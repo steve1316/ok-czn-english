@@ -1,0 +1,19 @@
+# Reverse OCR catalog: English game text -> the Chinese literal the task code matches against.
+#
+# The framework applies this in Task.fix_texts() before any handler sees a box, so the CN handlers in
+# ok_tasks/ keep working unchanged on the Global client. It also retries with spaces stripped, so a
+# msgid only needs its spaced form.
+#
+# This is NOT the app UI catalog. UI labels belong in ok.po, which runs the other way (Chinese -> English).
+#
+# Every entry carries a "# From <handler>: <literal>" comment naming the call site it serves. That is what
+# makes an upstream merge mechanical: diff the merge's new Chinese literals against these comments.
+#
+# Entries are added only from text actually seen on the Global client. Do not guess.
+msgid ""
+msgstr ""
+"Project-Id-Version: 1.0\n"
+"Language-Team: zh_CN\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
