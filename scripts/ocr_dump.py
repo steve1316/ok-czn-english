@@ -5,11 +5,15 @@ prints every text box with its confidence and relative position, marking which s
 covers. Copy the uncovered ones into `ocr.po` against the Chinese literal the handler expects.
 
 Run `python scripts/ocr_dump.py <image> [<image> ...]`, or add `--missing` to list only uncovered strings.
+Add `--aggregate` to fold many captures into one list of distinct strings ordered by how often they appeared,
+which is the practical way to read a whole run's worth of screens.
 """
 
 import argparse
 import gettext
 import sys
+from collections import Counter
+from collections import Counter
 from pathlib import Path
 
 import cv2
@@ -107,6 +111,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("images", nargs="+", help="screenshots to read")
     parser.add_argument("--missing", action="store_true", help="only show strings ocr.po does not cover")
+    parser.add_argument("--aggregate", action="store_true", help="pool every image into one list by frequency")
+    parser.add_argument("--min-confidence", type=float, default=0.0, help="drop boxes below this confidence")
     args = parser.parse_args()
 
     # The console is cp1252 on a default Windows install, and game text is routinely non-Latin.
@@ -115,13 +121,29 @@ def main():
 
     translation = load_catalog()
     engine = build_engine()
-    for image_path in args.images:
-        print(f"\n=== {image_path} ===")
+    seen = Counter()
+    best = {}
+
+    for index, image_path in enumerate(args.images, start=1):
+        if not args.aggregate:
+            print("")
+            print(f"=== {image_path} ===")
+        elif index % 25 == 0:
+            print(f"... {index}/{len(args.images)}", file=sys.stderr)
         for text, confidence, rel_x, rel_y in run_ocr(engine, image_path):
+            if confidence < args.min_confidence:
+                continue
             covered = is_covered(translation, text)
             if args.missing and covered:
                 continue
-            print(f"{'  ' if covered else '->'} {confidence:.3f}  ({rel_x:.3f}, {rel_y:.3f})  {text}")
+            if args.aggregate:
+                seen[text] += 1
+                best[text] = max(best.get(text, 0.0), confidence)
+            else:
+                print(f"{'  ' if covered else '->'} {confidence:.3f}  ({rel_x:.3f}, {rel_y:.3f})  {text}")
+
+    for text, count in seen.most_common():
+        print(f"{'  ' if is_covered(translation, text) else '->'} {count:4d}x  {best[text]:.3f}  {text}")
     return 0
 
 

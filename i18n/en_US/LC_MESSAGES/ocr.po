@@ -17,3 +17,23 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
+
+# From handle_center_confirm and handle_confirm: _clean_match(box.name, "确认")
+msgid "Confirm"
+msgstr "确认"
+
+# From handle_skip: _clean_match(box.name, "跳过")
+msgid "Skip"
+msgstr "跳过"
+
+# From handle_get_card: title.name == "获得卡牌"
+msgid "Obtain Card"
+msgstr "获得卡牌"
+
+# From handle_get_card: re.search(r"请选择.*获得的卡牌", tip.name)
+msgid "Choose 1 card to obtain."
+msgstr "请选择1张获得的卡牌"
+
+# From handle_equipment: title.name == "装备"
+msgid "Equipment"
+msgstr "装备"
