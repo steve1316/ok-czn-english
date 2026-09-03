@@ -34,10 +34,13 @@ def entries_of(catalog):
     Args:
         catalog: A `polib.POFile` or `polib.MOFile`.
 
+    Untranslated entries are skipped because `save_as_mofile` drops them, so counting them here would report a
+    catalog as stale forever no matter how often it is compiled.
+
     Returns:
-        A dict of msgid to msgstr, skipping obsolete entries and the header.
+        A dict of msgid to msgstr, skipping obsolete entries, the header, and anything untranslated.
     """
-    return {e.msgid: e.msgstr for e in catalog if not e.obsolete and e.msgid}
+    return {e.msgid: e.msgstr for e in catalog if not e.obsolete and e.msgid and e.msgstr}
 
 
 def check_one(po_path):
@@ -97,14 +100,14 @@ def main():
     stale = []
     for po_path in po_files:
         rel = po_path.relative_to(REPO_ROOT)
-        reason = check_one(po_path)
+        reason = check_one(po_path) if args.check else None
         if args.check:
             print(f"{'STALE' if reason else 'ok   '}  {rel}" + (f"  ({reason})" if reason else ""))
             if reason:
                 stale.append(rel)
         else:
             compile_one(po_path)
-            print(f"compiled  {rel} -> {rel.with_suffix('.mo')}" + (f"  ({reason})" if reason else "  (no change)"))
+            print(f"compiled  {rel} -> {rel.with_suffix('.mo')}")
 
     if args.check and stale:
         print(f"\n{len(stale)} catalog(s) out of date. Run: python scripts/compile_i18n.py")

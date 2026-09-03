@@ -13,21 +13,21 @@ from pathlib import Path
 import polib
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+I18N_ROOT = REPO_ROOT / "i18n"
 LOCALES = ("en_US", "zh_CN")
 CJK = re.compile(r"[\u4e00-\u9fff]")
 
 
-def catalog_path(locale, domain):
-    """Build the path to one compiled or source catalog.
+def ocr_po(locale):
+    """Build the path to one locale's reverse OCR catalog source.
 
     Args:
         locale: Locale directory name, such as `en_US`.
-        domain: Catalog domain, either `ocr` or `ok`.
 
     Returns:
-        A `Path` to `i18n/<locale>/LC_MESSAGES/<domain>`, without a suffix.
+        A `Path` to `i18n/<locale>/LC_MESSAGES/ocr.po`.
     """
-    return REPO_ROOT / "i18n" / locale / "LC_MESSAGES" / domain
+    return I18N_ROOT / locale / "LC_MESSAGES" / "ocr.po"
 
 
 def entries(locale):
@@ -39,59 +39,49 @@ def entries(locale):
     Returns:
         A list of `polib.POEntry`, excluding obsolete entries and the header.
     """
-    po = polib.pofile(str(catalog_path(locale, "ocr").with_suffix(".po")))
-    return [e for e in po if not e.obsolete and e.msgid]
+    return [e for e in polib.pofile(str(ocr_po(locale))) if not e.obsolete and e.msgid]
 
 
 class TestOcrCatalog(unittest.TestCase):
 
-    def test_catalogs_exist_for_every_locale(self):
-        """Both the source and the compiled catalog must be present, since the app only reads the .mo."""
-        for locale in LOCALES:
-            base = catalog_path(locale, "ocr")
-            self.assertTrue(base.with_suffix(".po").exists(), f"missing {locale} ocr.po")
-            self.assertTrue(base.with_suffix(".mo").exists(), f"missing {locale} ocr.mo, run scripts/compile_i18n.py")
+    def test_entries_are_well_formed(self):
+        """Every entry must be English on the left, non-empty on the right, and name the call site it serves.
 
-    def test_compiled_catalog_matches_source(self):
-        """A .po edit that was never compiled is invisible at runtime."""
-        for locale in LOCALES:
-            base = catalog_path(locale, "ocr")
-            want = {e.msgid: e.msgstr for e in entries(locale)}
-            have = {e.msgid: e.msgstr for e in polib.mofile(str(base.with_suffix(".mo"))) if e.msgid}
-            self.assertEqual(want, have, f"{locale} ocr.mo is stale, run scripts/compile_i18n.py")
-
-    def test_msgids_are_the_english_side(self):
-        """This catalog runs English to Chinese. A Chinese msgid means a UI string was filed here by mistake.
-
-        UI labels belong in `ok.po`, which runs the other way. Putting one here would rewrite game text.
+        A Chinese msgid means a UI string was filed here by mistake. UI labels belong in `ok.po`, which runs the
+        other way, and one landing here would rewrite game text instead of a label. An empty msgstr makes gettext
+        return the msgid, so the English would reach the handlers untranslated. The `# From <handler>` comment is
+        what keeps upstream merges mechanical - the new Chinese literals a merge brings in get diffed against it.
         """
         for locale in LOCALES:
             for entry in entries(locale):
-                self.assertIsNone(CJK.search(entry.msgid), f"{locale}: msgid '{entry.msgid}' contains Chinese, it belongs in ok.po")
+                with self.subTest(locale=locale, msgid=entry.msgid):
+                    self.assertIsNone(CJK.search(entry.msgid), "msgid is Chinese, it belongs in ok.po")
+                    self.assertTrue(entry.msgstr.strip(), "no translation")
+                    self.assertIn("From", (entry.comment or "") + (entry.tcomment or ""), "no '# From <handler>' comment")
 
-    def test_every_entry_translates_to_something(self):
-        """An empty msgstr makes gettext return the msgid, so the English text would reach the handlers."""
-        for locale in LOCALES:
-            for entry in entries(locale):
-                self.assertTrue(entry.msgstr.strip(), f"{locale}: '{entry.msgid}' has no translation")
+    def test_locales_stay_in_step(self):
+        """Both locales must carry the same entries.
 
-    def test_every_entry_names_its_call_site(self):
-        """Each entry carries a `# From <handler>: <literal>` comment.
+        The catalog is keyed on the app UI locale, not on the game client, so someone playing the Global client
+        with a Chinese UI reads `zh_CN/ocr.po`. `fix_texts` fails open, so an entry added to one file and not the
+        other loses every handler that depends on it with no error at all - the handlers just stop matching.
+        """
+        maps = {locale: {e.msgid: e.msgstr for e in entries(locale)} for locale in LOCALES}
+        first, *rest = LOCALES
+        for locale in rest:
+            self.assertEqual(maps[first], maps[locale], f"{first} and {locale} ocr.po have drifted apart")
 
-        That provenance is what makes an upstream merge mechanical - the new Chinese literals a merge brings in
-        can be diffed against these comments to find what still needs an English entry.
+    def test_compiled_catalog_is_current(self):
+        """Read the catalog the way the framework does, since the app only ever loads the compiled .mo.
+
+        This covers staleness as well as loading: a `.po` entry that was never compiled does not come back.
         """
         for locale in LOCALES:
+            self.assertTrue(ocr_po(locale).with_suffix(".mo").exists(), f"missing {locale} ocr.mo, run scripts/compile_i18n.py")
+            translation = gettext.translation("ocr", localedir=str(I18N_ROOT), languages=[locale])
             for entry in entries(locale):
-                comment = (entry.comment or "") + (entry.tcomment or "")
-                self.assertIn("From", comment, f"{locale}: '{entry.msgid}' has no '# From <handler>' comment")
-
-    def test_translation_round_trips_through_gettext(self):
-        """Read the catalog the way the framework does, so a bad encoding or plural form shows up here."""
-        for locale in LOCALES:
-            translation = gettext.translation("ocr", localedir=str(REPO_ROOT / "i18n"), languages=[locale])
-            for entry in entries(locale):
-                self.assertEqual(entry.msgstr, translation.gettext(entry.msgid), f"{locale}: '{entry.msgid}' did not round trip")
+                with self.subTest(locale=locale, msgid=entry.msgid):
+                    self.assertEqual(entry.msgstr, translation.gettext(entry.msgid), "stale .mo, run scripts/compile_i18n.py")
 
 
 if __name__ == "__main__":

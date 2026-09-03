@@ -5,7 +5,7 @@
 #
 #   .\local_release.ps1 -Version 2026.08.31
 #
-# Needs git, Node, pnpm, a Rust MSVC toolchain with the VS C++ build tools, and Python 3.12 on PATH.
+# Needs git, Node, a Rust MSVC toolchain with the VS C++ build tools, and Python 3.12 on PATH.
 # Run it from an elevated PowerShell, since building the offline package runs the launcher as administrator.
 
 [CmdletBinding()]
@@ -89,7 +89,7 @@ if (-not (New-Object Security.Principal.WindowsPrincipal($identity)).IsInRole([S
 }
 
 Write-Step 'Checking the toolchain'
-foreach ($tool in 'git', 'node', 'pnpm', 'cargo', 'python') {
+foreach ($tool in 'git', 'node', 'cargo', 'python') {
     if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) { throw "$tool is not on PATH." }
 }
 $pythonVersion = (& python --version 2>&1) -replace '^Python\s+', ''
@@ -162,7 +162,7 @@ Write-Step 'Installing dependencies into a fresh venv'
 Invoke-Checked 'python' @('-m', 'venv', $Venv)
 Invoke-Checked $VenvPython @('-m', 'pip', 'install', '--quiet', '--upgrade', 'pip')
 Invoke-Checked $VenvPython @('-m', 'pip', 'install', '--quiet', '-r', (Join-Path $BuildTree 'requirements.txt'))
-Invoke-Checked $VenvPython @('-m', 'pip', 'install', '--quiet', 'cython', 'setuptools', 'polib')
+Invoke-Checked $VenvPython @('-m', 'pip', 'install', '--quiet', '-r', (Join-Path $BuildTree 'requirements-dev.txt'))
 
 if (-not $SkipTests) {
     Write-Step 'Running tests'
