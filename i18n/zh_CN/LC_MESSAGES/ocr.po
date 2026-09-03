@@ -93,3 +93,31 @@ msgstr "免费"
 # From handle_remove: re.search(r"请选择(\d*)张*.*?(移除|复制|闪光|灵光).*?卡牌", tip.name)
 msgid "Select 1 card(s) to Remove."
 msgstr "请选择1张要移除的卡牌"
+
+# From handle_continue: _get_game_text(task, "继续") compared into box.name
+msgid "Continue"
+msgstr "继续"
+
+# From handle_equipment: _get_game_text(task, "请选择主战员") in equip_hint.name
+msgid "Select combatant."
+msgstr "请选择主战员"
+
+# From handle_assign_card: _get_game_text(task, "请选择要接受卡牌的主战员")
+msgid "Select the combatant to receive the card."
+msgstr "请选择要接受卡牌的主战员"
+
+# From handle_fate: _get_game_text(task, "请选择你的命运") in box.name
+msgid "Choose your fate"
+msgstr "请选择你的命运"
+
+# From _clickable_member_names: "主战员列表" is excluded when reading the member list
+msgid "Combatant List"
+msgstr "主战员列表"
+
+# From handle_boss_select: re.search(r"请选择.*遇见的首领", box.name)
+msgid "Select the Boss to encounter in the Depths."
+msgstr "请选择深处遇见的首领"
+
+# From handle_boss_select: re.search(r"请选择.*遇见的首领", box.name)
+msgid "Select the Boss to encounter in the Interior."
+msgstr "请选择内部遇见的首领"
