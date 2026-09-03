@@ -37,3 +37,59 @@ msgstr "请选择1张获得的卡牌"
 # From handle_equipment: title.name == "装备"
 msgid "Equipment"
 msgstr "装备"
+
+# From handle_enter: _clean_match(box.name, "进入")
+msgid "Enter"
+msgstr "进入"
+
+# From handle_leave: _clean_match(box.name, "离开")
+msgid "Leave"
+msgstr "离开"
+
+# From handle_get_reward: _clean_match(box.name, "获得")
+msgid "Obtain"
+msgstr "获得"
+
+# From _read_member_slots: _get_game_text(task, "重新搜索")
+msgid "Search again"
+msgstr "重新搜索"
+
+# From handle_other_page: box.name == "故事", stops the mode when it lands on a non-run page
+msgid "Story"
+msgstr "故事"
+
+# From handle_other_page: box.name == "营救"
+msgid "Rescue"
+msgstr "营救"
+
+# From handle_other_page: box.name == "方舟城市"
+msgid "Ark City"
+msgstr "方舟城市"
+
+# From handle_cancel: "取消" in box.name
+msgid "Cancel"
+msgstr "取消"
+
+# From handle_close: box.name == "关闭"
+msgid "Close"
+msgstr "关闭"
+
+# From handle_remove: "移除卡牌" in box.name
+msgid "Remove Card"
+msgstr "移除卡牌"
+
+# From handle_remove: _clean_match(box.name, "移除")
+msgid "Remove"
+msgstr "移除"
+
+# From handle_shop: "德朗商店" in box.name. The Global client spells it Dellang.
+msgid "Dellang Shop"
+msgstr "德朗商店"
+
+# From handle_shop: "免费" in box.name
+msgid "Free"
+msgstr "免费"
+
+# From handle_remove: re.search(r"请选择(\d*)张*.*?(移除|复制|闪光|灵光).*?卡牌", tip.name)
+msgid "Select 1 card(s) to Remove."
+msgstr "请选择1张要移除的卡牌"
