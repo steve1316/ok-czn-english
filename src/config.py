@@ -83,8 +83,10 @@ key_config_option = ConfigOption('Game Hotkey Config', { #全局配置示例
 }, description='In Game Hotkey for Skills')
 
 # 配置上传选项
+# Defaulted off in this fork. The upload pool is the CN community's, and a Global client's card and operative
+# names do not match anything in it, so uploads would be noise and the popular-config list unusable here.
 upload_config_option = ConfigOption('配置上传', {
-    '是否上传配置': True,
+    '是否上传配置': False,
 }, description='开启后每5分钟自动上传匿名的配置信息和胜率，帮助统计热门配置。\n不上传任何个人信息、游戏账号、截图、IP地址等隐私数据。\n仅上传配置内容和胜率统计数据。')
 
 ocr_backend_option = ConfigOption('OCR设置', {
@@ -179,15 +181,14 @@ config = {
     },
     'links': { # 关于里显示的链接, 可选
             'default': {
-                'github': 'https://github.com/baoxin1100/ok-kes',
-                'share': 'github：https://github.com/baoxin1100/ok-kes/releases；Mirror酱：https://mirrorchyan.com/zh/projects?rid=ok-kes；百度网盘：https://pan.baidu.com/s/156h76VWpUwPIffkZqFy_dw?pwd=okes；夸克网盘：https://pan.quark.cn/s/13b266aa8e80',
-                'qq_channel': 'https://pd.qq.com/s/eopggnxcu',
-                'faq': 'https://github.com/baoxin1100/ok-kes',
+                'github': 'https://github.com/steve1316/ok-czn-english',
+                'share': 'https://github.com/steve1316/ok-czn-english/releases',
+                'faq': 'https://github.com/steve1316/ok-czn-english',
                 'sponsor': 'local'
             }
         },
     'screenshots_folder': "screenshots", #截图存放目录, 每次重新启动会清空目录
-    'gui_title': 'ok-kes',  #窗口名
+    'gui_title': 'ok-czn',  #窗口名
     'template_matching': { # 可选, 如使用OpenCV的模板匹配
         'coco_feature_json': os.path.join('ok_tasks/assets', 'coco_annotations.json'), #coco格式标记, 需要png图片, 在debug模式运行后, 会对进行切图仅保留被标记部分以减少图片大小
         'default_horizontal_variance': 0.002, #默认x偏移, 查找不传box的时候, 会根据coco坐标, match偏移box内的
