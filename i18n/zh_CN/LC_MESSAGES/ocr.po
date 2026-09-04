@@ -94,6 +94,26 @@ msgstr "免费"
 msgid "Select 1 card(s) to Remove."
 msgstr "请选择1张要移除的卡牌"
 
+# From handle_select_card: same regex as the entry above. Lookup is whole-string, so every count the game
+# can ask for needs its own entry - a Fate that removes two cards never matched the single-card msgid.
+msgid "Select 2 card(s) to Remove."
+msgstr "请选择2张要移除的卡牌"
+
+# From handle_select_card: same regex as the entry above. Lookup is whole-string, so every count the game
+# can ask for needs its own entry - a Fate that removes two cards never matched the single-card msgid.
+msgid "Select 3 card(s) to Remove."
+msgstr "请选择3张要移除的卡牌"
+
+# From handle_select_card: same regex as the entry above. Lookup is whole-string, so every count the game
+# can ask for needs its own entry - a Fate that removes two cards never matched the single-card msgid.
+msgid "Select 4 card(s) to Remove."
+msgstr "请选择4张要移除的卡牌"
+
+# From handle_select_card: same regex as the entry above. Lookup is whole-string, so every count the game
+# can ask for needs its own entry - a Fate that removes two cards never matched the single-card msgid.
+msgid "Select 5 card(s) to Remove."
+msgstr "请选择5张要移除的卡牌"
+
 # From handle_continue: _get_game_text(task, "继续") compared into box.name
 msgid "Continue"
 msgstr "继续"
@@ -184,11 +204,32 @@ msgstr "逃脱"
 msgid "Tap to close the window."
 msgstr "点击屏幕关闭窗口"
 
-# From _card_has_type_below: matched against _CARD_TYPE_KEYWORDS. That check only considers boxes of four
-# characters or fewer, so the English label has to become the short Chinese one before it is measured.
+# From handle_close_page: the dice roll prompt is dismissed the same way, by tapping the screen, so it only
+# needs to carry "点击屏幕". The handler clicks the matching box, which sits under the dice.
+msgid "Tap the screen to roll the dice."
+msgstr "点击屏幕投掷骰子"
+
+# From handle_negotiation: the test is `title.name in "失败"`, a substring-of check, so this has to be
+# exactly "失败" and nothing longer. Failure is not a card, equipment or combatant name, so it cannot
+# collide with a roster entry.
+msgid "Failure"
+msgstr "失败"
+
+# From _card_has_type_below and _equipment_slot: one English word serves both the card type label and the
+# equipment stat row, and the two want different literals - "攻击" as a card type, "攻击力" as a stat.
+# "攻击力" satisfies both, because every card-type test is a substring test and three characters still
+# clears the four-character ceiling in _card_has_type_below.
 # Collides with a card also named Attack; the label appears under every attack card, the card is one of 1,472.
 msgid "Attack"
-msgstr "攻击"
+msgstr "攻击力"
+
+# From _equipment_slot: _EQUIPMENT_TYPE_SLOTS keys off the stat named in the row beside the equipment.
+msgid "Defense"
+msgstr "防御力"
+
+# From _equipment_slot: _EQUIPMENT_TYPE_SLOTS keys off the stat named in the row beside the equipment.
+msgid "Health"
+msgstr "生命值"
 
 # From _card_has_type_below: matched against _CARD_TYPE_KEYWORDS.
 msgid "Skill"
@@ -201,6 +242,12 @@ msgstr "基础攻击"
 # From select_card: _get_game_text(task, "基础") drives the basic-card removal pass.
 msgid "Basic Skill"
 msgstr "基础技能"
+
+# From _card_has_type_below: matched against _CARD_TYPE_KEYWORDS via the short form. Seven characters, so it
+# fails the four-character test until it is rewritten. src/en/ocr_text.py retries this msgid after
+# trimming the type icon, which covers the "4Upgrade" and "ZUpgrade" readings without an entry each.
+msgid "Upgrade"
+msgstr "强化"
 
 # From _card_has_type_below: matched against _CARD_TYPE_KEYWORDS. The client's own card type is `card_curse`.
 # Collides with a card also named Curse, and blocking curse cards is the shipped default, so the label wins.
@@ -231,14 +278,19 @@ msgstr "查看之前的闪光"
 msgid "View original"
 msgstr "查看原件"
 
-# From handle_view_original: the same button with the icon beside it read as part of the line, which the
-# OCR saw more often than the clean form.
-msgid "View original Q."
-msgstr "查看原件"
-
 # From handle_main_member_flash: _get_game_text(task, "请选择获得") in box.name
 msgid "Choose Epiphany Effect."
 msgstr "请选择获得"
+
+# From handle_main_member_flash: same substring test, but this is the combatant picker rather than the
+# effect picker. The handler only needs "请选择获得" to be present, so the rest names the screen.
+msgid "Select the combatant to gain Epiphany."
+msgstr "请选择获得闪光的主战员"
+
+# From handle_main_member_flash: the Duplicate combatant picker sits at the same point and is served by the
+# same handler, so it has to carry "请选择获得" too. The tail keeps the two apart in the log.
+msgid "Select the Combatant whose card you'd like to Duplicate."
+msgstr "请选择获得复制卡牌的主战员"
 
 # From handle_copy_card_choice: _get_game_text(task, "请选择要复制的卡牌") in box.name
 msgid "Select a card to Duplicate."
@@ -249,8 +301,9 @@ msgid "Convert selected Normal Card"
 msgstr "转换的卡牌"
 
 # From handle_refine_equipment_credit: _get_game_text(task, "以信用点接收") in box.name.
-# The leading O is the radio button beside the option, which the OCR reads as part of the line.
-msgid "O Receive as Credits"
+# The radio button beside the option sometimes lands in the same box and reads as a leading O. Keeping the
+# msgid clean lets src/en/ocr_text.py trim that off, so one entry covers both readings.
+msgid "Receive as Credits"
 msgstr "以信用点接收"
 
 # From handle_reflash: _get_game_text(task, "重新闪光") in box.name
