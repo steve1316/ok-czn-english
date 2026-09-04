@@ -10,9 +10,10 @@ class Globals(QObject):
     def __init__(self, exit_event):
         super().__init__()
         # Everything English-only lives under src/en/ so upstream's files stay untouched and merges stay clean.
-        from src.en import layout, ocr_text, overrides, picker
+        from src.en import layout, ocr_text, overrides, picker, templates
 
         layout.apply()
         picker.apply()
         ocr_text.apply()
+        templates.apply()
         overrides.apply()
