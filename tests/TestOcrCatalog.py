@@ -89,6 +89,25 @@ class TestOcrCatalog(unittest.TestCase):
         for locale in rest:
             self.assertEqual(maps[first], maps[locale], f"{first} and {locale} ocr.po have drifted apart")
 
+    def test_equipment_stats_resolve_to_a_slot(self):
+        """_EQUIPMENT_TYPE_SLOTS does a substring test on the stat row, so a short literal silently misses."""
+        slots = {"攻击力": 0, "防御力": 1, "生命值": 2}
+        translation = gettext.translation("ocr", str(I18N_ROOT), languages=["en_US"])
+        for stat, expected in (("Attack", 0), ("Defense", 1), ("Health", 2)):
+            with self.subTest(stat=stat):
+                # The row reads as one string once _get_region_text joins the boxes, hence the trailing value.
+                row = translation.gettext(stat) + "+60"
+                self.assertEqual(expected, next((s for k, s in slots.items() if k in row), None))
+
+    def test_the_attack_label_still_reads_as_a_card_type(self):
+        """Attack is shared with the card type label, which is why it is widened rather than replaced."""
+        keywords = {"攻击", "强化", "技能", "技", "咒术", "诅咒", "攻", "击", "基础", "基本", "状态", "异常"}
+        translation = gettext.translation("ocr", str(I18N_ROOT), languages=["en_US"])
+        attack = translation.gettext("Attack")
+        self.assertTrue(any(keyword in attack for keyword in keywords))
+        # _card_has_type_below only looks at boxes of four characters or fewer.
+        self.assertLessEqual(len(attack), 4)
+
     def test_compiled_catalog_is_current(self):
         """Read the catalog the way the framework does, since the app only ever loads the compiled .mo.
 

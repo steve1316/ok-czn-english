@@ -42,6 +42,11 @@ REVIEWED_COLLISIONS = {
     # The button that leaves a run. handle_escape only reads it at a fixed point in the bottom-right corner,
     # and abandoning a run matters more to the automation than targeting one card out of 1,472.
     "Retreat",
+    # Card type labels. `_card_has_type_below` only looks at boxes of four characters or fewer, so without the
+    # rewrite the English label is too long to be read as a type at all and the card above it stops being
+    # recognised as a card. The label sits under every card of that type, against one card sharing the name.
+    "Attack",
+    "Curse",
 }
 
 
