@@ -215,6 +215,12 @@ msgstr "点击屏幕投掷骰子"
 msgid "Failure"
 msgstr "失败"
 
+# From handle_card_reward: "卡牌奖励" in _get_region_text(task, (0.345, 0.012, 0.642, 0.141)), the title
+# strip. Without it the page is never identified and handle_unknown_page clicks at random until it lands
+# on a card. handle_get_card, which owns the caption below the title, is registered in Sortie only.
+msgid "Card Reward"
+msgstr "卡牌奖励"
+
 # From _card_has_type_below and _equipment_slot: one English word serves both the card type label and the
 # equipment stat row, and the two want different literals - "攻击" as a card type, "攻击力" as a stat.
 # "攻击力" satisfies both, because every card-type test is a substring test and three characters still

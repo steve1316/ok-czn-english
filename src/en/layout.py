@@ -20,6 +20,9 @@ logger = Logger.get_logger(__name__)
 DISABLE_ENV = "OK_CZN_NO_LAYOUT_PATCH"
 # Below this the view has not been laid out yet and `heightForWidth` returns a wildly inflated answer.
 MIN_MEANINGFUL_WIDTH = 200
+# Where a card remembers the height it last measured, as (width, height). The expand animation asks
+# about twenty times a second and the width never changes while it runs, so the answer is reusable.
+HEIGHT_CACHE = "_en_content_height"
 
 _patched = False
 
@@ -72,11 +75,12 @@ def widen_settings_text_column():
     logger.info("settings text column widened")
 
 
-def _content_height(card):
+def _measure_content_height(card):
     """Measure a card's content at the width it is actually laid out at.
 
     Word-wrapped labels report height through `heightForWidth` rather than `sizeHint`, so a layout holding
-    them cannot describe its own height with `sizeHint` alone.
+    them cannot describe its own height with `sizeHint` alone. This walks every row and re-wraps every
+    description, which is why the result is worth remembering.
 
     Args:
         card: The `ExpandSettingCard` being measured.
@@ -93,6 +97,26 @@ def _content_height(card):
     return layout.sizeHint().height()
 
 
+def _content_height(card, remeasure=False):
+    """Give the card's content height, measuring it only when the answer cannot be reused.
+
+    Args:
+        card: The `ExpandSettingCard` being measured.
+        remeasure: True to measure afresh and replace what was remembered, for when the content has changed.
+
+    Returns:
+        The content height in pixels.
+    """
+    width = card.view.width()
+    if not remeasure:
+        cached = getattr(card, HEIGHT_CACHE, None)
+        if cached is not None and cached[0] == width:
+            return cached[1]
+    height = _measure_content_height(card)
+    setattr(card, HEIGHT_CACHE, (width, height))
+    return height
+
+
 def size_cards_by_height_for_width():
     """Size expandable cards from real content height rather than the size hint.
 
@@ -106,12 +130,15 @@ def size_cards_by_height_for_width():
         return
 
     def adjust_view_size(self):
-        height = _content_height(self)
+        # Called whenever the content itself changes, so this is the one place that must measure afresh.
+        height = _content_height(self, remeasure=True)
         self.spaceWidget.setFixedHeight(height)
         if self.isExpand:
             self.setFixedHeight(self.card.height() + height)
 
     def on_expand_value_changed(self):
+        # Runs on every frame of the expand animation. Only the height is animating, so the measurement
+        # taken at this width still holds and re-running it would burn a full re-layout per frame.
         content = _content_height(self)
         top = self.viewportMargins().top()
         self.setFixedHeight(max(top + content - self.verticalScrollBar().value(), top))
