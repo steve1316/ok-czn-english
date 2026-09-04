@@ -108,6 +108,13 @@ class TestOcrCatalog(unittest.TestCase):
         # _card_has_type_below only looks at boxes of four characters or fewer.
         self.assertLessEqual(len(attack), 4)
 
+    def test_the_card_reward_title_is_mapped(self):
+        """Without it the page is never identified and handle_unknown_page clicks at random until it lands."""
+        translation = gettext.translation("ocr", str(I18N_ROOT), languages=["en_US"])
+        title = translation.gettext("Card Reward")
+        # handle_card_reward joins every box in the title strip before testing, hence the trailing text.
+        self.assertIn("卡牌奖励", title + "666")
+
     def test_compiled_catalog_is_current(self):
         """Read the catalog the way the framework does, since the app only ever loads the compiled .mo.
 
