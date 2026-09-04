@@ -72,22 +72,32 @@ This software is open-source and free, intended for personal learning purposes o
 
 ### Config Sync & Hot Configs
 - **Disabled by default in this fork.** The upload pool is the upstream CN community's, and a Global client's card and
-  operative names do not match anything in it, so uploads would be noise and the downloaded configs unusable here.
-  Turn it back on under `配置上传` if you play a Chinese client and want to take part.
+  combatant names do not match anything in it, so uploads would be noise and the downloaded configs unusable here.
+  Turn it back on under Config Upload if you play a Chinese client and want to take part.
+
+### Settings
+- **Names are picked from a list, not typed.** Cards, equipment and combatants come from the client's own
+  localization data, so a typo cannot silently stop a setting matching. The picker gains a search box once the
+  list is long, which it is for cards.
+- **Switching to this build re-seeds those settings.** Upstream ships one Chinese player's build as the
+  defaults, and those names can never match what the OCR reads on a Global client, so they are cleared on
+  first launch. Nothing is lost that would have worked.
+- **Route Priority is the exception** and stays on its original values. Those are internal labels rather than
+  text read off the screen, so they are only translated for display.
 
 ### General
 - **Resolutions**: 1920x1080, 1600x900, 1280x720 and other 16:9 sizes
 - **Background Mode**: Runs while the game window is minimized or obscured
 - **Clients**: Global (English) is the focus of this fork. Simplified and Traditional Chinese still work, including
-  Android emulators, via the `游戏语言` setting in each mode
+  Android emulators, via the Game Language setting in each mode
 
 ## Usage Guide
 
-1. **Global client**: set the app's own language to English. Game text is handled by the reverse OCR catalog described
-   below, so leave each mode's `游戏语言` on `简体中文`.
-2. **Traditional Chinese client**: set `游戏语言` to `繁体中文` in the mode you use.
+1. **Global client**: nothing to set. Game Language already defaults to English, and the game text itself is
+   handled by the reverse OCR catalog described below.
+2. **Chinese clients**: set Game Language to Simplified or Traditional Chinese in the mode you use.
 3. **Auto Battle**: relies on keybind recognition, so enable shortcut key display in the game's settings.
-4. **Chaos Mode**: turn on the game's own auto-battle and auto-story options.
+4. **Chaos Manifestation**: turn on the game's own auto-battle and auto-story options.
 5. **Story Mode**: enable Sortie Mode by hand for battle stages and Chaos Mode for chaos stages. Battle teams must be
    configured manually.
 
