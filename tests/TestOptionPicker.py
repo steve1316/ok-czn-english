@@ -178,6 +178,33 @@ class TestOptionPicker(unittest.TestCase):
             with self.subTest(list=name):
                 self.assertEqual(0, view.style().styleHint(QStyle.SH_ToolTip_WakeUpDelay, None, view))
 
+    def option_row(self, dialog):
+        """Find the layout holding the Available and Selected columns.
+
+        Args:
+            dialog: A picker built on a roster.
+
+        Returns:
+            The two-column layout, or None when the dialog has no roster and so no such row.
+        """
+        for index in range(dialog.viewLayout.count()):
+            row = dialog.viewLayout.itemAt(index).layout()
+            if row is not None and row.count() == 2 and all(row.itemAt(c).layout() is not None for c in range(2)):
+                return row
+        return None
+
+    def test_the_two_option_columns_share_the_width_evenly(self):
+        """Upstream splits the row 2:1, which leaves English card names cramped against a half-empty column."""
+        for name, roster in (("cards", CARDS), ("route nodes", ROUTE_NODES)):
+            with self.subTest(roster=name):
+                row = self.option_row(self.open_picker(roster))
+                self.assertEqual([1, 1], [row.stretch(0), row.stretch(1)])
+
+    def test_a_free_text_list_has_no_columns_to_balance(self):
+        """Without a roster the dialog is a single list, and its row must not be mistaken for the columns."""
+        dialog = ModifyListDialog(["one", "two"], self.parent)
+        self.assertIsNone(self.option_row(dialog))
+
     def test_confirm_returns_canonical_values_in_order(self):
         """The config stores the canonical value, so handing back display text would stop OCR matching."""
         dialog = self.open_picker(CARDS, selected=[CARDS[5]])

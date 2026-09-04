@@ -14,9 +14,9 @@ Building the rows here is also what makes a useful tooltip possible, so each one
 equipment's own effect text from `game_text.py` rather than just repeating the name, on both sides of the
 dialog, and shows it without the wait Qt normally puts in front of a tooltip.
 
-Only the three methods that touch the option grid are replaced, and only when the roster is long. A short one -
-Route Priority's four node types - falls through to upstream's buttons, so nothing changes where nothing was
-slow.
+Only the methods that touch the option pane are replaced, and the grid itself is only swapped out when the
+roster is long. A short one - Route Priority's four node types - falls through to upstream's buttons, so
+nothing changes where nothing was slow.
 
 The virtualization half of this is not really about the English client. It works around a framework performance
 bug that only happens to bite at Global-client roster sizes, so it belongs in ok-script's own `ModifyListDialog`
@@ -50,6 +50,8 @@ ENABLED_FLAGS = Qt.ItemIsEnabled | Qt.ItemIsSelectable
 # Used only if the framework's own `SHOW_SEARCH_OPTIONS_THRESHOLD` cannot be found, which would otherwise hand
 # every roster back to the slow grid. It matches that constant's value today, and a test asserts it resolves.
 FALLBACK_THRESHOLD = 20
+# The dialog's two option columns, Available and Selected.
+COLUMN_COUNT = 2
 
 _patched = False
 
@@ -118,6 +120,30 @@ class InstantTooltipStyle(QProxyStyle):
         if hint == QStyle.SH_ToolTip_WakeUpDelay:
             return 0
         return super().styleHint(hint, option, widget, returnData)
+
+
+def balance_dialog_columns(dialog):
+    """Give Available Options and Selected Options an equal share of the dialog width.
+
+    Upstream splits that row two to one. Its Chinese option names are short enough for the wider column to be
+    worth it, but English card names are not, and the narrow side ends up holding a list plus its buttons in a
+    third of the dialog. The split is set inside `__init__`, so it is corrected afterwards instead.
+
+    The row is found by shape rather than by position: it is the only child of the view layout whose own two
+    children are both layouts. The selected list's row looks similar but holds a widget and a layout, so this
+    cannot pick it by mistake.
+
+    Args:
+        dialog: The `ModifyListDialog` being set up.
+    """
+    for index in range(dialog.viewLayout.count()):
+        row = dialog.viewLayout.itemAt(index).layout()
+        if row is None or row.count() != COLUMN_COUNT:
+            continue
+        if all(row.itemAt(column).layout() is not None for column in range(COLUMN_COUNT)):
+            for column in range(COLUMN_COUNT):
+                row.setStretch(column, 1)
+            return
 
 
 def use_instant_tooltips(view):
@@ -195,6 +221,7 @@ def apply():
     original_create = dialog_class._create_available_options_widget
     original_update = dialog_class.update_option_buttons
     original_filter = dialog_class.filter_available_options
+    original_wrap = dialog_class._wrap_dialog_buttons
 
     def virtualized(dialog):
         """Whether this dialog shows the list. All three patches route on this one rule."""
@@ -228,7 +255,15 @@ def apply():
             hidden = bool(keyword) and keyword not in self.option_list.item(row).data(SEARCH_ROLE)
             self.option_list.setRowHidden(row, hidden)
 
+    def patched_wrap(self):
+        original_wrap(self)
+        # The last call `__init__` makes after installing the two-column row, so the row exists to rebalance.
+        # Every dialog with a roster gets it, not only the virtualized ones, so the shape stays consistent.
+        if self.options_available is not None:
+            balance_dialog_columns(self)
+
     dialog_class._create_available_options_widget = patched_create
     dialog_class.update_option_buttons = patched_update
     dialog_class.filter_available_options = patched_filter
+    dialog_class._wrap_dialog_buttons = patched_wrap
     logger.info("long option lists virtualized")
