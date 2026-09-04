@@ -101,6 +101,16 @@ class TestGameData(unittest.TestCase):
                 covered = sum(1 for entry in roster if entry in DESCRIPTIONS) / len(roster)
                 self.assertGreater(covered, floor, f"only {covered:.0%} of {name} have effect text")
 
+    def test_descriptions_carry_real_numbers(self):
+        """If value resolution breaks, every number reverts to `X` and nothing else here would notice.
+
+        About one description in ten still holds an unresolved value, almost all of them the `cs_` families
+        that read through a character-stat table the generator does not load. The ceiling is set well above
+        that but far below the ~100% a broken resolver would produce.
+        """
+        vague = sum(1 for text in DESCRIPTIONS.values() if "X" in text) / len(DESCRIPTIONS)
+        self.assertLess(vague, 0.15, f"{vague:.0%} of descriptions still have an unresolved value")
+
     def test_node_types_cover_the_route_options(self):
         """Route Priority is described with node-type names, so those must exist in the game data."""
         for expected in ("Safe Zones", "Unidentified Area", "Normal Battle Area", "Elite Battle Area"):

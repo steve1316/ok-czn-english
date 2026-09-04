@@ -11,7 +11,8 @@ screen, so the same roster is ready in about 2 ms and filters in about 3 ms, and
 of the pane, which a grid of fixed-width buttons never did.
 
 Building the rows here is also what makes a useful tooltip possible, so each one carries the card's or the
-equipment's own effect text from `game_text.py` rather than just repeating the name.
+equipment's own effect text from `game_text.py` rather than just repeating the name, and shows it on hover
+instead of after Qt's usual delay.
 
 Only the three methods that touch the option grid are replaced, and only when the roster is long. A short one -
 Route Priority's four node types - falls through to upstream's buttons, so nothing changes where nothing was
@@ -30,7 +31,8 @@ Options list beside it has never had touch scrolling either.
 from html import escape
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QListWidgetItem
+from PySide6.QtGui import QCursor
+from PySide6.QtWidgets import QListWidgetItem, QToolTip
 from qfluentwidgets import ListWidget
 
 from ok import Logger, og
@@ -90,6 +92,23 @@ def tooltip_for(option, display):
     return f"{name}<br><br>{escape(effect).replace(chr(10), '<br>')}"
 
 
+def show_row_tooltip(view, index):
+    """Put a row's tooltip up as soon as the cursor reaches it.
+
+    Qt waits about 700ms before showing a tooltip, which is a long pause when the tooltip is the reason you are
+    hovering in the first place. The delay is a style hint rather than a setting, so the way to skip it is to
+    show the text directly. Passing the row's rectangle lets Qt hide it again on the way out, and the next row
+    replaces it.
+
+    Args:
+        view: The option list.
+        index: Model index of the row now under the cursor.
+    """
+    item = view.itemFromIndex(index)
+    if item is not None:
+        QToolTip.showText(QCursor.pos(), item.toolTip(), view, view.visualRect(index))
+
+
 def build_option_list(dialog):
     """Build the virtualized replacement for one dialog's option grid.
 
@@ -114,6 +133,7 @@ def build_option_list(dialog):
         view.addItem(item)
 
     view.itemClicked.connect(lambda item: dialog.add_available_item(item.data(OPTION_ROLE)))
+    view.entered.connect(lambda index: show_row_tooltip(view, index))
     return view
 
 

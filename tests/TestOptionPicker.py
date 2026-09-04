@@ -20,7 +20,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from PySide6.QtCore import Qt  # noqa: E402
-from PySide6.QtWidgets import QApplication, QWidget  # noqa: E402
+from PySide6.QtWidgets import QApplication, QToolTip, QWidget  # noqa: E402
 
 from ok import og  # noqa: E402
 
@@ -145,6 +145,13 @@ class TestOptionPicker(unittest.TestCase):
         """Qt only word-wraps a tooltip it reads as rich text, and the longest effect is 196 characters."""
         dialog = self.open_picker(CARDS)
         self.assertTrue(dialog.option_list.item(0).toolTip().startswith("<b>"))
+
+    def test_hovering_a_row_shows_its_tooltip_without_the_delay(self):
+        """Qt's ~700ms wake-up is a style hint, so the picker puts the text up from `entered` itself."""
+        dialog = self.open_picker(CARDS)
+        view = dialog.option_list
+        view.entered.emit(view.model().index(0, 0))
+        self.assertEqual(view.item(0).toolTip(), QToolTip.text())
 
     def test_confirm_returns_canonical_values_in_order(self):
         """The config stores the canonical value, so handing back display text would stop OCR matching."""
