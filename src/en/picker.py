@@ -11,8 +11,8 @@ screen, so the same roster is ready in about 2 ms and filters in about 3 ms, and
 of the pane, which a grid of fixed-width buttons never did.
 
 Building the rows here is also what makes a useful tooltip possible, so each one carries the card's or the
-equipment's own effect text from `game_text.py` rather than just repeating the name, and shows it on hover
-instead of after Qt's usual delay.
+equipment's own effect text from `game_text.py` rather than just repeating the name, and shows it without the
+wait Qt normally puts in front of a tooltip.
 
 Only the three methods that touch the option grid are replaced, and only when the roster is long. A short one -
 Route Priority's four node types - falls through to upstream's buttons, so nothing changes where nothing was
@@ -31,8 +31,7 @@ Options list beside it has never had touch scrolling either.
 from html import escape
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QCursor
-from PySide6.QtWidgets import QListWidgetItem, QToolTip
+from PySide6.QtWidgets import QListWidgetItem, QProxyStyle, QStyle
 from qfluentwidgets import ListWidget
 
 from ok import Logger, og
@@ -92,21 +91,33 @@ def tooltip_for(option, display):
     return f"{name}<br><br>{escape(effect).replace(chr(10), '<br>')}"
 
 
-def show_row_tooltip(view, index):
-    """Put a row's tooltip up as soon as the cursor reaches it.
+class InstantTooltipStyle(QProxyStyle):
+    """Take the wait out of the option list's tooltips.
 
-    Qt waits about 700ms before showing a tooltip, which is a long pause when the tooltip is the reason you are
-    hovering in the first place. The delay is a style hint rather than a setting, so the way to skip it is to
-    show the text directly. Passing the row's rectangle lets Qt hide it again on the way out, and the next row
-    replaces it.
+    Qt holds a tooltip back for about 700ms, which is a long pause when the tooltip is the reason you are
+    hovering in the first place. That wait is a style hint rather than a setting, so overriding the hint is the
+    supported way to change it. Everything else passes straight through to the real style, and this is set on
+    the option list alone, so no other tooltip in the app is affected.
 
-    Args:
-        view: The option list.
-        index: Model index of the row now under the cursor.
+    Showing the text directly instead, from the view's `entered` signal, does not work: the item's own tooltip
+    still fires afterwards and the user gets two tooltips at once.
     """
-    item = view.itemFromIndex(index)
-    if item is not None:
-        QToolTip.showText(QCursor.pos(), item.toolTip(), view, view.visualRect(index))
+
+    def styleHint(self, hint, option=None, widget=None, returnData=None):
+        """Answer one style question, cutting the tooltip delay to nothing.
+
+        Args:
+            hint: The style hint being asked about.
+            option: Style option for the widget, when there is one.
+            widget: The widget being styled.
+            returnData: Out-parameter some hints use.
+
+        Returns:
+            The hint's value.
+        """
+        if hint == QStyle.SH_ToolTip_WakeUpDelay:
+            return 0
+        return super().styleHint(hint, option, widget, returnData)
 
 
 def build_option_list(dialog):
@@ -133,7 +144,9 @@ def build_option_list(dialog):
         view.addItem(item)
 
     view.itemClicked.connect(lambda item: dialog.add_available_item(item.data(OPTION_ROLE)))
-    view.entered.connect(lambda index: show_row_tooltip(view, index))
+    # Qt does not take ownership of a style, so the view has to hold the only reference to it.
+    view.instant_tooltip_style = InstantTooltipStyle()
+    view.setStyle(view.instant_tooltip_style)
     return view
 
 

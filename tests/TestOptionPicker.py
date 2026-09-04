@@ -20,7 +20,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from PySide6.QtCore import Qt  # noqa: E402
-from PySide6.QtWidgets import QApplication, QToolTip, QWidget  # noqa: E402
+from PySide6.QtWidgets import QApplication, QStyle, QWidget  # noqa: E402
 
 from ok import og  # noqa: E402
 
@@ -146,12 +146,18 @@ class TestOptionPicker(unittest.TestCase):
         dialog = self.open_picker(CARDS)
         self.assertTrue(dialog.option_list.item(0).toolTip().startswith("<b>"))
 
-    def test_hovering_a_row_shows_its_tooltip_without_the_delay(self):
-        """Qt's ~700ms wake-up is a style hint, so the picker puts the text up from `entered` itself."""
-        dialog = self.open_picker(CARDS)
-        view = dialog.option_list
-        view.entered.emit(view.model().index(0, 0))
-        self.assertEqual(view.item(0).toolTip(), QToolTip.text())
+    def test_the_list_shows_tooltips_without_the_usual_delay(self):
+        """Qt holds a tooltip back ~700ms, which is the whole wait when the tooltip is why you are hovering."""
+        view = self.open_picker(CARDS).option_list
+        self.assertEqual(0, view.style().styleHint(QStyle.SH_ToolTip_WakeUpDelay, None, view))
+
+    def test_only_the_option_list_loses_the_delay(self):
+        """The style is set on the one view, so hovering anything else in the app behaves as it always did."""
+        self.assertGreater(self.parent.style().styleHint(QStyle.SH_ToolTip_WakeUpDelay, None, self.parent), 0)
+
+    def test_the_list_keeps_its_fluent_styling(self):
+        """A widget-level style can knock out a stylesheet, which would leave the list unthemed."""
+        self.assertTrue(self.open_picker(CARDS).option_list.styleSheet())
 
     def test_confirm_returns_canonical_values_in_order(self):
         """The config stores the canonical value, so handing back display text would stop OCR matching."""
