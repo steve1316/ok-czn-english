@@ -29,6 +29,10 @@ from src.en.framework import import_ui  # noqa: E402
 SEARCH_THRESHOLD = import_ui("tasks.ModifyListDialog", "SHOW_SEARCH_OPTIONS_THRESHOLD")
 
 OCR_PO = REPO_ROOT / "i18n" / "en_US" / "LC_MESSAGES" / "ocr.po"
+# The mode files whose settings the user actually sees, and how a setting and a description are declared in them.
+MODE_FILES = ("ChaosMode", "SortieMode", "StoryMode")
+SETTING_KEY = re.compile(r"""default_config\[['"](.+?)['"]\]""")
+UPSTREAM_DESCRIPTION = re.compile(r"""config_description\[['"](.+?)['"]\]""")
 # Above this length the widget factory turns a string setting into a multi-line text box.
 MAX_LINE_EDIT_DEFAULT = 16
 ENTITY_NAMES = set(CARDS) | set(EQUIPMENT) | set(COMBATANTS)
@@ -63,6 +67,37 @@ class FakeTask:
         self.config_type = {}
         self.config_description = {}
         self.instructions = "placeholder"
+
+
+def mode_setting_keys():
+    """Read the settings the modes declare, straight from their source.
+
+    Returns:
+        A set of config keys. Commented-out lines are skipped, so a setting upstream has parked does not count.
+    """
+    keys = set()
+    for name in MODE_FILES:
+        path = REPO_ROOT / "ok_tasks" / f"{name}.py"
+        if not path.exists():
+            continue
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip().startswith("#"):
+                keys.update(SETTING_KEY.findall(line))
+    return keys
+
+
+def upstream_described():
+    """Read the settings upstream already writes its own help text for.
+
+    Returns:
+        A set of config keys whose Chinese description reaches the user translated through `ok.po`.
+    """
+    keys = set()
+    for name in MODE_FILES:
+        path = REPO_ROOT / "ok_tasks" / f"{name}.py"
+        if path.exists():
+            keys.update(UPSTREAM_DESCRIPTION.findall(path.read_text(encoding="utf-8")))
+    return keys
 
 
 def reshaped():
@@ -194,6 +229,17 @@ class TestReshape(unittest.TestCase):
         task = reshaped()
         self.assertEqual(overrides.SETTINGS_VERSION, task.default_config.get(overrides.VERSION_KEY))
         self.assertTrue(overrides.VERSION_KEY.startswith("_"), "the stamp must stay out of the settings UI")
+
+    def test_every_mode_setting_has_help_text(self):
+        """A setting with no description reads as a bare label, which is how `领取奖励(只使用验证卡)` shipped.
+
+        Upstream writes a few descriptions itself, in Chinese, and those reach the user through `ok.po`. The
+        rest are this fork's to supply, so a setting upstream adds later shows up here rather than in the GUI.
+        """
+        # `overrides.DESCRIPTIONS` is the settings help text. The bare `DESCRIPTIONS` here is card effects.
+        described = set(overrides.DESCRIPTIONS) | upstream_described()
+        bare = sorted(key for key in mode_setting_keys() if key not in described and not key.startswith("_"))
+        self.assertEqual([], bare, f"these settings would render with no help text: {bare}")
 
     def test_descriptions_are_english(self):
         task = reshaped()

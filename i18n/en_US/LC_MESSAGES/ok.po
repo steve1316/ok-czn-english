@@ -441,7 +441,7 @@ msgid "领取奖励"
 msgstr "Claim Rewards"
 
 msgid "领取奖励(只使用验证卡)"
-msgstr "Claim Rewards (verification cards only)"
+msgstr "Claim Additional Loot with Loot Certification Cards"
 
 msgid "优先使用金币治疗"
 msgstr "Prefer Paying Credits to Heal"
@@ -481,7 +481,7 @@ msgstr "Increases this unit's total attack card damage by 30%."
 
 msgid "默认刷闪光优先级第一张，可刷神闪，第一层没刷出自动逃脱"
 msgstr ""
-"Farms the first entry in Flash Priority, so it can chase a perfect Flash. "
+"Farms the first entry in Epiphany Priority, so it can chase a Divine Epiphany. "
 "Retreats automatically if floor 1 does not produce one."
 
 msgid "填写目标卡牌名称后反复刷新初始卡牌；不能与“刷空档”同时使用。"
