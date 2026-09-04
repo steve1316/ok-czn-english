@@ -273,7 +273,7 @@ msgstr ""
 "2. On the Global (English) client, leave Game Language on Simplified Chinese. International Traditional players should set it to Traditional Chinese."
 
 msgid "自动卡厄思模式"
-msgstr "Auto Chaos Mode"
+msgstr "Auto Chaos Manifestation"
 
 msgid "自动出击模式"
 msgstr "Auto Sortie Mode"
@@ -282,13 +282,13 @@ msgid "半自动剧情模式"
 msgstr "Semi-Auto Story Mode"
 
 msgid "刷梦边"
-msgstr "Farm Dream Border"
+msgstr "Farm Dream's Edge"
 
 msgid "梦边"
-msgstr "Dream Border"
+msgstr "Dream's Edge"
 
 msgid "梦之边境"
-msgstr "Dream Border"
+msgstr "Dream's Edge"
 
 msgid "测试trigger"
 msgstr "Trigger Test"
@@ -336,10 +336,10 @@ msgid "复制卡牌列表"
 msgstr "Cards to Copy"
 
 msgid "闪光卡牌列表"
-msgstr "Cards to Flash"
+msgstr "Epiphany Card List"
 
 msgid "闪光优先级"
-msgstr "Flash Priority"
+msgstr "Epiphany Priority"
 
 msgid "丢弃卡牌优先级"
 msgstr "Discard Priority"
@@ -354,7 +354,7 @@ msgid "刷初始卡牌"
 msgstr "Farm Starting Card"
 
 msgid "首层刷特定闪光"
-msgstr "Farm a Specific Flash on Floor 1"
+msgstr "Farm a Specific Epiphany on Floor 1"
 
 msgid "需要冥想的卡牌"
 msgstr "Cards to Meditate"
@@ -363,16 +363,16 @@ msgid "多少信用点以上冥想"
 msgstr "Meditate Above This Many Credits"
 
 msgid "指定面具卡牌"
-msgstr "Target Mask Card"
+msgstr "Target Persona Card"
 
 msgid "面具卡牌刻印"
-msgstr "Mask Card Engraving"
+msgstr "Persona Card Engraving"
 
 msgid "丢弃最多2张卡牌"
 msgstr "Discard Up to 2 Cards"
 
 msgid "生命值大于多少优先闪光(百分比)"
-msgstr "Flash First Above This Health (%)"
+msgstr "Epiphany First Above This Health (%)"
 
 msgid "主战员优先级"
 msgstr "Combatant Priority"
@@ -399,16 +399,16 @@ msgid "路线优先级"
 msgstr "Route Priority"
 
 msgid "休息"
-msgstr "Rest"
+msgstr "Safe Zones"
 
 msgid "事件"
-msgstr "Event"
+msgstr "Unidentified Area"
 
 msgid "小怪"
-msgstr "Minor Enemy"
+msgstr "Normal Battle Area"
 
 msgid "精英"
-msgstr "Elite"
+msgstr "Elite Battle Area"
 
 msgid "只打第一层"
 msgstr "First Floor Only"
@@ -432,10 +432,10 @@ msgid "选取随机3条命运"
 msgstr "Draw 3 Random Fates"
 
 msgid "任务优先级"
-msgstr "Event Task Priority"
+msgstr "Unidentified Area Option Priority"
 
 msgid "拉黑任务"
-msgstr "Blocked Event Tasks"
+msgstr "Blocked Unidentified Area Options"
 
 msgid "领取奖励"
 msgstr "Claim Rewards"
