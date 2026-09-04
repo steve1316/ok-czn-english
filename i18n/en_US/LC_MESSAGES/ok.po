@@ -87,7 +87,8 @@ msgstr "Claim Missions"
 msgid "Configuration Demo Task"
 msgstr ""
 
-msgid "Demonstrates every configuration widget for English to Chinese translation."
+msgid ""
+"Demonstrates every configuration widget for English to Chinese translation."
 msgstr ""
 
 msgid "Drop Down Config"
@@ -253,18 +254,269 @@ msgid "繁体中文"
 msgstr "Traditional Chinese"
 
 msgid "国际服请设置为繁体中文"
-msgstr "Set this to Traditional Chinese for the international server."
+msgstr ""
+"Set this to Traditional Chinese on the international client. Leave it on "
+"Simplified Chinese for the Global (English) client."
 
 msgid ""
 "1. 自动战斗依赖按键识别，请在游戏设置中打开快捷键显示，提升出牌准确率。\n"
 "2. 国际服玩家请将本模式配置中的\"游戏语言\"设置为繁体中文。"
 msgstr ""
-"1. Auto battle relies on shortcut recognition. Enable shortcut display in the game settings for better accuracy.\n"
-"2. International server players should set Game Language to Traditional Chinese in this mode."
+"Turn on shortcut key display in the game's settings so card play can read "
+"the keybinds."
 
 msgid ""
 "1. 请主动打开游戏内自动战斗和自动剧情功能。\n"
 "2. 国际服玩家请将本模式配置中的\"游戏语言\"设置为繁体中文。"
 msgstr ""
-"1. Enable auto battle and auto story in the game.\n"
-"2. International server players should set Game Language to Traditional Chinese in this mode."
+"Turn on the game's own auto-battle and auto-story options before starting a "
+"run."
+
+msgid "自动卡厄思模式"
+msgstr "Auto Chaos Manifestation"
+
+msgid "自动出击模式"
+msgstr "Auto Sortie Mode"
+
+msgid "半自动剧情模式"
+msgstr "Semi-Auto Story Mode"
+
+msgid "刷梦边"
+msgstr "Farm Dream's Edge"
+
+msgid "梦边"
+msgstr "Dream's Edge"
+
+msgid "梦之边境"
+msgstr "Dream's Edge"
+
+msgid "测试trigger"
+msgstr "Trigger Test"
+
+msgid "配置操作"
+msgstr "Configuration"
+
+msgid "导入配置码"
+msgstr "Import Config Code"
+
+msgid "导出配置码"
+msgstr "Export Config Code"
+
+msgid "热门配置"
+msgstr "Popular Configs"
+
+msgid "保存配置"
+msgstr "Save Config"
+
+msgid "切换配置"
+msgstr "Switch Config"
+
+msgid "配置上传"
+msgstr "Config Upload"
+
+msgid "是否上传配置"
+msgstr "Upload Config"
+
+msgid "OCR设置"
+msgstr "OCR Settings"
+
+msgid "OCR后端"
+msgstr "OCR Backend"
+
+msgid "卡牌奖励优先级"
+msgstr "Card Reward Priority"
+
+msgid "获得卡牌优先级"
+msgstr "Obtain Card Priority"
+
+msgid "移除卡牌列表"
+msgstr "Cards to Remove"
+
+msgid "复制卡牌列表"
+msgstr "Cards to Copy"
+
+msgid "闪光卡牌列表"
+msgstr "Epiphany Card List"
+
+msgid "闪光优先级"
+msgstr "Epiphany Priority"
+
+msgid "丢弃卡牌优先级"
+msgstr "Discard Priority"
+
+msgid "出牌优先级"
+msgstr "Card Play Priority"
+
+msgid "优先移除基础牌"
+msgstr "Remove Basic Cards First"
+
+msgid "刷初始卡牌"
+msgstr "Farm Starting Card"
+
+msgid "首层刷特定闪光"
+msgstr "Farm a Specific Epiphany on Floor 1"
+
+msgid "需要冥想的卡牌"
+msgstr "Cards to Meditate"
+
+msgid "多少信用点以上冥想"
+msgstr "Meditate Above This Many Credits"
+
+msgid "指定面具卡牌"
+msgstr "Target Persona Card"
+
+msgid "面具卡牌刻印"
+msgstr "Persona Card Engraving"
+
+msgid "丢弃最多2张卡牌"
+msgstr "Discard Up to 2 Cards"
+
+msgid "生命值大于多少优先闪光(百分比)"
+msgstr "Epiphany First Above This Health (%)"
+
+msgid "主战员优先级"
+msgstr "Combatant Priority"
+
+msgid "出战主战员优先级"
+msgstr "Deployed Combatant Priority"
+
+msgid "拉黑主战员"
+msgstr "Blocked Combatants"
+
+msgid "刷存档主战员"
+msgstr "Save Data Farming Combatant"
+
+msgid "装备1号位优先级"
+msgstr "Equipment Slot 1 Priority"
+
+msgid "装备2号位优先级"
+msgstr "Equipment Slot 2 Priority"
+
+msgid "装备3号位优先级"
+msgstr "Equipment Slot 3 Priority"
+
+msgid "路线优先级"
+msgstr "Route Priority"
+
+msgid "休息"
+msgstr "Safe Zones"
+
+msgid "事件"
+msgstr "Unidentified Area"
+
+msgid "小怪"
+msgstr "Normal Battle Area"
+
+msgid "精英"
+msgstr "Elite Battle Area"
+
+msgid "只打第一层"
+msgstr "First Floor Only"
+
+msgid "进入商店"
+msgstr "Enter Dellang Shop"
+
+msgid "几轮后停止(0为不停止)"
+msgstr "Stop After This Many Rounds (0 = never)"
+
+msgid "第几层boss前自动暂停"
+msgstr "Auto-Pause Before Boss on Floor"
+
+msgid "不暂停"
+msgstr "Never Pause"
+
+msgid "刷空档"
+msgstr "Farm Gaps"
+
+msgid "选取随机3条命运"
+msgstr "Draw 3 Random Fates"
+
+msgid "任务优先级"
+msgstr "Unidentified Area Option Priority"
+
+msgid "拉黑任务"
+msgstr "Blocked Unidentified Area Options"
+
+msgid "领取奖励"
+msgstr "Claim Rewards"
+
+msgid "领取奖励(只使用验证卡)"
+msgstr "Claim Additional Loot with Loot Certification Cards"
+
+msgid "优先使用金币治疗"
+msgstr "Prefer Paying Credits to Heal"
+
+msgid "治疗崩溃"
+msgstr "Treat Breakdown"
+
+msgid "移除"
+msgstr "Remove"
+
+msgid "复制"
+msgstr "Copy"
+
+msgid "压力"
+msgstr "Stress"
+
+msgid "咒术卡牌"
+msgstr "Curse Card"
+
+msgid "信用点增加"
+msgstr "Credits Gained"
+
+msgid "存储数据价值大于等于多少层级"
+msgstr "Minimum Save Data Value Tier"
+
+msgid "保留大于多少TB的存档"
+msgstr "Keep Save Data Above This Many TB"
+
+msgid "触发器会不断调用run方法"
+msgstr "The trigger calls run() continuously."
+
+msgid "一般根据frame来判断是否需要运行"
+msgstr "It normally decides from the frame whether it needs to act."
+
+msgid "自身攻击卡牌伤害总量提升30%"
+msgstr "Increases this unit's total attack card damage by 30%."
+
+msgid "默认刷闪光优先级第一张，可刷神闪，第一层没刷出自动逃脱"
+msgstr ""
+"Farms the first entry in Epiphany Priority, so it can chase a Divine Epiphany. "
+"Retreats automatically if floor 1 does not produce one."
+
+msgid "填写目标卡牌名称后反复刷新初始卡牌；不能与“刷空档”同时使用。"
+msgstr ""
+"Enter a card name to reroll the starting card until it appears. Cannot be "
+"used together with Farm Gaps."
+
+msgid "卡牌名称和描述无需完整填写，输入几个关键字即可，但顺序须与游戏原文一致。"
+msgstr ""
+"Card names and descriptions do not need to be complete. A few keywords are "
+"enough, but they must appear in the same order as in the game."
+
+msgid "初始任务必须包含“移除2张”，否则重新开始；不能与“刷初始卡牌”同时使用。"
+msgstr ""
+"The starting task must include Remove 2 Cards, otherwise the run restarts. "
+"Cannot be used together with Farm Starting Card."
+
+msgid "自动模式仅在内存不少于12GB的Intel设备上使用OpenVINO，其他设备使用ONNX Runtime。修改后重启程序生效。"
+msgstr ""
+"Auto only uses OpenVINO on Intel machines with at least 12 GB of RAM, and "
+"ONNX Runtime everywhere else. Restart the app after changing this."
+
+msgid ""
+"开启后每5分钟自动上传匿名的配置信息和胜率，帮助统计热门配置。\n"
+"不上传任何个人信息、游戏账号、截图、IP地址等隐私数据。\n"
+"仅上传配置内容和胜率统计数据。"
+msgstr ""
+"Uploads your anonymous config and win rate every 5 minutes to help compile popular configs.\n"
+"It never uploads personal information, game accounts, screenshots or IP addresses.\n"
+"This fork defaults it off, because the pool is the upstream CN community's and Global card names do not match it."
+
+msgid ""
+"1.剧情内战斗关卡可手动开启出击模式调用自动战斗功能。\n"
+"2. 遇到卡厄思关卡请手动打开卡厄思模式。\n"
+"3. 剧情战斗关卡队伍需手动配置"
+msgstr ""
+"Skips dialogue only. Switch to Sortie or Chaos Manifestation by hand when a "
+"battle starts."

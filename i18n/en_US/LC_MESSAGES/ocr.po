@@ -1,0 +1,185 @@
+# Reverse OCR catalog: English game text -> the Chinese literal the task code matches against.
+#
+# The framework applies this in Task.fix_texts() before any handler sees a box, so the CN handlers in
+# ok_tasks/ keep working unchanged on the Global client. It also retries with spaces stripped, so a
+# msgid only needs its spaced form.
+#
+# This is NOT the app UI catalog. UI labels belong in ok.po, which runs the other way (Chinese -> English).
+#
+# Every entry carries a "# From <handler>: <literal>" comment naming the call site it serves. That is what
+# makes an upstream merge mechanical: diff the merge's new Chinese literals against these comments.
+#
+# Entries are added only from text actually seen on the Global client. Do not guess.
+msgid ""
+msgstr ""
+"Project-Id-Version: 1.0\n"
+"Language-Team: en_US\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+# From handle_center_confirm and handle_confirm: _clean_match(box.name, "确认")
+msgid "Confirm"
+msgstr "确认"
+
+# From handle_skip: _clean_match(box.name, "跳过")
+msgid "Skip"
+msgstr "跳过"
+
+# From handle_get_card: title.name == "获得卡牌"
+msgid "Obtain Card"
+msgstr "获得卡牌"
+
+# From handle_get_card: re.search(r"请选择.*获得的卡牌", tip.name)
+msgid "Choose 1 card to obtain."
+msgstr "请选择1张获得的卡牌"
+
+# From handle_equipment: title.name == "装备"
+msgid "Equipment"
+msgstr "装备"
+
+# From handle_enter: _clean_match(box.name, "进入")
+msgid "Enter"
+msgstr "进入"
+
+# From handle_leave: _clean_match(box.name, "离开")
+msgid "Leave"
+msgstr "离开"
+
+# From handle_get_reward: _clean_match(box.name, "获得")
+msgid "Obtain"
+msgstr "获得"
+
+# From _read_member_slots: _get_game_text(task, "重新搜索")
+msgid "Search again"
+msgstr "重新搜索"
+
+# From handle_other_page: box.name == "故事", stops the mode when it lands on a non-run page
+msgid "Story"
+msgstr "故事"
+
+# From handle_other_page: box.name == "营救"
+msgid "Rescue"
+msgstr "营救"
+
+# From handle_other_page: box.name == "方舟城市"
+msgid "Ark City"
+msgstr "方舟城市"
+
+# From handle_cancel: "取消" in box.name
+msgid "Cancel"
+msgstr "取消"
+
+# From handle_close: box.name == "关闭"
+msgid "Close"
+msgstr "关闭"
+
+# From handle_remove: "移除卡牌" in box.name
+msgid "Remove Card"
+msgstr "移除卡牌"
+
+# From handle_remove: _clean_match(box.name, "移除")
+msgid "Remove"
+msgstr "移除"
+
+# From handle_shop: "德朗商店" in box.name. The Global client spells it Dellang.
+msgid "Dellang Shop"
+msgstr "德朗商店"
+
+# From handle_shop: "免费" in box.name
+msgid "Free"
+msgstr "免费"
+
+# From handle_remove: re.search(r"请选择(\d*)张*.*?(移除|复制|闪光|灵光).*?卡牌", tip.name)
+msgid "Select 1 card(s) to Remove."
+msgstr "请选择1张要移除的卡牌"
+
+# From handle_continue: _get_game_text(task, "继续") compared into box.name
+msgid "Continue"
+msgstr "继续"
+
+# From handle_equipment: _get_game_text(task, "请选择主战员") in equip_hint.name
+msgid "Select combatant."
+msgstr "请选择主战员"
+
+# From handle_assign_card: _get_game_text(task, "请选择要接受卡牌的主战员")
+msgid "Select the combatant to receive the card."
+msgstr "请选择要接受卡牌的主战员"
+
+# From handle_fate: _get_game_text(task, "请选择你的命运") in box.name
+msgid "Choose your fate"
+msgstr "请选择你的命运"
+
+# From _clickable_member_names: "主战员列表" is excluded when reading the member list
+msgid "Combatant List"
+msgstr "主战员列表"
+
+# From handle_boss_select: re.search(r"请选择.*遇见的首领", box.name)
+msgid "Select the Boss to encounter in the Depths."
+msgstr "请选择深处遇见的首领"
+
+# From handle_boss_select: re.search(r"请选择.*遇见的首领", box.name)
+msgid "Select the Boss to encounter in the Interior."
+msgstr "请选择内部遇见的首领"
+
+# From handle_zero_system: _get_game_text(task, "零式系统") in title.name
+msgid "Zero System"
+msgstr "零式系统"
+
+# From handle_trauma_center: _get_game_text(task, "创伤中心") in box.name
+msgid "Epione Center"
+msgstr "创伤中心"
+
+# From handle_trauma_center: find_text(task, _get_game_text(task, "没有恢复中的战员"))
+msgid "No agents are recovering"
+msgstr "没有恢复中的战员"
+
+# From handle_zero_system: codex.name == "法典"
+msgid "Codex"
+msgstr "法典"
+
+# From handle_battle_end: "战斗结束" in box.name
+msgid "BATTLE END"
+msgstr "战斗结束"
+
+# From handle_equipment: "提炼" in box.name. The button carries a currency icon that OCR reads as a stray
+# glyph, so the forms actually produced are mapped alongside the clean one.
+msgid "Extract"
+msgstr "提炼"
+
+# From handle_equipment: the same button, as OCR reads it with the icon glyph attached.
+msgid "前Extract"
+msgstr "提炼"
+
+# From handle_equipment: another reading of the same icon glyph.
+msgid "命Extract"
+msgstr "提炼"
+
+# From handle_trauma_center: "创伤中心" in box.name. OCR reads a circled numeral beside the title on some frames.
+msgid "Epione Center ①"
+msgstr "创伤中心"
+
+# From handle_non_battle_page: box.name == "方舟城市". OCR drops the space on some frames.
+msgid "ArkCity"
+msgstr "方舟城市"
+
+# From handle_season_chaos_initial_page: "卡厄思" not in _get_region_text(...) of the title area.
+msgid "Chaos Manifestation"
+msgstr "卡厄思显现"
+
+# From handle_next_step: _edit_distance(box.name, "下一步", max_dist=2) in the bottom-right button area.
+# Nothing else advances these pages, so an unmapped Next stalls the run.
+msgid "Next"
+msgstr "下一步"
+
+# From handle_settlement: _clean_match(box.name, "结算")
+msgid "Settlement"
+msgstr "结算"
+
+# From handle_escape: _get_game_text(task, "逃脱") in box.name
+msgid "Retreat"
+msgstr "逃脱"
+
+# From handle_close_page: find_text(task, "点击屏幕"), a regex search over every box.
+msgid "Tap to close the window."
+msgstr "点击屏幕关闭窗口"
