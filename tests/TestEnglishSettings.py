@@ -1,15 +1,17 @@
 """Guard the Global-client settings overrides.
 
-`src/en/overrides.py` re-shapes the mode settings after the framework builds them. Nothing here talks to the
-GUI - these assert the three things that fail silently at runtime if they drift: an entity name leaking into
-the reverse OCR catalog, a route value getting translated, and a long default turning a text box into a
-multi-line editor.
+`src/en/overrides.py` re-shapes the mode settings before the framework builds their config. Nothing here
+talks to the GUI - these assert the things that fail silently at runtime if they drift: an entity name leaking
+into the reverse OCR catalog, a route value getting translated, a long default turning a text box into a
+multi-line editor, and the one-shot migration either not running or running forever.
 """
 
-import re
+import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import polib
 
@@ -22,6 +24,7 @@ from src.en.game_data import CARDS, COMBATANTS, EQUIPMENT, NODE_TYPES  # noqa: E
 OCR_PO = REPO_ROOT / "i18n" / "en_US" / "LC_MESSAGES" / "ocr.po"
 # Above this length the widget factory turns a string setting into a multi-line text box.
 MAX_LINE_EDIT_DEFAULT = 16
+ENTITY_NAMES = set(CARDS) | set(EQUIPMENT) | set(COMBATANTS)
 # Words that are both a UI button and an entity name. gettext rewrites by exact string with no idea where the
 # text sat on screen, so one of the two has to lose. Each entry here is a decision, not an oversight.
 REVIEWED_COLLISIONS = {
@@ -32,7 +35,9 @@ REVIEWED_COLLISIONS = {
 
 
 class FakeTask:
-    """Stands in for a mode task, carrying the three attributes the settings are built from."""
+    """Stands in for a mode task, carrying the attributes the settings are built from."""
+
+    is_custom = True
 
     def __init__(self):
         self.default_config = {
@@ -53,14 +58,14 @@ class FakeTask:
         self.instructions = "placeholder"
 
 
-def configured():
-    """Build a task and run the overrides over it.
+def reshaped():
+    """Build a task and re-shape it.
 
     Returns:
-        The configured `FakeTask`.
+        The re-shaped `FakeTask`.
     """
     task = FakeTask()
-    overrides.apply_to(task)
+    overrides.reshape(task)
     return task
 
 
@@ -80,19 +85,19 @@ class TestGameData(unittest.TestCase):
             self.assertIn(expected, NODE_TYPES)
 
 
-class TestOverrides(unittest.TestCase):
+class TestReshape(unittest.TestCase):
 
     def test_game_language_defaults_to_english(self):
-        task = configured()
+        task = reshaped()
         self.assertEqual("English", task.default_config["游戏语言"])
         self.assertIn("English", task.config_type["游戏语言"]["options"])
 
     def test_entity_settings_become_pick_lists(self):
         """Typing an entity name by hand is how a config silently stops matching."""
-        task = configured()
+        task = reshaped()
         for key, roster in (("移除卡牌列表", CARDS), ("装备1号位优先级", EQUIPMENT), ("出战主战员优先级", COMBATANTS)):
             with self.subTest(key=key):
-                self.assertEqual(list(roster), task.config_type[key]["options_available"])
+                self.assertEqual(roster, task.config_type[key]["options_available"])
                 self.assertEqual([], task.default_config[key], "Chinese defaults cannot match English OCR")
 
     def test_route_priority_keeps_its_canonical_values(self):
@@ -101,62 +106,90 @@ class TestOverrides(unittest.TestCase):
         `recognize_map_connections` maps `enemy_in_map` to `小怪`, so translating the stored value would stop
         the route search matching. Only the display is translated, through `ok.po`.
         """
-        task = configured()
-        self.assertEqual(["休息", "事件", "小怪", "精英"], task.default_config["路线优先级"])
-        self.assertEqual(["休息", "事件", "小怪", "精英"], task.config_type["路线优先级"]["options_available"])
+        task = reshaped()
+        self.assertEqual(overrides.ROUTE_NODES, task.default_config["路线优先级"])
+        self.assertEqual(overrides.ROUTE_NODES, task.config_type["路线优先级"]["options_available"])
 
     def test_subsequence_settings_stay_free_text(self):
         """Epiphany Priority matches fragments of a card's name and description, so a fixed list would break it."""
-        task = configured()
-        self.assertNotIn("闪光优先级", task.config_type)
+        self.assertNotIn("闪光优先级", reshaped().config_type)
 
     def test_long_string_defaults_declare_a_line_edit(self):
         """The widget is chosen from the default's length, and over 16 characters silently becomes a text box."""
-        task = configured()
+        task = reshaped()
         for key, value in task.default_config.items():
             if isinstance(value, str) and len(value) > MAX_LINE_EDIT_DEFAULT:
                 with self.subTest(key=key):
                     self.assertEqual("line_edit", task.config_type.get(key, {}).get("type"),
                                      f"'{key}' defaults to {len(value)} characters and needs an explicit line_edit")
 
-    def test_saved_chinese_values_are_reset(self):
-        """Changing a default does nothing to a value already written to `configs/`.
+    def test_instructions_are_cleared_only_for_our_modes(self):
+        """Upstream leaves ok-script's scaffold placeholder here, but the framework's own tasks are not ours."""
+        self.assertIsNone(reshaped().instructions)
 
-        The restricted lists drop what they cannot offer, but a free-text setting would keep a Chinese card
-        name forever and a combatant dropdown would sit blank, because its saved name is not on the English
-        roster. Route Priority is exempt - Chinese is what it is supposed to hold.
+        framework_task = FakeTask()
+        framework_task.is_custom = False
+        overrides.reshape(framework_task)
+        self.assertEqual("placeholder", framework_task.instructions)
+
+    def test_the_migration_stamp_is_declared_as_a_default(self):
+        """`Config` drops any saved key it does not know about, which would lose the stamp.
+
+        Without this the migration re-seeds the user's settings on every single launch, because the stamp it
+        wrote is discarded the moment `Config` rebuilds the file.
         """
-        task = FakeTask()
-        task.config = {
-            "刷存档主战员": "海德玛丽",
-            "任务优先级": ["复制", "信用点增加"],
-            "面具卡牌刻印": "自身攻击卡牌伤害总量提升30%",
-            "路线优先级": ["休息", "事件", "小怪", "精英"],
-        }
-        overrides.apply_to(task)
-        self.assertEqual("Heidemarie", task.config["刷存档主战员"])
-        self.assertEqual([], task.config["任务优先级"])
-        self.assertEqual("", task.config["面具卡牌刻印"])
-        self.assertEqual(["休息", "事件", "小怪", "精英"], task.config["路线优先级"], "route values must survive")
-
-    def test_english_values_are_left_alone(self):
-        """The reset must be a one-time cleanup, not something that wipes a configured setting every launch."""
-        task = FakeTask()
-        task.config = {"刷存档主战员": "Nia", "任务优先级": ["Copy", "Remove"]}
-        overrides.apply_to(task)
-        self.assertEqual("Nia", task.config["刷存档主战员"])
-        self.assertEqual(["Copy", "Remove"], task.config["任务优先级"])
-
-    def test_instructions_are_cleared(self):
-        """Upstream leaves ok-script's scaffold placeholder here, which tells the user nothing."""
-        self.assertIsNone(configured().instructions)
+        task = reshaped()
+        self.assertEqual(overrides.SETTINGS_VERSION, task.default_config.get(overrides.VERSION_KEY))
+        self.assertTrue(overrides.VERSION_KEY.startswith("_"), "the stamp must stay out of the settings UI")
 
     def test_descriptions_are_english(self):
-        task = configured()
+        task = reshaped()
         self.assertTrue(task.config_description, "no descriptions were applied")
         for key, text in task.config_description.items():
             with self.subTest(key=key):
-                self.assertIsNone(re.search(r"[一-鿿]", text), f"'{key}' description still has Chinese")
+                self.assertFalse(any("一" <= ch <= "鿿" for ch in text), f"'{key}' description has Chinese")
+
+
+class TestMigration(unittest.TestCase):
+    """The saved config is re-seeded exactly once, by version stamp rather than by inspecting the values."""
+
+    def run_migration(self, saved):
+        """Run the migration against a throwaway config folder.
+
+        Args:
+            saved: The config dict to write before migrating.
+
+        Returns:
+            The config dict as it stands afterwards.
+        """
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "FakeTask.json"
+            path.write_text(json.dumps(saved), encoding="utf-8")
+            with mock.patch.object(overrides, "get_relative_path", return_value=str(path)):
+                overrides.migrate_saved_config(FakeTask())
+            return json.loads(path.read_text(encoding="utf-8"))
+
+    def test_upstream_values_are_dropped_once(self):
+        result = self.run_migration({"刷存档主战员": "海德玛丽", "任务优先级": ["复制"], "面具卡牌刻印": "自身攻击"})
+        self.assertNotIn("刷存档主战员", result)
+        self.assertNotIn("任务优先级", result)
+        self.assertNotIn("面具卡牌刻印", result)
+        self.assertEqual(overrides.SETTINGS_VERSION, result[overrides.VERSION_KEY])
+
+    def test_route_priority_survives(self):
+        """Route Priority is supposed to hold Chinese, so the migration must leave it alone."""
+        result = self.run_migration({"路线优先级": ["休息", "事件"]})
+        self.assertEqual(["休息", "事件"], result["路线优先级"])
+
+    def test_a_stamped_config_is_left_alone(self):
+        """Without the stamp this would wipe the user's settings on every launch."""
+        saved = {overrides.VERSION_KEY: overrides.SETTINGS_VERSION, "移除卡牌列表": ["Sword Curtain"]}
+        self.assertEqual(saved, self.run_migration(saved))
+
+    def test_unmanaged_settings_survive(self):
+        """Only the settings this module re-shapes are its to clear."""
+        result = self.run_migration({"几轮后停止(0为不停止)": 5})
+        self.assertEqual(5, result["几轮后停止(0为不停止)"])
 
 
 class TestCatalogSeparation(unittest.TestCase):
@@ -167,20 +200,18 @@ class TestCatalogSeparation(unittest.TestCase):
         Entity names must reach the handlers as the English the OCR read, because the user's config is English
         too. Only fixed UI anchors belong in that catalog.
         """
-        entities = set(CARDS) | set(EQUIPMENT) | set(COMBATANTS)
         for entry in polib.pofile(str(OCR_PO)):
             if entry.msgid and entry.msgid not in REVIEWED_COLLISIONS:
                 with self.subTest(msgid=entry.msgid):
-                    self.assertNotIn(entry.msgid, entities, f"'{entry.msgid}' is an entity name and must not be rewritten")
+                    self.assertNotIn(entry.msgid, ENTITY_NAMES, f"'{entry.msgid}' is an entity name")
 
     def test_every_reviewed_collision_is_still_real(self):
         """Drop an entry from the allowlist once it stops colliding, so the list stays a record of live tradeoffs."""
-        entities = set(CARDS) | set(EQUIPMENT) | set(COMBATANTS)
         catalog = {e.msgid for e in polib.pofile(str(OCR_PO)) if e.msgid}
         for word in REVIEWED_COLLISIONS:
             with self.subTest(word=word):
                 self.assertIn(word, catalog, f"'{word}' is no longer in ocr.po, remove it from the allowlist")
-                self.assertIn(word, entities, f"'{word}' no longer collides with an entity name, remove it")
+                self.assertIn(word, ENTITY_NAMES, f"'{word}' no longer collides with an entity name, remove it")
 
 
 if __name__ == "__main__":

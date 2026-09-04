@@ -5,39 +5,48 @@ hand. On the Global client those Chinese names can never match what the OCR read
 English defaults and, wherever the value set is knowable, with pick-from-a-list widgets built from the game's
 own localization table.
 
-Everything here is applied by wrapping `BaseTask.post_init`, which the framework calls once per task after it is
-constructed. That keeps `ok_tasks/ChaosMode.py` and `ok_tasks/SortieMode.py` byte-identical to upstream, so a
-merge never conflicts in them.
+This hooks `BaseTask.load_config` and runs *before* it. That is the seam upstream itself uses - `ChaosMode`
+overrides `load_config` to run its migrations and then calls `super()` - and it matters here for two reasons:
+it is the one call that happens exactly once per task, and it happens before `Config` is built, so a fresh
+install is seeded with the English defaults rather than written in Chinese and corrected afterwards.
+
+`ok_tasks/ChaosMode.py` and `ok_tasks/SortieMode.py` stay byte-identical to upstream, so a merge never
+conflicts in them.
 
 Two rules decide whether a setting can become a pick-list:
 
 - The value must be compared against **OCR text**. Card, equipment and combatant names are, so those become
   lists of English names. Route Priority is not - its values are internal labels produced from template
-  feature names (`enemy_in_map` -> `小怪`), so they stay Chinese and are only translated for display.
+  feature names (`enemy_in_map` -> `小怪`), so they stay as upstream writes them and are only translated for
+  display.
 - The match must be on a **whole name**. Epiphany Priority, the Persona settings and Farm Starting Card are
   matched as subsequences of `name + description`, which is how a user targets an effect rather than a card.
   Restricting those to full card names would take that away, so they stay free text.
 """
 
-import re
-
 from ok import Logger
+from ok.util.config import Config
+from ok.util.file import get_relative_path, read_json_file, write_json_file
 
 from src.en.game_data import CARDS, COMBATANTS, EQUIPMENT
+from src.en.layout import import_ui
 
 logger = Logger.get_logger(__name__)
 
-CJK = re.compile("[" + chr(0x4E00) + "-" + chr(0x9FFF) + "]")
+# Bump this when the settings below change shape enough that a saved config should be re-seeded. It is stamped
+# into the config file, and the leading underscore keeps it out of exported config codes.
+SETTINGS_VERSION = 1
+VERSION_KEY = "_en_settings_version"
 
 # Route Priority values are internal labels, never OCR text, so they must stay exactly as upstream writes
 # them. `ok.po` translates them for display, and ModifyListDialog stores the canonical value.
 ROUTE_NODES = ["休息", "事件", "小怪", "精英"]
+KEEPS_CHINESE = {"路线优先级"}
 # Game Language stays a real setting for the Chinese clients. English behaves like Simplified Chinese, since
 # `_get_game_text` falls back to the untranslated literal when a language has no map file.
 GAME_LANGUAGES = ["English", "简体中文", "繁体中文"]
-DEFAULT_SAVE_DATA_COMBATANT = "Heidemarie"
 
-# A list setting the user picks from, keyed by config name -> the roster it draws on.
+# List settings the user picks from, keyed by config name -> the roster it draws on.
 LIST_OPTIONS = {
     "移除卡牌列表": CARDS,
     "复制卡牌列表": CARDS,
@@ -55,16 +64,18 @@ LIST_OPTIONS = {
     "拉黑主战员": COMBATANTS,
     "路线优先级": ROUTE_NODES,
 }
-
+# Single-choice settings, keyed by config name -> the roster and the default to pick from it.
+SINGLE_CHOICE = {
+    "游戏语言": (GAME_LANGUAGES, "English"),
+    "刷存档主战员": (COMBATANTS, "Heidemarie"),
+}
 # Free-text settings whose Chinese default cannot carry over. Cleared so the user fills them from what the
 # client actually shows, rather than inheriting a value that can never match.
 CLEARED_TEXT = ["指定面具卡牌", "面具卡牌刻印", "刷初始卡牌"]
 CLEARED_LISTS = ["闪光优先级", "任务优先级", "拉黑任务"]
 
-# Settings this module owns, and so may reset when their saved value is stale.
-MANAGED_KEYS = set(LIST_OPTIONS) | set(CLEARED_TEXT) | set(CLEARED_LISTS) | {"刷存档主战员"}
-# Route Priority is meant to hold Chinese, and Chinese is a real choice for Game Language.
-EXEMPT_FROM_RESET = {"路线优先级", "游戏语言"}
+# Every setting this module owns, and so may re-seed when the saved config predates it.
+MANAGED_KEYS = set(LIST_OPTIONS) | set(SINGLE_CHOICE) | set(CLEARED_TEXT) | set(CLEARED_LISTS)
 
 # Help text, in the client's own wording.
 DESCRIPTIONS = {
@@ -99,160 +110,130 @@ DESCRIPTIONS = {
     "只打第一层": "Leave after the first floor instead of running the whole map.",
 }
 
+_applied = False
 
-def _apply_list_options(task):
-    """Turn the entity settings into pick-from-a-list widgets.
+
+def reshape(task):
+    """Replace one task's Chinese defaults and widgets with their Global-client equivalents.
 
     Args:
-        task: The task being configured.
+        task: The task being configured, before its `Config` exists.
     """
     for key, options in LIST_OPTIONS.items():
         if key not in task.default_config:
             continue
-        task.config_type[key] = {"type": "drop_down", "options_available": list(options)}
-        if key != "路线优先级":
-            # Upstream's defaults are Chinese card and combatant names that cannot match English OCR. The
-            # restricted list would strip them on first launch anyway, so start empty and let the user pick.
+        # The roster is shared rather than copied: ModifyListItem only ever reads it, and the card list is
+        # long enough that copying it per setting per task adds up to nothing useful.
+        task.config_type[key] = {"type": "drop_down", "options_available": options}
+        if key not in KEEPS_CHINESE:
             task.default_config[key] = []
 
+    for key, (options, default) in SINGLE_CHOICE.items():
+        if key in task.default_config:
+            task.config_type[key] = {"type": "drop_down", "options": options}
+            task.default_config[key] = default
 
-def _apply_cleared_defaults(task):
-    """Empty the free-text settings whose Chinese defaults cannot carry over.
-
-    These stay free text because they are matched as subsequences of a card's name and description.
-
-    Args:
-        task: The task being configured.
-    """
     for key in CLEARED_TEXT:
         if key in task.default_config:
             task.default_config[key] = ""
             # Pin the widget: the factory picks by default length, and a translated string over 16 characters
             # would silently become a multi-line text box.
             task.config_type[key] = {"type": "line_edit"}
+
     for key in CLEARED_LISTS:
         if key in task.default_config:
             task.default_config[key] = []
-
-
-def _apply_language(task):
-    """Offer English as the game language and make it the default.
-
-    Args:
-        task: The task being configured.
-    """
-    if "游戏语言" not in task.default_config:
-        return
-    task.config_type["游戏语言"] = {"type": "drop_down", "options": list(GAME_LANGUAGES)}
-    task.default_config["游戏语言"] = GAME_LANGUAGES[0]
-
-
-def _apply_combatant_choice(task):
-    """Make the save-data combatant a dropdown rather than a typed name.
-
-    Args:
-        task: The task being configured.
-    """
-    if "刷存档主战员" not in task.default_config:
-        return
-    task.config_type["刷存档主战员"] = {"type": "drop_down", "options": list(COMBATANTS)}
-    task.default_config["刷存档主战员"] = DEFAULT_SAVE_DATA_COMBATANT
-
-
-def _has_chinese(value):
-    """Report whether a saved setting still holds Chinese text.
-
-    Args:
-        value: A setting value, either a string or a list of them.
-
-    Returns:
-        True when any part of it contains a CJK character.
-    """
-    parts = value if isinstance(value, (list, tuple)) else [value]
-    return any(isinstance(part, str) and CJK.search(part) for part in parts)
-
-
-def _reset_stale_values(task):
-    """Clear saved Chinese values that can never match on the Global client.
-
-    Changing `default_config` only affects a fresh install: a value already written to `configs/` wins over
-    it. The restricted lists drop what they cannot offer, but the free-text settings would otherwise keep a
-    Chinese card name forever, and a combatant dropdown would sit blank because its saved name is not on the
-    English roster.
-
-    Route Priority is exempt because its values are supposed to be Chinese, and Game Language because Chinese
-    is a real choice there.
-
-    Args:
-        task: The task being configured.
-    """
-    config = getattr(task, "config", None)
-    if config is None:
-        return
-    for key, default in task.default_config.items():
-        if key in EXEMPT_FROM_RESET or key not in MANAGED_KEYS:
-            continue
-        try:
-            current = config.get(key)
-        except Exception:
-            continue
-        if current is not None and _has_chinese(current):
-            config[key] = default() if callable(default) else (list(default) if isinstance(default, list) else default)
-            logger.info(f"reset '{key}' - its saved value was Chinese and cannot match the Global client")
-
-
-def apply_to(task):
-    """Re-shape one task's settings for the Global client.
-
-    Args:
-        task: The task being configured.
-    """
-    if not hasattr(task, "default_config") or not hasattr(task, "config_type"):
-        return
-    _apply_language(task)
-    _apply_list_options(task)
-    _apply_cleared_defaults(task)
-    _apply_combatant_choice(task)
-    _reset_stale_values(task)
 
     for key, text in DESCRIPTIONS.items():
         if key in task.default_config:
             task.config_description[key] = text
 
-    # Upstream leaves ok-script's scaffold placeholder here, a bare link to the framework repo. The button
-    # hides itself when this is empty.
-    task.instructions = None
-    logger.info(f"applied Global client settings to {task.__class__.__name__}")
+    # `Config` rebuilds the saved file from `default_config` plus the saved values, so a key it does not know
+    # about is dropped - which would lose the migration stamp and re-seed on every launch. The leading
+    # underscore keeps it out of the settings UI and out of exported config codes.
+    task.default_config[VERSION_KEY] = SETTINGS_VERSION
 
+    # Upstream leaves ok-script's scaffold placeholder here, a bare link to the framework repo. The button
+    # hides itself when this is empty. Only the modes under `ok_tasks/` are ours to strip.
+    if getattr(task, "is_custom", False):
+        task.instructions = None
+
+
+def migrate_saved_config(task):
+    """Drop settings saved before this fork re-shaped them, once.
+
+    A config written against upstream's defaults holds Chinese card and combatant names that can never match
+    English OCR, so it has to be re-seeded. This runs before `Config` is built, editing the file the same way
+    upstream's own migrations in `ok_tasks/config_io.py` do, and stamps a version so it happens exactly once.
+    Anything the user sets afterwards is left alone, including a deliberately Chinese value.
+
+    Args:
+        task: The task whose saved config should be checked.
+    """
+    path = get_relative_path(Config.config_folder, f"{task.__class__.__name__}.json")
+    data = read_json_file(path)
+    if not isinstance(data, dict) or data.get(VERSION_KEY) == SETTINGS_VERSION:
+        return
+
+    dropped = [key for key in MANAGED_KEYS if key in data and key not in KEEPS_CHINESE]
+    for key in dropped:
+        del data[key]
+    data[VERSION_KEY] = SETTINGS_VERSION
+    write_json_file(path, data)
+    if dropped:
+        logger.info(f"re-seeded {len(dropped)} setting(s) of {task.__class__.__name__} for the Global client")
+
+
+def translate_notifications():
+    """Let toast notifications use the app translation catalog.
+
+    `MainWindow.show_notification` only runs its text through Qt's own context, which holds the framework's
+    strings. Everything this fork translates lives in the gettext catalog, so task names would otherwise reach
+    the toast untranslated. A string with no catalog entry comes back unchanged.
+    """
+    main_window = import_ui("MainWindow", "MainWindow")
+    if main_window is None:
+        return
+    original_show = main_window.show_notification
+
+    def patched_show(self, message, title=None, *args, **kwargs):
+        # ok-script has grown arguments here before, so forward the rest instead of respelling them.
+        from ok import og
+
+        try:
+            if message:
+                message = og.app.tr(message)
+            if title:
+                title = og.app.tr(title)
+        except Exception as error:
+            logger.warning(f"could not translate notification: {error}")
+        original_show(self, message, title, *args, **kwargs)
+
+    main_window.show_notification = patched_show
+    logger.info("notifications routed through the translation catalog")
 
 def apply():
-    """Wrap `BaseTask.post_init` so every task is re-shaped as the framework builds it.
-
-    Hooking the base class rather than the mode classes avoids depending on when `ok_tasks/` becomes
-    importable, and leaves upstream's task files untouched.
-    """
+    """Wrap `BaseTask.load_config` so every task is re-shaped before its config is built."""
+    global _applied
+    if _applied:
+        return
     try:
         from ok.task.task import BaseTask
     except ImportError:
         logger.warning("could not import BaseTask, leaving the stock settings alone")
         return
 
-    # Two seams, because the framework builds tasks two different ways. Tasks registered in `src/config.py`
-    # get `post_init`, while the modes discovered under `ok_tasks/` are custom tasks and only get
-    # `after_init`. Hooking both covers every task, and applying twice is harmless.
-    for hook in ("post_init", "after_init"):
-        original = getattr(BaseTask, hook, None)
-        if original is None:
-            logger.warning(f"BaseTask has no {hook}, skipping that hook")
-            continue
+    original_load_config = BaseTask.load_config
 
-        def patched(self, *args, _original=original, **kwargs):
-            result = _original(self, *args, **kwargs)
-            try:
-                apply_to(self)
-            except Exception as error:
-                logger.warning(f"could not apply Global client settings to {self.__class__.__name__}: {error}")
-            return result
+    def patched_load_config(self):
+        try:
+            reshape(self)
+            migrate_saved_config(self)
+        except Exception as error:
+            logger.warning(f"could not apply Global client settings to {self.__class__.__name__}: {error}")
+        original_load_config(self)
 
-        setattr(BaseTask, hook, patched)
+    BaseTask.load_config = patched_load_config
+    _applied = True
     logger.info("Global client settings hooked into task setup")
+    translate_notifications()

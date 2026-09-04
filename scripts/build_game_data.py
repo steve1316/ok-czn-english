@@ -23,10 +23,14 @@ DEFAULT_DUMP = Path(r"C:\Users\steve1316\Downloads\CZNRipper\output")
 
 # Namespaces in the localization table, and the constant each becomes.
 GROUPS = [
-    ("CARDS", r"card@name@", "Every card name, which covers Personas and Epiphanies too."),
-    ("EQUIPMENT", r"relic@name@", "Equipment, called relics internally."),
-    ("FATES", r"fate@name@", "The Fates offered at the start of a run."),
-    ("NODE_TYPES", r"spot_type", "Map node types, used for Route Priority."),
+    ("CARDS", "Every card name, which covers Personas and Epiphanies too.",
+     lambda table, dump: collect(table, r"card@name@")),
+    ("EQUIPMENT", "Equipment, called relics internally.",
+     lambda table, dump: collect(table, r"relic@name@")),
+    ("NODE_TYPES", "Map node types, used for Route Priority.",
+     lambda table, dump: collect(table, r"spot_type")),
+    ("COMBATANTS", "Playable combatants, from the released roster rather than the dump.",
+     lambda table, dump: collect_combatants(table, dump)),
 ]
 # Combatants cannot be read out of the dump alone, from either direction. The `char_base@name@` namespace
 # also names every NPC and enemy, and even the combatant table carries characters that have not been released
@@ -170,9 +174,7 @@ def main():
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
     table = load_table(args.dump)
-    groups = [(name, collect(table, pattern), comment) for name, pattern, comment in GROUPS]
-    groups.append(("COMBATANTS", collect_combatants(table, args.dump),
-                   "Playable combatants, joined through the combatant table so NPCs and enemies stay out."))
+    groups = [(name, collector(table, args.dump), comment) for name, comment, collector in GROUPS]
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUT_PATH.write_text(render(groups, args.dump), encoding="utf-8")

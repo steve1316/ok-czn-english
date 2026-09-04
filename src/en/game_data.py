@@ -1955,15 +1955,6 @@ EQUIPMENT = [
     'Yearning Left Hand',
 ]
 
-# The Fates offered at the start of a run.
-FATES = [
-    'Diallos',
-    'Kyrken',
-    'Nihilum',
-    'Sekred',
-    'Vytor',
-]
-
 # Map node types, used for Route Priority.
 NODE_TYPES = [
     'Boss',
@@ -1980,7 +1971,7 @@ NODE_TYPES = [
     'Waypoint Area',
 ]
 
-# Playable combatants, joined through the combatant table so NPCs and enemies stay out.
+# Playable combatants, from the released roster rather than the dump.
 COMBATANTS = [
     'Adelheid',
     'Amir',

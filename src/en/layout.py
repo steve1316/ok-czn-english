@@ -15,9 +15,10 @@ from ok import Logger
 
 logger = Logger.get_logger(__name__)
 
-# This repo runs ok-script-kes, whose UI lives under `ok.gui`. Upstream ok-script moved the same classes to
-# `ok.ui.qt`, so try that first and fall back, which keeps the patch working across a future rebase.
-UI_PACKAGES = ("ok.ui.qt", "ok.gui")
+# This repo runs ok-script-kes, whose live UI is `ok.gui`. Upstream ok-script moved the same classes to
+# `ok.ui.qt`, so fall back to that and the patch survives a future rebase. The first hit wins: both trees can
+# be installed at once, and importing the unused one would only pull a second copy of the widgets into memory.
+UI_PACKAGES = ("ok.gui", "ok.ui.qt")
 DISABLE_ENV = "OK_CZN_NO_LAYOUT_PATCH"
 # Below this the view has not been laid out yet and `heightForWidth` returns a wildly inflated answer.
 MIN_MEANINGFUL_WIDTH = 200
@@ -37,29 +38,24 @@ def _disabled():
     return False
 
 
-def _import_ui(module, name):
-    """Import one framework UI class from every package layout that provides it.
-
-    Both package trees can be present at once, and only one of them is the live one. Rather than guess, patch
-    every copy found: the unused tree is harmless, and this keeps working if a rebase swaps which is live.
+def import_ui(module, name):
+    """Import one framework UI class from whichever package layout is installed.
 
     Args:
         module: Module path below the UI package, such as `tasks.LabelAndWidget`.
         name: Class name to pull out of it.
 
     Returns:
-        A list of the classes found, empty when no installed layout provides it.
+        The class, or None when no installed layout provides it.
     """
-    found = []
     for package in UI_PACKAGES:
         try:
             imported = __import__(f"{package}.{module}", fromlist=[name])
-            found.append(getattr(imported, name))
+            return getattr(imported, name)
         except (ImportError, AttributeError):
             continue
-    if not found:
-        logger.warning(f"could not import {module}.{name}, skipping that layout patch")
-    return found
+    logger.warning(f"could not import {module}.{name}, skipping that layout patch")
+    return None
 
 
 def widen_settings_text_column():
@@ -71,34 +67,31 @@ def widen_settings_text_column():
     Must be paired with `size_cards_by_height_for_width`, otherwise cards keep reserving height for wrapping
     that no longer happens and leave a gap under their last row.
     """
-    global _patched
-    if _patched:
+    label_and_widget = import_ui("tasks.LabelAndWidget", "LabelAndWidget")
+    if label_and_widget is None:
         return
-    for label_and_widget in _import_ui("tasks.LabelAndWidget", "LabelAndWidget"):
-        original_init = label_and_widget.__init__
-        original_add_widget = label_and_widget.add_widget
+    original_init = label_and_widget.__init__
+    original_add_widget = label_and_widget.add_widget
 
-        def patched_init(self, *args, _original=original_init, **kwargs):
-            _original(self, *args, **kwargs)
-            try:
-                for index in reversed(range(self.layout.count())):
-                    if self.layout.itemAt(index).spacerItem() is not None:
-                        self.layout.takeAt(index)
-                        break
-                self.layout.setStretch(0, 1)
-            except Exception as error:
-                logger.warning(f"settings layout patch failed for this row: {error}")
+    def patched_init(self, *args, **kwargs):
+        original_init(self, *args, **kwargs)
+        try:
+            for index in reversed(range(self.layout.count())):
+                if self.layout.itemAt(index).spacerItem() is not None:
+                    self.layout.takeAt(index)
+                    break
+            self.layout.setStretch(0, 1)
+        except Exception as error:
+            logger.warning(f"settings layout patch failed for this row: {error}")
 
-        def patched_add_widget(self, widget, stretch=1, _original=original_add_widget):
-            # Subclasses add their control after __init__ returns, most with the default stretch=1, which
-            # would split the row evenly again and undo the widening. Controls size themselves already.
-            _original(self, widget, 0)
+    def patched_add_widget(self, widget, stretch=1):
+        # Subclasses add their control after __init__ returns, most with the default stretch=1, which would
+        # split the row evenly again and undo the widening. Controls size themselves already.
+        original_add_widget(self, widget, 0)
 
-        label_and_widget.__init__ = patched_init
-        label_and_widget.add_widget = patched_add_widget
-        _patched = True
-    if _patched:
-        logger.info("settings text column widened")
+    label_and_widget.__init__ = patched_init
+    label_and_widget.add_widget = patched_add_widget
+    logger.info("settings text column widened")
 
 
 def _content_height(card):
@@ -157,52 +150,25 @@ def align_card_action_buttons():
     cards with nothing to expand. Qt gives a hidden widget no space but keeps the spacers, so those rows push
     their buttons further right and the list gets a ragged edge. Reserving the hidden chevron's space fixes it.
     """
-    for config_card in _import_ui("tasks.ConfigCard", "ConfigCard"):
-        # Looked up separately because it is private: a rename should skip the patch, not raise out of startup.
-        original_on_empty = getattr(config_card, "_on_empty_config_content", None)
-        if original_on_empty is None:
-            logger.warning("ConfigCard has no _on_empty_config_content, skipping button alignment")
-            continue
+    config_card = import_ui("tasks.ConfigCard", "ConfigCard")
+    # Looked up separately because it is private: a rename should skip the patch, not raise out of startup.
+    original_on_empty = getattr(config_card, "_on_empty_config_content", None)
+    if original_on_empty is None:
+        logger.warning("ConfigCard has no _on_empty_config_content, skipping button alignment")
+        return
 
-        def patched_on_empty(self, _original=original_on_empty):
-            try:
-                button = self.card.expandButton
-                policy = button.sizePolicy()
-                policy.setRetainSizeWhenHidden(True)
-                button.setSizePolicy(policy)
-            except Exception as error:
-                logger.warning(f"could not reserve expand button space: {error}")
-            _original(self)
+    def patched_on_empty(self):
+        try:
+            button = self.card.expandButton
+            policy = button.sizePolicy()
+            policy.setRetainSizeWhenHidden(True)
+            button.setSizePolicy(policy)
+        except Exception as error:
+            logger.warning(f"could not reserve expand button space: {error}")
+        original_on_empty(self)
 
-        config_card._on_empty_config_content = patched_on_empty
-        logger.info("card action buttons aligned")
-
-
-def translate_notifications():
-    """Let toast notifications use the app translation catalog.
-
-    `MainWindow.show_notification` only runs its text through Qt's own context, which holds the framework's
-    strings. Everything this fork translates lives in the gettext catalog, so task names would otherwise reach
-    the toast untranslated. A string with no catalog entry comes back unchanged.
-    """
-    for main_window in _import_ui("MainWindow", "MainWindow"):
-        original_show = main_window.show_notification
-
-        def patched_show(self, message, title=None, *args, _original=original_show, **kwargs):
-            # ok-script has grown arguments here before, so forward the rest instead of respelling them.
-            from ok import og
-
-            try:
-                if message:
-                    message = og.app.tr(message)
-                if title:
-                    title = og.app.tr(title)
-            except Exception as error:
-                logger.warning(f"could not translate notification: {error}")
-            _original(self, message, title, *args, **kwargs)
-
-        main_window.show_notification = patched_show
-        logger.info("notifications routed through the translation catalog")
+    config_card._on_empty_config_content = patched_on_empty
+    logger.info("card action buttons aligned")
 
 
 def apply():
@@ -211,9 +177,10 @@ def apply():
     Note that ok-script-kes already carries its own collapsed-card height fix (`_sync_collapsed_height`), so
     the snap patch that ok-gf2-english needed is deliberately not ported here.
     """
-    if _disabled():
+    global _patched
+    if _patched or _disabled():
         return
+    _patched = True
     widen_settings_text_column()
     size_cards_by_height_for_width()
     align_card_action_buttons()
-    translate_notifications()
