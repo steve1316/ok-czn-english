@@ -42,6 +42,24 @@ def entries(locale):
     return [e for e in polib.pofile(str(ocr_po(locale))) if not e.obsolete and e.msgid]
 
 
+def is_english_side(msgid):
+    """Report whether a msgid reads as game text from an English client.
+
+    OCR sometimes attaches a stray CJK glyph to a button whose label is otherwise Latin, because it tries to
+    read the icon beside it. Those readings belong here. What does not belong is a Chinese UI label, which
+    would mean an `ok.po` entry was filed in this catalog by mistake.
+
+    Args:
+        msgid: The msgid to judge.
+
+    Returns:
+        True when the msgid carries Latin letters and is not predominantly Chinese.
+    """
+    if not any(ch.isascii() and ch.isalpha() for ch in msgid):
+        return False
+    return len(CJK.findall(msgid)) * 2 < len(msgid)
+
+
 class TestOcrCatalog(unittest.TestCase):
 
     def test_entries_are_well_formed(self):
@@ -55,7 +73,7 @@ class TestOcrCatalog(unittest.TestCase):
         for locale in LOCALES:
             for entry in entries(locale):
                 with self.subTest(locale=locale, msgid=entry.msgid):
-                    self.assertIsNone(CJK.search(entry.msgid), "msgid is Chinese, it belongs in ok.po")
+                    self.assertTrue(is_english_side(entry.msgid), "msgid is Chinese, it belongs in ok.po")
                     self.assertTrue(entry.msgstr.strip(), "no translation")
                     self.assertIn("From", (entry.comment or "") + (entry.tcomment or ""), "no '# From <handler>' comment")
 

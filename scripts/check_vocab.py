@@ -43,7 +43,9 @@ def collect_literals():
     """
     literals = defaultdict(set)
     for path in sorted(TASKS_DIR.glob("*.py")):
-        text = path.read_text(encoding="utf-8")
+        # Commented-out handlers still parse as comparisons, so drop comments before scanning.
+        lines = [l for l in path.read_text(encoding="utf-8").splitlines() if not l.lstrip().startswith("#")]
+        text = chr(10).join(lines)
         for kind, pattern in COMPARISONS:
             for match in pattern.finditer(text):
                 if CJK.search(match.group(1)):
