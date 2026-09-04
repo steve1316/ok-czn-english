@@ -12,7 +12,8 @@ of the pane, which a grid of fixed-width buttons never did.
 
 Building the rows here is also what makes a useful tooltip possible, so each one carries the card's or the
 equipment's own effect text from `game_text.py` rather than just repeating the name, on both sides of the
-dialog, and shows it without the wait Qt normally puts in front of a tooltip.
+dialog, and shows it without the wait Qt normally puts in front of a tooltip. The setting's own help text is
+repeated at the top of the dialog too, since the dialog covers the row that would otherwise explain it.
 
 Only the methods that touch the option pane are replaced, and the grid itself is only swapped out when the
 roster is long. A short one - Route Priority's four node types - falls through to upstream's buttons, so
@@ -32,7 +33,7 @@ from html import escape
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QListWidgetItem, QProxyStyle, QStyle
-from qfluentwidgets import ListWidget
+from qfluentwidgets import BodyLabel, ListWidget
 
 from ok import Logger, og
 
@@ -54,6 +55,10 @@ FALLBACK_THRESHOLD = 20
 COLUMN_COUNT = 2
 
 _patched = False
+# The row's help text, handed to the dialog it is about to open. `ModifyListItem` knows which setting it is
+# for and the dialog never does, so the text is parked here for the length of one constructor call. Qt widgets
+# only ever run on the GUI thread, so nothing else can be opening a dialog in between.
+_pending_help = None
 
 
 def wants_option_list(options, threshold):
@@ -175,6 +180,25 @@ def label_selected_rows(dialog):
         item.setToolTip(tooltip_for(dialog.source_by_display.get(display, display), display))
 
 
+def show_setting_help(dialog):
+    """Put the setting's own description at the top of its Modify dialog.
+
+    The row already explains the setting, but that text is off screen once the dialog covers it - which is
+    exactly when the user is deciding what to put in the list. `viewLayout` is the one place both dialog
+    shapes share: a setting with a roster has two columns inside it, and a free-text setting like Unidentified
+    Area Option Priority has a single list, so anything anchored to the Available column would miss half of
+    them.
+
+    Args:
+        dialog: The `ModifyListDialog` being set up.
+    """
+    if not _pending_help:
+        return
+    label = BodyLabel(_pending_help, dialog)
+    label.setWordWrap(True)
+    dialog.viewLayout.insertWidget(0, label)
+
+
 def build_option_list(dialog):
     """Build the virtualized replacement for one dialog's option grid.
 
@@ -257,6 +281,7 @@ def apply():
 
     def patched_wrap(self):
         original_wrap(self)
+        show_setting_help(self)
         # The last call `__init__` makes after installing the two-column row, so the row exists to rebalance.
         # Every dialog with a roster gets it, not only the virtualized ones, so the shape stays consistent.
         if self.options_available is not None:
@@ -266,4 +291,34 @@ def apply():
     dialog_class.update_option_buttons = patched_update
     dialog_class.filter_available_options = patched_filter
     dialog_class._wrap_dialog_buttons = patched_wrap
+    remember_help_text()
     logger.info("long option lists virtualized")
+
+
+def remember_help_text():
+    """Have each settings row hand its help text to the dialog it opens.
+
+    `ModifyListItem.clicked` builds the dialog without passing the config key, so the dialog cannot look its own
+    description up. The row can: `ConfigLabelAndWidget` keeps `self.key`, and `LabelAndWidget` builds
+    `contentLabel` from the already-translated description. Parking the text for the length of that one call is
+    less code than re-implementing the dialog construction just to pass an argument.
+
+    This has to run before any settings row is built, because `ModifyListItem.__init__` binds `self.clicked`
+    when it connects the button. `apply()` runs from `src/globals.py` at startup, well before the GUI exists.
+    """
+    item_class = import_ui("tasks.ModifyListItem", "ModifyListItem")
+    if item_class is None:
+        return
+    original_clicked = item_class.clicked
+
+    def patched_clicked(self):
+        global _pending_help
+        # `contentLabel` only exists when the setting has a description at all.
+        label = getattr(self, "contentLabel", None)
+        _pending_help = label.text() if label is not None else None
+        try:
+            original_clicked(self)
+        finally:
+            _pending_help = None
+
+    item_class.clicked = patched_clicked

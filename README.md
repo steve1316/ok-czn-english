@@ -52,7 +52,7 @@ This software is open-source and free, intended for personal learning purposes o
 - **Auto Card Management**: Obtain, remove, copy and flash cards
 - **Member Selection**: Picks battle members by your priority configuration
 - **Route Selection**: Recognises node types and advances by priority
-- **Shop Handling**: Enters the Derang Shop to remove cards
+- **Shop Handling**: Enters the Dellang Shop to remove cards
 - **Ether Supply Detection**: Detects low stamina and exits
 
 ### Chaos Mode

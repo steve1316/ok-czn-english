@@ -31,6 +31,7 @@ from src.en.game_text import DESCRIPTIONS  # noqa: E402
 from src.en.overrides import ROUTE_NODES  # noqa: E402
 
 ModifyListDialog = import_ui("tasks.ModifyListDialog", "ModifyListDialog")
+ModifyListItem = import_ui("tasks.ModifyListItem", "ModifyListItem")
 
 
 class EchoApp:
@@ -204,6 +205,68 @@ class TestOptionPicker(unittest.TestCase):
         """Without a roster the dialog is a single list, and its row must not be mistaken for the columns."""
         dialog = ModifyListDialog(["one", "two"], self.parent)
         self.assertIsNone(self.option_row(dialog))
+
+    def open_from_row(self, key, description, options=None):
+        """Open a picker the way clicking Modify on a settings row does.
+
+        Going through `ModifyListItem` is the whole point - it is what hands the dialog its help text, and a
+        dialog built directly would never receive any.
+
+        Args:
+            key: The config key the row is for.
+            description: The row's help text, or None for a setting that has none.
+            options: The roster to offer, or None for a free-text list.
+
+        Returns:
+            The `ModifyListDialog` the row opened.
+        """
+        opened = {}
+        original_exec = ModifyListDialog.exec
+        # The real `clicked` builds the dialog and then blocks on exec, so catch it there.
+        ModifyListDialog.exec = lambda dialog: opened.setdefault("dialog", dialog)
+        try:
+            row = ModifyListItem({key: description} if description else {}, {key: []}, key,
+                                 options_available=options)
+            row.clicked()
+        finally:
+            ModifyListDialog.exec = original_exec
+        dialog = opened["dialog"]
+        # The dialog is parented to the row's window, so the row has to outlive this call or Qt takes the
+        # dialog's C++ object down with it the moment the local goes out of scope.
+        dialog.help_source_row = row
+        return dialog
+
+    def help_text(self, dialog):
+        """Read the help line the picker puts at the top of a dialog.
+
+        Args:
+            dialog: The dialog to inspect.
+
+        Returns:
+            The text, or None when no help label was inserted.
+        """
+        item = dialog.viewLayout.itemAt(0)
+        widget = item.widget() if item is not None else None
+        return widget.text() if widget is not None and hasattr(widget, "text") else None
+
+    def test_a_roster_picker_repeats_the_setting_help(self):
+        """The row explains the setting, but the dialog covers the row exactly when you are choosing."""
+        dialog = self.open_from_row("需要冥想的卡牌", "Meditate on these.", CARDS)
+        self.assertEqual("Meditate on these.", self.help_text(dialog))
+
+    def test_a_free_text_picker_repeats_the_setting_help(self):
+        """This shape has no Available column at all, so help anchored to that column would miss it."""
+        dialog = self.open_from_row("任务优先级", "Pick these options.", None)
+        self.assertIsNone(getattr(dialog, "option_list", None))
+        self.assertEqual("Pick these options.", self.help_text(dialog))
+
+    def test_a_setting_without_help_gets_no_empty_label(self):
+        self.assertIsNone(self.help_text(self.open_from_row("no_such_setting", None, CARDS)))
+
+    def test_the_help_handoff_does_not_leak(self):
+        """The text is parked in a module global for one constructor call and must not outlive it."""
+        self.open_from_row("需要冥想的卡牌", "Meditate on these.", CARDS)
+        self.assertIsNone(picker._pending_help)
 
     def test_confirm_returns_canonical_values_in_order(self):
         """The config stores the canonical value, so handing back display text would stop OCR matching."""

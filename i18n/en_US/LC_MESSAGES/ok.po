@@ -414,7 +414,7 @@ msgid "只打第一层"
 msgstr "First Floor Only"
 
 msgid "进入商店"
-msgstr "Enter Shop"
+msgstr "Enter Dellang Shop"
 
 msgid "几轮后停止(0为不停止)"
 msgstr "Stop After This Many Rounds (0 = never)"

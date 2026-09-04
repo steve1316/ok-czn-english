@@ -241,6 +241,19 @@ class TestReshape(unittest.TestCase):
         bare = sorted(key for key in mode_setting_keys() if key not in described and not key.startswith("_"))
         self.assertEqual([], bare, f"these settings would render with no help text: {bare}")
 
+    def test_help_text_uses_the_client_s_own_terms(self):
+        """Every one of these was a term I invented that the Global client does not use.
+
+        They keep coming back because the Chinese reads literally: `旅行券` really is "travel ticket" and
+        `验证卡` really is "verification card". The client says Communication Pass and Loot Certification
+        Card, and the shop is Dellang, never Derang.
+        """
+        wrong = ("travel voucher", "travel ticket", "verification card", "derang shop", "mask card", "flash")
+        for key, help_text in overrides.DESCRIPTIONS.items():
+            for term in wrong:
+                with self.subTest(key=key, term=term):
+                    self.assertNotIn(term, help_text.casefold(), f"'{key}' uses a term the client does not")
+
     def test_descriptions_are_english(self):
         task = reshaped()
         self.assertTrue(task.config_description, "no descriptions were applied")
