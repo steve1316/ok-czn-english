@@ -166,3 +166,20 @@ msgstr "方舟城市"
 # From handle_season_chaos_initial_page: "卡厄思" not in _get_region_text(...) of the title area.
 msgid "Chaos Manifestation"
 msgstr "卡厄思显现"
+
+# From handle_next_step: _edit_distance(box.name, "下一步", max_dist=2) in the bottom-right button area.
+# Nothing else advances these pages, so an unmapped Next stalls the run.
+msgid "Next"
+msgstr "下一步"
+
+# From handle_settlement: _clean_match(box.name, "结算")
+msgid "Settlement"
+msgstr "结算"
+
+# From handle_escape: _get_game_text(task, "逃脱") in box.name
+msgid "Retreat"
+msgstr "逃脱"
+
+# From handle_close_page: find_text(task, "点击屏幕"), a regex search over every box.
+msgid "Tap to close the window."
+msgstr "点击屏幕关闭窗口"
