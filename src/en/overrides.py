@@ -19,11 +19,15 @@ Two rules decide whether a setting can become a pick-list:
   Restricting those to full card names would take that away, so they stay free text.
 """
 
+import re
+
 from ok import Logger
 
 from src.en.game_data import CARDS, COMBATANTS, EQUIPMENT
 
 logger = Logger.get_logger(__name__)
+
+CJK = re.compile("[" + chr(0x4E00) + "-" + chr(0x9FFF) + "]")
 
 # Route Priority values are internal labels, never OCR text, so they must stay exactly as upstream writes
 # them. `ok.po` translates them for display, and ModifyListDialog stores the canonical value.
@@ -56,6 +60,11 @@ LIST_OPTIONS = {
 # client actually shows, rather than inheriting a value that can never match.
 CLEARED_TEXT = ["指定面具卡牌", "面具卡牌刻印", "刷初始卡牌"]
 CLEARED_LISTS = ["闪光优先级", "任务优先级", "拉黑任务"]
+
+# Settings this module owns, and so may reset when their saved value is stale.
+MANAGED_KEYS = set(LIST_OPTIONS) | set(CLEARED_TEXT) | set(CLEARED_LISTS) | {"刷存档主战员"}
+# Route Priority is meant to hold Chinese, and Chinese is a real choice for Game Language.
+EXEMPT_FROM_RESET = {"路线优先级", "游戏语言"}
 
 # Help text, in the client's own wording.
 DESCRIPTIONS = {
@@ -150,6 +159,48 @@ def _apply_combatant_choice(task):
     task.default_config["刷存档主战员"] = DEFAULT_SAVE_DATA_COMBATANT
 
 
+def _has_chinese(value):
+    """Report whether a saved setting still holds Chinese text.
+
+    Args:
+        value: A setting value, either a string or a list of them.
+
+    Returns:
+        True when any part of it contains a CJK character.
+    """
+    parts = value if isinstance(value, (list, tuple)) else [value]
+    return any(isinstance(part, str) and CJK.search(part) for part in parts)
+
+
+def _reset_stale_values(task):
+    """Clear saved Chinese values that can never match on the Global client.
+
+    Changing `default_config` only affects a fresh install: a value already written to `configs/` wins over
+    it. The restricted lists drop what they cannot offer, but the free-text settings would otherwise keep a
+    Chinese card name forever, and a combatant dropdown would sit blank because its saved name is not on the
+    English roster.
+
+    Route Priority is exempt because its values are supposed to be Chinese, and Game Language because Chinese
+    is a real choice there.
+
+    Args:
+        task: The task being configured.
+    """
+    config = getattr(task, "config", None)
+    if config is None:
+        return
+    for key, default in task.default_config.items():
+        if key in EXEMPT_FROM_RESET or key not in MANAGED_KEYS:
+            continue
+        try:
+            current = config.get(key)
+        except Exception:
+            continue
+        if current is not None and _has_chinese(current):
+            config[key] = default() if callable(default) else (list(default) if isinstance(default, list) else default)
+            logger.info(f"reset '{key}' - its saved value was Chinese and cannot match the Global client")
+
+
 def apply_to(task):
     """Re-shape one task's settings for the Global client.
 
@@ -162,6 +213,7 @@ def apply_to(task):
     _apply_list_options(task)
     _apply_cleared_defaults(task)
     _apply_combatant_choice(task)
+    _reset_stale_values(task)
 
     for key, text in DESCRIPTIONS.items():
         if key in task.default_config:

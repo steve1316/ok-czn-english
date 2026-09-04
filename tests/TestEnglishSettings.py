@@ -46,6 +46,7 @@ class FakeTask:
             "面具卡牌刻印": "自身攻击卡牌伤害总量提升30%",
             "刷初始卡牌": "",
             "闪光优先级": ["缕光芒80%"],
+            "任务优先级": ["复制", "信用点增加", "移除"],
         }
         self.config_type = {}
         self.config_description = {}
@@ -117,6 +118,34 @@ class TestOverrides(unittest.TestCase):
                 with self.subTest(key=key):
                     self.assertEqual("line_edit", task.config_type.get(key, {}).get("type"),
                                      f"'{key}' defaults to {len(value)} characters and needs an explicit line_edit")
+
+    def test_saved_chinese_values_are_reset(self):
+        """Changing a default does nothing to a value already written to `configs/`.
+
+        The restricted lists drop what they cannot offer, but a free-text setting would keep a Chinese card
+        name forever and a combatant dropdown would sit blank, because its saved name is not on the English
+        roster. Route Priority is exempt - Chinese is what it is supposed to hold.
+        """
+        task = FakeTask()
+        task.config = {
+            "刷存档主战员": "海德玛丽",
+            "任务优先级": ["复制", "信用点增加"],
+            "面具卡牌刻印": "自身攻击卡牌伤害总量提升30%",
+            "路线优先级": ["休息", "事件", "小怪", "精英"],
+        }
+        overrides.apply_to(task)
+        self.assertEqual("Heidemarie", task.config["刷存档主战员"])
+        self.assertEqual([], task.config["任务优先级"])
+        self.assertEqual("", task.config["面具卡牌刻印"])
+        self.assertEqual(["休息", "事件", "小怪", "精英"], task.config["路线优先级"], "route values must survive")
+
+    def test_english_values_are_left_alone(self):
+        """The reset must be a one-time cleanup, not something that wipes a configured setting every launch."""
+        task = FakeTask()
+        task.config = {"刷存档主战员": "Nia", "任务优先级": ["Copy", "Remove"]}
+        overrides.apply_to(task)
+        self.assertEqual("Nia", task.config["刷存档主战员"])
+        self.assertEqual(["Copy", "Remove"], task.config["任务优先级"])
 
     def test_instructions_are_cleared(self):
         """Upstream leaves ok-script's scaffold placeholder here, which tells the user nothing."""
