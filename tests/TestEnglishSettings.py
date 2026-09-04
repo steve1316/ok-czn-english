@@ -21,6 +21,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from src.en import overrides, picker  # noqa: E402
 from src.en.game_data import CARDS, COMBATANTS, EQUIPMENT, NODE_TYPES  # noqa: E402
+from src.en.game_text import DESCRIPTIONS  # noqa: E402
 from src.en.framework import import_ui  # noqa: E402
 
 # Resolved the same way the patch resolves it, so the test cannot drift from what ships.
@@ -83,6 +84,22 @@ class TestGameData(unittest.TestCase):
                 self.assertGreater(len(roster), 20, f"{name} looks truncated")
                 self.assertEqual(len(roster), len(set(roster)), f"{name} has duplicates")
                 self.assertTrue(all(entry.strip() for entry in roster), f"{name} has blank entries")
+
+    def test_no_combatant_carries_a_description(self):
+        """A combatant sharing a name with a card would otherwise hover as that card's effect text.
+
+        `Narja` is both. The generator drops those, so one card loses its tooltip rather than a combatant
+        gaining a wrong one.
+        """
+        overlap = sorted(set(COMBATANTS) & set(DESCRIPTIONS))
+        self.assertEqual([], overlap, f"these combatants would show a card's effect: {overlap}")
+
+    def test_descriptions_cover_most_cards_and_equipment(self):
+        """A namespace rename upstream would silently empty the tooltips, which nothing else would catch."""
+        for name, roster, floor in (("CARDS", CARDS, 0.9), ("EQUIPMENT", EQUIPMENT, 0.8)):
+            with self.subTest(roster=name):
+                covered = sum(1 for entry in roster if entry in DESCRIPTIONS) / len(roster)
+                self.assertGreater(covered, floor, f"only {covered:.0%} of {name} have effect text")
 
     def test_node_types_cover_the_route_options(self):
         """Route Priority is described with node-type names, so those must exist in the game data."""

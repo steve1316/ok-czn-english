@@ -10,19 +10,24 @@ Swapping the grid for a `ListWidget` fixes both. `QListView` only builds delegat
 screen, so the same roster is ready in about 2 ms and filters in about 3 ms, and every row spans the full width
 of the pane, which a grid of fixed-width buttons never did.
 
+Building the rows here is also what makes a useful tooltip possible, so each one carries the card's or the
+equipment's own effect text from `game_text.py` rather than just repeating the name.
+
 Only the three methods that touch the option grid are replaced, and only when the roster is long. A short one -
 Route Priority's four node types - falls through to upstream's buttons, so nothing changes where nothing was
 slow.
 
-Unlike the rest of `src/en/`, this module is not about the English client. It works around a framework
-performance bug that only happens to bite at Global-client roster sizes, so it belongs in ok-script's own
-`ModifyListDialog` and this file should be deleted once a release carries the fix.
+The virtualization half of this is not really about the English client. It works around a framework performance
+bug that only happens to bite at Global-client roster sizes, so it belongs in ok-script's own `ModifyListDialog`
+and should go once a release carries the fix. The tooltips are fork-local and stay either way.
 
 One thing is knowingly given up: upstream wires touch drag-scrolling to the `QScrollArea` the list now sits in,
 and that outer area no longer scrolls. The framework's helper cannot be pointed at the list instead, because it
 calls `.widget()`, which a `QListWidget` does not have. The wheel and the scrollbar both work, and the Selected
 Options list beside it has never had touch scrolling either.
 """
+
+from html import escape
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QListWidgetItem
@@ -31,6 +36,7 @@ from qfluentwidgets import ListWidget
 from ok import Logger, og
 
 from src.en.framework import import_ui
+from src.en.game_text import DESCRIPTIONS
 
 logger = Logger.get_logger(__name__)
 
@@ -63,6 +69,27 @@ def wants_option_list(options, threshold):
     return options is not None and len(options) > threshold
 
 
+def tooltip_for(option, display):
+    """Build the hover text for one option.
+
+    The result is HTML rather than plain text on purpose. Qt only word-wraps a tooltip it recognises as rich
+    text, and the longest card effect is 196 characters, which would otherwise be drawn as one 1,440px line.
+    Names and effects both contain characters HTML would eat, so both are escaped.
+
+    Args:
+        option: The canonical config value, which is the name the description is keyed by.
+        display: The translated name shown on the row.
+
+    Returns:
+        The name, followed by its effect text when the game data has one.
+    """
+    name = f"<b>{escape(display)}</b>"
+    effect = DESCRIPTIONS.get(option)
+    if not effect:
+        return name
+    return f"{name}<br><br>{escape(effect).replace(chr(10), '<br>')}"
+
+
 def build_option_list(dialog):
     """Build the virtualized replacement for one dialog's option grid.
 
@@ -83,7 +110,7 @@ def build_option_list(dialog):
         item = QListWidgetItem(display)
         item.setData(OPTION_ROLE, option)
         item.setData(SEARCH_ROLE, f"{option}\n{display}".casefold())
-        item.setToolTip(display)
+        item.setToolTip(tooltip_for(option, display))
         view.addItem(item)
 
     view.itemClicked.connect(lambda item: dialog.add_available_item(item.data(OPTION_ROLE)))

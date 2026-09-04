@@ -1,11 +1,12 @@
-"""Generate `src/en/game_data.py` from the game's own English localization table.
+"""Generate `src/en/game_data.py` and `src/en/game_text.py` from the game's own English localization table.
 
 The Global client ships its text as `text/en/text.json`, a flat list of `{"id", "text"}` rows. That is the
 authoritative source for card, equipment and combatant names, so the settings can offer real pick-lists
-instead of asking the user to type a name and hope it matches.
+instead of asking the user to type a name and hope it matches. The same table carries each card's effect text,
+which becomes the tooltip shown while picking.
 
 Point `--dump` at the extracted `output` directory of a CZN asset rip. The dump itself is not committed - the
-generated module is, so the repo stays self-contained and a game patch is a re-run rather than a mystery.
+generated modules are, so the repo stays self-contained and a game patch is a re-run rather than a mystery.
 
 Run `python scripts/build_game_data.py --dump <path-to-output>`.
 """
@@ -19,6 +20,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 OUT_PATH = REPO_ROOT / "src" / "en" / "game_data.py"
+OUT_TEXT_PATH = REPO_ROOT / "src" / "en" / "game_text.py"
 DEFAULT_DUMP = Path(r"C:\Users\steve1316\Downloads\CZNRipper\output")
 
 # Namespaces in the localization table, and the constant each becomes.
@@ -50,6 +52,24 @@ COMBATANT_NAME_ID = "char_base@name@{id}"
 TEST_ID_PREFIX = "99"
 # Placeholder rows the extraction should not carry into a dropdown.
 JUNK = re.compile(r"^(test|temp|dummy|sample|todo|battle test|#)", re.I)
+
+# Description namespaces, each paired with the name namespace it shares ids with.
+DESCRIPTION_SOURCES = [
+    ("card@desc@", "card@name@"),
+    ("relic@s1_description@", "relic@name@"),
+]
+# The game's own markup, unwound in this order. A cross-reference resolves to the referenced card's name, so
+# "Create X ^card@c_30097_cre1^" ends up reading "Create X Homing Laser L".
+CARD_REFERENCE = re.compile(r"\^card@([^^]+)\^")
+OTHER_REFERENCE = re.compile(r"\^[^^]+\^")
+TERM_MARKER = re.compile(r"\$([^$#]+)(?:#\d+)?\$")
+RUNTIME_VALUE = re.compile(r"#[a-zA-Z0-9_]+#")
+COLOUR_TAG = re.compile(r"\[/?[a-z_]{0,15}\]")
+STYLE_TAG = re.compile(r"</?[a-z]{0,3}>")
+RUN_OF_SPACES = re.compile(r"[ \t]+")
+# What a runtime value is shown as. The real number comes from per-card stat tables this table does not carry,
+# and a tooltip only needs to say what a card does, not how far it scales.
+VALUE_PLACEHOLDER = "X"
 
 
 def load_table(dump_dir):
@@ -130,6 +150,64 @@ def collect_combatants(table, dump_dir):
     return sorted(roster)
 
 
+def clean_description(text, table):
+    """Turn one raw description into the plain sentence a tooltip can show.
+
+    Args:
+        text: The raw description, carrying the game's own markup.
+        table: The localization table, used to resolve card cross-references.
+
+    Returns:
+        The cleaned text, with a newline wherever the original had a line break.
+    """
+    text = CARD_REFERENCE.sub(lambda match: table.get("card@name@" + match.group(1), "that card"), text)
+    text = OTHER_REFERENCE.sub("", text)
+    text = text.replace("<br>", "\n")
+    text = TERM_MARKER.sub(r"\1", text)
+    text = RUNTIME_VALUE.sub(VALUE_PLACEHOLDER, text)
+    text = COLOUR_TAG.sub("", text)
+    text = STYLE_TAG.sub("", text)
+    text = RUN_OF_SPACES.sub(" ", text)
+    return "\n".join(line.strip() for line in text.split("\n") if line.strip())
+
+
+def collect_descriptions(table):
+    """Pair every named card and relic with its effect text.
+
+    Args:
+        table: The localization table.
+
+    Returns:
+        A dict of entity name to cleaned description.
+    """
+    described = {}
+    for desc_prefix, name_prefix in DESCRIPTION_SOURCES:
+        names = {key[len(name_prefix):]: value for key, value in table.items() if key.startswith(name_prefix)}
+        bodies = {key[len(desc_prefix):]: value for key, value in table.items() if key.startswith(desc_prefix)}
+        chosen = {}
+        for suffix, name in names.items():
+            # A card appears once per upgrade tier under the same name. The shortest id is the base card.
+            if suffix in bodies and (name not in chosen or len(suffix) < len(chosen[name])):
+                chosen[name] = suffix
+        for name, suffix in chosen.items():
+            body = clean_description(bodies[suffix], table)
+            # A description that only repeats the name tells the user nothing the tooltip does not already show.
+            if not body or body == name:
+                continue
+            if name in described and described[name] != body:
+                print(f"  note: '{name}' is named by two namespaces, keeping the first description")
+                continue
+            described[name] = body
+
+    # A combatant can share a name with a card, and the combatant pickers look tooltips up the same way, so a
+    # description here would explain something else entirely. One card loses its tooltip, which is the cheaper
+    # half of the trade.
+    for name in sorted(set(described) & set(PLAYABLE_COMBATANTS)):
+        print(f"  note: '{name}' is both a combatant and a card, so its description is dropped")
+        del described[name]
+    return described
+
+
 def render(groups, dump_dir):
     """Build the source of the generated module.
 
@@ -160,8 +238,37 @@ def render(groups, dump_dir):
     return "\n".join(lines)
 
 
+def render_descriptions(described, dump_dir):
+    """Build the source of the generated description module.
+
+    Args:
+        described: A dict of entity name to cleaned description.
+        dump_dir: The dump the text came from, recorded in the header.
+
+    Returns:
+        The module source as a string.
+    """
+    lines = [
+        '"""Card and equipment effect text, taken from the Global client\'s own localization table.',
+        "",
+        "Generated by `scripts/build_game_data.py` - do not edit by hand. Re-run it after a game patch.",
+        "",
+        f"Source: {str(dump_dir).replace(chr(92), '/')}",
+        f"Generated: {date.today().isoformat()}",
+        '"""',
+        "",
+        "# Keyed by the same names as the rosters in `game_data.py`. `X` stands in for a value the game fills in",
+        "# at runtime from stat tables the localization table does not carry.",
+        "DESCRIPTIONS = {",
+    ]
+    lines.extend(f"    {name!r}: {described[name]!r}," for name in sorted(described))
+    lines.append("}")
+    lines.append("")
+    return "\n".join(lines)
+
+
 def main():
-    """Entry point. Writes the generated module and reports what it found.
+    """Entry point. Writes the generated modules and reports what they hold.
 
     Returns:
         0 on success.
@@ -175,14 +282,18 @@ def main():
 
     table = load_table(args.dump)
     groups = [(name, collector(table, args.dump), comment) for name, comment, collector in GROUPS]
+    described = collect_descriptions(table)
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUT_PATH.write_text(render(groups, args.dump), encoding="utf-8")
+    OUT_TEXT_PATH.write_text(render_descriptions(described, args.dump), encoding="utf-8")
 
     print(f"read {len(table)} localization rows from {args.dump}")
     for name, values, _ in groups:
-        print(f"  {name:12} {len(values):5d}")
+        with_text = sum(1 for value in values if value in described)
+        print(f"  {name:12} {len(values):5d}   {with_text:5d} described")
     print(f"wrote {OUT_PATH.relative_to(REPO_ROOT)}")
+    print(f"wrote {OUT_TEXT_PATH.relative_to(REPO_ROOT)} with {len(described)} descriptions")
     return 0
 
 

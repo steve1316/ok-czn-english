@@ -82,6 +82,9 @@ This software is open-source and free, intended for personal learning purposes o
 - **The picker opens instantly, however long the list.** Chaos Mode's card settings offer nearly 1,500 options,
   which ok-script draws as a grid of that many real buttons. Here the option pane only builds the rows you can
   actually see, so opening it and searching it stay immediate.
+- **Hover an option to see what it does.** Cards and equipment carry their in-game effect text, taken from the
+  client's own data, so you can build a removal or copy list without looking anything up. Numbers the game fills
+  in per card show as `X`, since those live outside the text data. Search still matches names only.
 - **Switching to this build re-seeds those settings.** Upstream ships one Chinese player's build as the
   defaults, and those names can never match what the OCR reads on a Global client, so they are cleared on
   first launch. Nothing is lost that would have worked.

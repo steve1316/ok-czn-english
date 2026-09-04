@@ -11,6 +11,7 @@ Qt runs headless here through the offscreen platform plugin, which has to be cho
 import os
 import sys
 import unittest
+from html import escape
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -26,6 +27,7 @@ from ok import og  # noqa: E402
 from src.en import picker  # noqa: E402
 from src.en.framework import import_ui  # noqa: E402
 from src.en.game_data import CARDS  # noqa: E402
+from src.en.game_text import DESCRIPTIONS  # noqa: E402
 from src.en.overrides import ROUTE_NODES  # noqa: E402
 
 ModifyListDialog = import_ui("tasks.ModifyListDialog", "ModifyListDialog")
@@ -122,6 +124,27 @@ class TestOptionPicker(unittest.TestCase):
         dialog.filter_available_options("sword")
         dialog.filter_available_options("")
         self.assertEqual(len(CARDS), len(self.visible_rows(dialog)))
+
+    def test_a_card_row_shows_its_effect(self):
+        """The whole point of the tooltip: say what the card does, not just repeat the name."""
+        dialog = self.open_picker(CARDS)
+        described = next(row for row in range(dialog.option_list.count())
+                         if dialog.option_list.item(row).text() in DESCRIPTIONS)
+        item = dialog.option_list.item(described)
+        self.assertIn(escape(DESCRIPTIONS[item.text()].splitlines()[0]), item.toolTip())
+
+    def test_a_row_without_an_effect_shows_only_its_name(self):
+        """Roughly 3% of cards have no description, and those must not render a dangling separator."""
+        dialog = self.open_picker(CARDS)
+        bare = next(row for row in range(dialog.option_list.count())
+                    if dialog.option_list.item(row).text() not in DESCRIPTIONS)
+        item = dialog.option_list.item(bare)
+        self.assertEqual(f"<b>{escape(item.text())}</b>", item.toolTip())
+
+    def test_tooltips_are_rich_text_so_qt_wraps_them(self):
+        """Qt only word-wraps a tooltip it reads as rich text, and the longest effect is 196 characters."""
+        dialog = self.open_picker(CARDS)
+        self.assertTrue(dialog.option_list.item(0).toolTip().startswith("<b>"))
 
     def test_confirm_returns_canonical_values_in_order(self):
         """The config stores the canonical value, so handing back display text would stop OCR matching."""
