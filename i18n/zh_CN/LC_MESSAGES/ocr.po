@@ -268,3 +268,20 @@ msgstr "主战员配置"
 # From handle_copy: "复制" in box.name
 msgid "Duplicate Card"
 msgstr "复制卡牌"
+
+# From handle_battle_member_selection: _get_game_text(task, "甄别主战员") in right_hint.name.
+# The OCR puts this box at (0.527, 0.045) and the handler reads (0.562, 0.044), which is the same box.
+msgid "Drafted Combatants"
+msgstr "甄别主战员"
+
+# From handle_shop: "售" in soldout.name. The OCR puts it at (0.725, 0.284), matching the handler's (0.727, 0.286).
+msgid "SOLD OUT"
+msgstr "售罄"
+
+# From handle_shop: "购买" in box.name, scanned over the buttons along the bottom of the shop.
+msgid "Buy"
+msgstr "购买"
+
+# From handle_card_assign: "无法获得" in box.name
+msgid "Cannot obtain Save Data"
+msgstr "无法获得存储数据"
