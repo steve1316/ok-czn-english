@@ -93,7 +93,7 @@ def fingerprint(image):
     return np.asarray(image.convert("L").resize(THUMBNAIL), dtype=float)
 
 
-def looks_the_same(previous, current):
+def looks_the_same(previous, current, ratio=SAME_SCREEN_RATIO):
     """Report whether two frames show the same screen.
 
     Args:
@@ -105,10 +105,10 @@ def looks_the_same(previous, current):
     """
     if previous is None:
         return False
-    return float(np.mean(np.abs(previous - current) > 24)) < SAME_SCREEN_RATIO
+    return float(np.mean(np.abs(previous - current) > 24)) < ratio
 
 
-def watch(hwnd, name, interval):
+def watch(hwnd, name, interval, ratio):
     """Grab distinct screens for as long as the game stays in front.
 
     Args:
@@ -128,7 +128,7 @@ def watch(hwnd, name, interval):
             if win32gui.GetForegroundWindow() == hwnd:
                 image = capture(hwnd)
                 current = fingerprint(image)
-                if not looks_the_same(previous, current):
+                if not looks_the_same(previous, current, ratio):
                     out_path = OUT_DIR / f"{name}_{written:03d}.png"
                     image.save(out_path)
                     written += 1
@@ -150,12 +150,14 @@ def main():
     parser.add_argument("name", help="basename for the PNG written into screenshots/")
     parser.add_argument("--title", default=WINDOW_TITLE, help="window title to capture")
     parser.add_argument("--watch", action="store_true", help="keep capturing distinct screens while you play")
-    parser.add_argument("--interval", type=float, default=1.5, help="seconds between grabs in watch mode")
+    parser.add_argument("--interval", type=float, default=2.0, help="seconds between grabs in watch mode")
+    parser.add_argument("--threshold", type=float, default=0.06,
+                        help="fraction of pixels that must change to count as a new screen")
     args = parser.parse_args()
 
     hwnd = find_window(args.title)
     if args.watch:
-        print(f"wrote {watch(hwnd, args.name, args.interval)} images")
+        print(f"wrote {watch(hwnd, args.name, args.interval, args.threshold)} images")
         return 0
 
     bring_to_front(hwnd)
