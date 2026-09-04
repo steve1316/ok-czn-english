@@ -30,6 +30,7 @@ COMPARISONS = [
     # Not task.name: that is the mode's own name, never text read off the screen.
     ("name ==", re.compile(r'(?<!task)\.name\s*==\s*["\']([^"\']+)["\']')),
     ("in name", re.compile(r'["\']([^"\']+)["\']\s+in\s+\w+\.name')),
+    ("edit_distance", re.compile(r"_edit_distance\([^,]+,\s*[\"']([^\"']+)[\"']")),
     ("find_text", re.compile(r'find_text\(task,\s*r?["\']([^"\']+)["\']')),
     ("re.search", re.compile(r're\.search\(\s*r?["\']([^"\']+)["\']')),
     ("get_game_text", re.compile(r'_get_game_text\(task,\s*["\']([^"\']+)["\']')),
