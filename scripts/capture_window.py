@@ -5,7 +5,10 @@ return a black frame. So this brings the window to the front and grabs the deskt
 means the window has to be unobscured for the moment of capture, which is fine for building the OCR catalog
 by hand. The bot itself uses the framework's WGC path instead and does not need this.
 
-Run `python scripts/capture_window.py <name>` to write `screenshots/<name>.png`, or add `--watch` to keep
+Captures go to `captures/`, never `screenshots/`: the framework owns the latter and wipes it wholesale once it
+passes 300 MB, or on every cleanup in debug mode.
+
+Run `python scripts/capture_window.py <name>` to write `captures/<name>.png`, or add `--watch` to keep
 grabbing while you play. Watch mode never steals focus - it only captures while the game is already frontmost,
 and it skips frames that look like the one before, so a run leaves one image per distinct screen.
 """
@@ -21,7 +24,7 @@ import win32gui
 from PIL import ImageGrab
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-OUT_DIR = REPO_ROOT / "screenshots"
+OUT_DIR = REPO_ROOT / "captures"
 WINDOW_TITLE = "Chaos Zero Nightmare"
 SETTLE_SECONDS = 0.6
 # Two frames counting as the same screen. Measured on idle menus, where an animated background still moves a few

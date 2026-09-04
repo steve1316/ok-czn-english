@@ -22,7 +22,7 @@ import cv2
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 TASKS_DIR = REPO_ROOT / "ok_tasks"
-CACHE_PATH = REPO_ROOT / "screenshots" / ".ocr_cache.json"
+CACHE_PATH = REPO_ROOT / "captures" / ".ocr_cache.json"
 POINT_CALL = re.compile(r"find_box_at_point\(\s*task\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)\s*\)")
 DEF_LINE = re.compile(r"^def\s+(\w+)")
 

@@ -67,3 +67,6 @@ autohelper
 working_images/
 pyappify/
 pyappify_dist/
+
+# Game captures for building the OCR catalog.
+captures/
