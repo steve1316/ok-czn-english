@@ -27,7 +27,8 @@ REGEX_CHARS = re.compile(r"[.*+?()\[\]\|]")
 # How the handlers test OCR text. Each pattern captures the literal being compared against.
 COMPARISONS = [
     ("clean_match", re.compile(r'_clean_match\([^,]+,\s*["\']([^"\']+)["\']')),
-    ("name ==", re.compile(r'\.name\s*==\s*["\']([^"\']+)["\']')),
+    # Not task.name: that is the mode's own name, never text read off the screen.
+    ("name ==", re.compile(r'(?<!task)\.name\s*==\s*["\']([^"\']+)["\']')),
     ("in name", re.compile(r'["\']([^"\']+)["\']\s+in\s+\w+\.name')),
     ("find_text", re.compile(r'find_text\(task,\s*r?["\']([^"\']+)["\']')),
     ("re.search", re.compile(r're\.search\(\s*r?["\']([^"\']+)["\']')),
