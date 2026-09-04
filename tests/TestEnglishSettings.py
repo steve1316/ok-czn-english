@@ -8,6 +8,7 @@ option picker's slow path.
 """
 
 import json
+import re
 import sys
 import tempfile
 import unittest
@@ -110,6 +111,26 @@ class TestGameData(unittest.TestCase):
         """
         vague = sum(1 for text in DESCRIPTIONS.values() if "X" in text) / len(DESCRIPTIONS)
         self.assertLess(vague, 0.15, f"{vague:.0%} of descriptions still have an unresolved value")
+
+    def test_coefficient_values_are_written_as_percentages(self):
+        """A card reading `300 Damage` really deals 300% of attack, so the sign belongs in the tooltip.
+
+        The game appends it for damage, shield and heal effects rather than writing it into the text, so the
+        generator has to add it back. Two thirds of descriptions show a percentage once it does.
+        """
+        showing = sum(1 for text in DESCRIPTIONS.values() if "%" in text) / len(DESCRIPTIONS)
+        self.assertGreater(showing, 0.4, f"only {showing:.0%} of descriptions show a percentage")
+        self.assertTrue(any(re.match(r"^\d+% ", text) for text in DESCRIPTIONS.values()),
+                        "no description opens with a percentage, so the sign is not being appended")
+
+    def test_the_percent_sign_is_never_doubled(self):
+        """Some families already write the sign into the text, so appending has to look before it leaps."""
+        doubled = sorted(name for name, text in DESCRIPTIONS.items() if "%%" in text)
+        self.assertEqual([], doubled, f"these descriptions doubled the percent sign: {doubled[:5]}")
+
+    def test_hit_counts_are_not_turned_into_percentages(self):
+        """`50% Damage x 4` reads a count off the same damage effect, and a count is not a percentage."""
+        self.assertFalse(any(re.search(r"× *\d+%", text) for text in DESCRIPTIONS.values()))
 
     def test_node_types_cover_the_route_options(self):
         """Route Priority is described with node-type names, so those must exist in the game data."""

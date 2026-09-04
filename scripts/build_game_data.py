@@ -66,7 +66,18 @@ RELIC_TABLES = ("*relic.json", "s1_cs_value")
 # and `#result_ecv_1#` the second one's count. The prefix varies with where the text is shown and does not
 # change which column is read, so only the `ev` / `ecv` / `damage` part of the name matters.
 CARD_PLACEHOLDER = re.compile(r"#([a-z][a-z0-9_]*)_(\d+)#")
-CARD_VALUE_KINDS = {"ecv": "eff_count_value", "ev": "eff_value", "damage": "eff_value"}
+VALUE_COLUMN = "eff_value"
+COUNT_COLUMN = "eff_count_value"
+CARD_VALUE_KINDS = {"ecv": COUNT_COLUMN, "ev": VALUE_COLUMN, "damage": VALUE_COLUMN}
+# Effects whose value is a coefficient the game shows as a percentage, so "300 Damage" is really "300%".
+#
+# The data pins this list rather than guesswork. Several placeholder families come in a plain and a `pct_off`
+# spelling, and every one of the 177 `pct_off` uses is followed by a literal `%` in the text while their plain
+# counterparts almost never are - so `pct_off` means "the sign is written out here" and the plain spelling
+# means the game appends it. These are the effect types those pairs point at.
+PERCENT_EFFECTS = {"SKILL_EFF_DMG", "SKILL_EFF_SHIELD", "SKILL_EFF_CURE", "SKILL_EFF_DAMAGE_VALUE_ADD"}
+# A count is a number of hits or cards even on a damage effect, as in "50% Damage x 4", so it never takes a sign.
+MARKUP_PREFIX = re.compile(r"^(\[/?[a-z_]*\]|</?[a-z]{0,3}>)+")
 # The `cs_` families reach through a character-stat table this does not load, and their linked effect holds a
 # stack count rather than the number shown, so resolving them from here would print a confidently wrong value.
 UNRESOLVED_FAMILY = "cs_"
@@ -204,6 +215,23 @@ def card_value_field(family):
     return None
 
 
+def needs_percent(effect, column, text, position):
+    """Decide whether a resolved value should be written with a percent sign.
+
+    Args:
+        effect: The linked effect row the value came from.
+        column: The column that was read.
+        text: The whole raw description.
+        position: Where the placeholder ended, so the following text can be checked.
+
+    Returns:
+        True when the game would show this value as a percentage and the text does not write the sign itself.
+    """
+    if column != VALUE_COLUMN or effect.get("eff") not in PERCENT_EFFECTS:
+        return False
+    return not MARKUP_PREFIX.sub("", text[position:]).startswith("%")
+
+
 def resolve_card_values(text, card, effects):
     """Fill a card's placeholders in from its linked effects.
 
@@ -222,8 +250,11 @@ def resolve_card_values(text, card, effects):
         index = int(match.group(2))
         if column is None or index >= len(links):
             return match.group(0)
-        value = (effects.get(links[index]) or {}).get(column)
-        return value if value else match.group(0)
+        effect = effects.get(links[index]) or {}
+        value = effect.get(column)
+        if not value:
+            return match.group(0)
+        return value + "%" if needs_percent(effect, column, text, match.end()) else value
 
     return CARD_PLACEHOLDER.sub(replace, text)
 
