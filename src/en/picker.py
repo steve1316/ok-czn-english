@@ -11,8 +11,8 @@ screen, so the same roster is ready in about 2 ms and filters in about 3 ms, and
 of the pane, which a grid of fixed-width buttons never did.
 
 Building the rows here is also what makes a useful tooltip possible, so each one carries the card's or the
-equipment's own effect text from `game_text.py` rather than just repeating the name, and shows it without the
-wait Qt normally puts in front of a tooltip.
+equipment's own effect text from `game_text.py` rather than just repeating the name, on both sides of the
+dialog, and shows it without the wait Qt normally puts in front of a tooltip.
 
 Only the three methods that touch the option grid are replaced, and only when the roster is long. A short one -
 Route Priority's four node types - falls through to upstream's buttons, so nothing changes where nothing was
@@ -97,7 +97,7 @@ class InstantTooltipStyle(QProxyStyle):
     Qt holds a tooltip back for about 700ms, which is a long pause when the tooltip is the reason you are
     hovering in the first place. That wait is a style hint rather than a setting, so overriding the hint is the
     supported way to change it. Everything else passes straight through to the real style, and this is set on
-    the option list alone, so no other tooltip in the app is affected.
+    the dialog's two lists alone, so no other tooltip in the app is affected.
 
     Showing the text directly instead, from the view's `entered` signal, does not work: the item's own tooltip
     still fires afterwards and the user gets two tooltips at once.
@@ -118,6 +118,35 @@ class InstantTooltipStyle(QProxyStyle):
         if hint == QStyle.SH_ToolTip_WakeUpDelay:
             return 0
         return super().styleHint(hint, option, widget, returnData)
+
+
+def use_instant_tooltips(view):
+    """Take the tooltip delay off one view.
+
+    Args:
+        view: The view to restyle. Qt does not take ownership of a style, so the view holds the reference.
+    """
+    view.instant_tooltip_style = InstantTooltipStyle()
+    view.setStyle(view.instant_tooltip_style)
+
+
+def label_selected_rows(dialog):
+    """Give the Selected Options rows the same tooltips as the options they were picked from.
+
+    Upstream fills that list inside `__init__`, which this module deliberately leaves alone, so the rows are
+    labelled from `update_option_buttons` instead. That runs once the list is populated and again after every
+    add and remove, which is exactly when a row could be missing its tooltip. Reordering moves the item itself,
+    so those rows keep theirs.
+
+    Args:
+        dialog: The `ModifyListDialog` being updated.
+    """
+    for row in range(dialog.list_widget.count()):
+        item = dialog.list_widget.item(row)
+        display = item.text()
+        # The list stores display text, so go back through the dialog's own map for the name a description is
+        # keyed by. On the Global client the two are the same, but a translated build would need the lookup.
+        item.setToolTip(tooltip_for(dialog.source_by_display.get(display, display), display))
 
 
 def build_option_list(dialog):
@@ -144,9 +173,7 @@ def build_option_list(dialog):
         view.addItem(item)
 
     view.itemClicked.connect(lambda item: dialog.add_available_item(item.data(OPTION_ROLE)))
-    # Qt does not take ownership of a style, so the view has to hold the only reference to it.
-    view.instant_tooltip_style = InstantTooltipStyle()
-    view.setStyle(view.instant_tooltip_style)
+    use_instant_tooltips(view)
     return view
 
 
@@ -177,6 +204,8 @@ def apply():
         if not virtualized(self):
             return original_create(self)
         self.option_list = build_option_list(self)
+        # The Selected Options list already exists by now, and its rows want the same treatment.
+        use_instant_tooltips(self.list_widget)
         return self.option_list
 
     def patched_update(self):
@@ -189,6 +218,7 @@ def apply():
             item = self.option_list.item(row)
             available = self.allow_duplication or item.text() not in selected
             item.setFlags(ENABLED_FLAGS if available else Qt.NoItemFlags)
+        label_selected_rows(self)
 
     def patched_filter(self, text):
         if not virtualized(self):

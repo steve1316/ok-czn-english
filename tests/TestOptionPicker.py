@@ -159,6 +159,25 @@ class TestOptionPicker(unittest.TestCase):
         """A widget-level style can knock out a stylesheet, which would leave the list unthemed."""
         self.assertTrue(self.open_picker(CARDS).option_list.styleSheet())
 
+    def test_saved_rows_carry_their_effect_on_the_selected_side(self):
+        """Upstream fills that list inside `__init__`, so the rows are labelled from the update pass instead."""
+        dialog = self.open_picker(CARDS, selected=["Absolute Zero"])
+        item = dialog.list_widget.item(0)
+        self.assertIn(escape(DESCRIPTIONS["Absolute Zero"].splitlines()[0]), item.toolTip())
+
+    def test_a_newly_added_row_carries_its_effect_too(self):
+        """Clicking an option appends a bare row, which only gets its tooltip on the pass that follows."""
+        dialog = self.open_picker(CARDS)
+        dialog.add_available_item("Rapid Slash")
+        item = dialog.list_widget.item(dialog.list_widget.count() - 1)
+        self.assertIn(escape(DESCRIPTIONS["Rapid Slash"]), item.toolTip())
+
+    def test_both_lists_lose_the_tooltip_delay(self):
+        dialog = self.open_picker(CARDS, selected=["Absolute Zero"])
+        for name, view in (("available", dialog.option_list), ("selected", dialog.list_widget)):
+            with self.subTest(list=name):
+                self.assertEqual(0, view.style().styleHint(QStyle.SH_ToolTip_WakeUpDelay, None, view))
+
     def test_confirm_returns_canonical_values_in_order(self):
         """The config stores the canonical value, so handing back display text would stop OCR matching."""
         dialog = self.open_picker(CARDS, selected=[CARDS[5]])
