@@ -25,12 +25,17 @@ DEFAULT_DUMP = Path(r"C:\Users\steve1316\Downloads\CZNRipper\output")
 GROUPS = [
     ("CARDS", r"card@name@", "Every card name, which covers Personas and Epiphanies too."),
     ("EQUIPMENT", r"relic@name@", "Equipment, called relics internally."),
-    ("COMBATANTS", r"char_base@name@", "Playable combatants."),
     ("FATES", r"fate@name@", "The Fates offered at the start of a run."),
     ("NODE_TYPES", r"spot_type", "Map node types, used for Route Priority."),
 ]
+# Combatants cannot come from the `char_base@name@` namespace: it names every NPC and enemy in the game too,
+# which is three times the real roster. The combatant table is the actual unit list, so join through that.
+COMBATANT_TABLE = "char_base@char_combatant.json"
+COMBATANT_NAME_ID = "char_base@name@{id}"
+# Internal ids used for the developers' test units.
+TEST_ID_PREFIX = "99"
 # Placeholder rows the extraction should not carry into a dropdown.
-JUNK = re.compile(r"^(test|temp|dummy|sample|todo|#)", re.I)
+JUNK = re.compile(r"^(test|temp|dummy|sample|todo|battle test|#)", re.I)
 
 
 def load_table(dump_dir):
@@ -70,6 +75,34 @@ def collect(table, pattern):
             text = (value or "").strip()
             if text and not JUNK.match(text):
                 names.add(text)
+    return sorted(names)
+
+
+def collect_combatants(table, dump_dir):
+    """Pull the playable combatants by joining the combatant table to its names.
+
+    Args:
+        table: The localization table.
+        dump_dir: Path to the dump's `output` directory.
+
+    Returns:
+        A sorted list of combatant names.
+
+    Raises:
+        SystemExit: When the combatant table is missing.
+    """
+    path = Path(dump_dir) / "db" / COMBATANT_TABLE
+    if not path.exists():
+        raise SystemExit(f"no combatant table at {path}")
+
+    names = set()
+    for row in json.loads(path.read_text(encoding="utf-8")):
+        combatant_id = str(row.get("id", ""))
+        if combatant_id.startswith(TEST_ID_PREFIX):
+            continue
+        name = (table.get(COMBATANT_NAME_ID.format(id=combatant_id)) or "").strip()
+        if name and not JUNK.match(name):
+            names.add(name)
     return sorted(names)
 
 
@@ -118,6 +151,8 @@ def main():
 
     table = load_table(args.dump)
     groups = [(name, collect(table, pattern), comment) for name, pattern, comment in GROUPS]
+    groups.append(("COMBATANTS", collect_combatants(table, args.dump),
+                   "Playable combatants, joined through the combatant table so NPCs and enemies stay out."))
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUT_PATH.write_text(render(groups, args.dump), encoding="utf-8")
