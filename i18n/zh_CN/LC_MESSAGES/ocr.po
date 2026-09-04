@@ -183,3 +183,38 @@ msgstr "逃脱"
 # From handle_close_page: find_text(task, "点击屏幕"), a regex search over every box.
 msgid "Tap to close the window."
 msgstr "点击屏幕关闭窗口"
+
+# From _card_has_type_below: matched against _CARD_TYPE_KEYWORDS. That check only considers boxes of four
+# characters or fewer, so the English label has to become the short Chinese one before it is measured.
+# Collides with a card also named Attack; the label appears under every attack card, the card is one of 1,472.
+msgid "Attack"
+msgstr "攻击"
+
+# From _card_has_type_below: matched against _CARD_TYPE_KEYWORDS.
+msgid "Skill"
+msgstr "技能"
+
+# From select_card: _get_game_text(task, "基础") drives the basic-card removal pass.
+msgid "Basic Attack"
+msgstr "基础攻击"
+
+# From select_card: _get_game_text(task, "基础") drives the basic-card removal pass.
+msgid "Basic Skill"
+msgstr "基础技能"
+
+# From _card_has_type_below: matched against _CARD_TYPE_KEYWORDS. The client's own card type is `card_curse`.
+# Collides with a card also named Curse, and blocking curse cards is the shipped default, so the label wins.
+msgid "Curse"
+msgstr "咒术"
+
+# From handle_flash: _get_game_text(task, "闪光") in box.name
+msgid "Epiphany"
+msgstr "闪光"
+
+# From handle_weakness_info: "弱点" in box.name
+msgid "Weakness"
+msgstr "弱点"
+
+# From handle_sortie_reward_claim: re.search(r"卡.*思战利品", title.name)
+msgid "Chaos Loot"
+msgstr "卡厄思战利品"

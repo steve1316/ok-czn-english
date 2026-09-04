@@ -150,7 +150,7 @@ def main():
         0 on success, 1 when the window could not be raised and the grab would show whatever is on top.
     """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("name", help="basename for the PNG written into screenshots/")
+    parser.add_argument("name", help="basename for the PNG written into captures/")
     parser.add_argument("--title", default=WINDOW_TITLE, help="window title to capture")
     parser.add_argument("--watch", action="store_true", help="keep capturing distinct screens while you play")
     parser.add_argument("--interval", type=float, default=2.0, help="seconds between grabs in watch mode")
