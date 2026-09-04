@@ -298,3 +298,24 @@ msgstr "创伤中心"
 # From handle_trauma_center: the same title, misread on the bottom navigation bar.
 msgid "Epione Genter"
 msgstr "创伤中心"
+
+# From handle_chaos_mask_engraving: "面具卡牌刻印" in title_box.name. The OCR puts this title at
+# (0.500, 0.128) and the handler reads (0.499, 0.126), which is the same box.
+msgid "Engrave a Persona Card"
+msgstr "面具卡牌刻印"
+
+# From handle_mask_card: the box at (0.507, 0.090) must hold both "面具" and "获得". The OCR puts this line at
+# (0.502, 0.090), so the Chinese has to carry both words.
+msgid "Acquire a Persona Card"
+msgstr "获得面具卡牌"
+
+# From handle_discovery_select: "获得法典" in title.name. Seen at (0.501, 0.081) against the handler's
+# (0.498, 0.078).
+msgid "Codex Obtained"
+msgstr "获得法典"
+
+# From handle_chaos_mask_engraving: "替换" in the box at (0.495, 0.221) is what tells replace mode from a fresh
+# engraving. Only this line means replace - "Applies a new Engraving onto a Persona Card" sits in the same spot
+# on the other screen and deliberately has no entry, so the handler can still tell the two apart.
+msgid "Select the Engraving to change to."
+msgstr "替换刻印"
