@@ -1,9 +1,10 @@
 """Guard the Global-client settings overrides.
 
-`src/en/overrides.py` re-shapes the mode settings before the framework builds their config. Nothing here
-talks to the GUI - these assert the things that fail silently at runtime if they drift: an entity name leaking
-into the reverse OCR catalog, a route value getting translated, a long default turning a text box into a
-multi-line editor, and the one-shot migration either not running or running forever.
+`src/en/overrides.py` re-shapes the mode settings before the framework builds their config. No widget is built
+here - these assert the things that fail silently at runtime if they drift: an entity name leaking into the
+reverse OCR catalog, a route value getting translated, a long default turning a text box into a multi-line
+editor, the one-shot migration either not running or running forever, and a roster quietly dropping back to the
+option picker's slow path.
 """
 
 import json
@@ -18,8 +19,12 @@ import polib
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.en import overrides  # noqa: E402
+from src.en import overrides, picker  # noqa: E402
 from src.en.game_data import CARDS, COMBATANTS, EQUIPMENT, NODE_TYPES  # noqa: E402
+from src.en.layout import import_ui  # noqa: E402
+
+# Resolved the same way the patch resolves it, so the test cannot drift from what ships.
+SEARCH_THRESHOLD = import_ui("tasks.ModifyListDialog", "SHOW_SEARCH_OPTIONS_THRESHOLD")
 
 OCR_PO = REPO_ROOT / "i18n" / "en_US" / "LC_MESSAGES" / "ocr.po"
 # Above this length the widget factory turns a string setting into a multi-line text box.
@@ -190,6 +195,29 @@ class TestMigration(unittest.TestCase):
         """Only the settings this module re-shapes are its to clear."""
         result = self.run_migration({"几轮后停止(0为不停止)": 5})
         self.assertEqual(5, result["几轮后停止(0为不停止)"])
+
+
+class TestPicker(unittest.TestCase):
+    """Which rosters get the virtualized option list instead of upstream's grid of real buttons."""
+
+    def test_the_threshold_was_found(self):
+        """Everything below leans on the framework's constant, so a rename must fail loudly here."""
+        self.assertIsInstance(SEARCH_THRESHOLD, int)
+
+    def test_shipped_rosters_are_virtualized(self):
+        """Upstream builds one PushButton per option, which costs seconds at these sizes."""
+        for name, roster in (("CARDS", CARDS), ("EQUIPMENT", EQUIPMENT), ("COMBATANTS", COMBATANTS)):
+            with self.subTest(roster=name):
+                self.assertTrue(picker.wants_option_list(roster, SEARCH_THRESHOLD),
+                                f"{name} has {len(roster)} options and would fall back to the button grid")
+
+    def test_route_priority_keeps_the_button_grid(self):
+        """Four node types read better as buttons, and cost nothing to build."""
+        self.assertFalse(picker.wants_option_list(overrides.ROUTE_NODES, SEARCH_THRESHOLD))
+
+    def test_free_text_lists_are_untouched(self):
+        """A list setting with no roster has no option pane at all."""
+        self.assertFalse(picker.wants_option_list(None, SEARCH_THRESHOLD))
 
 
 class TestCatalogSeparation(unittest.TestCase):

@@ -79,6 +79,9 @@ This software is open-source and free, intended for personal learning purposes o
 - **Names are picked from a list, not typed.** Cards, equipment and combatants come from the client's own
   localization data, so a typo cannot silently stop a setting matching. The picker gains a search box once the
   list is long, which it is for cards.
+- **The picker opens instantly, however long the list.** Chaos Mode's card settings offer nearly 1,500 options,
+  which ok-script draws as a grid of that many real buttons. Here the option pane only builds the rows you can
+  actually see, so opening it and searching it stay immediate.
 - **Switching to this build re-seeds those settings.** Upstream ships one Chinese player's build as the
   defaults, and those names can never match what the OCR reads on a Global client, so they are cleared on
   first launch. Nothing is lost that would have worked.

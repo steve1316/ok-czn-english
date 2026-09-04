@@ -39,14 +39,14 @@ def _disabled():
 
 
 def import_ui(module, name):
-    """Import one framework UI class from whichever package layout is installed.
+    """Import one framework UI attribute from whichever package layout is installed.
 
     Args:
         module: Module path below the UI package, such as `tasks.LabelAndWidget`.
-        name: Class name to pull out of it.
+        name: Class or constant to pull out of it.
 
     Returns:
-        The class, or None when no installed layout provides it.
+        The attribute, or None when no installed layout provides it.
     """
     for package in UI_PACKAGES:
         try:
