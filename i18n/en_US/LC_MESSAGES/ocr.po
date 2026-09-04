@@ -218,3 +218,53 @@ msgstr "弱点"
 # From handle_sortie_reward_claim: re.search(r"卡.*思战利品", title.name)
 msgid "Chaos Loot"
 msgstr "卡厄思战利品"
+
+# From handle_data_collected: _get_game_text(task, "存储数据收集完成") in box.name
+msgid "Save Data collection complete"
+msgstr "存储数据收集完成"
+
+# From handle_view_original: _get_game_text(task, "查看之前的闪光") in box.name
+msgid "See previous Epiphany"
+msgstr "查看之前的闪光"
+
+# From handle_view_original: _get_game_text(task, "查看原件") in box.name
+msgid "View original"
+msgstr "查看原件"
+
+# From handle_view_original: the same button with the icon beside it read as part of the line, which the
+# OCR saw more often than the clean form.
+msgid "View original Q."
+msgstr "查看原件"
+
+# From handle_main_member_flash: _get_game_text(task, "请选择获得") in box.name
+msgid "Choose Epiphany Effect."
+msgstr "请选择获得"
+
+# From handle_copy_card_choice: _get_game_text(task, "请选择要复制的卡牌") in box.name
+msgid "Select a card to Duplicate."
+msgstr "请选择要复制的卡牌"
+
+# From handle_convert_card: _get_game_text(task, "转换的卡牌") in box.name
+msgid "Convert selected Normal Card"
+msgstr "转换的卡牌"
+
+# From handle_refine_equipment_credit: _get_game_text(task, "以信用点接收") in box.name.
+# The leading O is the radio button beside the option, which the OCR reads as part of the line.
+msgid "O Receive as Credits"
+msgstr "以信用点接收"
+
+# From handle_reflash: _get_game_text(task, "重新闪光") in box.name
+msgid "Epiphany Again"
+msgstr "重新闪光"
+
+# From handle_expedition_result: _get_game_text(task, "探险结果") in title_box.name
+msgid "Exploration Results"
+msgstr "探险结果"
+
+# From handle_battle_member_config: _get_game_text(task, "主战员配置") in title.name
+msgid "Team Formation"
+msgstr "主战员配置"
+
+# From handle_copy: "复制" in box.name
+msgid "Duplicate Card"
+msgstr "复制卡牌"
