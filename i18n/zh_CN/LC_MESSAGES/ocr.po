@@ -285,3 +285,16 @@ msgstr "购买"
 # From handle_card_assign: "无法获得" in box.name
 msgid "Cannot obtain Save Data"
 msgstr "无法获得存储数据"
+
+# From handle_trauma_center: "创伤中心" in box.name. A badge sits beside the title and the OCR reads it
+# differently from frame to frame, so the same heading arrives under several spellings.
+msgid "Epione Center ?"
+msgstr "创伤中心"
+
+# From handle_trauma_center: the same title, with the badge read as a letter.
+msgid "Epione Center O"
+msgstr "创伤中心"
+
+# From handle_trauma_center: the same title, misread on the bottom navigation bar.
+msgid "Epione Genter"
+msgstr "创伤中心"
