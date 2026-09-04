@@ -28,8 +28,18 @@ GROUPS = [
     ("FATES", r"fate@name@", "The Fates offered at the start of a run."),
     ("NODE_TYPES", r"spot_type", "Map node types, used for Route Priority."),
 ]
-# Combatants cannot come from the `char_base@name@` namespace: it names every NPC and enemy in the game too,
-# which is three times the real roster. The combatant table is the actual unit list, so join through that.
+# Combatants cannot be read out of the dump alone, from either direction. The `char_base@name@` namespace
+# also names every NPC and enemy, and even the combatant table carries characters that have not been released
+# yet, while a character released after the rip is missing from it altogether. So the roster below is the
+# source of truth for who exists, and the dump is used to check it rather than to build it.
+#
+# Source: https://game8.co/games/Chaos-Zero-Nightmare/archives/558105 (checked 2026-09-03)
+PLAYABLE_COMBATANTS = [
+    "Adelheid", "Amir", "Arabella", "Beryl", "Cassius", "Chizuru", "Diana", "Fei", "Haru", "Heidemarie",
+    "Hilde", "Hugo", "Kayron", "Khalipe", "Lucas", "Luke", "Magna", "Maribell", "Mei Lin", "Mika", "Narja",
+    "Nia", "Nine", "Olga", "Orlea", "Owen", "Rei", "Renoa", "Rin", "Rita", "Selena", "Sereniel", "Tenebria",
+    "Tiphera", "Tressa", "Veronica", "Yuki",
+]
 COMBATANT_TABLE = "char_base@char_combatant.json"
 COMBATANT_NAME_ID = "char_base@name@{id}"
 # Internal ids used for the developers' test units.
@@ -79,7 +89,11 @@ def collect(table, pattern):
 
 
 def collect_combatants(table, dump_dir):
-    """Pull the playable combatants by joining the combatant table to its names.
+    """Return the playable roster, and report where the dump disagrees with it.
+
+    The roster decides who is in the list. The dump is only consulted to catch drift: a name the dump has
+    never heard of is probably a typo, and a unit the dump carries that the roster does not is either
+    unreleased or newly added and worth a look.
 
     Args:
         table: The localization table.
@@ -95,15 +109,21 @@ def collect_combatants(table, dump_dir):
     if not path.exists():
         raise SystemExit(f"no combatant table at {path}")
 
-    names = set()
+    in_dump = set()
     for row in json.loads(path.read_text(encoding="utf-8")):
         combatant_id = str(row.get("id", ""))
         if combatant_id.startswith(TEST_ID_PREFIX):
             continue
         name = (table.get(COMBATANT_NAME_ID.format(id=combatant_id)) or "").strip()
         if name and not JUNK.match(name):
-            names.add(name)
-    return sorted(names)
+            in_dump.add(name)
+
+    roster = set(PLAYABLE_COMBATANTS)
+    for name in sorted(roster - in_dump):
+        print(f"  note: '{name}' is on the roster but not in this dump, so the dump predates them")
+    for name in sorted(in_dump - roster):
+        print(f"  note: '{name}' is in the dump but not on the roster, so unreleased or newly added")
+    return sorted(roster)
 
 
 def render(groups, dump_dir):
