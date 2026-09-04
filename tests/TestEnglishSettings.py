@@ -21,7 +21,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from src.en import overrides, picker  # noqa: E402
 from src.en.game_data import CARDS, COMBATANTS, EQUIPMENT, NODE_TYPES  # noqa: E402
-from src.en.layout import import_ui  # noqa: E402
+from src.en.framework import import_ui  # noqa: E402
 
 # Resolved the same way the patch resolves it, so the test cannot drift from what ships.
 SEARCH_THRESHOLD = import_ui("tasks.ModifyListDialog", "SHOW_SEARCH_OPTIONS_THRESHOLD")
@@ -198,26 +198,22 @@ class TestMigration(unittest.TestCase):
 
 
 class TestPicker(unittest.TestCase):
-    """Which rosters get the virtualized option list instead of upstream's grid of real buttons."""
+    """Which rosters get the virtualized option list. How it behaves is covered by `TestOptionPicker`."""
 
-    def test_the_threshold_was_found(self):
-        """Everything below leans on the framework's constant, so a rename must fail loudly here."""
-        self.assertIsInstance(SEARCH_THRESHOLD, int)
+    def test_the_fallback_threshold_still_matches_the_framework(self):
+        """`apply()` falls back to a local copy of this number, so drift would change which rosters qualify.
 
-    def test_shipped_rosters_are_virtualized(self):
-        """Upstream builds one PushButton per option, which costs seconds at these sizes."""
-        for name, roster in (("CARDS", CARDS), ("EQUIPMENT", EQUIPMENT), ("COMBATANTS", COMBATANTS)):
+        This also catches an upstream rename: the constant would resolve to None and the comparison would fail.
+        """
+        self.assertEqual(SEARCH_THRESHOLD, picker.FALLBACK_THRESHOLD)
+
+    def test_only_long_rosters_are_virtualized(self):
+        """Upstream builds one real PushButton per option, which costs seconds at the sizes this fork ships."""
+        rosters = (("CARDS", CARDS, True), ("EQUIPMENT", EQUIPMENT, True), ("COMBATANTS", COMBATANTS, True),
+                   ("ROUTE_NODES", overrides.ROUTE_NODES, False), ("free text", None, False))
+        for name, roster, expected in rosters:
             with self.subTest(roster=name):
-                self.assertTrue(picker.wants_option_list(roster, SEARCH_THRESHOLD),
-                                f"{name} has {len(roster)} options and would fall back to the button grid")
-
-    def test_route_priority_keeps_the_button_grid(self):
-        """Four node types read better as buttons, and cost nothing to build."""
-        self.assertFalse(picker.wants_option_list(overrides.ROUTE_NODES, SEARCH_THRESHOLD))
-
-    def test_free_text_lists_are_untouched(self):
-        """A list setting with no roster has no option pane at all."""
-        self.assertFalse(picker.wants_option_list(None, SEARCH_THRESHOLD))
+                self.assertEqual(expected, picker.wants_option_list(roster, SEARCH_THRESHOLD))
 
 
 class TestCatalogSeparation(unittest.TestCase):

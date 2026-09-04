@@ -29,7 +29,7 @@ from ok.util.config import Config
 from ok.util.file import get_relative_path, read_json_file, write_json_file
 
 from src.en.game_data import CARDS, COMBATANTS, EQUIPMENT
-from src.en.layout import import_ui
+from src.en.framework import import_ui
 
 logger = Logger.get_logger(__name__)
 

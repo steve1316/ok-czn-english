@@ -13,12 +13,10 @@ import os
 
 from ok import Logger
 
+from src.en.framework import import_ui
+
 logger = Logger.get_logger(__name__)
 
-# This repo runs ok-script-kes, whose live UI is `ok.gui`. Upstream ok-script moved the same classes to
-# `ok.ui.qt`, so fall back to that and the patch survives a future rebase. The first hit wins: both trees can
-# be installed at once, and importing the unused one would only pull a second copy of the widgets into memory.
-UI_PACKAGES = ("ok.gui", "ok.ui.qt")
 DISABLE_ENV = "OK_CZN_NO_LAYOUT_PATCH"
 # Below this the view has not been laid out yet and `heightForWidth` returns a wildly inflated answer.
 MIN_MEANINGFUL_WIDTH = 200
@@ -36,26 +34,6 @@ def _disabled():
         logger.info(f"{DISABLE_ENV} set, leaving the stock layout alone")
         return True
     return False
-
-
-def import_ui(module, name):
-    """Import one framework UI attribute from whichever package layout is installed.
-
-    Args:
-        module: Module path below the UI package, such as `tasks.LabelAndWidget`.
-        name: Class or constant to pull out of it.
-
-    Returns:
-        The attribute, or None when no installed layout provides it.
-    """
-    for package in UI_PACKAGES:
-        try:
-            imported = __import__(f"{package}.{module}", fromlist=[name])
-            return getattr(imported, name)
-        except (ImportError, AttributeError):
-            continue
-    logger.warning(f"could not import {module}.{name}, skipping that layout patch")
-    return None
 
 
 def widen_settings_text_column():
