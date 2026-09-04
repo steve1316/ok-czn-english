@@ -121,3 +121,48 @@ msgstr "请选择深处遇见的首领"
 # From handle_boss_select: re.search(r"请选择.*遇见的首领", box.name)
 msgid "Select the Boss to encounter in the Interior."
 msgstr "请选择内部遇见的首领"
+
+# From handle_zero_system: _get_game_text(task, "零式系统") in title.name
+msgid "Zero System"
+msgstr "零式系统"
+
+# From handle_trauma_center: _get_game_text(task, "创伤中心") in box.name
+msgid "Epione Center"
+msgstr "创伤中心"
+
+# From handle_trauma_center: find_text(task, _get_game_text(task, "没有恢复中的战员"))
+msgid "No agents are recovering"
+msgstr "没有恢复中的战员"
+
+# From handle_zero_system: codex.name == "法典"
+msgid "Codex"
+msgstr "法典"
+
+# From handle_battle_end: "战斗结束" in box.name
+msgid "BATTLE END"
+msgstr "战斗结束"
+
+# From handle_equipment: "提炼" in box.name. The button carries a currency icon that OCR reads as a stray
+# glyph, so the forms actually produced are mapped alongside the clean one.
+msgid "Extract"
+msgstr "提炼"
+
+# From handle_equipment: the same button, as OCR reads it with the icon glyph attached.
+msgid "前Extract"
+msgstr "提炼"
+
+# From handle_equipment: another reading of the same icon glyph.
+msgid "命Extract"
+msgstr "提炼"
+
+# From handle_trauma_center: "创伤中心" in box.name. OCR reads a circled numeral beside the title on some frames.
+msgid "Epione Center ①"
+msgstr "创伤中心"
+
+# From handle_non_battle_page: box.name == "方舟城市". OCR drops the space on some frames.
+msgid "ArkCity"
+msgstr "方舟城市"
+
+# From handle_season_chaos_initial_page: "卡厄思" not in _get_region_text(...) of the title area.
+msgid "Chaos Manifestation"
+msgstr "卡厄思显现"
