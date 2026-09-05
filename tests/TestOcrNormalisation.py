@@ -114,6 +114,38 @@ class TestOcrNormalisation(unittest.TestCase):
         self.assertIsNone(self.fix("Multishot"))
         self.assertIsNone(self.fix("Hunting Instincts"))
 
+    def test_a_templated_caption_is_rewritten_whatever_the_count(self):
+        """The client builds these from a template, so no fixed msgid can cover every count."""
+        for count in (1, 2, 3, 4, 5, 9):
+            with self.subTest(count=count):
+                self.assertEqual(f"请选择{count}张要移除的卡牌",
+                                 ocr_text.pattern_fix(f"Select {count} card(s) to Remove."))
+
+    def test_every_action_a_handler_looks_for_is_covered(self):
+        for caption, expected in (
+            ("Select 1 card(s) to spark an Epiphany for.", "请选择1张闪光的卡牌"),
+            ("Select 1 card(s) to trigger Epiphany.", "请选择1张闪光的卡牌"),
+            ("Select 1 card(s) to Convert.", "请选择1张转换的卡牌"),
+            ("Select 3 card(s) to Duplicate.", "请选择3张复制的卡牌"),
+            ("Select up to 2 card(s) to Remove.", "请选择2张要移除的卡牌"),
+            ("Select second Combatant to join.", "请选择加入的主战员"),
+            ("Select fourth Combatant to join.", "请选择加入的主战员"),
+        ):
+            with self.subTest(caption=caption):
+                self.assertEqual(expected, ocr_text.pattern_fix(caption))
+
+    def test_an_action_no_handler_wants_is_left_in_english(self):
+        """The client ships fifty of these. Inventing a literal for one nothing reads would be worse."""
+        for caption in ("Select 1 card(s) to Discard.", "Select 2 card(s) to Exhaust.",
+                        "Select 1 card(s) to move to Draw Pile."):
+            with self.subTest(caption=caption):
+                self.assertIsNone(ocr_text.pattern_fix(caption))
+
+    def test_ordinary_text_is_never_rewritten_by_a_rule(self):
+        for text in ("Tap and hold the card to view its details.", "Card Reward", "Prepare for Battle", ""):
+            with self.subTest(text=text):
+                self.assertIsNone(ocr_text.pattern_fix(text))
+
     def test_the_patch_is_idempotent(self):
         """globals.apply() runs once, but a second call must not wrap the patch inside itself."""
         from ok.task.task import OCR

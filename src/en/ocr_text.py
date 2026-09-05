@@ -10,6 +10,8 @@ retries the lookup instead, ignoring letter case and a short run of leading junk
 variants that have not happened yet.
 """
 
+import re
+
 from ok import Logger
 
 logger = Logger.get_logger(__name__)
@@ -24,6 +26,18 @@ MIN_REMAINDER = 3
 # The icon sometimes lands after the caption instead, where OCR reads it as a stray short word.
 # Only a one- or two-character tail counts - anything longer is a real word, or a half-drawn one.
 MAX_TRAILING = 2
+
+# Some captions are templates the client fills in, so no fixed msgid can ever match them all: the client
+# ships more than fifty "Select {0} card(s) to X." strings, and the count varies per screen. These rewrite the
+# whole family at once. Only the actions a handler actually looks for are listed - an unrecognised screen is
+# better left in English than given an invented literal.
+PATTERNS = (
+    (re.compile(r"^select (?:up to )?(\d+) cards? ?\(?s?\)? to remove.*$", re.I), "请选择{0}张要移除的卡牌"),
+    (re.compile(r"^select (?:up to )?(\d+) cards? ?\(?s?\)? to convert.*$", re.I), "请选择{0}张转换的卡牌"),
+    (re.compile(r"^select (?:up to )?(\d+) cards? ?\(?s?\)? to duplicate.*$", re.I), "请选择{0}张复制的卡牌"),
+    (re.compile(r"^select (?:up to )?(\d+) cards? ?\(?s?\)? to (?:spark|trigger).*epiphany.*$", re.I), "请选择{0}张闪光的卡牌"),
+    (re.compile(r"^select \w+ combatant to join.*$", re.I), "请选择加入的主战员"),
+)
 
 _patched = False
 
@@ -102,13 +116,31 @@ def fix_for(translation, text):
     Returns:
         The catalog's translation, or None when nothing matches.
     """
-    if not text or len(text) > MAX_LENGTH:
+    if not text:
         return None
-    lookup = lookup_for(translation)
-    for key in normalised_forms(text):
-        fix = lookup.get(key)
-        if fix is not None and fix != text:
-            return fix
+    if len(text) <= MAX_LENGTH:
+        lookup = lookup_for(translation)
+        for key in normalised_forms(text):
+            fix = lookup.get(key)
+            if fix is not None and fix != text:
+                return fix
+    return pattern_fix(text)
+
+
+def pattern_fix(text):
+    """Rewrite a caption the client builds from a template.
+
+    Args:
+        text: The box text, already stripped.
+
+    Returns:
+        The Chinese literal the handler compares against, or None when no rule applies.
+    """
+    stripped = text.strip()
+    for pattern, template in PATTERNS:
+        found = pattern.match(stripped)
+        if found:
+            return template.format(*found.groups())
     return None
 
 
