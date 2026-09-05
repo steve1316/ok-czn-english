@@ -566,3 +566,6 @@ msgstr "初始任务必须包含“移除2张”，否则重新开始；不能�
 
 msgid "自动模式仅在内存不少于12GB的Intel设备上使用OpenVINO，其他设备使用ONNX Runtime。修改后重启程序生效。"
 msgstr "自动模式仅在内存不少于12GB的Intel设备上使用OpenVINO，其他设备使用ONNX Runtime。修改后重启程序生效。"
+
+msgid "自动"
+msgstr "自动"

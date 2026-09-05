@@ -63,16 +63,16 @@ def resolve_use_openvino():
     backend = _read_ocr_backend()
     if backend == OCR_BACKEND_OPENVINO:
         if _openvino_is_available():
-            print("OCR 后端：OpenVINO（用户指定）")
+            print("OCR backend: OpenVINO (chosen by you)")
             return True
-        print("OpenVINO 不可用，OCR 后端自动回退到 ONNX Runtime")
+        print("OpenVINO is not available, so the OCR backend falls back to ONNX Runtime")
         return False
     if backend == OCR_BACKEND_AUTO:
         use_openvino = _auto_use_openvino()
         selected_backend = OCR_BACKEND_OPENVINO if use_openvino else OCR_BACKEND_ONNX
-        print(f"OCR 后端：{selected_backend}（自动选择）")
+        print(f"OCR backend: {selected_backend} (chosen automatically)")
         return use_openvino
-    print("OCR 后端：ONNX Runtime（用户指定）")
+    print("OCR backend: ONNX Runtime (chosen by you)")
     return False
 
 key_config_option = ConfigOption('Game Hotkey Config', { #全局配置示例
