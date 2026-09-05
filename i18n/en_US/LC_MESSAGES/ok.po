@@ -520,3 +520,6 @@ msgid ""
 msgstr ""
 "Skips dialogue only. Switch to Sortie or Chaos Manifestation by hand when a "
 "battle starts."
+
+msgid "自动"
+msgstr "Auto"
