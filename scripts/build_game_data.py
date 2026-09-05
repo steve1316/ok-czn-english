@@ -11,11 +11,12 @@ written against placeholders rather than numbers - `#result_ev_0#` means "the va
 Point `--dump` at the extracted `output` directory of a CZN asset rip. The dump itself is not committed - the
 generated modules are, so the repo stays self-contained and a game patch is a re-run rather than a mystery.
 
-Run `python scripts/build_game_data.py --dump <path-to-output>`.
+Run `python scripts/build_game_data.py --dump <path-to-output>`, or set `CZN_DUMP` and run it bare.
 """
 
 import argparse
 import json
+import os
 import re
 import sys
 from datetime import date
@@ -24,7 +25,13 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 OUT_PATH = REPO_ROOT / "src" / "en" / "game_data.py"
 OUT_TEXT_PATH = REPO_ROOT / "src" / "en" / "game_text.py"
-DEFAULT_DUMP = Path(r"C:\Users\steve1316\Downloads\CZNRipper\output")
+OUT_QUALITY_PATH = REPO_ROOT / "src" / "en" / "game_quality.py"
+# Where the extracted asset dump lives. Set CZN_DUMP, or pass --dump. Deliberately not a real path:
+# these modules are committed, and a default pointing at one machine would be copied into all of them.
+DUMP_ENV = "CZN_DUMP"
+DEFAULT_DUMP = Path(os.environ.get(DUMP_ENV, "dump"))
+# Stamped into every generated module in place of the dump path, for the same reason.
+SOURCE_NOTE = "Source: the Global client's own asset dump."
 
 # Namespaces in the localization table, and the constant each becomes.
 GROUPS = [
@@ -300,6 +307,134 @@ def clean_description(text, table):
     return "\n".join(line.strip() for line in text.split("\n") if line.strip())
 
 
+# What the client calls each rarity, and the short name used here. Anything not listed is ignored, which
+# keeps a future rarity from silently reading as the best one.
+RARITIES = {
+    "RARITY_COMMON": "COMMON",
+    "RARITY_RARE": "RARE",
+    "RARITY_LEGEND": "LEGEND",
+    "RARITY_UNIQUE": "UNIQUE",
+}
+# Equipment slots, in the order `_EQUIPMENT_TYPE_SLOTS` numbers them: attack, defense, health.
+SLOTS = {"EQUIP_WEAPON": 0, "EQUIP_ARMOR": 1, "EQUIP_ACC": 2}
+# Which classes may hold a card. Empty for nine cards in ten, and it is a class rather than a combatant, so
+# it can only ever answer "could anyone on this team use this", never "whose is it".
+CARD_CLASS_COLUMN = "ownable_link_base_class_define_id"
+COMBATANT_CLASS_COLUMN = "link_base_class_define_id"
+# Only the player card tables. The broader `*card.json` glob also picks up 1,790 monster card rows that carry
+# no rarity at all, and because a name is resolved to its shortest id, one of those can displace the real card
+# and take its rarity with it.
+PLAYER_CARD_TABLES = ("card(*)@card.json", "rarity")
+
+
+def id_list(value):
+    """Read one of the dump's bracketed id lists.
+
+    The dump writes an empty list as the two-character string `[]`, which is why a plain truth test on these
+    columns reports every row as populated. Parsing it properly is the difference between "every equipment
+    names a combatant" and the truth, which is that none of them do.
+
+    Args:
+        value: The raw column value, such as `[psionic,controller]` or `[]`.
+
+    Returns:
+        A tuple of ids, empty when the column holds none.
+    """
+    inner = str(value or "").strip().strip("[]")
+    return tuple(part.strip() for part in inner.split(",") if part.strip())
+
+
+def collect_quality(table, dump_dir):
+    """Pair every card, equipment and combatant with what the client knows about its worth.
+
+    Args:
+        table: The localization table.
+        dump_dir: Path to the dump's `output` directory.
+
+    Returns:
+        A dict of constant name to value, ready to render.
+    """
+    cards = base_rows_by_name(load_data_tables(dump_dir, PLAYER_CARD_TABLES), table)
+    relics = base_rows_by_name(load_data_tables(dump_dir, RELIC_TABLES), table)
+
+    card_rarity = {}
+    card_classes = {}
+    for name, row in cards.items():
+        rarity = RARITIES.get(row.get("rarity"))
+        if rarity:
+            card_rarity[name] = rarity
+        classes = id_list(row.get(CARD_CLASS_COLUMN))
+        if classes:
+            card_classes[name] = classes
+
+    equipment_rarity = {}
+    equipment_slot = {}
+    for name, row in relics.items():
+        rarity = RARITIES.get(row.get("rarity"))
+        if rarity:
+            equipment_rarity[name] = rarity
+        slot = SLOTS.get(row.get("relic_type"))
+        if slot is not None:
+            equipment_slot[name] = slot
+
+    combatant_class = {}
+    for row in json.loads(Path(dump_dir, "db", COMBATANT_TABLE).read_text(encoding="utf-8")):
+        name = (table.get(COMBATANT_NAME_ID.format(id=row.get("id"))) or "").strip()
+        klass = str(row.get(COMBATANT_CLASS_COLUMN) or "").strip()
+        if name and klass and klass != "none":
+            combatant_class[name] = klass
+
+    return {
+        "CARD_RARITY": card_rarity,
+        "CARD_CLASSES": card_classes,
+        "EQUIPMENT_RARITY": equipment_rarity,
+        "EQUIPMENT_SLOT": equipment_slot,
+        "COMBATANT_CLASS": combatant_class,
+    }
+
+
+def render_quality(quality, dump_dir):
+    """Write the module holding what each card and equipment is worth.
+
+    Args:
+        quality: The collected mappings.
+        dump_dir: Path to the dump, recorded in the header.
+
+    Returns:
+        The module source.
+    """
+    comments = {
+        "CARD_RARITY": "What the client grades each card, for deciding whether one is worth buying or keeping.",
+        "CARD_CLASSES": "Which classes may hold a card, for the roughly one card in ten that is restricted."
+                        " A card absent from here is unrestricted, and the value is a class, not a combatant.",
+        "EQUIPMENT_RARITY": "What the client grades each piece of equipment.",
+        "EQUIPMENT_SLOT": "Which of the three equipment slots a piece goes in, numbered as the handlers number them.",
+        "COMBATANT_CLASS": "Each combatant's class, so a team read off the Combatants screen becomes a set of classes.",
+    }
+    lines = [
+        '"""What the client knows about the worth of a card, a piece of equipment, or a combatant.',
+        "",
+        "Generated by `scripts/build_game_data.py` - do not edit by hand. Re-run it after a game patch.",
+        "",
+        "Only what the dump actually carries is here. In particular there is no per-combatant link for either",
+        "cards or equipment: the equipment column that looks like one is empty on every row, and the card column",
+        "is empty on nine rows in ten and names a class rather than a combatant on the rest.",
+        "",
+        SOURCE_NOTE,
+        f"Generated: {date.today().isoformat()}",
+        '"""',
+        "",
+    ]
+    for name, values in quality.items():
+        lines.append("")
+        lines.append(f"# {comments[name]}")
+        lines.append(f"{name} = {{")
+        for key in sorted(values):
+            lines.append(f"    {key!r}: {values[key]!r},")
+        lines.append("}")
+    return chr(10).join(lines) + chr(10)
+
+
 def base_rows_by_name(rows, table):
     """Pick one row per name, preferring the base version of a card over its upgrades.
 
@@ -377,7 +512,7 @@ def render(groups, dump_dir):
         "Generated by `scripts/build_game_data.py` - do not edit by hand. Re-run it after a game patch.",
         "",
         # Forward slashes so a Windows path cannot read as an escape sequence in the generated docstring.
-        f"Source: {str(dump_dir).replace(chr(92), '/')}",
+        SOURCE_NOTE,
         f"Generated: {date.today().isoformat()}",
         '"""',
         "",
@@ -406,7 +541,7 @@ def render_descriptions(described, dump_dir):
         "",
         "Generated by `scripts/build_game_data.py` - do not edit by hand. Re-run it after a game patch.",
         "",
-        f"Source: {str(dump_dir).replace(chr(92), '/')}",
+        SOURCE_NOTE,
         f"Generated: {date.today().isoformat()}",
         '"""',
         "",
@@ -436,10 +571,12 @@ def main():
     table = load_table(args.dump)
     groups = [(name, collector(table, args.dump), comment) for name, comment, collector in GROUPS]
     described = collect_descriptions(table, args.dump)
+    quality = collect_quality(table, args.dump)
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUT_PATH.write_text(render(groups, args.dump), encoding="utf-8")
     OUT_TEXT_PATH.write_text(render_descriptions(described, args.dump), encoding="utf-8")
+    OUT_QUALITY_PATH.write_text(render_quality(quality, args.dump), encoding="utf-8")
 
     unresolved = sum(1 for text in described.values() if VALUE_PLACEHOLDER in text)
     print(f"read {len(table)} localization rows from {args.dump}")
@@ -449,6 +586,8 @@ def main():
     print(f"wrote {OUT_PATH.relative_to(REPO_ROOT)}")
     print(f"wrote {OUT_TEXT_PATH.relative_to(REPO_ROOT)} with {len(described)} descriptions, "
           f"{unresolved} of them still holding an unresolved value")
+    print(f"wrote {OUT_QUALITY_PATH.relative_to(REPO_ROOT)} with "
+          + ", ".join(f"{len(values)} {name.lower()}" for name, values in quality.items()))
     return 0
 
 
