@@ -18,29 +18,31 @@ from ok import Logger
 
 logger = Logger.get_logger(__name__)
 
-# Each template that is a picture of a word, and the English caption drawn in its place.
+# Each template that is a picture of a word, and the captions drawn in its place. Both forms are listed
+# because the catalog may rewrite the English one: `LV` is already mapped to 等级 for the draft screen, and
+# mapping `LEVEL` too would otherwise leave this looking for a string that no longer reaches it.
 TEXT_TEMPLATES = {
-    "leveltag": "LEVEL",
+    "leveltag": ("LEVEL", "等级"),
 }
 
 _patched = False
 
 
-def boxes_in(task, region, caption):
-    """Find the OCR boxes inside a region whose text is the given caption.
+def boxes_in(task, region, captions):
+    """Find the OCR boxes inside a region whose text is one of the given captions.
 
     Args:
         task: The running task, whose `all_texts` holds the current OCR pass.
         region: The `Box` the caller restricted the search to, or None for the whole frame.
-        caption: The English caption the template stood for.
+        captions: The captions the template stood for.
 
     Returns:
         A list of matching boxes, which may be empty.
     """
-    wanted = caption.casefold()
+    wanted = {caption.casefold() for caption in captions}
     found = []
     for box in getattr(task, "all_texts", None) or []:
-        if box.name.strip().casefold() != wanted:
+        if box.name.strip().casefold() not in wanted:
             continue
         if region is not None:
             center_x = box.x + box.width / 2
@@ -70,10 +72,10 @@ def resolve(found, feature_name, task, region):
     # Chinese-text template, so anything that is not a single name is left alone.
     if found or not isinstance(feature_name, str) or feature_name not in TEXT_TEMPLATES:
         return found
-    caption = TEXT_TEMPLATES[feature_name]
-    fallback = boxes_in(task, region, caption)
+    captions = TEXT_TEMPLATES[feature_name]
+    fallback = boxes_in(task, region, captions)
     if fallback:
-        logger.debug(f"{feature_name} template found nothing, matched {len(fallback)} boxes on {caption}")
+        logger.debug(f"{feature_name} template found nothing, matched {len(fallback)} boxes on {captions}")
     return fallback
 
 

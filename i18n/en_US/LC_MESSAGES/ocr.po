@@ -221,6 +221,13 @@ msgstr "失败"
 msgid "Card Reward"
 msgstr "卡牌奖励"
 
+# From _read_member_slots: level_boxes keeps only boxes reading exactly "等级", and the combatant draft
+# screen labels each card "LV". Without this no slot is found, so the handler never reaches its random
+# pick and refreshes the same three candidates forever. The equipment screen writes "LEVEL" instead and
+# is deliberately left unmapped, though src/en/templates.py accepts either form.
+msgid "LV"
+msgstr "等级"
+
 # From _card_has_type_below and _equipment_slot: one English word serves both the card type label and the
 # equipment stat row, and the two want different literals - "攻击" as a card type, "攻击力" as a stat.
 # "攻击力" satisfies both, because every card-type test is a substring test and three characters still
