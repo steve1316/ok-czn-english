@@ -75,13 +75,6 @@ def resolve_use_openvino():
     print("OCR backend: ONNX Runtime (chosen by you)")
     return False
 
-key_config_option = ConfigOption('Game Hotkey Config', { #全局配置示例
-    'Echo Key': 'q',
-    'Liberation Key': 'r',
-    'Resonance Key': 'e',
-    'Tool Key': 't',
-}, description='In Game Hotkey for Skills')
-
 # 配置上传选项
 # Defaulted off in this fork. The upload pool is the CN community's, and a Global client's card and operative
 # names do not match anything in it, so uploads would be noise and the popular-config list unusable here.
@@ -137,7 +130,7 @@ config = {
     'debug': False,  # Optional, default: False
     'use_gui': True, # 目前只支持True
     'config_folder': 'configs', #最好不要修改
-    'global_configs': [key_config_option, upload_config_option, ocr_backend_option],
+    'global_configs': [upload_config_option, ocr_backend_option],
     'screenshot_processor': make_bottom_right_black, # 在截图的时候对frame进行修改, 可选
     'gui_icon': 'icons/icon.png', #窗口图标, 最好不需要修改文件名
     'wait_until_before_delay': 0,
@@ -199,8 +192,7 @@ config = {
     },
     'version': version, #版本
     'my_app': ['src.globals', 'Globals'], #可选. 全局单例对象, 可以存放加载的模型, 使用og.my_app调用
-    'onetime_tasks': [  # 用户点击触发的任务
-        ["src.tasks.MyOneTimeTask", "MyOneTimeTask"],
-        ["ok", "DiagnosisTask"],
-    ],
+    # The three game modes are the only tasks. They are declared by `ok_tasks/` as trigger tasks and moved
+    # into this list by `src/en/shell.py`, which is what gives them a Start button.
+    'onetime_tasks': [],
 }

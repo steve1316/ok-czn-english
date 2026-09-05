@@ -28,7 +28,6 @@ class MyOneTimeTask(MyBaseTask):
             "Sub Boolean Config": False,
             "Sub String Config": "Sub String Value",
             "Sub Float Config": 2.2,
-            "Game Hotkey Config": {},
         })
         self.config_description.update({
             "Drop Down Config": "Drop-down configuration with translated option values.",
@@ -37,7 +36,6 @@ class MyOneTimeTask(MyBaseTask):
             "Folder Selector Config": "Folder selector configuration that stores the selected folder path.",
             "File Selector Config": "File selector configuration with an optional file filter.",
             "Drop Down Options Config": "Dropdown option list restricted to available translated values.",
-            "Game Hotkey Config": "Open the shared global configuration example.",
             "Button Config": "Button configuration that displays all current values.",
             "Button Options Config": "Button configuration with multiple action buttons.",
         })
@@ -79,7 +77,6 @@ class MyOneTimeTask(MyBaseTask):
                     "Multi Selection Value 3",
                 ],
             },
-            "Game Hotkey Config": {"type": "global"},
             "Button Config": {
                 "type": "button",
                 "text": "Button Value",
@@ -118,10 +115,7 @@ class MyOneTimeTask(MyBaseTask):
 
     def show_config_values(self):
         for key, value in self.config.items():
-            if key == "Game Hotkey Config":
-                continue
             self.info_set(key, self.translate_config_value(value))
-        self.info_set("Game Hotkey Config", dict(self.get_global_config("Game Hotkey Config")))
 
     def show_notification(self):
         self.log_info("Button notification displayed.", notify=True)

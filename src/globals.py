@@ -11,7 +11,7 @@ class Globals(QObject):
         super().__init__()
         # Everything English-only lives under src/en/ so upstream's files stay untouched and merges stay clean.
         from src.en import (  # noqa: E501
-            dice, draft, events, layout, navigation, ocr_text, overrides, picker, rewards, templates,
+            dice, draft, events, layout, navigation, ocr_text, overrides, picker, rewards, shell, templates,
         )
 
         layout.apply()
@@ -25,3 +25,5 @@ class Globals(QObject):
         draft.apply()
         rewards.apply()
         overrides.apply()
+        # Re-shapes the task lists, so it hooks the window rather than the tasks.
+        shell.apply()
