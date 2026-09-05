@@ -53,21 +53,27 @@ class TestTemplateFallback(unittest.TestCase):
         ])
 
     def test_every_level_caption_is_found(self):
-        self.assertEqual(3, len(templates.boxes_in(self.task, None, "LEVEL")))
+        self.assertEqual(3, len(templates.boxes_in(self.task, None, ("LEVEL",))))
 
     def test_a_region_excludes_captions_outside_it(self):
         """The caller restricts the search, and the boxes it gets back decide which combatant is picked."""
         region = Box(1100, 300, 400, 200)
-        found = templates.boxes_in(self.task, region, "LEVEL")
+        found = templates.boxes_in(self.task, region, ("LEVEL",))
         self.assertEqual([339], [box.y for box in found])
 
     def test_other_text_is_never_returned(self):
-        self.assertEqual([], templates.boxes_in(self.task, None, "VORTEX"))
+        self.assertEqual([], templates.boxes_in(self.task, None, ("VORTEX",)))
+
+    def test_either_caption_is_accepted(self):
+        """The catalog rewrites LV to 等级 for the draft screen, and could do the same to LEVEL."""
+        chinese = FakeTask([caption("等级", 1187, 339), caption("等级", 1187, 579)])
+        self.assertEqual(2, len(templates.resolve([], "leveltag", chinese, None)))
+        self.assertEqual(3, len(templates.resolve([], "leveltag", self.task, None)))
 
     def test_the_caption_matches_regardless_of_case(self):
         self.assertEqual(3, len(templates.boxes_in(FakeTask([
             caption("Level", 1187, 339), caption("level", 1187, 579), caption(" LEVEL ", 1187, 819),
-        ]), None, "LEVEL")))
+        ]), None, ("LEVEL",))))
 
     def test_only_leveltag_is_stood_in_for(self):
         """xuanwo_in_deck is the other Chinese-text template, but no code references it, so it is left alone."""

@@ -90,30 +90,6 @@ msgstr "德朗商店"
 msgid "Free"
 msgstr "免费"
 
-# From handle_remove: re.search(r"请选择(\d*)张*.*?(移除|复制|闪光|灵光).*?卡牌", tip.name)
-msgid "Select 1 card(s) to Remove."
-msgstr "请选择1张要移除的卡牌"
-
-# From handle_select_card: same regex as the entry above. Lookup is whole-string, so every count the game
-# can ask for needs its own entry - a Fate that removes two cards never matched the single-card msgid.
-msgid "Select 2 card(s) to Remove."
-msgstr "请选择2张要移除的卡牌"
-
-# From handle_select_card: same regex as the entry above. Lookup is whole-string, so every count the game
-# can ask for needs its own entry - a Fate that removes two cards never matched the single-card msgid.
-msgid "Select 3 card(s) to Remove."
-msgstr "请选择3张要移除的卡牌"
-
-# From handle_select_card: same regex as the entry above. Lookup is whole-string, so every count the game
-# can ask for needs its own entry - a Fate that removes two cards never matched the single-card msgid.
-msgid "Select 4 card(s) to Remove."
-msgstr "请选择4张要移除的卡牌"
-
-# From handle_select_card: same regex as the entry above. Lookup is whole-string, so every count the game
-# can ask for needs its own entry - a Fate that removes two cards never matched the single-card msgid.
-msgid "Select 5 card(s) to Remove."
-msgstr "请选择5张要移除的卡牌"
-
 # From handle_continue: _get_game_text(task, "继续") compared into box.name
 msgid "Continue"
 msgstr "继续"
@@ -220,6 +196,13 @@ msgstr "失败"
 # on a card. handle_get_card, which owns the caption below the title, is registered in Sortie only.
 msgid "Card Reward"
 msgstr "卡牌奖励"
+
+# From _read_member_slots: level_boxes keeps only boxes reading exactly "等级", and the combatant draft
+# screen labels each card "LV". Without this no slot is found, so the handler never reaches its random
+# pick and refreshes the same three candidates forever. The equipment screen writes "LEVEL" instead and
+# is deliberately left unmapped, though src/en/templates.py accepts either form.
+msgid "LV"
+msgstr "等级"
 
 # From _card_has_type_below and _equipment_slot: one English word serves both the card type label and the
 # equipment stat row, and the two want different literals - "攻击" as a card type, "攻击力" as a stat.
