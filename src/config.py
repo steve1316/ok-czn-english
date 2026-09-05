@@ -75,13 +75,6 @@ def resolve_use_openvino():
     print("OCR backend: ONNX Runtime (chosen by you)")
     return False
 
-# 配置上传选项
-# Defaulted off in this fork. The upload pool is the CN community's, and a Global client's card and operative
-# names do not match anything in it, so uploads would be noise and the popular-config list unusable here.
-upload_config_option = ConfigOption('配置上传', {
-    '是否上传配置': False,
-}, description='开启后每5分钟自动上传匿名的配置信息和胜率，帮助统计热门配置。\n不上传任何个人信息、游戏账号、截图、IP地址等隐私数据。\n仅上传配置内容和胜率统计数据。')
-
 ocr_backend_option = ConfigOption('OCR设置', {
     'OCR后端': OCR_BACKEND_AUTO,
 }, config_type={
@@ -130,7 +123,7 @@ config = {
     'debug': False,  # Optional, default: False
     'use_gui': True, # 目前只支持True
     'config_folder': 'configs', #最好不要修改
-    'global_configs': [upload_config_option, ocr_backend_option],
+    'global_configs': [ocr_backend_option],
     'screenshot_processor': make_bottom_right_black, # 在截图的时候对frame进行修改, 可选
     'gui_icon': 'icons/icon.png', #窗口图标, 最好不需要修改文件名
     'wait_until_before_delay': 0,
