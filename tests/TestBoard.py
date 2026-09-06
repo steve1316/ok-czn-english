@@ -129,5 +129,91 @@ class TestEgoBadges(unittest.TestCase):
         self.assertEqual(board.affordable_egos(FakeTask.__new__(FakeTask)), [])
 
 
+def in_hue(hue, saturation=220, value=220):
+    """Build a BGR colour at one hue, the way the game draws its badges.
+
+    Args:
+        hue: The OpenCV hue, 0 to 179.
+        saturation: How saturated to make it.
+        value: How bright to make it.
+
+    Returns:
+        The colour as a BGR tuple.
+    """
+    pixel = np.array([[[hue, saturation, value]]], dtype=np.uint8)
+    return tuple(int(channel) for channel in cv2.cvtColor(pixel, cv2.COLOR_HSV2BGR)[0][0])
+
+
+def paint_enemy(frame, centre_x, centre_y, hue):
+    """Draw an enemy's action counter and the attribute badge beside it.
+
+    Args:
+        frame: The frame to draw on.
+        centre_x: Where the counter sits across the frame.
+        centre_y: Where the counter sits down the frame.
+        hue: The hue to draw the attribute badge in.
+
+    Returns:
+        The frame, for chaining.
+    """
+    height, width = frame.shape[:2]
+    # Sized as the game draws it, since how tall a counter is now decides whether it is one.
+    half = int(0.057 * height / 2)
+    cx, cy = int(centre_x * width), int(centre_y * height)
+    frame[cy - half:cy + half, cx - half:cx + half] = in_hue(170, 230, 200)
+    bx = int((centre_x + board.BADGE_OFFSET[0]) * width)
+    by = int((centre_y + board.BADGE_OFFSET[1]) * height)
+    frame[by - 12:by + 12, bx - 12:bx + 12] = in_hue(hue)
+    return frame
+
+
+class TestWeaknessBadges(unittest.TestCase):
+    """The attribute an enemy is weak to, read off the badge beside its action counter."""
+
+    def test_the_instinct_badge_is_recognised(self):
+        # The one reading confirmed against the game itself.
+        self.assertEqual(board.attribute_of(fixture("weakness_instinct")), "Instinct")
+
+    def test_the_other_two_colours_seen_so_far(self):
+        self.assertEqual(board.attribute_of(fixture("weakness_order")), "Order")
+        self.assertEqual(board.attribute_of(fixture("weakness_void")), "Void")
+
+    def test_a_patch_with_no_badge_in_it_says_nothing(self):
+        self.assertIsNone(board.attribute_of(np.full((18, 33, 3), 60, dtype=np.uint8)))
+
+    def test_a_fight_where_every_enemy_shares_a_weakness(self):
+        frame = flat(0)
+        paint_enemy(frame, 0.50, 0.25, board.ATTRIBUTE_HUES["ORANGE"])
+        paint_enemy(frame, 0.70, 0.30, board.ATTRIBUTE_HUES["ORANGE"])
+        self.assertEqual(board.weakness(FakeTask(frame)), "Instinct")
+
+    def test_enemies_that_disagree_give_no_preference(self):
+        # Nothing one card can exploit applies to all of them, and no capture so far shows a mixed fight to
+        # check a majority rule against, so the honest answer is to have no opinion.
+        frame = flat(0)
+        paint_enemy(frame, 0.50, 0.25, board.ATTRIBUTE_HUES["ORANGE"])
+        paint_enemy(frame, 0.70, 0.30, board.ATTRIBUTE_HUES["GREEN"])
+        self.assertIsNone(board.weakness(FakeTask(frame)))
+
+    def test_a_magenta_flash_is_not_an_enemy(self):
+        # An attack landing throws up a magenta burst the same colour as a counter but many times its size.
+        frame = flat(0)
+        paint_enemy(frame, 0.50, 0.25, board.ATTRIBUTE_HUES["ORANGE"])
+        frame[int(0.30 * 1080):int(0.50 * 1080), int(0.60 * 1920):int(0.90 * 1920)] = in_hue(170, 230, 200)
+        self.assertEqual(len(board.enemy_counters(FakeTask(frame))), 1)
+
+    def test_an_enemy_at_the_frame_edge_is_not_guessed_at(self):
+        # Its badge would sit off screen, and sampling what little is left reads as a confident answer about
+        # the scenery rather than about an enemy.
+        frame = paint_enemy(flat(0), 0.985, 0.30, board.ATTRIBUTE_HUES["ORANGE"])
+        self.assertIsNone(board.weakness(FakeTask(frame)))
+
+    def test_no_enemies_found_means_no_preference(self):
+        self.assertIsNone(board.weakness(FakeTask(flat(0))))
+
+    def test_no_frame_means_no_preference(self):
+        self.assertIsNone(board.weakness(FakeTask.__new__(FakeTask)))
+
+
 if __name__ == "__main__":
     unittest.main()

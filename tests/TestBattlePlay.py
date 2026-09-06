@@ -10,6 +10,7 @@ import unittest
 from contextlib import contextmanager
 from pathlib import Path
 
+import cv2
 import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -17,7 +18,10 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from src.en import battle, board, cards, overrides  # noqa: E402
 
+# Haru is Justice and Renoa is Void, and these two cards are otherwise identical: one Action Point, an
+# Attack, exactly "100% Damage". So only a weakness read off the screen can order them.
 ATTACK = "Anchor"
+VOID_ATTACK = "Annihilation Shot"
 BIG_ATTACK = "Charge Launcher"
 CURSE = "Anemia"
 
@@ -96,7 +100,7 @@ class TestTurnTracking(unittest.TestCase):
 class Pressed:
     """A task that records what was sent to the game instead of sending it."""
 
-    def __init__(self, hand_cards, smart=True, action_points=True, egos=()):
+    def __init__(self, hand_cards, smart=True, action_points=True, egos=(), weakness=None):
         self.hand_cards = hand_cards
         self.config = {overrides.SMART_CARD_PLAY: smart}
         # A fresh list per frame, the way `SortieMode.run` rebinds it after every OCR pass.
@@ -105,6 +109,13 @@ class Pressed:
         # remaining and black as none.
         self.frame = np.full((1080, 1920, 3), 255 if action_points else 0, dtype=np.uint8)
         self.height, self.width = self.frame.shape[:2]
+        if weakness:
+            half = int(0.057 * 1080 / 2)
+            cx, cy = int(0.50 * 1920), int(0.25 * 1080)
+            self.frame[cy - half:cy + half, cx - half:cx + half] = self.paint(170, 230, 200)
+            bx = int((0.50 + board.BADGE_OFFSET[0]) * 1920)
+            by = int((0.25 + board.BADGE_OFFSET[1]) * 1080)
+            self.frame[by - 12:by + 12, bx - 12:bx + 12] = self.paint(board.ATTRIBUTE_HUES[weakness], 220, 220)
         for key in egos:
             centre = board.EGO_BADGE_Y[key]
             half_x, half_y = board.EGO_BADGE_HALF
@@ -112,6 +123,21 @@ class Pressed:
                        int((board.EGO_BADGE_X - half_x) * 1920):int((board.EGO_BADGE_X + half_x) * 1920)] = (230, 150, 60)
         self.keys = []
         self.logged = []
+
+    @staticmethod
+    def paint(hue, saturation, value):
+        """Turn one HSV colour into the BGR the frame is drawn in.
+
+        Args:
+            hue: The OpenCV hue.
+            saturation: How saturated to make it.
+            value: How bright to make it.
+
+        Returns:
+            The colour as BGR.
+        """
+        pixel = np.array([[[hue, saturation, value]]], dtype=np.uint8)
+        return tuple(int(channel) for channel in cv2.cvtColor(pixel, cv2.COLOR_HSV2BGR)[0][0])
 
     def send_key(self, key):
         self.keys.append(key)
@@ -124,7 +150,7 @@ class Pressed:
 
 
 @contextmanager
-def upstream(hand_cards, smart=True, action_points=True, egos=()):
+def upstream(hand_cards, smart=True, action_points=True, egos=(), weakness=None):
     """Stand the two upstream modules up in `sys.modules` so the install has something to patch.
 
     Args:
@@ -132,6 +158,7 @@ def upstream(hand_cards, smart=True, action_points=True, egos=()):
         smart: What the Smart Card Play setting reads as.
         action_points: Whether the Action Point readout should look lit.
         egos: Slot keys whose cost badge should look affordable.
+        weakness: An attribute colour to draw on an enemy's badge, or None for no enemies at all.
 
     Yields:
         The fake `utils_sortie` module and the task the replacement is called with.
@@ -158,7 +185,7 @@ def upstream(hand_cards, smart=True, action_points=True, egos=()):
     saved = {name: sys.modules.get(name) for name in ("utils", "utils_sortie")}
     sys.modules["utils"], sys.modules["utils_sortie"] = utils, utils_sortie
     try:
-        yield utils_sortie, Pressed(hand_cards, smart, action_points, egos)
+        yield utils_sortie, Pressed(hand_cards, smart, action_points, egos, weakness)
     finally:
         for name, module in saved.items():
             if module is None:
@@ -232,6 +259,19 @@ class TestInstalling(unittest.TestCase):
             battle.install()
             utils_sortie._try_all_card_keys(task, 2)
             self.assertEqual(task.keys, ["2", battle.CONFIRM_KEY])
+
+    def test_the_attribute_the_enemies_are_weak_to_is_preferred(self):
+        with upstream(hand(ATTACK, VOID_ATTACK), weakness="PURPLE") as (utils_sortie, task):
+            battle.install()
+            utils_sortie._try_all_card_keys(task, 2)
+            # Renoa's card is the Void one, and it is second in hand, so key 2.
+            self.assertEqual(task.keys, ["2", battle.CONFIRM_KEY])
+
+    def test_with_no_enemies_read_the_hand_order_stands(self):
+        with upstream(hand(ATTACK, VOID_ATTACK)) as (utils_sortie, task):
+            battle.install()
+            utils_sortie._try_all_card_keys(task, 2)
+            self.assertEqual(task.keys, ["1", battle.CONFIRM_KEY])
 
     def test_a_card_still_in_hand_is_not_tried_again(self):
         with upstream(hand(ATTACK, BIG_ATTACK)) as (utils_sortie, task):

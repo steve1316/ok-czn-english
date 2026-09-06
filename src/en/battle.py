@@ -17,6 +17,11 @@ affordable, because the game draws that badge blue, so the choice is made from t
 is upstream's own `random` swapped out for the length of one frame, which is the same thing `src/en/events.py`
 does to rank event options, and every other use of `random` in that module passes straight through.
 
+The attribute the enemies are weak to comes from `board.py` as well, and goes to the planner rather than being
+acted on here: it raises what a card of that attribute is worth, so a matching attack is played first when
+two are otherwise equal. A card only has an attribute if the data knows who owns it, which is true of about a
+third of them, so this reorders some turns and leaves the rest as they were.
+
 `_try_all_card_keys` has two callers, though, and rebinding it takes over both. One is the fallback proper,
 reached when the list matched nothing. The other is the escape hatch upstream reaches for after a card the
 list *did* name has failed to play three times running - and taking that one over is wanted rather than
@@ -242,7 +247,7 @@ def install():
         # The readout says whether anything is left to spend, not how much, so a turn with points left is
         # planned against a full three and corrected by what the game will actually accept.
         points = cards.BASE_ACTION_POINTS if board.has_action_points(task) else 0
-        state = cards.Board(action_points=points)
+        state = cards.Board(action_points=points, weakness=board.weakness(task))
         card = choose(hand, state, turn.refused)
         if card is None:
             if not names:
