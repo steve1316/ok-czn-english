@@ -69,6 +69,11 @@ SINGLE_CHOICE = {
     "游戏语言": (GAME_LANGUAGES, "English"),
     "刷存档主战员": (COMBATANTS, "Heidemarie"),
 }
+# A setting this fork adds rather than re-shapes, so its key is English like the rest of the fork's own
+# code. Play Priority is declared by Sortie alone, which makes it the marker for the only mode that has
+# to choose its own cards, and so the only one this belongs on.
+SMART_CARD_PLAY = "Smart Card Play"
+PLAYS_ITS_OWN_CARDS = "出牌优先级"
 # Free-text settings whose Chinese default cannot carry over. Cleared so the user fills them from what the
 # client actually shows, rather than inheriting a value that can never match.
 CLEARED_TEXT = ["指定面具卡牌", "面具卡牌刻印", "刷初始卡牌"]
@@ -90,6 +95,10 @@ DESCRIPTIONS = {
     "获得卡牌优先级": "Preferred cards when the run offers a card to obtain.",
     "丢弃卡牌优先级": "Cards to throw away first when the run asks you to discard.",
     "出牌优先级": "Order to play cards in battle. Needs shortcut key display turned on in the game's settings.",
+    SMART_CARD_PLAY: "Choose battle cards on what they actually do - what they cost, what kind they are, and"
+                     " which attribute an enemy is weak to - rather than pressing every hotkey in turn. Your"
+                     " Play Priority list still comes first and is unaffected; this decides the cards it does"
+                     " not mention. Turn it off to go back to upstream's behaviour.",
     "装备1号位优先级": "Preferred equipment for the first slot, best first.",
     "装备2号位优先级": "Preferred equipment for the second slot, best first.",
     "装备3号位优先级": "Preferred equipment for the third slot, best first.",
@@ -151,6 +160,11 @@ def reshape(task):
     for key in CLEARED_LISTS:
         if key in task.default_config:
             task.default_config[key] = []
+
+    # Added rather than re-shaped, so it needs no migration: `Config` seeds a key it has never saved from
+    # `default_config`, and an existing config simply gains it switched on.
+    if PLAYS_ITS_OWN_CARDS in task.default_config:
+        task.default_config[SMART_CARD_PLAY] = True
 
     for key, text in DESCRIPTIONS.items():
         if key in task.default_config:
