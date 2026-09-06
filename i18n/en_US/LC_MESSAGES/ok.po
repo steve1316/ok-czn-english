@@ -347,6 +347,11 @@ msgstr "Discard Priority"
 msgid "出牌优先级"
 msgstr "Card Play Priority"
 
+# Added by this fork rather than re-shaped from upstream, so its key is already English. It still needs an
+# entry here, because a key with no entry falls through untranslated only by luck.
+msgid "Smart Card Play"
+msgstr "Smart Card Play"
+
 msgid "优先移除基础牌"
 msgstr "Remove Basic Cards First"
 

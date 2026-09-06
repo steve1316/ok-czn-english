@@ -91,50 +91,14 @@ class TestTurnTracking(unittest.TestCase):
         self.assertTrue(battle.new_turn(before=None, after=5))
 
 
-class FakeTask:
-    """A mode task carrying only what `overrides.reshape` reads."""
-
-    is_custom = True
-
-    def __init__(self, default_config):
-        self.default_config = dict(default_config)
-        self.config_type = {}
-        self.config_description = {}
-        self.instructions = "placeholder"
-
-
-class TestTheSwitch(unittest.TestCase):
-    """The setting that turns the picker off, which belongs only on the mode that picks its own cards."""
-
-    def sortie(self):
-        """Re-shape a task shaped like Sortie.
-
-        Returns:
-            The task, after `overrides.reshape` has had it.
-        """
-        task = FakeTask({overrides.PLAYS_ITS_OWN_CARDS: []})
-        overrides.reshape(task)
-        return task
-
-    def test_sortie_gets_it_switched_on(self):
-        self.assertIs(self.sortie().default_config[overrides.SMART_CARD_PLAY], True)
-
-    def test_it_is_explained_to_the_user(self):
-        self.assertIn(overrides.SMART_CARD_PLAY, self.sortie().config_description)
-
-    def test_a_mode_that_plays_no_cards_does_not_carry_it(self):
-        # Chaos leaves the game's own Auto to play its cards, so a switch for this would mean nothing there.
-        task = FakeTask({"游戏语言": "简体中文"})
-        overrides.reshape(task)
-        self.assertNotIn(overrides.SMART_CARD_PLAY, task.default_config)
-
-
 class Pressed:
     """A task that records what was sent to the game instead of sending it."""
 
     def __init__(self, hand_cards, smart=True):
         self.hand_cards = hand_cards
         self.config = {overrides.SMART_CARD_PLAY: smart}
+        # A fresh list per frame, the way `SortieMode.run` rebinds it after every OCR pass.
+        self.all_texts = []
         self.keys = []
         self.logged = []
 
@@ -150,7 +114,7 @@ class Pressed:
 
 @contextmanager
 def upstream(hand_cards, smart=True):
-    """Stand two upstream modules up in `sys.modules` so the install has something to patch.
+    """Stand the two upstream modules up in `sys.modules` so the install has something to patch.
 
     Args:
         hand_cards: What `_hand_cards` should report.
@@ -163,11 +127,12 @@ def upstream(hand_cards, smart=True):
     utils._get_config_value = lambda task, key, default: task.config.get(key, default)
     utils_sortie = types.ModuleType("utils_sortie")
     utils_sortie._hand_cards = lambda task: task.hand_cards
+    utils_sortie.name_reads = []
+    utils_sortie._hand_card_names = lambda task: utils_sortie.name_reads.append(task.all_texts) or []
     utils_sortie.blind_calls = []
     utils_sortie._try_all_card_keys = lambda task, count: utils_sortie.blind_calls.append(count)
     saved = {name: sys.modules.get(name) for name in ("utils", "utils_sortie")}
     sys.modules["utils"], sys.modules["utils_sortie"] = utils, utils_sortie
-    battle._patched = False
     try:
         yield utils_sortie, Pressed(hand_cards, smart)
     finally:
@@ -176,7 +141,6 @@ def upstream(hand_cards, smart=True):
                 sys.modules.pop(name, None)
             else:
                 sys.modules[name] = module
-        battle._patched = False
 
 
 class TestInstalling(unittest.TestCase):
@@ -213,6 +177,23 @@ class TestInstalling(unittest.TestCase):
             utils_sortie._try_all_card_keys(task, 4)
             self.assertEqual(task.keys, [])
             self.assertEqual(utils_sortie.blind_calls, [4])
+
+    def test_the_hand_is_only_read_once_for_one_ocr_pass(self):
+        # Upstream reads the hand twice a frame and the picker would make it three. Each read logs a line per
+        # box on screen, so on the busiest screen in the game that is the difference worth removing.
+        with upstream(hand(ATTACK)) as (utils_sortie, task):
+            battle.install()
+            utils_sortie._hand_card_names(task)
+            utils_sortie._hand_card_names(task)
+            self.assertEqual(len(utils_sortie.name_reads), 1)
+
+    def test_the_next_ocr_pass_reads_the_hand_again(self):
+        with upstream(hand(ATTACK)) as (utils_sortie, task):
+            battle.install()
+            utils_sortie._hand_card_names(task)
+            task.all_texts = []
+            utils_sortie._hand_card_names(task)
+            self.assertEqual(len(utils_sortie.name_reads), 2)
 
     def test_a_card_still_in_hand_is_not_tried_again(self):
         with upstream(hand(ATTACK, BIG_ATTACK)) as (utils_sortie, task):

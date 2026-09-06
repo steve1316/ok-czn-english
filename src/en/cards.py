@@ -25,15 +25,14 @@ import re
 from collections import namedtuple
 from functools import lru_cache
 
-from src.en.game_battle import CARD_CATEGORY, CARD_COST, CARD_OWNER, COMBATANT_ATTRIBUTE
+from src.en.game_battle import CARD_CATEGORY, CARD_COST, CARD_OWNER, COMBATANT_ATTRIBUTE, X_COST
 from src.en.game_text import DESCRIPTIONS
 from src.en.quality import fold, index
 
 # Action Points a turn starts with, before anything in a run changes the figure.
 BASE_ACTION_POINTS = 3
-# What `scripts/build_game_data.py` writes for a card that spends every Action Point left rather than a fixed
-# number. It can only ever be played last, and only when there is something left for it to spend.
-X_COST = -1
+# `X_COST` comes from the generated data rather than being restated here, so a card that spends everything
+# left cannot come to mean one thing to the generator and another to this.
 # Categories the game deals you rather than ones you choose. A Curse is someone else's doing and a Status
 # Ailment is damage waiting to happen, so neither is ever part of a plan.
 DEALT_TO_YOU = frozenset({"ABNORM", "CURSE"})
@@ -78,14 +77,20 @@ DRAW = re.compile(r"\bDraw (\d+)")
 # What a card does, in the terms the ordering cares about.
 Features = namedtuple("Features", ["damage", "shield", "draw"])
 # What the picker knows about the moment it is choosing in. `weakness` is the attribute the enemies are weak
-# to, and `epiphany` the hand card the run has lit up, both as read off the screen and both often unknown.
+# to and `epiphany` the hand card the run has lit up. Nothing reads either off a screen yet - both regions
+# need pinning down against a frame with a hand in it first - so today they arrive as None and the scoring
+# that uses them waits for a reader. The planner is built to take them the day one exists.
 Board = namedtuple("Board", ["action_points", "weakness", "epiphany"],
                    defaults=[BASE_ACTION_POINTS, None, None])
 
+# How many distinct readings to remember the folding of. OCR invents new misspellings all session, so this
+# is bounded rather than unlimited, and it is far larger than the ten names one frame ever asks about.
+CACHED_READINGS = 1024
 # Folded card name to the client's own spelling, so a reading run together or in the wrong case still lands.
 CARD_INDEX = index(CARD_COST)
 
 
+@lru_cache(maxsize=CACHED_READINGS)
 def canonical(name):
     """Turn a name as read off the screen into the one the data is keyed by.
 
@@ -98,7 +103,6 @@ def canonical(name):
     return CARD_INDEX.get(fold(name), name)
 
 
-@lru_cache(maxsize=None)
 def features(name):
     """Read what a card does out of its own effect text.
 
@@ -112,7 +116,23 @@ def features(name):
     Returns:
         The `Features` the text states, all zero for a card with no description.
     """
-    text = DESCRIPTIONS.get(canonical(name)) or ""
+    return parsed(canonical(name))
+
+
+@lru_cache(maxsize=None)
+def parsed(name):
+    """Pull the figures out of one card's effect text.
+
+    Cached on the client's own spelling rather than on what was read off the screen, so the cache is bounded
+    by the catalog instead of by however many ways OCR has misread a name over a long session.
+
+    Args:
+        name: The canonical card name.
+
+    Returns:
+        The `Features` the text states.
+    """
+    text = DESCRIPTIONS.get(name) or ""
     return Features(
         damage=sum(int(found) for found in DAMAGE.findall(text)),
         shield=sum(int(found) for found in SHIELD.findall(text)),
@@ -148,6 +168,18 @@ def attribute_of(name):
     return COMBATANT_ATTRIBUTE.get(CARD_OWNER.get(canonical(name)))
 
 
+def category(name):
+    """Say what kind of card this is.
+
+    Args:
+        name: The card name, in any spelling.
+
+    Returns:
+        The category, or None for a card the data does not carry.
+    """
+    return CARD_CATEGORY.get(canonical(name))
+
+
 def worth_playing(name):
     """Say whether a card is one the player would ever choose to play.
 
@@ -157,7 +189,7 @@ def worth_playing(name):
     Returns:
         False for a Curse or a Status Ailment, True for anything else, including a card not in the data.
     """
-    return CARD_CATEGORY.get(canonical(name)) not in DEALT_TO_YOU
+    return category(name) not in DEALT_TO_YOU
 
 
 def value(name, board):
@@ -212,9 +244,10 @@ def phase(name, board):
         return PHASE_SPENDS_EVERYTHING
     if price == 0:
         return PHASE_FREE
-    if CARD_CATEGORY.get(canonical(name)) == SETUP_CATEGORY or features(name).draw:
+    kind = category(name)
+    if kind == SETUP_CATEGORY or features(name).draw:
         return PHASE_SETUP
-    if CARD_CATEGORY.get(canonical(name)) == ATTACK_CATEGORY:
+    if kind == ATTACK_CATEGORY:
         return PHASE_ATTACK
     return PHASE_OTHER
 
@@ -233,7 +266,8 @@ def buying_order(name, board):
     Returns:
         A sort key putting the best buy first.
     """
-    return cost(name) == X_COST, -value(name, board) / max(cost(name), 1)
+    price = cost(name)
+    return price == X_COST, -value(name, board) / max(price, 1)
 
 
 def plan(hand, board):

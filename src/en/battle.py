@@ -7,9 +7,14 @@ half a press. At nine cards that is thirteen seconds of blind input per turn, an
 whatever happened to be under the last key that worked.
 
 That fallback is the only thing replaced here. Upstream keeps the frame: the Ego check, the end-of-turn
-button, the stuck detection, the final-boss flag. The user's Play Priority list keeps winning outright, so
-anyone who has tuned one sees no change at all. What changes is what happens when the list has nothing to
-say, which is where `cards.py` now decides instead of the keyboard.
+button, the stuck detection, the final-boss flag. A card the user's Play Priority list names is still played
+by upstream, unchanged, so a tuned list keeps behaving as it did.
+
+`_try_all_card_keys` has two callers, though, and rebinding it takes over both. One is the fallback proper,
+reached when the list matched nothing. The other is the escape hatch upstream reaches for after a card the
+list *did* name has failed to play three times running - and taking that one over is wanted rather than
+tolerated, because a card that will not play three times is usually one there are no Action Points for, and
+choosing a different card is a better answer than flailing at every key.
 
 **Action Points are not read.** The position of that readout has not been confirmed against a frame with a
 hand in it, and guessing wrong would end turns early, so the budget is assumed rather than read. That costs
@@ -27,10 +32,13 @@ from src.en.overrides import SMART_CARD_PLAY
 logger = Logger.get_logger(__name__)
 
 # Parked on the task for the length of a battle, the way upstream parks `_play_stuck_count` and
-# `_last_attempted_card`. The prefix keeps them clear of anything upstream owns.
-REFUSED = "_en_refused_cards"
-ATTEMPTED = "_en_attempted_card"
-LAST_HAND = "_en_last_hand_count"
+# `_last_attempted_card`. One attribute, so starting a fresh turn is one assignment rather than three that
+# have to agree. The prefix keeps it clear of anything upstream owns.
+TURN = "_en_turn"
+# Remembers one frame's hand reading, keyed on the OCR pass it came from. `SortieMode.run` builds a fresh
+# `all_texts` list every frame, so identity tells frames apart, and a matching list can only ever produce a
+# matching hand. Upstream reads the hand twice a frame already; this makes all of those one reading.
+HAND_CACHE = "_en_hand_for"
 
 # Upstream's own timings for playing a card, kept so the two paths feel the same to the game.
 AFTER_KEY = 1
@@ -87,21 +95,36 @@ def new_turn(before, after):
     return before is None or after > before
 
 
-def state_of(task, hand_count):
-    """Bring the per-turn bookkeeping up to date and hand back what this frame should avoid.
+class Turn:
+    """What one turn has learnt: the hand it last saw, the card it tried, and what the game would not play."""
+
+    def __init__(self, hand_count):
+        """Start a turn that has learnt nothing yet.
+
+        Args:
+            hand_count: The hand size this turn opened with.
+        """
+        self.hand_count = hand_count
+        self.attempted = None
+        self.refused = set()
+
+
+def turn_of(task, hand_count):
+    """Bring the per-turn bookkeeping up to date and hand it back.
 
     Args:
         task: The running task, which the state is parked on.
         hand_count: The hand size read this frame.
 
     Returns:
-        The set of card names already refused this turn.
+        The `Turn` in progress, fresh when the hand has just been dealt again.
     """
-    if new_turn(getattr(task, LAST_HAND, None), hand_count):
-        setattr(task, REFUSED, set())
-        setattr(task, ATTEMPTED, None)
-    setattr(task, LAST_HAND, hand_count)
-    return getattr(task, REFUSED, set())
+    turn = getattr(task, TURN, None)
+    if turn is None or new_turn(turn.hand_count, hand_count):
+        turn = Turn(hand_count)
+        setattr(task, TURN, turn)
+    turn.hand_count = hand_count
+    return turn
 
 
 def install():
@@ -121,6 +144,27 @@ def install():
     if getattr(utils_sortie._try_all_card_keys, "_en_picker", False):
         return
     blind_fallback = utils_sortie._try_all_card_keys
+    read_names = utils_sortie._hand_card_names
+
+    def _hand_card_names(task):
+        """Read the hand's card names once per OCR pass rather than once per caller.
+
+        Upstream calls this twice a frame - directly, and again inside `_hand_cards` - and the picker would
+        have made it three. Each call walks `all_texts` and logs a line for every box on screen, which on a
+        battle screen is the noisiest thing the bot does.
+
+        Args:
+            task: The running task.
+
+        Returns:
+            The name boxes, from this frame's reading or the one already taken from the same OCR pass.
+        """
+        read_for, names = getattr(task, HAND_CACHE, (None, None))
+        if read_for is task.all_texts:
+            return names
+        names = read_names(task)
+        setattr(task, HAND_CACHE, (task.all_texts, names))
+        return names
 
     def _try_all_card_keys(task, count):
         """Play the best card in hand, in place of pressing every key in turn.
@@ -135,21 +179,20 @@ def install():
 
         hand = utils_sortie._hand_cards(task) or []
         names = [card["name"] for card in hand]
-        refused = state_of(task, len(names))
+        turn = turn_of(task, len(names))
 
-        attempted = getattr(task, ATTEMPTED, None)
-        if was_refused(attempted, names):
-            refused.add(attempted)
-            task.log_info(f"the game would not play {attempted}, leaving it for the rest of this turn")
+        if was_refused(turn.attempted, names):
+            turn.refused.add(turn.attempted)
+            task.log_info(f"the game would not play {turn.attempted}, leaving it for the rest of this turn")
 
         board = cards.Board()
-        card = choose(hand, board, refused)
+        card = choose(hand, board, turn.refused)
         if card is None:
             if not names:
                 # Upstream ends an empty hand itself, so there is nothing here to do and nothing to say.
                 return
             task.log_info(f"nothing left worth playing in {names}, ending the turn")
-            setattr(task, ATTEMPTED, None)
+            turn.attempted = None
             task.send_key(END_TURN_KEY)
             task.sleep(AFTER_KEY)
             return
@@ -157,7 +200,7 @@ def install():
         name = card["name"]
         task.log_info(f"playing {name} for {cards.cost(name)} AP on key {card['key']}, "
                       f"worth {cards.value(name, board):.0f}")
-        setattr(task, ATTEMPTED, name)
+        turn.attempted = name
         task.send_key(card["key"])
         task.sleep(AFTER_KEY)
         task.send_key(CONFIRM_KEY)
@@ -166,6 +209,7 @@ def install():
     # Marked so a later task load recognises the replacement and does not wrap it in itself.
     _try_all_card_keys._en_picker = True
     utils_sortie._try_all_card_keys = _try_all_card_keys
+    utils_sortie._hand_card_names = _hand_card_names
     logger.info("sortie battles now pick a card instead of pressing every key")
 
 

@@ -12,6 +12,9 @@ Generated: 2026-09-05
 """
 
 
+# What a card with no fixed price reads as: it spends every Action Point left. Written here rather than in the reader, so the two cannot drift apart.
+X_COST = -1
+
 # Every attribute, keyed by the colour the client stores it as, which is the colour it is drawn in as well.
 ATTRIBUTES = {
     'BLUE': 'Justice',
@@ -21,7 +24,7 @@ ATTRIBUTES = {
     'RED': 'Passion',
 }
 
-# What a card costs to play. -1 means it spends every Action Point left rather than a fixed number.
+# What a card costs to play, in Action Points.
 CARD_COST = {
     'A Girl And Her Rotted Apple': 1,
     'Absolute Protection': -1,

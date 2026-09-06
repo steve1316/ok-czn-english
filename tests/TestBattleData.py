@@ -13,7 +13,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from src.en.game_battle import (  # noqa: E402
     ATTRIBUTES, CARD_CATEGORY, CARD_COST, CARD_OWNER, CARD_SPARKABLE, CARD_TARGET,
-    COMBATANT_ATTRIBUTE, COMBATANT_EGO_CARD, COMBATANT_EGO_COST, COMBATANT_SPARK_CARDS,
+    COMBATANT_ATTRIBUTE, COMBATANT_EGO_CARD, COMBATANT_EGO_COST, COMBATANT_SPARK_CARDS, X_COST,
 )
 from src.en.game_data import COMBATANTS  # noqa: E402
 
@@ -21,8 +21,8 @@ from src.en.game_data import COMBATANTS  # noqa: E402
 EXPECTED_ATTRIBUTES = {"Instinct", "Justice", "Order", "Passion", "Void"}
 # The kinds of card the client defines. A Curse or a Status Ailment is dealt to you rather than chosen.
 EXPECTED_CATEGORIES = {"ATK", "SKILL", "POWER", "ABNORM", "CURSE"}
-# What a card may cost. -1 stands for every Action Point left, and the dearest fixed price in the data is 9.
-X_COST = -1
+# The dearest fixed price in the data. `X_COST` comes from the module under test, since what it stands for
+# is the generator's to decide.
 MOST_EXPENSIVE = 9
 # Released after the rip this data was built from, so the dump has never heard of her. The picker has to cope
 # with a combatant it knows nothing about, and she is the one that actually occurs.

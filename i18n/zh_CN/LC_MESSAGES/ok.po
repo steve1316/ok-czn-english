@@ -327,6 +327,9 @@ msgstr "出战主战员优先级"
 msgid "出牌优先级"
 msgstr "出牌优先级"
 
+msgid "Smart Card Play"
+msgstr "智能出牌"
+
 msgid "刷梦边"
 msgstr "刷梦边"
 

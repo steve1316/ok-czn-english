@@ -42,8 +42,7 @@ def hand(*names_in_order):
     Returns:
         A list of hand-card dicts, each carrying the hotkey that plays it.
     """
-    return [{"name": name, "key": str(index + 1), "x": 0.2 + index * 0.06}
-            for index, name in enumerate(names_in_order)]
+    return [{"name": name, "key": str(index + 1)} for index, name in enumerate(names_in_order)]
 
 
 def played(chosen):
@@ -138,10 +137,6 @@ class TestWeakness(unittest.TestCase):
     def test_the_matching_attribute_goes_first(self):
         chosen = cards.plan(hand(JUSTICE_ATTACK, VOID_ATTACK), cards.Board(weakness="Void"))
         self.assertEqual(played(chosen), [VOID_ATTACK, JUSTICE_ATTACK])
-
-    def test_the_other_attribute_still_gets_played(self):
-        chosen = cards.plan(hand(JUSTICE_ATTACK, VOID_ATTACK), cards.Board(weakness="Void"))
-        self.assertIn(JUSTICE_ATTACK, played(chosen))
 
     def test_an_unknown_weakness_leaves_the_order_alone(self):
         # Nothing separates these two without a weakness to match, so the hand's own order has to survive.

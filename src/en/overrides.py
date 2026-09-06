@@ -46,6 +46,11 @@ KEEPS_CHINESE = {"路线优先级"}
 # `_get_game_text` falls back to the untranslated literal when a language has no map file.
 GAME_LANGUAGES = ["English", "简体中文", "繁体中文"]
 
+# A setting this fork adds rather than re-shapes, so its key is English like the rest of the fork's own
+# code. Play Priority is declared by Sortie alone, which makes it the marker for the only mode that has
+# to choose its own cards, and so the only one this belongs on.
+SMART_CARD_PLAY = "Smart Card Play"
+PLAYS_ITS_OWN_CARDS = "出牌优先级"
 # List settings the user picks from, keyed by config name -> the roster it draws on.
 LIST_OPTIONS = {
     "移除卡牌列表": CARDS,
@@ -55,7 +60,7 @@ LIST_OPTIONS = {
     "卡牌奖励优先级": CARDS,
     "获得卡牌优先级": CARDS,
     "丢弃卡牌优先级": CARDS,
-    "出牌优先级": CARDS,
+    PLAYS_ITS_OWN_CARDS: CARDS,
     "装备1号位优先级": EQUIPMENT,
     "装备2号位优先级": EQUIPMENT,
     "装备3号位优先级": EQUIPMENT,
@@ -69,11 +74,6 @@ SINGLE_CHOICE = {
     "游戏语言": (GAME_LANGUAGES, "English"),
     "刷存档主战员": (COMBATANTS, "Heidemarie"),
 }
-# A setting this fork adds rather than re-shapes, so its key is English like the rest of the fork's own
-# code. Play Priority is declared by Sortie alone, which makes it the marker for the only mode that has
-# to choose its own cards, and so the only one this belongs on.
-SMART_CARD_PLAY = "Smart Card Play"
-PLAYS_ITS_OWN_CARDS = "出牌优先级"
 # Free-text settings whose Chinese default cannot carry over. Cleared so the user fills them from what the
 # client actually shows, rather than inheriting a value that can never match.
 CLEARED_TEXT = ["指定面具卡牌", "面具卡牌刻印", "刷初始卡牌"]
@@ -94,11 +94,12 @@ DESCRIPTIONS = {
     "卡牌奖励优先级": "Preferred cards when a reward offers a choice.",
     "获得卡牌优先级": "Preferred cards when the run offers a card to obtain.",
     "丢弃卡牌优先级": "Cards to throw away first when the run asks you to discard.",
-    "出牌优先级": "Order to play cards in battle. Needs shortcut key display turned on in the game's settings.",
+    PLAYS_ITS_OWN_CARDS: "Order to play cards in battle. Needs shortcut key display turned on in the game's"
+                         " settings.",
     SMART_CARD_PLAY: "Choose battle cards on what they actually do - what they cost, what kind they are, and"
-                     " which attribute an enemy is weak to - rather than pressing every hotkey in turn. Your"
-                     " Play Priority list still comes first and is unaffected; this decides the cards it does"
-                     " not mention. Turn it off to go back to upstream's behaviour.",
+                     " what their effect text says - rather than pressing every hotkey in turn and taking whatever"
+                     " plays. Your Play Priority list still comes first and is unaffected; this decides the"
+                     " cards it does not mention. Turn it off to go back to upstream's behaviour.",
     "装备1号位优先级": "Preferred equipment for the first slot, best first.",
     "装备2号位优先级": "Preferred equipment for the second slot, best first.",
     "装备3号位优先级": "Preferred equipment for the third slot, best first.",
