@@ -16,16 +16,17 @@ list *did* name has failed to play three times running - and taking that one ove
 tolerated, because a card that will not play three times is usually one there are no Action Points for, and
 choosing a different card is a better answer than flailing at every key.
 
-**Action Points are not read.** The position of that readout has not been confirmed against a frame with a
-hand in it, and guessing wrong would end turns early, so the budget is assumed rather than read. That costs
-less than it sounds: the game itself refuses a card there is no room for, and a card that is still in hand
-after being tried is recorded as refused for the rest of the turn and passed over. The turn corrects itself
-against the game rather than against a number this module believes in.
+The budget comes from `board.py`, which can tell a spent turn from one with Action Points left but not how
+many are left. So a turn that still has points is planned against the full three, which may be more than it
+really has. That is safe rather than sloppy: the game refuses a card there is no room for, and a card still
+sitting in hand after being tried is recorded as refused and passed over for the rest of the turn. The turn
+corrects itself against the game rather than against a number this module believes in. What the readout adds
+is the other end - once it goes dark, the turn ends at once instead of after every card has been refused.
 """
 
 from ok import Logger
 
-from src.en import cards
+from src.en import board, cards
 from src.en.handlers import loaded, register
 from src.en.overrides import SMART_CARD_PLAY
 
@@ -185,13 +186,17 @@ def install():
             turn.refused.add(turn.attempted)
             task.log_info(f"the game would not play {turn.attempted}, leaving it for the rest of this turn")
 
-        board = cards.Board()
-        card = choose(hand, board, turn.refused)
+        # The readout says whether anything is left to spend, not how much, so a turn with points left is
+        # planned against a full three and corrected by what the game will actually accept.
+        points = cards.BASE_ACTION_POINTS if board.has_action_points(task) else 0
+        state = cards.Board(action_points=points)
+        card = choose(hand, state, turn.refused)
         if card is None:
             if not names:
                 # Upstream ends an empty hand itself, so there is nothing here to do and nothing to say.
                 return
-            task.log_info(f"nothing left worth playing in {names}, ending the turn")
+            spent = "" if points else ", no Action Points left"
+            task.log_info(f"nothing left worth playing in {names}{spent}, ending the turn")
             turn.attempted = None
             task.send_key(END_TURN_KEY)
             task.sleep(AFTER_KEY)
@@ -199,7 +204,7 @@ def install():
 
         name = card["name"]
         task.log_info(f"playing {name} for {cards.cost(name)} AP on key {card['key']}, "
-                      f"worth {cards.value(name, board):.0f}")
+                      f"worth {cards.value(name, state):.0f}")
         turn.attempted = name
         task.send_key(card["key"])
         task.sleep(AFTER_KEY)

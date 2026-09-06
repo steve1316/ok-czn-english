@@ -10,6 +10,8 @@ import unittest
 from contextlib import contextmanager
 from pathlib import Path
 
+import numpy as np
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
@@ -94,11 +96,15 @@ class TestTurnTracking(unittest.TestCase):
 class Pressed:
     """A task that records what was sent to the game instead of sending it."""
 
-    def __init__(self, hand_cards, smart=True):
+    def __init__(self, hand_cards, smart=True, action_points=True):
         self.hand_cards = hand_cards
         self.config = {overrides.SMART_CARD_PLAY: smart}
         # A fresh list per frame, the way `SortieMode.run` rebinds it after every OCR pass.
         self.all_texts = []
+        # A flat frame is enough: the readout is judged on how much of it is lit, so white reads as points
+        # remaining and black as none.
+        self.frame = np.full((1080, 1920, 3), 255 if action_points else 0, dtype=np.uint8)
+        self.height, self.width = self.frame.shape[:2]
         self.keys = []
         self.logged = []
 
@@ -113,12 +119,13 @@ class Pressed:
 
 
 @contextmanager
-def upstream(hand_cards, smart=True):
+def upstream(hand_cards, smart=True, action_points=True):
     """Stand the two upstream modules up in `sys.modules` so the install has something to patch.
 
     Args:
         hand_cards: What `_hand_cards` should report.
         smart: What the Smart Card Play setting reads as.
+        action_points: Whether the Action Point readout should look lit.
 
     Yields:
         The fake `utils_sortie` module and the task the replacement is called with.
@@ -134,7 +141,7 @@ def upstream(hand_cards, smart=True):
     saved = {name: sys.modules.get(name) for name in ("utils", "utils_sortie")}
     sys.modules["utils"], sys.modules["utils_sortie"] = utils, utils_sortie
     try:
-        yield utils_sortie, Pressed(hand_cards, smart)
+        yield utils_sortie, Pressed(hand_cards, smart, action_points)
     finally:
         for name, module in saved.items():
             if module is None:
@@ -194,6 +201,20 @@ class TestInstalling(unittest.TestCase):
             task.all_texts = []
             utils_sortie._hand_card_names(task)
             self.assertEqual(len(utils_sortie.name_reads), 2)
+
+    def test_an_empty_readout_ends_the_turn_without_trying_a_card(self):
+        # Nothing in hand is free, and the readout says there is nothing left to spend, so trying each card
+        # in turn only to be refused would cost several seconds a turn for an answer already on screen.
+        with upstream(hand(ATTACK, BIG_ATTACK), action_points=False) as (utils_sortie, task):
+            battle.install()
+            utils_sortie._try_all_card_keys(task, 2)
+            self.assertEqual(task.keys, [battle.END_TURN_KEY])
+
+    def test_a_lit_readout_still_plays_a_card(self):
+        with upstream(hand(ATTACK, BIG_ATTACK), action_points=True) as (utils_sortie, task):
+            battle.install()
+            utils_sortie._try_all_card_keys(task, 2)
+            self.assertEqual(task.keys, ["2", battle.CONFIRM_KEY])
 
     def test_a_card_still_in_hand_is_not_tried_again(self):
         with upstream(hand(ATTACK, BIG_ATTACK)) as (utils_sortie, task):
