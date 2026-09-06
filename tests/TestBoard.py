@@ -85,5 +85,49 @@ class TestActionPoints(unittest.TestCase):
         self.assertTrue(board.has_action_points(FakeTask.__new__(FakeTask)))
 
 
+def paint(frame, slots):
+    """Colour the Ego cost badges of the named slots the blue the game uses for an affordable one.
+
+    Args:
+        frame: The frame to draw on.
+        slots: The slot keys to light up.
+
+    Returns:
+        The frame, for chaining.
+    """
+    height, width = frame.shape[:2]
+    for slot in slots:
+        centre = board.EGO_BADGE_Y[slot]
+        half_x, half_y = board.EGO_BADGE_HALF
+        frame[int((centre - half_y) * height):int((centre + half_y) * height),
+              int((board.EGO_BADGE_X - half_x) * width):int((board.EGO_BADGE_X + half_x) * width)] = (230, 150, 60)
+    return frame
+
+
+class TestEgoBadges(unittest.TestCase):
+    """Which Ego skills the EP bar can actually pay for, read off the badge beside each one."""
+
+    def test_an_affordable_badge_reads_blue(self):
+        self.assertGreater(board.blue_fraction(fixture("ego_badge_ready")), board.EGO_READY)
+
+    def test_a_badge_that_cannot_be_paid_for_has_no_blue_at_all(self):
+        self.assertEqual(board.blue_fraction(fixture("ego_badge_spent")), 0.0)
+
+    def test_the_slots_that_are_lit_are_the_ones_offered(self):
+        task = FakeTask(paint(flat(0), ("F1", "F3")))
+        self.assertEqual(board.affordable_egos(task), ["F1", "F3"])
+
+    def test_nothing_lit_offers_nothing(self):
+        self.assertEqual(board.affordable_egos(FakeTask(flat(0))), [])
+
+    def test_slots_come_back_in_the_order_they_are_shown(self):
+        task = FakeTask(paint(flat(0), ("F3", "F2", "F1")))
+        self.assertEqual(board.affordable_egos(task), ["F1", "F2", "F3"])
+
+    def test_no_frame_offers_nothing(self):
+        # Firing an Ego blind is what this replaces, so an unreadable frame has to decline rather than guess.
+        self.assertEqual(board.affordable_egos(FakeTask.__new__(FakeTask)), [])
+
+
 if __name__ == "__main__":
     unittest.main()

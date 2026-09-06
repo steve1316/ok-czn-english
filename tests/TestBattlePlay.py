@@ -15,7 +15,7 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.en import battle, cards, overrides  # noqa: E402
+from src.en import battle, board, cards, overrides  # noqa: E402
 
 ATTACK = "Anchor"
 BIG_ATTACK = "Charge Launcher"
@@ -96,7 +96,7 @@ class TestTurnTracking(unittest.TestCase):
 class Pressed:
     """A task that records what was sent to the game instead of sending it."""
 
-    def __init__(self, hand_cards, smart=True, action_points=True):
+    def __init__(self, hand_cards, smart=True, action_points=True, egos=()):
         self.hand_cards = hand_cards
         self.config = {overrides.SMART_CARD_PLAY: smart}
         # A fresh list per frame, the way `SortieMode.run` rebinds it after every OCR pass.
@@ -105,6 +105,11 @@ class Pressed:
         # remaining and black as none.
         self.frame = np.full((1080, 1920, 3), 255 if action_points else 0, dtype=np.uint8)
         self.height, self.width = self.frame.shape[:2]
+        for key in egos:
+            centre = board.EGO_BADGE_Y[key]
+            half_x, half_y = board.EGO_BADGE_HALF
+            self.frame[int((centre - half_y) * 1080):int((centre + half_y) * 1080),
+                       int((board.EGO_BADGE_X - half_x) * 1920):int((board.EGO_BADGE_X + half_x) * 1920)] = (230, 150, 60)
         self.keys = []
         self.logged = []
 
@@ -119,13 +124,14 @@ class Pressed:
 
 
 @contextmanager
-def upstream(hand_cards, smart=True, action_points=True):
+def upstream(hand_cards, smart=True, action_points=True, egos=()):
     """Stand the two upstream modules up in `sys.modules` so the install has something to patch.
 
     Args:
         hand_cards: What `_hand_cards` should report.
         smart: What the Smart Card Play setting reads as.
         action_points: Whether the Action Point readout should look lit.
+        egos: Slot keys whose cost badge should look affordable.
 
     Yields:
         The fake `utils_sortie` module and the task the replacement is called with.
@@ -138,10 +144,21 @@ def upstream(hand_cards, smart=True, action_points=True):
     utils_sortie._hand_card_names = lambda task: utils_sortie.name_reads.append(task.all_texts) or []
     utils_sortie.blind_calls = []
     utils_sortie._try_all_card_keys = lambda task, count: utils_sortie.blind_calls.append(count)
+    utils_sortie.random = types.SimpleNamespace(choice=lambda options: "asked the real random",
+                                                uniform=lambda low, high: low)
+    utils_sortie.page_saw = []
+
+    def handle_battle_page(task):
+        """Stand in for upstream's battle frame, recording the `random` it ran with."""
+        utils_sortie.page_saw.append(utils_sortie.random)
+
+    utils_sortie.handle_battle_page = handle_battle_page
+    # The seam edits this list rather than the module attribute, so the fake has to carry one too.
+    utils_sortie.PAGE_HANDLERS = [handle_battle_page]
     saved = {name: sys.modules.get(name) for name in ("utils", "utils_sortie")}
     sys.modules["utils"], sys.modules["utils_sortie"] = utils, utils_sortie
     try:
-        yield utils_sortie, Pressed(hand_cards, smart, action_points)
+        yield utils_sortie, Pressed(hand_cards, smart, action_points, egos)
     finally:
         for name, module in saved.items():
             if module is None:
@@ -223,6 +240,55 @@ class TestInstalling(unittest.TestCase):
             # The game kept it, so the next frame should reach for the other card instead.
             utils_sortie._try_all_card_keys(task, 2)
             self.assertEqual(task.keys, ["2", battle.CONFIRM_KEY, "1", battle.CONFIRM_KEY])
+
+
+class TestEgoChoice(unittest.TestCase):
+    """Which Ego skill gets fired. Upstream picks one of the three at random, affordable or not."""
+
+    def fire(self, utils_sortie, task):
+        """Run one battle frame and ask the stand-in what it would fire.
+
+        Args:
+            utils_sortie: The fake upstream module.
+            task: The task the frame runs against.
+
+        Returns:
+            The key upstream's own `random.choice(["F1", "F2", "F3"])` call would return.
+        """
+        utils_sortie.PAGE_HANDLERS[0](task)
+        return utils_sortie.page_saw[-1].choice(list(board.EGO_KEYS))
+
+    def test_an_affordable_ego_is_chosen(self):
+        with upstream(hand(ATTACK), egos=("F2",)) as (utils_sortie, task):
+            battle.install()
+            self.assertEqual(self.fire(utils_sortie, task), "F2")
+
+    def test_the_first_affordable_one_is_chosen(self):
+        with upstream(hand(ATTACK), egos=("F2", "F3")) as (utils_sortie, task):
+            battle.install()
+            self.assertEqual(self.fire(utils_sortie, task), "F2")
+
+    def test_nothing_affordable_falls_back_to_upstream(self):
+        # Upstream fires only when it believes the bar is full, so if no badge reads as affordable the
+        # reading is more likely wrong than the game is, and guessing beats refusing to act.
+        with upstream(hand(ATTACK), egos=()) as (utils_sortie, task):
+            battle.install()
+            self.assertEqual(self.fire(utils_sortie, task), "asked the real random")
+
+    def test_every_other_random_choice_is_left_alone(self):
+        with upstream(hand(ATTACK), egos=("F1",)) as (utils_sortie, task):
+            battle.install()
+            utils_sortie.PAGE_HANDLERS[0](task)
+            stood_in = utils_sortie.page_saw[-1]
+            self.assertEqual(stood_in.choice(["a", "b"]), "asked the real random")
+            self.assertEqual(stood_in.uniform(0.2, 0.8), 0.2)
+
+    def test_the_module_is_left_as_it_was_found(self):
+        with upstream(hand(ATTACK), egos=("F1",)) as (utils_sortie, task):
+            battle.install()
+            before = utils_sortie.random
+            utils_sortie.PAGE_HANDLERS[0](task)
+            self.assertIs(utils_sortie.random, before)
 
 
 if __name__ == "__main__":

@@ -10,6 +10,13 @@ That fallback is the only thing replaced here. Upstream keeps the frame: the Ego
 button, the stuck detection, the final-boss flag. A card the user's Play Priority list names is still played
 by upstream, unchanged, so a tuned list keeps behaving as it did.
 
+The Ego skill is picked here too. Upstream fires one of `F1`, `F2` and `F3` at random once it reads the EP
+bar as full, without checking whether the EP will actually cover the one it picked - and in a real frame with
+the bar full, one of the three routinely costs more than the bar holds. `board.py` can see which are
+affordable, because the game draws that badge blue, so the choice is made from those instead. The mechanism
+is upstream's own `random` swapped out for the length of one frame, which is the same thing `src/en/events.py`
+does to rank event options, and every other use of `random` in that module passes straight through.
+
 `_try_all_card_keys` has two callers, though, and rebinding it takes over both. One is the fallback proper,
 reached when the list matched nothing. The other is the escape hatch upstream reaches for after a card the
 list *did* name has failed to play three times running - and taking that one over is wanted rather than
@@ -27,7 +34,7 @@ is the other end - once it goes dark, the turn ends at once instead of after eve
 from ok import Logger
 
 from src.en import board, cards
-from src.en.handlers import loaded, register
+from src.en.handlers import loaded, register, replace
 from src.en.overrides import SMART_CARD_PLAY
 
 logger = Logger.get_logger(__name__)
@@ -49,6 +56,52 @@ END_TURN_KEY = "e"
 CONFIRM_KEY = "enter"
 
 _patched = False
+
+
+class EgoChoice:
+    """Stands in for the module's `random` while one battle frame runs.
+
+    Only the Ego question is answered here. Every other call - and there are several in that module, for
+    picking a card to drag at a Secret Enemy and for the hand-select screens - is handed to the real `random`
+    untouched, which is what the attribute passthrough is for.
+    """
+
+    def __init__(self, task, original):
+        """Stand in for one frame.
+
+        Args:
+            task: The task the frame is running against, whose screen holds the answer.
+            original: The module's real `random`, which everything else still goes to.
+        """
+        self.task = task
+        self.original = original
+
+    def choice(self, options):
+        """Answer a random choice, taking the Ego question for ourselves.
+
+        Args:
+            options: What upstream is choosing between.
+
+        Returns:
+            An affordable Ego key when that is the question being asked and the screen gives an answer,
+            otherwise whatever the real `random` says.
+        """
+        if list(options) == list(board.EGO_KEYS):
+            ready = board.affordable_egos(self.task)
+            if ready:
+                return ready[0]
+        return self.original.choice(options)
+
+    def __getattr__(self, name):
+        """Hand every other use of `random` to the real one.
+
+        Args:
+            name: The attribute upstream is reaching for.
+
+        Returns:
+            That attribute of the real `random`.
+        """
+        return getattr(self.original, name)
 
 
 def choose(hand, board, refused):
@@ -210,6 +263,27 @@ def install():
         task.sleep(AFTER_KEY)
         task.send_key(CONFIRM_KEY)
         task.sleep(AFTER_CONFIRM)
+
+    original_page = utils_sortie.handle_battle_page
+
+    def handle_battle_page(task):
+        """Run upstream's battle frame with the Ego choice answered from the screen.
+
+        Args:
+            task: The running task.
+
+        Returns:
+            Whatever upstream's own handler returns.
+        """
+        was = utils_sortie.random
+        utils_sortie.random = EgoChoice(task, was)
+        try:
+            return original_page(task)
+        finally:
+            utils_sortie.random = was
+
+    handle_battle_page._en_picker = True
+    replace("handle_battle_page", handle_battle_page)
 
     # Marked so a later task load recognises the replacement and does not wrap it in itself.
     _try_all_card_keys._en_picker = True

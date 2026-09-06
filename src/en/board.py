@@ -21,6 +21,11 @@ large flat area, and counting that would have read an empty turn as a full one.
 
 This says whether any points remain, not how many. That is enough for the planner, which only needs to know
 whether a card costing something can still be played, and it is all the screen actually gives away.
+
+The Ego panel is read the same way. Each of the three slots carries a cost badge, drawn blue while the EP bar
+can pay for it and flat grey once it cannot, so which Ego skills are actually available is a colour question
+too. Measured over 30 badges, an affordable one is at least 21% blue and one that cannot be paid for is
+exactly 0% at every supported resolution - the widest margin anything here is judged on.
 """
 
 import cv2
@@ -35,6 +40,21 @@ LIT = 200
 # The share of the readout that has to be lit before it is read as "points remain". See the module docstring
 # for the readings this sits between.
 LIT_ENOUGH = 0.08
+
+# The three Ego slots, in the order the panel shows them.
+EGO_KEYS = ("F1", "F2", "F3")
+# Where each slot's cost badge sits. The three are evenly spaced down the panel, and the figures come from the
+# OCR pass, which does read the bottom slot's badge and both of the outer labels even though it misses the
+# Action Point digit entirely.
+EGO_BADGE_X = 0.065
+EGO_BADGE_Y = {"F1": 0.7140, "F2": 0.8050, "F3": 0.8960}
+EGO_BADGE_HALF = (0.0090, 0.0150)
+# What the game paints an affordable badge: its own UI blue, well clear of the grey a spent one is drawn in.
+BLUE_HUE = (95, 125)
+BLUE_SATURATION = 80
+BLUE_VALUE = 120
+# How much of a badge has to be that blue before the Ego behind it is treated as one that can be fired.
+EGO_READY = 0.10
 
 
 def patch_of(task, box):
@@ -84,3 +104,43 @@ def has_action_points(task):
     if patch is None:
         return True
     return lit_fraction(patch) >= LIT_ENOUGH
+
+
+def blue_fraction(patch):
+    """Say how much of a lit patch is drawn in the game's own UI blue.
+
+    Measured against the lit pixels rather than the whole patch, so a badge sitting on a dark background and
+    one sitting on a bright scene are judged the same way.
+
+    Args:
+        patch: The pixels to measure, in BGR.
+
+    Returns:
+        The blue share of the lit pixels, from 0 to 1, and 0 for an empty patch.
+    """
+    if patch is None or patch.size == 0:
+        return 0.0
+    hue, saturation, value = cv2.split(cv2.cvtColor(patch, cv2.COLOR_BGR2HSV))
+    lit = value > BLUE_VALUE
+    blue = lit & (saturation > BLUE_SATURATION) & (hue > BLUE_HUE[0]) & (hue < BLUE_HUE[1])
+    return float(np.count_nonzero(blue)) / max(int(np.count_nonzero(lit)), 1)
+
+
+def affordable_egos(task):
+    """List the Ego skills the EP bar can currently pay for.
+
+    Args:
+        task: The running task.
+
+    Returns:
+        The keys that fire an affordable Ego, in panel order. Empty when none can be paid for, and empty when
+        there is no frame to read, since firing one blind is the behaviour this exists to replace.
+    """
+    half_x, half_y = EGO_BADGE_HALF
+    ready = []
+    for key in EGO_KEYS:
+        centre = EGO_BADGE_Y[key]
+        box = (EGO_BADGE_X - half_x, centre - half_y, EGO_BADGE_X + half_x, centre + half_y)
+        if blue_fraction(patch_of(task, box)) > EGO_READY:
+            ready.append(key)
+    return ready
