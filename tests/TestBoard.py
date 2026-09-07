@@ -208,6 +208,12 @@ class TestWeaknessBadges(unittest.TestCase):
     def test_a_patch_with_no_badge_in_it_says_nothing(self):
         self.assertIsNone(board.attribute_of(np.full((18, 33, 3), 60, dtype=np.uint8)))
 
+    def test_the_counters_own_magenta_is_not_an_attribute(self):
+        # Magenta sits next to red on the hue wheel, so a patch that catches the counter itself - or any of
+        # the effects the game draws in that colour - would otherwise read as a confident Passion.
+        magenta = np.full((18, 33, 3), in_hue(170, 230, 200), dtype=np.uint8)
+        self.assertIsNone(board.attribute_of(magenta))
+
     def test_a_fight_where_every_enemy_shares_a_weakness(self):
         frame = flat(0)
         paint_enemy(frame, 0.50, 0.25, board.ATTRIBUTE_HUES["ORANGE"])

@@ -41,6 +41,11 @@ match them, and `attack_flash.png` holds the burst that passes every other test 
 When the enemies disagree the answer is that there is no preference. The attribute only ever raises what a
 matching card is worth, so taking the majority would be defensible, but no capture so far shows a mixed fight
 to check a majority against, and having no opinion is the answer that cannot be wrong.
+
+All of this assumes it is being asked about a battle screen, which is the only place it is ever called from.
+Swept over every screen in `captures/`, the 22 battle frames read Instinct or nothing at all, but red artwork
+elsewhere in the game - a Card Epiphany screen, a full-screen character portrait - throws up shapes that pass
+for counters and reads as Passion. Nothing calls it there, and it is not built to be robust to it.
 """
 
 import cv2
@@ -267,6 +272,11 @@ def attribute_of(patch):
     if np.count_nonzero(strong) < WEAKNESS_ENOUGH * strong.size:
         return None
     middle = int(np.median(hue[strong]))
+    # The counter sitting beside the badge is magenta, which is red's neighbour on the hue wheel, so its own
+    # colour would otherwise read as a confident Passion. Anything in that band is the counter, or one of the
+    # effects the game draws in the same colour, rather than a badge.
+    if COUNTER_HUE[0] < middle < COUNTER_HUE[1]:
+        return None
     colour = min(ATTRIBUTE_HUES, key=lambda name: hue_distance(middle, ATTRIBUTE_HUES[name]))
     if hue_distance(middle, ATTRIBUTE_HUES[colour]) > HUE_TOLERANCE:
         return None
