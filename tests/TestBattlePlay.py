@@ -10,13 +10,11 @@ import unittest
 from contextlib import contextmanager
 from pathlib import Path
 
-import cv2
-import numpy as np
-
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from src.en import battle, board, cards, overrides  # noqa: E402
+from tests.TestBoard import flat, paint, paint_enemy  # noqa: E402
 
 # Haru is Justice and Renoa is Void, and these two cards are otherwise identical: one Action Point, an
 # Attack, exactly "100% Damage". So only a weakness read off the screen can order them.
@@ -24,6 +22,9 @@ ATTACK = "Anchor"
 VOID_ATTACK = "Annihilation Shot"
 BIG_ATTACK = "Charge Launcher"
 CURSE = "Anemia"
+
+# Where the painted enemy stands. Anywhere inside the band the counters are looked for in will do.
+ENEMY_AT = (0.50, 0.25)
 
 
 def hand(*names_in_order, keyless=()):
@@ -38,6 +39,31 @@ def hand(*names_in_order, keyless=()):
     """
     return [{"name": name, "key": None if name in keyless else str(index + 1)}
             for index, name in enumerate(names_in_order)]
+
+
+@contextmanager
+def counting(module, name):
+    """Count the calls to one function while still letting it do its real work.
+
+    Args:
+        module: The module the function is looked up on.
+        name: Its name there.
+
+    Yields:
+        A list that gains an entry per call.
+    """
+    real = getattr(module, name)
+    calls = []
+
+    def counted(*args, **kwargs):
+        calls.append(args)
+        return real(*args, **kwargs)
+
+    setattr(module, name, counted)
+    try:
+        yield calls
+    finally:
+        setattr(module, name, real)
 
 
 class TestChoosing(unittest.TestCase):
@@ -105,39 +131,14 @@ class Pressed:
         self.config = {overrides.SMART_CARD_PLAY: smart}
         # A fresh list per frame, the way `SortieMode.run` rebinds it after every OCR pass.
         self.all_texts = []
-        # A flat frame is enough: the readout is judged on how much of it is lit, so white reads as points
-        # remaining and black as none.
-        self.frame = np.full((1080, 1920, 3), 255 if action_points else 0, dtype=np.uint8)
-        self.height, self.width = self.frame.shape[:2]
+        # A flat frame is enough for the readout, which is judged on how much of it is lit, so white reads as
+        # points remaining and black as none. The badges are painted on by the same helpers `TestBoard` uses.
+        self.frame = flat(255 if action_points else 0)
         if weakness:
-            half = int(0.057 * 1080 / 2)
-            cx, cy = int(0.50 * 1920), int(0.25 * 1080)
-            self.frame[cy - half:cy + half, cx - half:cx + half] = self.paint(170, 230, 200)
-            bx = int((0.50 + board.BADGE_OFFSET[0]) * 1920)
-            by = int((0.25 + board.BADGE_OFFSET[1]) * 1080)
-            self.frame[by - 12:by + 12, bx - 12:bx + 12] = self.paint(board.ATTRIBUTE_HUES[weakness], 220, 220)
-        for key in egos:
-            centre = board.EGO_BADGE_Y[key]
-            half_x, half_y = board.EGO_BADGE_HALF
-            self.frame[int((centre - half_y) * 1080):int((centre + half_y) * 1080),
-                       int((board.EGO_BADGE_X - half_x) * 1920):int((board.EGO_BADGE_X + half_x) * 1920)] = (230, 150, 60)
+            paint_enemy(self.frame, ENEMY_AT[0], ENEMY_AT[1], board.ATTRIBUTE_HUES[weakness])
+        paint(self.frame, egos)
         self.keys = []
         self.logged = []
-
-    @staticmethod
-    def paint(hue, saturation, value):
-        """Turn one HSV colour into the BGR the frame is drawn in.
-
-        Args:
-            hue: The OpenCV hue.
-            saturation: How saturated to make it.
-            value: How bright to make it.
-
-        Returns:
-            The colour as BGR.
-        """
-        pixel = np.array([[[hue, saturation, value]]], dtype=np.uint8)
-        return tuple(int(channel) for channel in cv2.cvtColor(pixel, cv2.COLOR_HSV2BGR)[0][0])
 
     def send_key(self, key):
         self.keys.append(key)
@@ -171,13 +172,36 @@ def upstream(hand_cards, smart=True, action_points=True, egos=(), weakness=None)
     utils_sortie._hand_card_names = lambda task: utils_sortie.name_reads.append(task.all_texts) or []
     utils_sortie.blind_calls = []
     utils_sortie._try_all_card_keys = lambda task, count: utils_sortie.blind_calls.append(count)
-    utils_sortie.random = types.SimpleNamespace(choice=lambda options: "asked the real random",
-                                                uniform=lambda low, high: low)
-    utils_sortie.page_saw = []
+    utils_sortie.offered = []
+
+    def choice(options):
+        """Answer the way the real `random` would, recording what it was given to choose between.
+
+        Args:
+            options: What is being chosen between.
+
+        Returns:
+            One of them. Which one does not matter, but what was on offer does.
+        """
+        options = list(options)
+        utils_sortie.offered.append(options)
+        return options[0]
+
+    utils_sortie.random = types.SimpleNamespace(choice=choice, uniform=lambda low, high: low)
+    utils_sortie.asked = []
 
     def handle_battle_page(task):
-        """Stand in for upstream's battle frame, recording the `random` it ran with."""
-        utils_sortie.page_saw.append(utils_sortie.random)
+        """Stand in for upstream's battle frame, putting `random` the questions upstream puts it.
+
+        Asking here rather than afterwards is the point: what matters is what upstream's own call returns
+        while the frame is running, not what the stand-in would say once it has been put back.
+
+        Args:
+            task: The task the frame is running against.
+        """
+        utils_sortie.asked.append({"ego": utils_sortie.random.choice(list(board.EGO_KEYS)),
+                                   "other": utils_sortie.random.choice(["a", "b"]),
+                                   "wait": utils_sortie.random.uniform(0.2, 0.8)})
 
     utils_sortie.handle_battle_page = handle_battle_page
     # The seam edits this list rather than the module attribute, so the fake has to carry one too.
@@ -273,6 +297,26 @@ class TestInstalling(unittest.TestCase):
             utils_sortie._try_all_card_keys(task, 2)
             self.assertEqual(task.keys, ["1", battle.CONFIRM_KEY])
 
+    def test_the_weakness_is_read_once_a_turn(self):
+        # It describes the fight rather than the frame, it costs a pass over a third of the screen, and a hit
+        # landing over an enemy hides its badge for a frame or two.
+        with upstream(hand(ATTACK, BIG_ATTACK), weakness="PURPLE") as (utils_sortie, task):
+            battle.install()
+            with counting(board, "weakness") as reads:
+                utils_sortie._try_all_card_keys(task, 2)
+                utils_sortie._try_all_card_keys(task, 2)
+            self.assertEqual(len(reads), 1)
+
+    def test_a_fresh_hand_reads_the_weakness_again(self):
+        # A new turn can be a new fight, so what the last one saw no longer counts.
+        with upstream(hand(ATTACK, BIG_ATTACK), weakness="PURPLE") as (utils_sortie, task):
+            battle.install()
+            with counting(board, "weakness") as reads:
+                utils_sortie._try_all_card_keys(task, 2)
+                task.hand_cards = hand(ATTACK, BIG_ATTACK, CURSE)
+                utils_sortie._try_all_card_keys(task, 3)
+            self.assertEqual(len(reads), 2)
+
     def test_a_card_still_in_hand_is_not_tried_again(self):
         with upstream(hand(ATTACK, BIG_ATTACK)) as (utils_sortie, task):
             battle.install()
@@ -286,42 +330,45 @@ class TestEgoChoice(unittest.TestCase):
     """Which Ego skill gets fired. Upstream picks one of the three at random, affordable or not."""
 
     def fire(self, utils_sortie, task):
-        """Run one battle frame and ask the stand-in what it would fire.
+        """Run one battle frame and report what it fired, as the frame itself saw it.
 
         Args:
             utils_sortie: The fake upstream module.
             task: The task the frame runs against.
 
         Returns:
-            The key upstream's own `random.choice(["F1", "F2", "F3"])` call would return.
+            What upstream's own `random.choice(["F1", "F2", "F3"])` returned during the frame.
         """
         utils_sortie.PAGE_HANDLERS[0](task)
-        return utils_sortie.page_saw[-1].choice(list(board.EGO_KEYS))
+        return utils_sortie.asked[-1]["ego"]
 
     def test_an_affordable_ego_is_chosen(self):
         with upstream(hand(ATTACK), egos=("F2",)) as (utils_sortie, task):
             battle.install()
             self.assertEqual(self.fire(utils_sortie, task), "F2")
 
-    def test_the_first_affordable_one_is_chosen(self):
+    def test_only_the_affordable_ones_are_chosen_between(self):
+        # Firing one the bar cannot pay for is the defect. Which of the affordable ones goes is still left to
+        # chance, so a fight fought twice does not open the same way both times.
         with upstream(hand(ATTACK), egos=("F2", "F3")) as (utils_sortie, task):
             battle.install()
-            self.assertEqual(self.fire(utils_sortie, task), "F2")
+            self.fire(utils_sortie, task)
+            self.assertEqual(utils_sortie.offered[0], ["F2", "F3"])
 
     def test_nothing_affordable_falls_back_to_upstream(self):
         # Upstream fires only when it believes the bar is full, so if no badge reads as affordable the
         # reading is more likely wrong than the game is, and guessing beats refusing to act.
         with upstream(hand(ATTACK), egos=()) as (utils_sortie, task):
             battle.install()
-            self.assertEqual(self.fire(utils_sortie, task), "asked the real random")
+            self.fire(utils_sortie, task)
+            self.assertEqual(utils_sortie.offered[0], list(board.EGO_KEYS))
 
     def test_every_other_random_choice_is_left_alone(self):
         with upstream(hand(ATTACK), egos=("F1",)) as (utils_sortie, task):
             battle.install()
             utils_sortie.PAGE_HANDLERS[0](task)
-            stood_in = utils_sortie.page_saw[-1]
-            self.assertEqual(stood_in.choice(["a", "b"]), "asked the real random")
-            self.assertEqual(stood_in.uniform(0.2, 0.8), 0.2)
+            self.assertEqual(utils_sortie.asked[-1]["other"], "a")
+            self.assertEqual(utils_sortie.asked[-1]["wait"], 0.2)
 
     def test_the_module_is_left_as_it_was_found(self):
         with upstream(hand(ATTACK), egos=("F1",)) as (utils_sortie, task):

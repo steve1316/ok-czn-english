@@ -34,9 +34,13 @@ against the game - it is Instinct - but the rest come from the client's own tabl
 The badge hues measured so far sit far apart, at 15, 78 and 133 out of 180, with a spread of about three each.
 
 Enemies are found by their action counter, a magenta diamond of a consistent size, and the badge is taken at
-a fixed offset from it. When the enemies disagree the answer is that there is no preference, since nothing a
-single card does would exploit all of them, and no capture so far shows a mixed fight to check anything
-cleverer against.
+a fixed offset from it. `tests/images/enemy_instinct.png` holds one real enemy, counter and badge together, so
+the sizes and the offset are pinned against the game's own rendering rather than against a square drawn to
+match them, and `attack_flash.png` holds the burst that passes every other test and fails only on height.
+
+When the enemies disagree the answer is that there is no preference. The attribute only ever raises what a
+matching card is worth, so taking the majority would be defensible, but no capture so far shows a mixed fight
+to check a majority against, and having no opinion is the answer that cannot be wrong.
 """
 
 import cv2
@@ -82,13 +86,13 @@ COUNTER_SQUARENESS = (0.6, 1.7)
 # the magenta flashes an attack throws up run from 0.08 to 0.38 and the smaller markers sit at 0.033, so
 # this band is what keeps a hit landing on screen from being counted as another enemy.
 COUNTER_HEIGHT = (0.045, 0.072)
-# Where the attribute badge sits relative to its counter, and how much of it to sample.
-BADGE_OFFSET = (0.0185, 0.0225)
-BADGE_HALF = (0.0085, 0.0085)
-BADGE_SATURATION = 150
-BADGE_VALUE = 130
+# Where the weakness badge sits relative to its counter, and how much of it to sample.
+WEAKNESS_OFFSET = (0.0185, 0.0225)
+WEAKNESS_HALF = (0.0085, 0.0085)
+WEAKNESS_SATURATION = 150
+WEAKNESS_VALUE = 130
 # How much of the sampled patch has to be strongly coloured before it is read as a badge rather than scenery.
-BADGE_ENOUGH = 0.20
+WEAKNESS_ENOUGH = 0.20
 # The hue the client draws each of its attribute colours in. Red sits at 0 rather than 180 only because that
 # is the same place on a hue wheel, and the nearest of these five decides which attribute a badge is.
 ATTRIBUTE_HUES = {"RED": 0, "ORANGE": 15, "GREEN": 78, "BLUE": 110, "PURPLE": 133}
@@ -96,19 +100,48 @@ ATTRIBUTE_HUES = {"RED": 0, "ORANGE": 15, "GREEN": 78, "BLUE": 110, "PURPLE": 13
 HUE_TOLERANCE = 20
 
 
-def patch_of(task, box):
-    """Cut a relative box out of the frame being looked at.
+def frame_of(task):
+    """Take the frame to read, once, for the whole of one answer.
+
+    Reached through the task, `frame` waits out a pause and re-captures once the last frame has been let go,
+    so asking for it twice inside one reading can quietly mix two frames' pixels into a single answer.
 
     Args:
         task: The running task.
+
+    Returns:
+        The frame, or None when there is none to read.
+    """
+    return getattr(task, "frame", None)
+
+
+def box_around(centre_x, centre_y, half):
+    """Build a relative box of a given size around a point.
+
+    Args:
+        centre_x: Where the middle of the box sits across the frame, as a fraction.
+        centre_y: Where the middle of the box sits down the frame, as a fraction.
+        half: The `(x, y)` half-size, in the same fractions.
+
+    Returns:
+        A `(left, top, right, bottom)` tuple.
+    """
+    half_x, half_y = half
+    return (centre_x - half_x, centre_y - half_y, centre_x + half_x, centre_y + half_y)
+
+
+def patch_of(frame, box):
+    """Cut a relative box out of a frame.
+
+    Args:
+        frame: The frame to cut from, or None when there is none.
         box: A `(left, top, right, bottom)` tuple in fractions of the frame.
 
     Returns:
-        The pixels inside the box, or None when there is no frame to read or the box runs off it. A box that
-        falls partly outside would otherwise come back as a narrow strip of whatever sits at the edge, which
-        reads as a perfectly confident answer about the wrong pixels.
+        The pixels inside the box, or None when there is no frame or the box runs off it. A box that falls
+        partly outside would otherwise come back as a narrow strip of whatever sits at the edge, which reads
+        as a perfectly confident answer about the wrong pixels.
     """
-    frame = getattr(task, "frame", None)
     if frame is None:
         return None
     left, top, right, bottom = box
@@ -116,6 +149,20 @@ def patch_of(task, box):
         return None
     height, width = frame.shape[:2]
     return frame[int(top * height):int(bottom * height), int(left * width):int(right * width)]
+
+
+def hsv_of(patch):
+    """Turn a patch into the colour space every reading here judges it in.
+
+    Args:
+        patch: The pixels to convert, in BGR.
+
+    Returns:
+        The patch in HSV, or None when there is nothing to convert.
+    """
+    if patch is None or patch.size == 0:
+        return None
+    return cv2.cvtColor(patch, cv2.COLOR_BGR2HSV)
 
 
 def lit_fraction(patch):
@@ -143,7 +190,7 @@ def has_action_points(task):
         True while the readout is lit. Also True when there is no frame to read, because ending a turn that
         had not finished costs more than trying a card that will not play.
     """
-    patch = patch_of(task, ACTION_POINTS)
+    patch = patch_of(frame_of(task), ACTION_POINTS)
     if patch is None:
         return True
     return lit_fraction(patch) >= LIT_ENOUGH
@@ -161,9 +208,10 @@ def blue_fraction(patch):
     Returns:
         The blue share of the lit pixels, from 0 to 1, and 0 for an empty patch.
     """
-    if patch is None or patch.size == 0:
+    hsv = hsv_of(patch)
+    if hsv is None:
         return 0.0
-    hue, saturation, value = cv2.split(cv2.cvtColor(patch, cv2.COLOR_BGR2HSV))
+    hue, saturation, value = cv2.split(hsv)
     lit = value > BLUE_VALUE
     blue = lit & (saturation > BLUE_SATURATION) & (hue > BLUE_HUE[0]) & (hue < BLUE_HUE[1])
     return float(np.count_nonzero(blue)) / max(int(np.count_nonzero(lit)), 1)
@@ -179,12 +227,11 @@ def affordable_egos(task):
         The keys that fire an affordable Ego, in panel order. Empty when none can be paid for, and empty when
         there is no frame to read, since firing one blind is the behaviour this exists to replace.
     """
-    half_x, half_y = EGO_BADGE_HALF
+    frame = frame_of(task)
     ready = []
     for key in EGO_KEYS:
-        centre = EGO_BADGE_Y[key]
-        box = (EGO_BADGE_X - half_x, centre - half_y, EGO_BADGE_X + half_x, centre + half_y)
-        if blue_fraction(patch_of(task, box)) > EGO_READY:
+        box = box_around(EGO_BADGE_X, EGO_BADGE_Y[key], EGO_BADGE_HALF)
+        if blue_fraction(patch_of(frame, box)) > EGO_READY:
             ready.append(key)
     return ready
 
@@ -212,11 +259,12 @@ def attribute_of(patch):
     Returns:
         The attribute's name, or None when the patch holds no badge worth reading.
     """
-    if patch is None or patch.size == 0:
+    hsv = hsv_of(patch)
+    if hsv is None:
         return None
-    hue, saturation, value = cv2.split(cv2.cvtColor(patch, cv2.COLOR_BGR2HSV))
-    strong = (saturation > BADGE_SATURATION) & (value > BADGE_VALUE)
-    if np.count_nonzero(strong) < BADGE_ENOUGH * strong.size:
+    hue, saturation, value = cv2.split(hsv)
+    strong = (saturation > WEAKNESS_SATURATION) & (value > WEAKNESS_VALUE)
+    if np.count_nonzero(strong) < WEAKNESS_ENOUGH * strong.size:
         return None
     middle = int(np.median(hue[strong]))
     colour = min(ATTRIBUTE_HUES, key=lambda name: hue_distance(middle, ATTRIBUTE_HUES[name]))
@@ -225,23 +273,23 @@ def attribute_of(patch):
     return ATTRIBUTES.get(colour)
 
 
-def enemy_counters(task):
+def enemy_counters(frame):
     """Find the action counter of every enemy on screen.
 
     Args:
-        task: The running task.
+        frame: The frame to read, or None when there is none.
 
     Returns:
         A list of `(x, y)` centres in fractions of the frame, left to right.
     """
-    band = patch_of(task, ENEMY_BAND)
-    if band is None or band.size == 0:
+    hsv = hsv_of(patch_of(frame, ENEMY_BAND))
+    if hsv is None:
         return []
-    frame = task.frame
     height, width = frame.shape[:2]
-    hue, saturation, value = cv2.split(cv2.cvtColor(band, cv2.COLOR_BGR2HSV))
-    mask = ((hue > COUNTER_HUE[0]) & (hue < COUNTER_HUE[1])
-            & (saturation > COUNTER_SATURATION) & (value > COUNTER_VALUE)).astype(np.uint8)
+    # One pass over the three channels rather than three. The bounds `inRange` takes are inclusive and the
+    # ones named above are exclusive, hence the step in at each end.
+    mask = cv2.inRange(hsv, (COUNTER_HUE[0] + 1, COUNTER_SATURATION + 1, COUNTER_VALUE + 1),
+                       (COUNTER_HUE[1] - 1, 255, 255))
     count, _, stats, centres = cv2.connectedComponentsWithStats(mask, 8)
     left, top = ENEMY_BAND[0], ENEMY_BAND[1]
     found = []
@@ -268,13 +316,11 @@ def weakness(task):
         The attribute every enemy on screen shares, or None when they differ, when none was read, or when
         there is no frame to read.
     """
-    half_x, half_y = BADGE_HALF
+    frame = frame_of(task)
     seen = set()
-    for centre_x, centre_y in enemy_counters(task):
-        badge_x = centre_x + BADGE_OFFSET[0]
-        badge_y = centre_y + BADGE_OFFSET[1]
-        box = (badge_x - half_x, badge_y - half_y, badge_x + half_x, badge_y + half_y)
-        attribute = attribute_of(patch_of(task, box))
+    for centre_x, centre_y in enemy_counters(frame):
+        badge = box_around(centre_x + WEAKNESS_OFFSET[0], centre_y + WEAKNESS_OFFSET[1], WEAKNESS_HALF)
+        attribute = attribute_of(patch_of(frame, badge))
         if attribute:
             seen.add(attribute)
     return seen.pop() if len(seen) == 1 else None

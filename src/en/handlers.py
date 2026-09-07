@@ -16,6 +16,11 @@ The modes are found by shape rather than by name. They are imported flat (`utils
 `ok_tasks.utils_chaos`), a future mode would be missed by a hardcoded list, and `utils_story` has a
 `PAGE_HANDLERS` of its own that happens to contain neither handler we touch - all three cases fall out of
 looking for the attribute instead of the module name.
+
+`StandIn` covers a second shape that has come up twice. Upstream reaches for `random.choice` in several
+places in the same module, and a fork change usually wants exactly one of them. Standing in for the whole
+module for the length of one call is how both `src/en/events.py` and `src/en/battle.py` do that, and the
+part they share - hold the real module, hand everything else to it - lives here.
 """
 
 import sys
@@ -28,6 +33,33 @@ HANDLER_LIST = "PAGE_HANDLERS"
 
 _pending = []
 _hooked = False
+
+
+class StandIn:
+    """Stands in for a module upstream calls, answering one question and passing the rest along.
+
+    A subclass overrides the one call it wants to take over and leaves everything else to the passthrough,
+    so an unrelated use of the same module carries on behaving exactly as it did.
+    """
+
+    def __init__(self, original):
+        """Hold the module being stood in for.
+
+        Args:
+            original: The module upstream would otherwise have used.
+        """
+        self.original = original
+
+    def __getattr__(self, name):
+        """Hand anything the subclass does not answer straight to the real module.
+
+        Args:
+            name: The attribute being looked up.
+
+        Returns:
+            The real module's attribute.
+        """
+        return getattr(self.original, name)
 
 
 def each_list():

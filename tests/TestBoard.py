@@ -1,8 +1,11 @@
 """Check what the picker manages to read off a battle screen.
 
-The two fixtures are the Action Point readout cut out of real frames, and they are deliberately the hardest
-pair the captures offer: the zero with the most background bleeding into it, and the lowest positive reading
-seen. Anything that widens the gap is fine; anything that closes it fails here first.
+Two kinds of fixture sit behind this. The cut-outs are real pixels and pin the colour thresholds: the Action
+Point readouts are deliberately the hardest pair the captures offer, the zero with the most background
+bleeding into it and the lowest positive reading seen, so anything that closes that gap fails here first.
+The painted frames pin the geometry, where what matters is the size and placement rather than the exact
+colour - and `enemy_instinct` is there so the sizes are held to what the game draws and not to what the
+painter draws.
 """
 
 import sys
@@ -20,9 +23,16 @@ from src.en import board  # noqa: E402
 IMAGES = REPO_ROOT / "tests" / "images"
 WIDTH, HEIGHT = 1920, 1080
 
+# Where each cut-out sat in the frame it came from. The readings are all in fractions of the frame, so a crop
+# only means what it meant once it is back at the size and place it was cut from. `enemy_instinct` is one
+# enemy of `battle_000`, counter and attribute badge together. `attack_flash` is the magenta burst thrown up
+# by a hit landing in `battle_003`, which is square enough and large enough to pass everything but the height.
+ENEMY_AT = (1238, 203)
+FLASH_AT = (1000, 454)
+
 
 def fixture(name):
-    """Load one of the cut-out readouts.
+    """Load one of the cut-outs.
 
     Args:
         name: The file's base name.
@@ -51,6 +61,24 @@ def flat(value):
         A full-size frame.
     """
     return np.full((HEIGHT, WIDTH, 3), value, dtype=np.uint8)
+
+
+def pasted(name, left, top):
+    """Put a cut-out back into a full frame at the place it came from.
+
+    Args:
+        name: The file's base name.
+        left: Where its left edge sat.
+        top: Where its top edge sat.
+
+    Returns:
+        A full-size frame, black apart from the cut-out.
+    """
+    patch = fixture(name)
+    frame = flat(0)
+    height, width = patch.shape[:2]
+    frame[top:top + height, left:left + width] = patch
+    return frame
 
 
 class TestLitFraction(unittest.TestCase):
@@ -97,10 +125,9 @@ def paint(frame, slots):
     """
     height, width = frame.shape[:2]
     for slot in slots:
-        centre = board.EGO_BADGE_Y[slot]
-        half_x, half_y = board.EGO_BADGE_HALF
-        frame[int((centre - half_y) * height):int((centre + half_y) * height),
-              int((board.EGO_BADGE_X - half_x) * width):int((board.EGO_BADGE_X + half_x) * width)] = (230, 150, 60)
+        left, top, right, bottom = board.box_around(board.EGO_BADGE_X, board.EGO_BADGE_Y[slot],
+                                                    board.EGO_BADGE_HALF)
+        frame[int(top * height):int(bottom * height), int(left * width):int(right * width)] = (230, 150, 60)
     return frame
 
 
@@ -159,11 +186,11 @@ def paint_enemy(frame, centre_x, centre_y, hue):
     height, width = frame.shape[:2]
     # Sized as the game draws it, since how tall a counter is now decides whether it is one.
     half = int(0.057 * height / 2)
-    cx, cy = int(centre_x * width), int(centre_y * height)
-    frame[cy - half:cy + half, cx - half:cx + half] = in_hue(170, 230, 200)
-    bx = int((centre_x + board.BADGE_OFFSET[0]) * width)
-    by = int((centre_y + board.BADGE_OFFSET[1]) * height)
-    frame[by - 12:by + 12, bx - 12:bx + 12] = in_hue(hue)
+    counter_x, counter_y = int(centre_x * width), int(centre_y * height)
+    frame[counter_y - half:counter_y + half, counter_x - half:counter_x + half] = in_hue(170, 230, 200)
+    left, top, right, bottom = board.box_around(centre_x + board.WEAKNESS_OFFSET[0],
+                                                centre_y + board.WEAKNESS_OFFSET[1], board.WEAKNESS_HALF)
+    frame[int(top * height):int(bottom * height), int(left * width):int(right * width)] = in_hue(hue)
     return frame
 
 
@@ -188,8 +215,8 @@ class TestWeaknessBadges(unittest.TestCase):
         self.assertEqual(board.weakness(FakeTask(frame)), "Instinct")
 
     def test_enemies_that_disagree_give_no_preference(self):
-        # Nothing one card can exploit applies to all of them, and no capture so far shows a mixed fight to
-        # check a majority rule against, so the honest answer is to have no opinion.
+        # The attribute is only ever a tie-break, so a majority would be defensible, but no capture so far
+        # shows a mixed fight to check one against. Having no opinion is the answer that cannot be wrong.
         frame = flat(0)
         paint_enemy(frame, 0.50, 0.25, board.ATTRIBUTE_HUES["ORANGE"])
         paint_enemy(frame, 0.70, 0.30, board.ATTRIBUTE_HUES["GREEN"])
@@ -199,8 +226,8 @@ class TestWeaknessBadges(unittest.TestCase):
         # An attack landing throws up a magenta burst the same colour as a counter but many times its size.
         frame = flat(0)
         paint_enemy(frame, 0.50, 0.25, board.ATTRIBUTE_HUES["ORANGE"])
-        frame[int(0.30 * 1080):int(0.50 * 1080), int(0.60 * 1920):int(0.90 * 1920)] = in_hue(170, 230, 200)
-        self.assertEqual(len(board.enemy_counters(FakeTask(frame))), 1)
+        frame[int(0.30 * HEIGHT):int(0.50 * HEIGHT), int(0.60 * WIDTH):int(0.90 * WIDTH)] = in_hue(170, 230, 200)
+        self.assertEqual(len(board.enemy_counters(frame)), 1)
 
     def test_an_enemy_at_the_frame_edge_is_not_guessed_at(self):
         # Its badge would sit off screen, and sampling what little is left reads as a confident answer about
@@ -213,6 +240,25 @@ class TestWeaknessBadges(unittest.TestCase):
 
     def test_no_frame_means_no_preference(self):
         self.assertIsNone(board.weakness(FakeTask.__new__(FakeTask)))
+
+
+class TestRealEnemies(unittest.TestCase):
+    """The same reading against the game's own rendering, which is what the sizes were measured from.
+
+    The painted frames above would still pass if the counter size, the badge offset and the badge size all
+    drifted together. These would not, so this is where those four constants are actually held.
+    """
+
+    def test_a_real_counter_is_found(self):
+        self.assertEqual(len(board.enemy_counters(pasted("enemy_instinct", *ENEMY_AT))), 1)
+
+    def test_a_real_enemy_reads_its_weakness(self):
+        self.assertEqual(board.weakness(FakeTask(pasted("enemy_instinct", *ENEMY_AT))), "Instinct")
+
+    def test_a_real_attack_flash_is_not_an_enemy(self):
+        # It is the right colour, well over the minimum area and within the squareness band, so the height is
+        # the only thing keeping a hit landing from being counted as another enemy.
+        self.assertEqual(board.enemy_counters(pasted("attack_flash", *FLASH_AT)), [])
 
 
 if __name__ == "__main__":

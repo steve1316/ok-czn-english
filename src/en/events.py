@@ -25,7 +25,7 @@ import re
 
 from ok import Logger
 
-from src.en.handlers import loaded, register, replace
+from src.en.handlers import StandIn, loaded, register, replace
 
 logger = Logger.get_logger(__name__)
 
@@ -168,32 +168,13 @@ def order(options, priority_keywords, is_subsequence):
     return [option for _, option in sorted(enumerate(options), key=key)]
 
 
-class RankingChoice:
+class RankingChoice(StandIn):
     """Stands in for the `random` module for one call, ranking event options instead of picking blindly.
 
     Upstream reaches for `random.choice` once its own ladder has run out of opinions, which is the decision
     worth improving and the only `random` call inside the function. Anything that is not a list of event
     options falls through to the real module, so an unrelated call still behaves normally.
     """
-
-    def __init__(self, original):
-        """Wrap the real random module.
-
-        Args:
-            original: The `random` module upstream would otherwise have used.
-        """
-        self.original = original
-
-    def __getattr__(self, name):
-        """Hand anything else straight to the real module.
-
-        Args:
-            name: The attribute being looked up.
-
-        Returns:
-            The real module's attribute.
-        """
-        return getattr(self.original, name)
 
     def choice(self, sequence):
         """Pick the best-ranked event option, or defer when this is not an event choice.

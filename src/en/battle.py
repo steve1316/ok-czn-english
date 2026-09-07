@@ -13,14 +13,16 @@ by upstream, unchanged, so a tuned list keeps behaving as it did.
 The Ego skill is picked here too. Upstream fires one of `F1`, `F2` and `F3` at random once it reads the EP
 bar as full, without checking whether the EP will actually cover the one it picked - and in a real frame with
 the bar full, one of the three routinely costs more than the bar holds. `board.py` can see which are
-affordable, because the game draws that badge blue, so the choice is made from those instead. The mechanism
-is upstream's own `random` swapped out for the length of one frame, which is the same thing `src/en/events.py`
+affordable, because the game draws that badge blue, so the shortlist shrinks to those. The pick itself stays
+random, because picking one it cannot pay for is the defect and picking at random is not. The mechanism is
+upstream's own `random` swapped out for the length of one frame, which is the same thing `src/en/events.py`
 does to rank event options, and every other use of `random` in that module passes straight through.
 
 The attribute the enemies are weak to comes from `board.py` as well, and goes to the planner rather than being
 acted on here: it raises what a card of that attribute is worth, so a matching attack is played first when
 two are otherwise equal. A card only has an attribute if the data knows who owns it, which is true of about a
-third of them, so this reorders some turns and leaves the rest as they were.
+third of them, so this reorders some turns and leaves the rest as they were. It is read once a turn and kept,
+since it describes the fight rather than the frame.
 
 `_try_all_card_keys` has two callers, though, and rebinding it takes over both. One is the fallback proper,
 reached when the list matched nothing. The other is the escape hatch upstream reaches for after a card the
@@ -39,7 +41,7 @@ is the other end - once it goes dark, the turn ends at once instead of after eve
 from ok import Logger
 
 from src.en import board, cards
-from src.en.handlers import loaded, register, replace
+from src.en.handlers import StandIn, loaded, register, replace
 from src.en.overrides import SMART_CARD_PLAY
 
 logger = Logger.get_logger(__name__)
@@ -63,12 +65,12 @@ CONFIRM_KEY = "enter"
 _patched = False
 
 
-class EgoChoice:
+class EgoChoice(StandIn):
     """Stands in for the module's `random` while one battle frame runs.
 
     Only the Ego question is answered here. Every other call - and there are several in that module, for
     picking a card to drag at a Secret Enemy and for the hand-select screens - is handed to the real `random`
-    untouched, which is what the attribute passthrough is for.
+    untouched, which is what `StandIn` is for.
     """
 
     def __init__(self, task, original):
@@ -78,35 +80,28 @@ class EgoChoice:
             task: The task the frame is running against, whose screen holds the answer.
             original: The module's real `random`, which everything else still goes to.
         """
+        super().__init__(original)
         self.task = task
-        self.original = original
 
     def choice(self, options):
-        """Answer a random choice, taking the Ego question for ourselves.
+        """Answer a random choice, narrowing the Ego question to what the EP bar can pay for.
+
+        The defect being fixed is that upstream picks an Ego it cannot afford, not that it picks at random.
+        So the choice stays random and only the shortlist changes, which keeps a repeated fight from always
+        firing the same Ego.
 
         Args:
             options: What upstream is choosing between.
 
         Returns:
-            An affordable Ego key when that is the question being asked and the screen gives an answer,
-            otherwise whatever the real `random` says.
+            One of the affordable Ego keys when that is the question being asked and the screen gives an
+            answer, otherwise whatever the real `random` says.
         """
         if list(options) == list(board.EGO_KEYS):
             ready = board.affordable_egos(self.task)
             if ready:
-                return ready[0]
+                return self.original.choice(ready)
         return self.original.choice(options)
-
-    def __getattr__(self, name):
-        """Hand every other use of `random` to the real one.
-
-        Args:
-            name: The attribute upstream is reaching for.
-
-        Returns:
-            That attribute of the real `random`.
-        """
-        return getattr(self.original, name)
 
 
 def choose(hand, board, refused):
@@ -155,7 +150,12 @@ def new_turn(before, after):
 
 
 class Turn:
-    """What one turn has learnt: the hand it last saw, the card it tried, and what the game would not play."""
+    """What one turn has learnt: the hand it last saw, the card it tried, and what the game would not play.
+
+    The weakness the enemies show belongs here rather than to the frame. It is a property of the fight, it
+    costs a pass over a third of the screen to read, and an attack landing over an enemy hides its badge for
+    a frame or two - so it is read once and kept, and a turn that never manages to read one keeps trying.
+    """
 
     def __init__(self, hand_count):
         """Start a turn that has learnt nothing yet.
@@ -166,6 +166,7 @@ class Turn:
         self.hand_count = hand_count
         self.attempted = None
         self.refused = set()
+        self.weakness = None
 
 
 def turn_of(task, hand_count):
@@ -247,7 +248,9 @@ def install():
         # The readout says whether anything is left to spend, not how much, so a turn with points left is
         # planned against a full three and corrected by what the game will actually accept.
         points = cards.BASE_ACTION_POINTS if board.has_action_points(task) else 0
-        state = cards.Board(action_points=points, weakness=board.weakness(task))
+        if turn.weakness is None:
+            turn.weakness = board.weakness(task)
+        state = cards.Board(action_points=points, weakness=turn.weakness)
         card = choose(hand, state, turn.refused)
         if card is None:
             if not names:
@@ -287,7 +290,6 @@ def install():
         finally:
             utils_sortie.random = was
 
-    handle_battle_page._en_picker = True
     replace("handle_battle_page", handle_battle_page)
 
     # Marked so a later task load recognises the replacement and does not wrap it in itself.

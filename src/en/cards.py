@@ -77,9 +77,9 @@ DRAW = re.compile(r"\bDraw (\d+)")
 # What a card does, in the terms the ordering cares about.
 Features = namedtuple("Features", ["damage", "shield", "draw"])
 # What the picker knows about the moment it is choosing in. `weakness` is the attribute the enemies are weak
-# to and `epiphany` the hand card the run has lit up. Nothing reads either off a screen yet - both regions
-# need pinning down against a frame with a hand in it first - so today they arrive as None and the scoring
-# that uses them waits for a reader. The planner is built to take them the day one exists.
+# to, which `board.weakness` reads off the badge beside each enemy's action counter. `epiphany` is the hand
+# card the run has lit up, and nothing reads that yet - no capture so far holds one to pin the region against
+# - so it arrives as None and the scoring that uses it waits for a reader.
 Board = namedtuple("Board", ["action_points", "weakness", "epiphany"],
                    defaults=[BASE_ACTION_POINTS, None, None])
 
