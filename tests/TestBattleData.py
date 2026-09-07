@@ -71,6 +71,12 @@ class TestCards(unittest.TestCase):
     def test_sparkable_cards_are_cards(self):
         self.assertLessEqual(CARD_SPARKABLE, set(CARD_COST))
 
+    def test_no_card_name_starts_with_a_digit(self):
+        # A leading digit on a reading is therefore always the hotkey bleeding into the name box, which is
+        # what lets `cards.canonical` strip it.
+        leading = sorted(name for name in CARD_COST if name[:1].isdigit())
+        self.assertEqual(leading, [])
+
 
 class TestOwnership(unittest.TestCase):
     """The card-to-combatant link, which is where a card gets its attribute from."""

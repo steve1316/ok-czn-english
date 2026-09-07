@@ -100,7 +100,14 @@ def canonical(name):
     Returns:
         The client's spelling, or the name unchanged when nothing matches it.
     """
-    return CARD_INDEX.get(fold(name), name)
+    folded = fold(name)
+    known = CARD_INDEX.get(folded)
+    if known:
+        return known
+    # The hotkey sits just above the card name, close enough that the reader sometimes returns the two as one
+    # box - a real hand came back as "1=Soul Riff". No card in the data is named starting with a digit, so a
+    # leading one is the key rather than part of the name.
+    return CARD_INDEX.get(folded.lstrip("0123456789"), name)
 
 
 def features(name):

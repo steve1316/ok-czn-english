@@ -178,6 +178,11 @@ class TestReadingNames(unittest.TestCase):
     def test_case_and_spacing_do_not_matter(self):
         self.assertEqual(cards.canonical("  anchor "), JUSTICE_ATTACK)
 
+    def test_a_hotkey_run_into_the_name_is_stripped(self):
+        # The hotkey is printed just above the card, close enough that the reader sometimes returns the two
+        # as one box. A real Sortie hand came back with "1=Soul Riff" beside four cleanly read names.
+        self.assertEqual(cards.canonical("1=Soul Riff"), "Soul Riff")
+
     def test_a_card_the_data_never_heard_of_is_still_played(self):
         chosen = cards.plan(hand("Some Card From A Later Patch"), cards.Board())
         self.assertEqual(len(chosen), 1)
