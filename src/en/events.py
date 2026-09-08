@@ -5,8 +5,13 @@ blacklist and the user's priority lists, then the combat option, then a random p
 what that means in practice - the upper-half shortcut fired 38 times and **chose "End the event" five times**,
 the random pick fired 40 times, and the user's own priority list never ran once.
 
-So two things change here: the option that ends the event is withheld while anything else is on offer, and
+So two things change here: the options that give nothing are withheld while anything else is on offer, and
 what is left is ranked spark, then rewards, then combat.
+
+"Nothing" covers two kinds of option. Ending the event is one. Reading lore is the other, and it is worse:
+the screen comes back unchanged afterwards, so the shortcut takes the same option again on the next frame. A
+logged Chaos run clicked "Examine the mushroom" three times in four seconds, left the event, came back to it
+and did the same thing again.
 
 Both changes are made by wrapping `handle_event_task` and adjusting what it sees, rather than copying its two
 hundred lines. Everything it does still runs untouched - the taskreward and treasure features, the
@@ -28,11 +33,17 @@ logger = Logger.get_logger(__name__)
 SPARK = ("epiphany", "闪光")
 QUIT = ("end the event",)
 ATTACK = ("initiate battle", "event encounter")
+# An option that only reads out lore. This phrasing was captured from a run rather than read out of the
+# client's tables, so it is one known wording and not the whole set.
+DIALOGUE = ("check information on",)
 
 SPARK_RANK = 0
 REWARD_RANK = 1
 ATTACK_RANK = 2
 QUIT_RANK = 3
+# Worse than quitting. Ending the event at least moves the run on, while reading lore puts the same screen
+# straight back up.
+DIALOGUE_RANK = 4
 
 # `_get_region_text` glues the OCR boxes together with no separator and in an unstable order, and the reader
 # loses or invents spaces at line breaks - the same option was captured as "Spark an Epiphany for a" and
@@ -87,11 +98,13 @@ def rank(description):
         description: The option text.
 
     Returns:
-        `SPARK_RANK`, `REWARD_RANK`, `ATTACK_RANK` or `QUIT_RANK`.
+        `SPARK_RANK`, `REWARD_RANK`, `ATTACK_RANK`, `QUIT_RANK` or `DIALOGUE_RANK`.
     """
     text = fold(description)
     if contains(text, SPARK):
         return SPARK_RANK
+    if contains(text, DIALOGUE):
+        return DIALOGUE_RANK
     if contains(text, QUIT):
         return QUIT_RANK
     if contains(text, ATTACK):
@@ -101,24 +114,12 @@ def rank(description):
     return REWARD_RANK
 
 
-def is_quit(option):
-    """Report whether an option ends the event.
+def drop_unwanted(options):
+    """Withhold the options that give nothing, unless they are all that is on offer.
 
-    Args:
-        option: An option dict from `recognize_event_options`.
-
-    Returns:
-        True when taking it would end the event.
-    """
-    return rank(option.get("description", "")) == QUIT_RANK
-
-
-def drop_quit(options):
-    """Withhold the option that ends the event, unless it is all that is on offer.
-
-    This is what makes "never quit while something else is available" a guarantee rather than a preference.
-    Upstream's upper-half shortcut runs before any ranking and cannot be reasoned with, so the option is kept
-    out of its reach entirely.
+    This is what makes "never end or stall the event while something else is available" a guarantee rather than
+    a preference. Upstream's upper-half shortcut runs before any ranking and cannot be reasoned with, so those
+    options are kept out of its reach entirely.
 
     Args:
         options: Every recognised option.
@@ -126,12 +127,19 @@ def drop_quit(options):
     Returns:
         The options worth considering.
     """
-    worth_taking = [option for option in options if not is_quit(option)]
-    if not worth_taking:
+    if not options:
         return options
-    if len(worth_taking) != len(options):
-        logger.info(f"withholding {len(options) - len(worth_taking)} end-the-event option(s)")
-    return worth_taking
+    ranked = [(rank(option.get("description", "")), option) for option in options]
+    # Every option worth taking ranks at `ATTACK_RANK` or better, so the cutoff only rises above it on a screen
+    # offering nothing but ways to end or stall the event - and then only far enough to leave something to click.
+    cutoff = max(min(tier for tier, _ in ranked), ATTACK_RANK)
+    kept = [option for tier, option in ranked if tier <= cutoff]
+    # Naming what was dropped, not just how many. The next lore wording to loop will be one nobody has seen
+    # yet, and this line is what makes it obvious from a run's log rather than needing a repro.
+    withheld = [f"rank {tier}: {option.get('description', '')}" for tier, option in ranked if tier > cutoff]
+    if withheld:
+        logger.info(f"withholding {len(withheld)} option(s) that give nothing - {' | '.join(withheld)}")
+    return kept
 
 
 def order(options, priority_keywords, is_subsequence):
@@ -230,7 +238,7 @@ def apply():
             for slot in range(1, 4):
                 priority.extend(utils._get_card_list(task, f"装备{slot}号位优先级"))
             priority.extend(utils._get_card_list(task, "任务优先级"))
-            return order(drop_quit(options), priority, utils.is_subsequence)
+            return order(drop_unwanted(options), priority, utils.is_subsequence)
 
         def patched_handle_event_task(task):
             original_find_feature = task.find_feature

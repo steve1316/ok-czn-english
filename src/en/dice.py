@@ -17,6 +17,7 @@ import time
 from ok import Logger
 
 from src.en.handlers import insert_before, loaded, register
+from src.en.screen import in_region
 
 logger = Logger.get_logger(__name__)
 
@@ -56,24 +57,6 @@ def parse_currency(text):
     if not found:
         return None
     return int(found.group(1)), int(found.group(2))
-
-
-def in_region(box, region, width, height):
-    """Report whether a box's centre sits inside a relative region.
-
-    Args:
-        box: The OCR box.
-        region: A `(left, top, right, bottom)` tuple in screen fractions.
-        width: Screen width in pixels.
-        height: Screen height in pixels.
-
-    Returns:
-        True when the box centre is inside the region.
-    """
-    left, top, right, bottom = region
-    center_x = (box.x + box.width / 2) / width
-    center_y = (box.y + box.height / 2) / height
-    return left <= center_x <= right and top <= center_y <= bottom
 
 
 def find_currency(boxes, width, height):
