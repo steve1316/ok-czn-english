@@ -26,9 +26,12 @@ CLASS_NAMES = {
     "controller": "Controller",
 }
 
-# Everything that is not a letter or a digit. Apostrophes, hyphens, spaces and the zero-width space the
-# client hides in one card name all disappear, which is what makes a concatenated OCR reading match.
-INSIGNIFICANT = re.compile(r"[^0-9a-z一-鿿]+")
+# Everything that is not a letter, a digit or one of the geometric shapes. Apostrophes, hyphens, spaces and
+# the zero-width space the client hides in one card name all disappear, which is what makes a concatenated
+# OCR reading match. The shapes are kept because one real card is named `○ △ □` and nothing else -
+# without them it folds away to nothing, and then every punctuation-only box the reader produces folds to
+# the same nothing and matches it.
+INSIGNIFICANT = re.compile(r"[^0-9a-z一-鿿■-◿]+")
 
 
 def fold(name):
@@ -50,9 +53,10 @@ def index(names):
         names: An iterable of canonical names.
 
     Returns:
-        A dict of folded name to canonical name.
+        A dict of folded name to canonical name. A name that folds away to nothing is left out, since that
+        key would match every reading made only of characters the fold discards.
     """
-    return {fold(name): name for name in names}
+    return {folded: name for folded, name in ((fold(name), name) for name in names) if folded}
 
 
 CARD_INDEX = index(CARD_RARITY)
