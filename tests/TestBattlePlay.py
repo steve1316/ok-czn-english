@@ -97,18 +97,26 @@ class TestTurnTracking(unittest.TestCase):
     """Telling a card the game would not play apart from one it did, and both apart from a fresh turn."""
 
     def test_a_card_still_in_hand_was_refused(self):
-        # Counting the hand is not enough: a card that draws replaces itself, so the count can stay the same
-        # on a card that played perfectly well. Whether the card itself is still there is the real answer.
-        self.assertTrue(battle.was_refused(ATTACK, [ATTACK, BIG_ATTACK]))
+        # Counting the whole hand is not enough: a card that draws replaces itself, so the hand size can be
+        # unchanged on a card that played perfectly well. How many of that one card are left does answer it.
+        self.assertTrue(battle.was_refused(ATTACK, 1, [ATTACK, BIG_ATTACK]))
 
     def test_a_card_gone_from_hand_was_played(self):
-        self.assertFalse(battle.was_refused(ATTACK, [BIG_ATTACK]))
+        self.assertFalse(battle.was_refused(ATTACK, 1, [BIG_ATTACK]))
 
     def test_a_card_that_drew_another_is_not_a_refusal(self):
-        self.assertFalse(battle.was_refused(ATTACK, [BIG_ATTACK, CURSE]))
+        self.assertFalse(battle.was_refused(ATTACK, 1, [BIG_ATTACK, CURSE]))
+
+    def test_another_copy_of_the_same_card_is_not_a_refusal(self):
+        # A deck holds several copies of a card, so a hand can too. One of three going down to two is the
+        # game accepting it, not refusing it - reading that as a refusal stranded the other two.
+        self.assertFalse(battle.was_refused(ATTACK, 3, [ATTACK, ATTACK]))
+
+    def test_the_last_copy_staying_put_is_a_refusal(self):
+        self.assertTrue(battle.was_refused(ATTACK, 2, [ATTACK, ATTACK]))
 
     def test_nothing_attempted_is_not_a_refusal(self):
-        self.assertFalse(battle.was_refused(None, [ATTACK]))
+        self.assertFalse(battle.was_refused(None, 0, [ATTACK]))
 
     def test_a_bigger_hand_means_a_new_turn(self):
         self.assertTrue(battle.new_turn(before=1, after=5))
@@ -316,6 +324,16 @@ class TestInstalling(unittest.TestCase):
                 task.hand_cards = hand(ATTACK, BIG_ATTACK, CURSE)
                 utils_sortie._try_all_card_keys(task, 3)
             self.assertEqual(len(reads), 2)
+
+    def test_every_copy_of_a_card_gets_played(self):
+        # Caught live: a hand of three Escapism played one, read the other two as the game refusing it, and
+        # ended the turn with both still sitting there and still playable.
+        with upstream(hand(ATTACK, ATTACK)) as (utils_sortie, task):
+            battle.install()
+            utils_sortie._try_all_card_keys(task, 2)
+            task.hand_cards = hand(ATTACK)
+            utils_sortie._try_all_card_keys(task, 1)
+            self.assertEqual(task.keys, ["1", battle.CONFIRM_KEY, "1", battle.CONFIRM_KEY])
 
     def test_a_card_still_in_hand_is_not_tried_again(self):
         with upstream(hand(ATTACK, BIG_ATTACK)) as (utils_sortie, task):

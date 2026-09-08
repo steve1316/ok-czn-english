@@ -120,20 +120,23 @@ def choose(hand, board, refused):
     return chosen[0] if chosen else None
 
 
-def was_refused(attempted, hand_names):
+def was_refused(attempted, copies, hand_names):
     """Say whether the card tried last frame is still sitting in hand.
 
-    Counting the hand does not answer this. A card that draws replaces itself, so the count can be unchanged
-    on a card that played perfectly well. Whether that particular card is still there does answer it.
+    Neither the size of the hand nor the presence of the card answers this on its own. A card that draws
+    replaces itself, so the hand can be the same size after one played perfectly well. And a deck holds
+    several copies of a card, so the name can still be there because another copy is. How many copies are
+    left is what actually settles it: one fewer than there were means the game took it.
 
     Args:
         attempted: The card name tried last frame, or None when nothing was.
+        copies: How many of that card were in hand when its key was pressed.
         hand_names: The names now in hand.
 
     Returns:
         True when the game would not play it, so it should be passed over for the rest of the turn.
     """
-    return attempted is not None and attempted in hand_names
+    return attempted is not None and hand_names.count(attempted) >= copies
 
 
 def new_turn(before, after):
@@ -165,6 +168,7 @@ class Turn:
         """
         self.hand_count = hand_count
         self.attempted = None
+        self.attempted_copies = 0
         self.refused = set()
         self.weakness = None
 
@@ -241,7 +245,7 @@ def install():
         names = [card["name"] for card in hand]
         turn = turn_of(task, len(names))
 
-        if was_refused(turn.attempted, names):
+        if was_refused(turn.attempted, turn.attempted_copies, names):
             turn.refused.add(turn.attempted)
             task.log_info(f"the game would not play {turn.attempted}, leaving it for the rest of this turn")
 
@@ -267,6 +271,7 @@ def install():
         task.log_info(f"playing {name} for {cards.cost(name)} AP on key {card['key']}, "
                       f"worth {cards.value(name, state):.0f}")
         turn.attempted = name
+        turn.attempted_copies = names.count(name)
         task.send_key(card["key"])
         task.sleep(AFTER_KEY)
         task.send_key(CONFIRM_KEY)
