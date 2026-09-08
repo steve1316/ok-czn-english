@@ -1,10 +1,12 @@
 """Check which event option the bot decides to take.
 
 `src/en/events.py` changes two of upstream's decisions, and both are easy to get subtly wrong. Ranking has to
-survive OCR that concatenates an option's boxes in an unpredictable order, and the option that ends the event
-has to be withheld while anything else is on offer - a logged Chaos run shows upstream choosing it five times.
+survive OCR that concatenates an option's boxes in an unpredictable order, and an option that gives nothing has
+to be withheld while anything else is on offer - a logged Chaos run shows upstream ending the event five times,
+and a later one shows it reading the same lore option over and over.
 
-Every description here was captured from the 2026-09-04 Chaos run, mangling and all. Nothing is invented.
+Every description here was captured from the 2026-09-04 and 2026-09-07 Chaos runs, mangling and all. Nothing
+is invented.
 """
 
 import sys
@@ -15,10 +17,15 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from src.en.events import (  # noqa: E402
-    ATTACK, ATTACK_RANK, MIN_LATIN_MARKER_LENGTH, MIN_MARKER_LENGTH, QUIT, QUIT_RANK, REWARD_RANK,
-    SPARK, SPARK_RANK,
-    drop_quit, fold, order, rank,
+    ATTACK, ATTACK_RANK, DIALOGUE, DIALOGUE_RANK, MIN_LATIN_MARKER_LENGTH, MIN_MARKER_LENGTH, QUIT, QUIT_RANK,
+    REWARD_RANK, SPARK, SPARK_RANK,
+    drop_unwanted, fold, order, rank,
 )
+
+# The three the mushroom event offers, which is where the lore option was caught looping.
+MUSHROOM_LORE = "Examine the mushroomPheromonesCheck information on Types of"
+MUSHROOM_REWARD = "[Dexterous] Collect a pieceDice Roll 4Upon success Decrease allCombatants' Stress by 3, Ob ."
+MUSHROOM_ATTACK = "Provoke the mushroomEvent Encounter: [PheromoneSpore]"
 
 # Real descriptions, with the tier each must land in.
 REAL_OPTIONS = {
@@ -40,6 +47,8 @@ REAL_OPTIONS = {
     "I'll let you live.End the event": QUIT_RANK,
     "II et you live.End the event": QUIT_RANK,
     'I"I let you live.End the event': QUIT_RANK,
+    # Lore. Taking it spends a click and leaves the same screen up, so it ranks below quitting.
+    MUSHROOM_LORE: DIALOGUE_RANK,
 }
 
 # The same option, captured twice with its OCR boxes joined in a different order.
@@ -50,6 +59,7 @@ SCRAMBLED_PAIRS = [
      "Examine the rootRecover Health by 40%,Stress by 6Decrease all Combatants'"),
     ("Enter InsideEvent Encounter: Inside theBrood Lord",
      "Enter InsideBrood LordEvent Encounter: Inside the"),
+    (MUSHROOM_LORE, "Examine the mushroomCheck information on Types ofPheromones"),
 ]
 
 
@@ -101,13 +111,13 @@ class TestEventRanking(unittest.TestCase):
 
     def test_every_marker_survives_folding(self):
         """A marker that folded away to nothing would be `in` every description and match everything."""
-        for marker in SPARK + QUIT + ATTACK:
+        for marker in SPARK + QUIT + ATTACK + DIALOGUE:
             with self.subTest(marker=marker):
                 self.assertGreaterEqual(len(fold(marker)), MIN_MARKER_LENGTH)
 
     def test_latin_markers_are_whole_phrases(self):
         """Two Chinese characters are a specific word; two Latin letters would match half the screen."""
-        for marker in SPARK + QUIT + ATTACK:
+        for marker in SPARK + QUIT + ATTACK + DIALOGUE:
             if marker.isascii():
                 with self.subTest(marker=marker):
                     self.assertGreaterEqual(len(fold(marker)), MIN_LATIN_MARKER_LENGTH)
@@ -122,18 +132,31 @@ class TestEventRanking(unittest.TestCase):
                       "Enter InsideEvent Encounter: Inside theBrood Lord",
                       "Bury the bodySpark an Epiphany for arandom Combatant 1 time(s)"):
             with self.subTest(other=other[:40]):
-                kept = drop_quit([option("离开End the event"), option(other)])
+                kept = drop_unwanted([option("离开End the event"), option(other)])
                 self.assertEqual([other], [o["description"] for o in kept])
 
-    def test_quit_survives_when_it_is_the_only_option(self):
+    def test_a_withheld_option_survives_when_it_is_the_only_one(self):
         """Withholding the last option would leave the bot with nothing to click."""
-        only = [option("离开End the event")]
-        self.assertEqual(only, drop_quit(only))
+        for description in ("离开End the event", MUSHROOM_LORE):
+            with self.subTest(description=description[:40]):
+                only = [option(description)]
+                self.assertEqual(only, drop_unwanted(only))
 
     def test_every_quit_phrasing_is_withheld(self):
         quits = [option(text) for text, tier in REAL_OPTIONS.items() if tier == QUIT_RANK]
-        kept = drop_quit(quits + [option("Gather salvageIncrease Credits by 140")])
+        kept = drop_unwanted(quits + [option("Gather salvageIncrease Credits by 140")])
         self.assertEqual(1, len(kept))
+
+    def test_the_lore_option_is_withheld_from_the_mushroom_event(self):
+        """The logged loop: the lore option tied with the reward and won the coin flip, again and again."""
+        offered = [option(MUSHROOM_LORE), option(MUSHROOM_REWARD), option(MUSHROOM_ATTACK)]
+        kept = drop_unwanted(offered)
+        self.assertEqual([MUSHROOM_REWARD, MUSHROOM_ATTACK], [o["description"] for o in kept])
+
+    def test_a_lore_option_loses_even_to_quitting(self):
+        """Ending the event moves the run on. Reading lore puts the same screen back up."""
+        kept = drop_unwanted([option(MUSHROOM_LORE), option("离开End the event")])
+        self.assertEqual(["离开End the event"], [o["description"] for o in kept])
 
     def test_ordering_puts_the_best_option_first(self):
         """Upstream's upper-half shortcut takes the first option it can, so first must mean best."""
@@ -156,6 +179,12 @@ class TestEventRanking(unittest.TestCase):
                    option("Gather salvageIncrease Credits by 140")]
         ordered = order(options, ["Credits", "Equipment"], is_subsequence)
         self.assertIn("Credits by 140", ordered[0]["description"])
+
+    def test_ordering_puts_a_lore_option_last(self):
+        """Upstream's shortcut takes the first option it can, so lore must never be first."""
+        options = [option(MUSHROOM_LORE), option(MUSHROOM_REWARD), option("离开End the event")]
+        ordered = order(options, [], is_subsequence)
+        self.assertEqual(MUSHROOM_LORE, ordered[-1]["description"])
 
     def test_equal_options_keep_their_original_order(self):
         """A stable sort keeps the ordering upstream gave us, which is left to right on screen."""
