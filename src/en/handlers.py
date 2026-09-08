@@ -112,12 +112,42 @@ def insert_before(anchor_name, handler):
     return changed
 
 
+def append(handler, anchor_name):
+    """Register a handler to run after every existing one, in the modes carrying a given handler.
+
+    Last is its own kind of precedence: a handler here only sees a frame that every handler recognising a
+    screen by name has already declined, which is what makes acting on shape alone safe.
+
+    The anchor is what keeps that from spreading. `replace` and `insert_before` scope themselves - a list
+    without the handler they name is left alone - and appending has no such brake of its own, so it would
+    reach every mode loaded now and every mode added later. Naming a handler the target modes carry restores
+    the property. The anchor only decides *which* lists are changed, never where in them the handler lands.
+
+    Args:
+        handler: The function to append.
+        anchor_name: `__name__` of a handler the intended modes carry and others do not.
+
+    Returns:
+        The number of lists changed.
+    """
+    changed = 0
+    for module_name, handlers in each_list():
+        names = [getattr(existing, "__name__", None) for existing in handlers]
+        # Matched by name for the same reason `insert_before` does it: the install runs once per task load.
+        if anchor_name not in names or handler.__name__ in names:
+            continue
+        handlers.append(handler)
+        changed += 1
+        logger.info(f"{module_name}: {handler.__name__} appended at {len(handlers) - 1}")
+    return changed
+
+
 def register(install):
     """Arrange for a handler-list edit to run once the modes have been imported.
 
     Args:
         install: A callable taking no arguments that performs the edit. It is run on every task load, so it
-            must be idempotent - `replace` and `insert_before` both are.
+            must be idempotent - `replace`, `insert_before` and `append` all are.
     """
     global _hooked
     _pending.append(install)

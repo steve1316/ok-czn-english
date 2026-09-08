@@ -67,6 +67,24 @@ class TestHandlerSeam(unittest.TestCase):
         self.assertEqual(["handle_close_page", "handle_dice_reroll", "handle_negotiation",
                           "handle_event_task"], self.names())
 
+    def test_an_appended_handler_runs_after_everything_else(self):
+        """Last is the point: it only sees a frame no handler that knows a screen by name has claimed."""
+        handlers.append(named("handle_dialogue"), "handle_event_task")
+        self.assertEqual(["handle_close_page", "handle_negotiation", "handle_event_task",
+                          "handle_dialogue"], self.names())
+
+    def test_appending_twice_does_not_duplicate(self):
+        for _ in range(3):
+            handlers.append(named("handle_dialogue"), "handle_event_task")
+        self.assertEqual(1, self.names().count("handle_dialogue"))
+
+    def test_a_mode_without_the_anchor_is_left_alone(self):
+        """Appending has no brake of its own, so the anchor is what keeps a handler tuned on one mode's
+        screens out of the modes it was never measured against."""
+        before = self.names()
+        self.assertEqual(0, handlers.append(named("handle_dialogue"), "handle_that_mode_does_not_have"))
+        self.assertEqual(before, self.names())
+
     def test_inserting_twice_does_not_duplicate(self):
         """The install runs on every task load, and each run builds a fresh function object."""
         for _ in range(3):
