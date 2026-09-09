@@ -6,14 +6,18 @@ a live run rather than one invented for the test.
 """
 
 import sys
+import types
 import unittest
 from collections import Counter
+from contextlib import contextmanager
 from pathlib import Path
+
+import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.en import autoplay  # noqa: E402
+from src.en import autoplay, observe  # noqa: E402
 
 # Real card names, so canonical folding is exercised rather than bypassed.
 ATTACK = "Anchor"
@@ -145,6 +149,123 @@ class TestTurns(unittest.TestCase):
     def test_an_empty_recording_reconstructs_nothing(self):
         self.assertEqual(autoplay.decisions([]), [])
         self.assertEqual(autoplay.turns([]), [])
+
+
+class FakeTask:
+    """A task on a battle screen, holding just what the recorder reads."""
+
+    def __init__(self, hand_cards):
+        self.hand_cards = hand_cards
+        self.all_texts = []
+        self.frame = np.full((1080, 1920, 3), 255, dtype=np.uint8)
+        self.height, self.width = self.frame.shape[:2]
+        self.logged = []
+
+    def log_info(self, message):
+        self.logged.append(message)
+
+
+@contextmanager
+def chaos(hand_cards):
+    """Stand the upstream modules up so the recorder has a handler to wrap.
+
+    Args:
+        hand_cards: What `_hand_cards` should report.
+
+    Yields:
+        The fake `utils_chaos` module and the task the wrapped handler is called with.
+    """
+    utils_sortie = types.ModuleType("utils_sortie")
+    utils_sortie._hand_cards = lambda task: task.hand_cards
+    utils_sortie._read_hand_count = lambda task: len(task.hand_cards)
+    utils_chaos = types.ModuleType("utils_chaos")
+    utils_chaos.on_battle = True
+
+    def handle_battle_auto_check(task):
+        """Stand in for upstream's Chaos battle frame."""
+        return utils_chaos.on_battle
+
+    utils_chaos.handle_battle_auto_check = handle_battle_auto_check
+    utils_chaos.PAGE_HANDLERS = [handle_battle_auto_check]
+    saved = {name: sys.modules.get(name) for name in ("utils_sortie", "utils_chaos")}
+    sys.modules["utils_sortie"], sys.modules["utils_chaos"] = utils_sortie, utils_chaos
+    try:
+        yield utils_chaos, FakeTask(hand_cards)
+    finally:
+        for name, module in saved.items():
+            if module is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = module
+
+
+@contextmanager
+def collected():
+    """Catch what the recorder would have written instead of letting it touch the disk.
+
+    Yields:
+        A list that gains one record per frame written.
+    """
+    written = []
+    saved, observe.write = observe.write, lambda task: written.append(observe.seen(task))
+    try:
+        yield written
+    finally:
+        observe.write = saved
+
+
+class TestRecording(unittest.TestCase):
+    """The recorder itself, which watches Chaos and must never get in its way."""
+
+    def test_a_battle_frame_is_recorded(self):
+        with chaos([{"name": ATTACK, "key": "1"}]) as (utils_chaos, task):
+            record = observe.seen(task)
+            self.assertEqual(record["hand"], [[ATTACK, "1"]])
+
+    def test_the_board_state_is_recorded(self):
+        with chaos([{"name": ATTACK, "key": "1"}]) as (utils_chaos, task):
+            record = observe.seen(task)
+            self.assertIn("points", record)
+            self.assertIn("weakness", record)
+            self.assertIn("at", record)
+
+    def test_upstream_still_decides_whether_this_is_a_battle(self):
+        with chaos([{"name": ATTACK, "key": "1"}]) as (utils_chaos, task):
+            observe.install()
+            with collected() as written:
+                self.assertTrue(utils_chaos.PAGE_HANDLERS[0](task))
+                utils_chaos.on_battle = False
+                self.assertFalse(utils_chaos.PAGE_HANDLERS[0](task))
+            self.assertEqual(len(written), 1)
+
+    def test_nothing_is_written_when_it_is_not_a_battle_screen(self):
+        with chaos([{"name": ATTACK, "key": "1"}]) as (utils_chaos, task):
+            observe.install()
+            utils_chaos.on_battle = False
+            with collected() as written:
+                utils_chaos.PAGE_HANDLERS[0](task)
+            self.assertEqual(written, [])
+
+    def test_a_recorder_that_throws_never_breaks_the_run(self):
+        # Losing the data costs a capture session. Breaking Chaos costs a run, so the handler must survive
+        # anything the recorder does.
+        with chaos([{"name": ATTACK, "key": "1"}]) as (utils_chaos, task):
+            observe.install()
+            def broken(task):
+                raise RuntimeError("no disk")
+
+            saved, observe.write = observe.write, broken
+            try:
+                self.assertTrue(utils_chaos.PAGE_HANDLERS[0](task))
+            finally:
+                observe.write = saved
+
+    def test_installing_again_does_not_wrap_the_wrapper(self):
+        with chaos([{"name": ATTACK, "key": "1"}]) as (utils_chaos, task):
+            observe.install()
+            once = utils_chaos.PAGE_HANDLERS[0]
+            observe.install()
+            self.assertIs(utils_chaos.PAGE_HANDLERS[0], once)
 
 
 if __name__ == "__main__":
