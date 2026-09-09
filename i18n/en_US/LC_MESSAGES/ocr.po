@@ -98,6 +98,11 @@ msgstr "继续"
 msgid "Select combatant."
 msgstr "请选择主战员"
 
+# From src/en/equipment.py: the banner the client draws on the combatant row with a free slot of the
+# right kind. Upstream has no notion of it, so without this the fallback stays "whoever is listed first".
+msgid "Recommended"
+msgstr "推荐"
+
 # From handle_assign_card: _get_game_text(task, "请选择要接受卡牌的主战员")
 msgid "Select the combatant to receive the card."
 msgstr "请选择要接受卡牌的主战员"
