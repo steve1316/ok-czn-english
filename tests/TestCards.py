@@ -167,6 +167,45 @@ class TestEpiphany(unittest.TestCase):
         self.assertNotIn(CURSE, played(chosen))
 
 
+class TestTellingCardsFromLabels(unittest.TestCase):
+    """The game prints a type label under every card, and the reader hands both back the same way."""
+
+    def test_a_real_card_is_a_card(self):
+        self.assertTrue(cards.is_card_name("Anchor"))
+
+    def test_a_type_label_is_not_a_card(self):
+        for label in ("Basic Attack", "Basic Skill", "Status Ailment", "Skill", "Attack"):
+            with self.subTest(label=label):
+                self.assertFalse(cards.is_card_name(label))
+
+    def test_a_truncated_type_label_is_not_a_card(self):
+        # "Basic Atta" was the single most common junk reading in a real Chaos recording.
+        for stub in ("Basic Atta", "Status Ailm", "XBasic A", "Basic"):
+            with self.subTest(stub=stub):
+                self.assertFalse(cards.is_card_name(stub))
+
+    def test_the_chinese_label_the_catalog_rewrites_to_is_not_a_card(self):
+        # `ocr.po` turns "Defense" into this, and upstream's own exclude list has no defense keyword, so it
+        # reached the hand as a card name 22 times in one recording.
+        self.assertFalse(cards.is_card_name("防御力"))
+
+    def test_a_card_whose_name_starts_with_a_label_is_still_a_card(self):
+        # These are the ones a careless label test deletes. Each is a real card whose name begins with a type
+        # label, so the known-card check has to run before the truncation test.
+        for name in ("Curse of the Fairy", "Defense System", "Power Anchor", "Attack, My Minions"):
+            with self.subTest(card=name):
+                self.assertTrue(cards.is_card_name(name))
+
+    def test_a_card_named_exactly_after_a_label_loses_to_the_label(self):
+        # Only two cards collide this way and `ocr.po` already decided it: the label sits under every card of
+        # its type, the card is one of 794. `Curse` costs nothing since curse cards are never played anyway.
+        self.assertFalse(cards.is_card_name("Attack!"))
+        self.assertFalse(cards.is_card_name("Curse"))
+
+    def test_a_card_released_after_the_dump_is_still_a_card(self):
+        self.assertTrue(cards.is_card_name("Some Card From A Later Patch"))
+
+
 class TestReadingNames(unittest.TestCase):
     """What the reader hands over is rarely spelt the way the data spells it."""
 
@@ -182,6 +221,18 @@ class TestReadingNames(unittest.TestCase):
         # The hotkey is printed just above the card, close enough that the reader sometimes returns the two
         # as one box. A real Sortie hand came back with "1=Soul Riff" beside four cleanly read names.
         self.assertEqual(cards.canonical("1=Soul Riff"), "Soul Riff")
+
+    def test_a_name_cut_short_is_repaired(self):
+        # The reader truncates a name mid-word while the hand animates. "Knife Tos" was read 10 times in one
+        # Chaos recording, and it can only ever have been one card.
+        self.assertEqual(cards.canonical("Knife Tos"), "Knife Toss")
+
+    def test_an_ambiguous_stub_is_left_alone(self):
+        # Two cards start this way, so guessing between them would be worse than not knowing.
+        self.assertEqual(cards.canonical("Attac"), "Attac")
+
+    def test_a_stub_too_short_to_be_sure_is_left_alone(self):
+        self.assertEqual(cards.canonical("Bas"), "Bas")
 
     def test_a_card_the_data_never_heard_of_is_still_played(self):
         chosen = cards.plan(hand("Some Card From A Later Patch"), cards.Board())

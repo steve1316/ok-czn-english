@@ -89,6 +89,19 @@ CACHED_READINGS = 1024
 # Folded card name to the client's own spelling, so a reading run together or in the wrong case still lands.
 CARD_INDEX = index(CARD_COST)
 
+# The type label the game prints under every card, in both the English the Global client draws and the
+# Chinese `ocr.po` rewrites some of them into. Upstream's own filter lists only Chinese, so every English
+# label reached the hand as a card name - `Basic Atta` was the commonest junk reading in a Chaos recording.
+# `Defense` is here because the catalog does rewrite it, to a literal upstream's exclude list never had.
+TYPE_LABELS = ("basic attack", "basic skill", "status ailment", "attack", "skill", "curse", "power",
+               "upgrade", "defense", "攻击力", "防御力", "状态异常")
+# The type icon shares the label's OCR box and is read as a stray letter or two in front of it, which is why
+# `XBasic A` occurs. `src/en/ocr_text.py` trims the same way for the same reason.
+LABEL_PREFIX = 2
+# How much of a name has to survive before a truncated reading is worth repairing. Below this a stub matches
+# too many cards to mean anything - four would rescue only two more readings out of 1,662 and risk far more.
+MIN_STUB = 5
+
 
 @lru_cache(maxsize=CACHED_READINGS)
 def canonical(name):
@@ -107,7 +120,48 @@ def canonical(name):
     # The hotkey sits just above the card name, close enough that the reader sometimes returns the two as one
     # box - a real hand came back as "1=Soul Riff". No card in the data is named starting with a digit, so a
     # leading one is the key rather than part of the name.
-    return CARD_INDEX.get(folded.lstrip("0123456789"), name)
+    stub = folded.lstrip("0123456789")
+    known = CARD_INDEX.get(stub)
+    if known:
+        return known
+    # The reader also cuts a name short while the hand animates, so "Knife Tos" arrives for "Knife Toss".
+    # Only an unambiguous stub is repaired: two cards start "Attac", and guessing between them would be
+    # worse than leaving the reading alone for the label test to deal with.
+    if len(stub) >= MIN_STUB:
+        matches = {real for folded_name, real in CARD_INDEX.items() if folded_name.startswith(stub)}
+        if len(matches) == 1:
+            return matches.pop()
+    return name
+
+
+def is_card_name(reading):
+    """Say whether a reading off the hand names a card, or is the type label printed under one.
+
+    A name the data knows always wins, because several real cards are named after a label - `Attack!`,
+    `Curse of the Fairy`, `Defense System`, `Power Anchor`. Testing the label first would delete all of them.
+    A reading the data does not know is kept unless it looks like a label, so a card released after the dump
+    is still played rather than silently dropped.
+
+    Args:
+        reading: The text the reader returned for one hand card.
+
+    Returns:
+        True when it should be treated as a card.
+    """
+    folded = fold(reading)
+    if not folded:
+        return False
+    # Two real cards are named exactly after a label, `Attack!` and `Curse`. `ocr.po` already ruled on both:
+    # the label appears under every card of that type while the card is one of 794, so the label wins. Curse
+    # cards are never played voluntarily anyway, which leaves `Attack!` as the whole cost of the rule.
+    if any(fold(label) == folded for label in TYPE_LABELS):
+        return False
+    if canonical(reading) in CARD_COST:
+        return True
+    for trimmed in (folded[cut:] for cut in range(LABEL_PREFIX + 1)):
+        if trimmed and any(fold(label).startswith(trimmed) for label in TYPE_LABELS):
+            return False
+    return True
 
 
 def features(name):

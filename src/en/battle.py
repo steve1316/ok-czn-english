@@ -301,6 +301,10 @@ def install():
     _try_all_card_keys._en_picker = True
     utils_sortie._try_all_card_keys = _try_all_card_keys
     utils_sortie._hand_card_names = _hand_card_names
+    # Upstream's own card-name filter excludes the type label printed under each card, but it lists only the
+    # Chinese labels. On the Global client they are drawn in English, so every one of them passed straight
+    # through and was read as a card in hand.
+    utils_sortie._is_card_name = cards.is_card_name
     logger.info("sortie battles now pick a card instead of pressing every key")
 
 

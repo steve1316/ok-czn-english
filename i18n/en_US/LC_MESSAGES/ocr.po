@@ -224,6 +224,11 @@ msgstr "生命值"
 msgid "Skill"
 msgstr "技能"
 
+# From _is_card_name: the one card type label the catalog never covered, so it reached the hand as a card
+# name 24 times in a single Chaos recording.
+msgid "Status Ailment"
+msgstr "状态异常"
+
 # From select_card: _get_game_text(task, "基础") drives the basic-card removal pass.
 msgid "Basic Attack"
 msgstr "基础攻击"

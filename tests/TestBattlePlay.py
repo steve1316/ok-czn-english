@@ -176,6 +176,7 @@ def upstream(hand_cards, smart=True, action_points=True, egos=(), weakness=None)
     utils._get_config_value = lambda task, key, default: task.config.get(key, default)
     utils_sortie = types.ModuleType("utils_sortie")
     utils_sortie._hand_cards = lambda task: task.hand_cards
+    utils_sortie._is_card_name = lambda name: True
     utils_sortie.name_reads = []
     utils_sortie._hand_card_names = lambda task: utils_sortie.name_reads.append(task.all_texts) or []
     utils_sortie.blind_calls = []
@@ -260,6 +261,15 @@ class TestInstalling(unittest.TestCase):
             utils_sortie._try_all_card_keys(task, 4)
             self.assertEqual(task.keys, [])
             self.assertEqual(utils_sortie.blind_calls, [4])
+
+    def test_the_type_label_filter_is_taught_english(self):
+        # Upstream's own filter lists only Chinese type labels, so on the Global client every English one
+        # reached the hand as a card name.
+        with upstream(hand(ATTACK)) as (utils_sortie, _):
+            battle.install()
+            self.assertFalse(utils_sortie._is_card_name("Basic Attack"))
+            self.assertFalse(utils_sortie._is_card_name("Status Ailm"))
+            self.assertTrue(utils_sortie._is_card_name(ATTACK))
 
     def test_the_hand_is_only_read_once_for_one_ocr_pass(self):
         # Upstream reads the hand twice a frame and the picker would make it three. Each read logs a line per
