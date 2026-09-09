@@ -1,4 +1,9 @@
-"""Offer equipment to the combatant the client itself recommends.
+"""Decide who gets a piece of equipment, and refuse to pass over a Mythic one.
+
+Two fork-local changes to `handle_equipment`, both narrow: one moves which combatant is preferred, the other
+moves one comparison. Neither copies any of the handler.
+
+**Who gets it.**
 
 The Equipment screen marks one of the three rows "Recommended", and the mark is not decoration: it lands on
 the combatant with a free slot of the kind the piece being offered fills. Upstream never reads it, because the
@@ -20,6 +25,17 @@ save-scum target still outranks the banner wherever one is set.
 One knock-on worth knowing when reading a log: upstream numbers combatants by their position in that list, so
 on a frame where the banner moved a row, its `第N号主战员` counts from the recommended row rather than from the
 top of the screen.
+
+**Mythic pieces.** Only one may be worn per combatant and there is nothing better to hold out for, so one is
+always worth taking. Upstream weighs the user's per-slot priority list ahead of quality, though, which means
+a configured piece already in the slot turns a Mythic away. That one comparison is overridden while a Mythic
+is on offer.
+
+Worth recording, because it is not obvious from `ok_tasks/`: upstream's top quality bucket already *is*
+Mythic on this client. It reads quality from a single pixel of the item's frame, and the violet a Mythic
+draws is the one colour that matches none of its constants and falls through to `传说`. So the existing
+one-per-combatant rule and the existing top ranking both apply to Mythic pieces already, and only the
+priority-list comparison needed moving.
 """
 
 from ok import Logger
@@ -36,6 +52,16 @@ BANNER_REGION = (0.560, 0.150, 1.000, 0.950)
 # One row's pitch, measured off the captured screen as 241px of 1080. A tag further below the banner than
 # this belongs to a lower row, not the banner's own.
 ROW_PITCH = 0.223
+
+# The caption the client prints under a Mythic piece. Matched in English because nothing in `ok_tasks/` looks
+# for it, so there is no Chinese literal for the catalog to rewrite it into.
+MYTHIC = "mythic"
+# Where that caption sits, as (x1, y1, x2, y2). Under the offered piece on the left, well clear of the
+# combatant column, where item names would otherwise supply the same word.
+MYTHIC_REGION = (0.050, 0.660, 0.600, 0.800)
+# Upstream's top quality bucket. Nothing in `ok_tasks/` knows the word Mythic, but the colour it reads off a
+# Mythic piece - a violet no other tier uses - is the one that falls through to this, so the two coincide.
+TOP_QUALITY = "传说"
 
 _patched = False
 
@@ -86,6 +112,66 @@ def recommended_row(task, banner, level_tags):
     return nearest[0] if nearest else None
 
 
+def mythic_offer(task):
+    """Report whether the piece on offer is Mythic.
+
+    Args:
+        task: The running task, whose `all_texts` holds the current OCR pass.
+
+    Returns:
+        True when the client's one-per-combatant caption is under the offered piece.
+    """
+    x1, y1, x2, y2 = MYTHIC_REGION
+    for box in getattr(task, "all_texts", None) or []:
+        if MYTHIC not in box.name.casefold():
+            continue
+        center_x = (box.x + box.width / 2) / task.width
+        center_y = (box.y + box.height / 2) / task.height
+        if x1 <= center_x <= x2 and y1 <= center_y <= y2:
+            return True
+    return False
+
+
+def insisting_on_mythic(handler, utils):
+    """Wrap `handle_equipment` so a Mythic piece is never passed over for a configured one.
+
+    Upstream weighs the user's per-slot priority list before quality, so a configured piece already in the
+    slot refuses anything not on that list - a Mythic included. A Mythic is worth more than any list entry,
+    because there is no way to obtain a better one and only one may be worn at a time.
+
+    The override stops at the slot already holding a Mythic. Swapping one for another gains nothing, and
+    upstream's own one-per-combatant rule runs after this and still moves the piece to another combatant when
+    the preferred one is already wearing one.
+
+    Args:
+        handler: The handler to wrap, upstream's or another patch's.
+        utils: The module holding `_should_install_equipment`, the seam the decision is changed through.
+
+    Returns:
+        The wrapped handler.
+    """
+    def wrapped(task):
+        if not mythic_offer(task):
+            return handler(task)
+        original = utils._should_install_equipment
+
+        def insisted(task_, current_name, current_quality, new_equipment):
+            install, reason = original(task_, current_name, current_quality, new_equipment)
+            if install or current_quality == TOP_QUALITY:
+                return install, reason
+            logger.info(f"taking a Mythic over the configured piece, which upstream refused: {reason}")
+            return True, "Mythic outranks the configured equipment"
+
+        utils._should_install_equipment = insisted
+        try:
+            return handler(task)
+        finally:
+            utils._should_install_equipment = original
+
+    wrapped.__name__ = handler.__name__
+    return wrapped
+
+
 def preferring_recommended(handler, utils):
     """Wrap `handle_equipment` so the recommended combatant is the one it falls back to.
 
@@ -123,7 +209,7 @@ def preferring_recommended(handler, utils):
 
 
 def apply():
-    """Prefer the combatant the client recommends when nothing else has claimed the equipment."""
+    """Prefer the recommended combatant, and never pass over a Mythic piece."""
     global _patched
     if _patched:
         return
@@ -132,8 +218,10 @@ def apply():
         utils = loaded("utils")
         if utils is None:
             return
-        # Always wraps upstream's own handler, never a wrapper of it, so running twice cannot nest.
-        replace("handle_equipment", preferring_recommended(utils.handle_equipment, utils))
+        # Always rebuilt from upstream's own handler, never from a wrapper of it, so running twice on a
+        # second task load cannot nest one inside the other.
+        chosen = preferring_recommended(utils.handle_equipment, utils)
+        replace("handle_equipment", insisting_on_mythic(chosen, utils))
 
     register(install)
     _patched = True

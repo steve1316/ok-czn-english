@@ -15,7 +15,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from src.en.equipment import (  # noqa: E402
-    ROW_PITCH, preferring_recommended, recommended_banner, recommended_row,
+    MYTHIC_REGION, ROW_PITCH, insisting_on_mythic, mythic_offer, preferring_recommended,
+    recommended_banner, recommended_row,
 )
 
 WIDTH, HEIGHT = 1920, 1080
@@ -23,6 +24,11 @@ WIDTH, HEIGHT = 1920, 1080
 TAG_Y = (345, 588, 827)
 BANNER_Y = (229, 472, 711)
 TAG_X, BANNER_X = 1210, 1702
+# The caption the client prints under a Mythic piece, and where it sits.
+MYTHIC_CAPTION = "Combatants are limited to 1 piece of Mythic-grade equipment."
+CAPTION_X, CAPTION_Y = 586, 780
+# What upstream calls its top quality bucket. On this client that bucket is Mythic.
+TOP_QUALITY = "传说"
 
 
 class FakeBox:
@@ -183,6 +189,110 @@ class TestPreferringRecommended(unittest.TestCase):
 
         self.assertEqual("handle_equipment",
                          preferring_recommended(handle_equipment, self.utils_stub()).__name__)
+
+
+class TestMythicOffer(unittest.TestCase):
+    """Spotting a Mythic piece."""
+
+    def test_reads_the_caption(self):
+        self.assertTrue(mythic_offer(FakeTask([FakeBox(MYTHIC_CAPTION, CAPTION_X, CAPTION_Y)])))
+
+    def test_ignores_a_screen_without_it(self):
+        self.assertFalse(mythic_offer(equipment_screen(recommended=1)))
+
+    def test_ignores_the_word_outside_the_caption_area(self):
+        # The combatant column is full of item names; only the caption under the offered piece counts.
+        self.assertFalse(mythic_offer(FakeTask([FakeBox(MYTHIC_CAPTION, 1700, 300)])))
+
+    def test_caption_area_covers_the_measured_position(self):
+        x1, y1, x2, y2 = MYTHIC_REGION
+        self.assertTrue(x1 <= CAPTION_X / WIDTH <= x2)
+        self.assertTrue(y1 <= CAPTION_Y / HEIGHT <= y2)
+
+
+class TestInsistingOnMythic(unittest.TestCase):
+    """Whether a Mythic piece survives the user's equipment priority list."""
+
+    @staticmethod
+    def utils_stub(answer):
+        """Build a stand-in carrying only the decision this patch overrides.
+
+        Args:
+            answer: What upstream's comparison returns.
+
+        Returns:
+            A namespace with `_should_install_equipment`.
+        """
+        return types.SimpleNamespace(
+            _should_install_equipment=lambda task_, name, quality, new: answer,
+        )
+
+    def decide(self, task, answer, current_quality, new_quality=TOP_QUALITY):
+        """Run the wrapped handler and report the decision it reached.
+
+        Args:
+            task: The Equipment screen to run against.
+            answer: What upstream's comparison would have returned.
+            current_quality: The quality already in that slot.
+            new_quality: The quality of the piece being offered.
+
+        Returns:
+            The `(install, reason)` pair upstream was handed.
+        """
+        utils = self.utils_stub(answer)
+        reached = []
+
+        def handler(task_):
+            reached.append(utils._should_install_equipment(
+                task_, "Raider's Scanning Gear", current_quality, {"quality": new_quality}))
+            return False
+
+        insisting_on_mythic(handler, utils)(task)
+        return reached[0]
+
+    def screen(self):
+        """Build an Equipment screen offering a Mythic piece.
+
+        Returns:
+            A `FakeTask`.
+        """
+        return FakeTask(level_tags() + [FakeBox(MYTHIC_CAPTION, CAPTION_X, CAPTION_Y)])
+
+    def test_overrides_a_refusal_from_the_priority_list(self):
+        install, reason = self.decide(self.screen(), (False, "当前装备配置优先级更高"), "史诗")
+        self.assertTrue(install)
+        self.assertIn("Mythic", reason)
+
+    def test_leaves_an_acceptance_alone(self):
+        self.assertEqual((True, "配置优先级更高"),
+                         self.decide(self.screen(), (True, "配置优先级更高"), "史诗"))
+
+    def test_does_not_swap_one_mythic_for_another(self):
+        # The slot already holds the best thing there is, so replacing it gains nothing.
+        self.assertEqual((False, "品质传说不高于传说"),
+                         self.decide(self.screen(), (False, "品质传说不高于传说"), TOP_QUALITY))
+
+    def test_leaves_a_plain_piece_alone(self):
+        self.assertEqual((False, "当前装备配置优先级更高"),
+                         self.decide(equipment_screen(), (False, "当前装备配置优先级更高"), "史诗",
+                                     new_quality="史诗"))
+
+    def test_restores_the_seam_afterwards(self):
+        utils = self.utils_stub((False, "x"))
+        before = utils._should_install_equipment
+        insisting_on_mythic(lambda task_: False, utils)(self.screen())
+        self.assertIs(utils._should_install_equipment, before)
+
+    def test_restores_the_seam_when_the_handler_raises(self):
+        utils = self.utils_stub((False, "x"))
+        before = utils._should_install_equipment
+
+        def raising(task_):
+            raise ValueError("boom")
+
+        with self.assertRaises(ValueError):
+            insisting_on_mythic(raising, utils)(self.screen())
+        self.assertIs(utils._should_install_equipment, before)
 
 
 if __name__ == "__main__":
