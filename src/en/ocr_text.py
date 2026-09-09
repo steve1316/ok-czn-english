@@ -14,6 +14,8 @@ import re
 
 from ok import Logger
 
+from src.en.quality import CLASS_NAMES
+
 logger = Logger.get_logger(__name__)
 
 # Only short text is worth retrying. Type labels and button captions are a few characters; a card's description
@@ -37,6 +39,13 @@ PATTERNS = (
     (re.compile(r"^select (?:up to )?(\d+) cards? ?\(?s?\)? to duplicate.*$", re.I), "请选择{0}张复制的卡牌"),
     (re.compile(r"^select (?:up to )?(\d+) cards? ?\(?s?\)? to (?:spark|trigger).*epiphany.*$", re.I), "请选择{0}张闪光的卡牌"),
     (re.compile(r"^select \w+ combatant to join.*$", re.I), "请选择加入的主战员"),
+    # Forty characters, so the length guard above keeps it out of the catalog lookup entirely, and the reader
+    # drops its full stop about half the time. A run stalled on Purchase Card for minutes over that full stop.
+    (re.compile(r"^select the combatant to receive the card\.?$", re.I), "请选择要接受卡牌的主战员"),
+    # A combatant of the wrong class cannot take the card, and the client says so by name. Spelling the six
+    # classes out rather than matching any word is what stops a card called something Unobtainable excluding
+    # every combatant on screen and cancelling the purchase.
+    (re.compile(rf"^(?:{'|'.join(CLASS_NAMES.values())}) unobtainable\.?$", re.I), "无法获得"),
 )
 
 _patched = False

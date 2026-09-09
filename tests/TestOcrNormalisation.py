@@ -18,6 +18,10 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from src.en import ocr_text  # noqa: E402
 
+# The prompt over the combatant list. OCR drops its full stop about half the time, and the handler that owns
+# the Purchase Card screen does nothing at all until this matches.
+ASSIGN_PROMPT = "请选择要接受卡牌的主战员"
+
 # The four-character ceiling in _card_has_type_below, which is the whole reason these have to become Chinese.
 TYPE_LABEL_MAX = 4
 
@@ -143,6 +147,26 @@ class TestOcrNormalisation(unittest.TestCase):
 
     def test_ordinary_text_is_never_rewritten_by_a_rule(self):
         for text in ("Tap and hold the card to view its details.", "Card Reward", "Prepare for Battle", ""):
+            with self.subTest(text=text):
+                self.assertIsNone(ocr_text.pattern_fix(text))
+
+    def test_the_assign_prompt_matches_with_its_period(self):
+        """The form the catalog carries, and the one a clean frame produces."""
+        self.assertEqual(ASSIGN_PROMPT, self.fix("Select the combatant to receive the card."))
+
+    def test_the_assign_prompt_matches_without_its_period(self):
+        """A run stalled on Purchase Card for minutes because this frame dropped the full stop."""
+        self.assertEqual(ASSIGN_PROMPT, self.fix("Select the combatant to receive the card"))
+
+    def test_a_class_locked_combatant_is_recognised(self):
+        """handle_card_assign excludes a row by this literal, so an unmapped class is clicked anyway."""
+        for klass in ("Striker", "Vanguard", "Ranger", "Hunter", "Psionic", "Controller"):
+            with self.subTest(klass=klass):
+                self.assertIn("无法获得", ocr_text.pattern_fix(f"{klass} Unobtainable"))
+
+    def test_only_a_real_class_reads_as_unobtainable(self):
+        """A loose rule here would exclude every combatant and cancel the purchase."""
+        for text in ("Unobtainable", "Loot Unobtainable", "This card is Unobtainable for now"):
             with self.subTest(text=text):
                 self.assertIsNone(ocr_text.pattern_fix(text))
 
