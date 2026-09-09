@@ -146,6 +146,33 @@ class TestTurns(unittest.TestCase):
         self.assertEqual(len(found), 2)
         self.assertEqual(found[0].played, Counter())
 
+    def test_a_turn_where_we_would_pick_the_same_set_scores_one(self):
+        auto = Counter({ATTACK: 1, BIG_ATTACK: 1})
+        self.assertEqual(autoplay.overlap(Counter({ATTACK: 1, BIG_ATTACK: 1}), auto), 1.0)
+
+    def test_a_turn_where_we_would_pick_half_of_it_scores_half(self):
+        auto = Counter({ATTACK: 1, BIG_ATTACK: 1})
+        self.assertEqual(autoplay.overlap(Counter({ATTACK: 1, HEAL: 1}), auto), 0.5)
+
+    def test_copies_are_counted_not_names(self):
+        # Auto played two copies and we would have played one, so half of what it did is matched.
+        self.assertEqual(autoplay.overlap(Counter({ATTACK: 1}), Counter({ATTACK: 2})), 0.5)
+
+    def test_a_turn_auto_spent_on_nothing_is_not_scored(self):
+        self.assertIsNone(autoplay.overlap(Counter({ATTACK: 1}), Counter()))
+
+    def test_a_card_auto_drew_mid_turn_is_not_counted_against_us(self):
+        # The picker only ever sees the hand it was dealt. Auto plays on past that, into cards drawn later
+        # in the turn, and scoring those as misses measures the sampling rate rather than the choice.
+        turn = autoplay.Turn(opening=(ATTACK, BIG_ATTACK), played=Counter({ATTACK: 1, HEAL: 1}),
+                             ambiguous=True)
+        self.assertEqual(autoplay.comparable(turn), Counter({ATTACK: 1}))
+
+    def test_everything_auto_played_from_the_dealt_hand_counts(self):
+        turn = autoplay.Turn(opening=(ATTACK, BIG_ATTACK), played=Counter({ATTACK: 1, BIG_ATTACK: 1}),
+                             ambiguous=False)
+        self.assertEqual(autoplay.comparable(turn), Counter({ATTACK: 1, BIG_ATTACK: 1}))
+
     def test_an_empty_recording_reconstructs_nothing(self):
         self.assertEqual(autoplay.decisions([]), [])
         self.assertEqual(autoplay.turns([]), [])
@@ -158,6 +185,7 @@ class FakeTask:
         self.hand_cards = hand_cards
         self.all_texts = []
         self.frame = np.full((1080, 1920, 3), 255, dtype=np.uint8)
+        self.trigger_interval = 1
         self.height, self.width = self.frame.shape[:2]
         self.logged = []
 
@@ -271,6 +299,24 @@ class TestRecording(unittest.TestCase):
                 self.assertTrue(utils_chaos.PAGE_HANDLERS[0](task))
             finally:
                 observe.write = saved
+
+    def test_a_battle_is_sampled_faster_than_the_rest_of_the_run(self):
+        # Auto plays several cards a second. At upstream's one second pace most transitions lose two or more
+        # cards at once, and which one it chose first is then unknowable.
+        with chaos([{"name": ATTACK, "key": "1"}]) as (utils_chaos, task):
+            observe.install()
+            with collected():
+                utils_chaos.PAGE_HANDLERS[0](task)
+            self.assertEqual(task.trigger_interval, observe.BATTLE_INTERVAL)
+
+    def test_the_normal_pace_comes_back_off_the_battle_screen(self):
+        with chaos([{"name": ATTACK, "key": "1"}]) as (utils_chaos, task):
+            observe.install()
+            with collected():
+                utils_chaos.PAGE_HANDLERS[0](task)
+                utils_chaos.on_battle = False
+                utils_chaos.PAGE_HANDLERS[0](task)
+            self.assertEqual(task.trigger_interval, 1)
 
     def test_installing_again_does_not_wrap_the_wrapper(self):
         with chaos([{"name": ATTACK, "key": "1"}]) as (utils_chaos, task):

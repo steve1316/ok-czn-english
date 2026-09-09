@@ -119,18 +119,45 @@ def report_agreement(made):
             print(f"  x{count:<4} {theirs!r} -> {ours!r}")
 
 
+def our_turn(turn):
+    """Say which cards the picker would have spent a turn on.
+
+    Args:
+        turn: The `Turn` Auto played.
+
+    Returns:
+        A `Counter` of the card names the picker would have played.
+    """
+    hand = [{"name": name, "key": str(index + 1)} for index, name in enumerate(turn.opening)]
+    return Counter(card["name"] for card in cards.plan(hand, cards.Board()))
+
+
 def report_turns(played):
-    """Print the turn-level picture, which survives Auto outrunning the sampling rate.
+    """Print the turn-level picture, the measure that survives Auto outrunning the sampling rate.
 
     Args:
         played: The `Turn` list reconstructed from the recording.
     """
-    if not played:
+    scored = [(turn, autoplay.overlap(our_turn(turn), autoplay.comparable(turn))) for turn in played]
+    scored = [(turn, share) for turn, share in scored if share is not None]
+    if not scored:
+        print("\nno turns Auto spent any cards on")
         return
-    clean = [turn for turn in played if not turn.ambiguous]
-    cards_per_turn = sum(sum(turn.played.values()) for turn in played) / len(played)
-    print(f"\nturns {len(played)}, of which {len(clean)} were sampled cleanly")
-    print(f"  cards played per turn  {cards_per_turn:.1f}")
+    clean = [share for turn, share in scored if not turn.ambiguous]
+    mean = sum(share for _, share in scored) / len(scored)
+    spent = sum(sum(autoplay.comparable(turn).values()) for turn, _ in scored)
+    print(f"\nturn-level agreement {100 * mean:.0f}%  over {len(scored)} turns")
+    if clean:
+        print(f"  on the {len(clean)} sampled cleanly {100 * sum(clean) / len(clean):.0f}%")
+    print(f"  cards Auto played from the dealt hand, per turn {spent / len(scored):.1f}")
+    missed = Counter()
+    for turn, _ in scored:
+        for name, count in (autoplay.comparable(turn) - our_turn(turn)).items():
+            missed[name] += count
+    if missed:
+        print("\ncards Auto played that we would have left in hand:")
+        for name, count in missed.most_common(WORST):
+            print(f"  x{count:<4} {name!r}")
 
 
 def main():
@@ -140,8 +167,10 @@ def main():
     arguments = parser.parse_args()
     frames = load(arguments.recording)
     report_feasibility(frames)
-    report_agreement(autoplay.decisions(frames))
+    # The turn view leads. It uses every frame, where a single-card label needs Auto to have been caught
+    # between two of them - on a real recording that is 25 usable turns against 14 decisions.
     report_turns(autoplay.turns(frames))
+    report_agreement(autoplay.decisions(frames))
 
 
 if __name__ == "__main__":

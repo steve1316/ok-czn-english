@@ -27,6 +27,14 @@ logger = Logger.get_logger(__name__)
 # Where the recording goes. `data/` is already in `.gitignore`, so nothing here can reach a commit, and the
 # file is append-only text that can be deleted at any time without breaking anything.
 RECORDING = "data/auto_play.jsonl"
+# How often to look while a battle is on screen. Auto plays several cards a second, and at upstream's one
+# second pace a fifth of the readings lost two or more cards at once, which says nothing about which it chose
+# first. The executor sleeps whatever is left of the interval, so asking for less than one OCR pass takes just
+# means every pass is used. Only battle frames are sped up: the menus keep upstream's pace and its timing.
+BATTLE_INTERVAL = 0.4
+# Where upstream's own pace is parked the first time it is seen, so it can be handed back exactly rather than
+# guessed at. Reading it off the task beats hardcoding one second, which is upstream's to change.
+NORMAL_INTERVAL = "_en_normal_interval"
 
 _patched = False
 _complained = False
@@ -91,6 +99,11 @@ def install():
             Whatever upstream's own handler returns, untouched.
         """
         on_battle = original(task)
+        # Captured before the first change, so what gets handed back is upstream's own figure.
+        if not hasattr(task, NORMAL_INTERVAL):
+            setattr(task, NORMAL_INTERVAL, task.trigger_interval)
+        # Restored the moment the battle leaves the screen, so nothing else in the run is paced differently.
+        task.trigger_interval = BATTLE_INTERVAL if on_battle else getattr(task, NORMAL_INTERVAL)
         if on_battle:
             try:
                 write(task)

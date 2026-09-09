@@ -107,6 +107,43 @@ def decisions(frames):
     return found
 
 
+def overlap(ours, theirs):
+    """Say how much of what Auto spent a turn on we would have played too.
+
+    Counted in copies rather than names, because a hand holding three of a card and a turn spending two of
+    them are different facts. Scored against Auto's set rather than ours, so a turn we would have spent more
+    cards on is not punished for it - the question is how much of Auto's play we reproduce.
+
+    Args:
+        ours: A `Counter` of what the picker would have played.
+        theirs: A `Counter` of what Auto actually played.
+
+    Returns:
+        The share of Auto's cards we would also have played, 0 to 1, or None when Auto played nothing and
+        there is no question to answer.
+    """
+    spent = sum(theirs.values())
+    if not spent:
+        return None
+    return sum((ours & theirs).values()) / spent
+
+
+def comparable(turn):
+    """Narrow what Auto played to the cards the picker could also have seen.
+
+    A turn deals a hand and then plays on into whatever it draws. The picker is only ever asked about the
+    hand in front of it, so counting a card drawn later in the turn as one it failed to play measures how
+    fast the bot samples rather than how well it chooses.
+
+    Args:
+        turn: The `Turn` Auto played.
+
+    Returns:
+        A `Counter` of the cards Auto played that were in the hand it opened the turn with.
+    """
+    return turn.played & Counter(turn.opening)
+
+
 def turns(frames):
     """Group the frames into turns and total what left the hand in each.
 
