@@ -303,8 +303,22 @@ def install():
     utils_sortie._hand_card_names = _hand_card_names
     # Upstream's own card-name filter excludes the type label printed under each card, but it lists only the
     # Chinese labels. On the Global client they are drawn in English, so every one of them passed straight
-    # through and was read as a card in hand.
-    utils_sortie._is_card_name = cards.is_card_name
+    # through and was read as a card in hand. Wrapped rather than replaced: the catalog rewrites some English
+    # labels back into Chinese, and upstream's list is what catches those.
+    reads_as_card = utils_sortie._is_card_name
+
+    def _is_card_name(name):
+        """Say whether a reading off the hand names a card, in either language.
+
+        Args:
+            name: The text the reader returned for one hand card.
+
+        Returns:
+            True when both upstream's filter and this fork's agree it is a card.
+        """
+        return bool(reads_as_card(name)) and cards.is_card_name(name)
+
+    utils_sortie._is_card_name = _is_card_name
     logger.info("sortie battles now pick a card instead of pressing every key")
 
 

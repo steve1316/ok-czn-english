@@ -271,6 +271,16 @@ class TestInstalling(unittest.TestCase):
             self.assertFalse(utils_sortie._is_card_name("Status Ailm"))
             self.assertTrue(utils_sortie._is_card_name(ATTACK))
 
+    def test_upstreams_own_chinese_labels_are_still_excluded(self):
+        # The catalog rewrites some English labels into Chinese, and upstream's filter is what catches those.
+        # Replacing its filter rather than wrapping it let "技能" and "基础技能" back into the hand.
+        with upstream(hand(ATTACK)) as (utils_sortie, _):
+            utils_sortie._is_card_name = lambda name: "技能" not in name
+            battle.install()
+            self.assertFalse(utils_sortie._is_card_name("技能"))
+            self.assertFalse(utils_sortie._is_card_name("基础技能"))
+            self.assertTrue(utils_sortie._is_card_name(ATTACK))
+
     def test_the_hand_is_only_read_once_for_one_ocr_pass(self):
         # Upstream reads the hand twice a frame and the picker would make it three. Each read logs a line per
         # box on screen, so on the busiest screen in the game that is the difference worth removing.
