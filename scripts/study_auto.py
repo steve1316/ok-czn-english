@@ -22,6 +22,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
+# One real card is named in geometric symbols, and the Windows console defaults to a codepage that cannot
+# encode them. Without this the report dies partway through printing its own results.
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 from src.en import autoplay, cards  # noqa: E402
 from src.en.observe import RECORDING  # noqa: E402
 

@@ -44,10 +44,13 @@ def seen(task):
     utils_sortie = loaded("utils_sortie")
     hand = utils_sortie._hand_cards(task) or [] if utils_sortie else []
     frame = board.frame_of(task)
+    # The game's own readout, not the length of what the reader found. When the two disagree the hand region
+    # picked up something that is not a card, and that is the only way to tell a junk frame from a real one.
+    count = utils_sortie._read_hand_count(task) if utils_sortie else None
     return {
         "at": round(time.time(), 3),
         "hand": [[card.get("name"), card.get("key")] for card in hand],
-        "count": len(hand),
+        "count": count,
         "points": board.has_action_points(task),
         "weakness": board.weakness(task),
         "egos": board.affordable_egos(task),

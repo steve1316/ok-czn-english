@@ -222,6 +222,18 @@ class TestRecording(unittest.TestCase):
             record = observe.seen(task)
             self.assertEqual(record["hand"], [[ATTACK, "1"]])
 
+    def test_the_hand_count_comes_from_the_games_own_readout(self):
+        # Not from the length of what the reader found. The two disagreeing is the signal that the hand
+        # region picked up something that is not a card, which is the only way to catch a junk frame.
+        with chaos([{"name": ATTACK, "key": "1"}]) as (utils_chaos, task):
+            sys.modules["utils_sortie"]._read_hand_count = lambda task: 5
+            self.assertEqual(observe.seen(task)["count"], 5)
+
+    def test_a_readout_that_cannot_be_read_is_recorded_as_unknown(self):
+        with chaos([{"name": ATTACK, "key": "1"}]) as (utils_chaos, task):
+            sys.modules["utils_sortie"]._read_hand_count = lambda task: None
+            self.assertIsNone(observe.seen(task)["count"])
+
     def test_the_board_state_is_recorded(self):
         with chaos([{"name": ATTACK, "key": "1"}]) as (utils_chaos, task):
             record = observe.seen(task)
