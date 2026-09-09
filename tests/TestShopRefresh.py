@@ -1,0 +1,164 @@
+"""Check that the shop stops spending refreshes it can never afford to use.
+
+The shop's refresh is free, so upstream takes it whenever nothing on the shelf matches. A run captured with
+29 credits in front of a 96-credit shelf burned every refresh that way and then left anyway. The floor is what
+stops that, and hiding the button rather than skipping the click afterwards is what keeps `handle_leave` - the
+next handler in the list - free to walk out.
+"""
+
+import sys
+import unittest
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT))
+
+from src.en.shop import (  # noqa: E402
+    REFRESH_REGION, SHOP_FLOOR, free_refresh_box, refusing_free_refresh, worth_refreshing,
+)
+
+WIDTH, HEIGHT = 1920, 1080
+# Where the shop draws its free-refresh button, measured off the captured screen.
+FREE_X, FREE_Y = 0.163, 0.933
+# A shelf price sits well above the refresh band and must never be mistaken for the button.
+SHELF_X, SHELF_Y = 0.500, 0.850
+
+
+class FakeBox:
+    """An OCR box positioned by its centre, the way the shop reads one."""
+
+    def __init__(self, name, center_x, center_y):
+        self.name = name
+        self.width, self.height = 90, 30
+        self.x = center_x * WIDTH - self.width / 2
+        self.y = center_y * HEIGHT - self.height / 2
+
+
+class FakeTask:
+    """A task holding one OCR pass of the shop screen."""
+
+    width, height = WIDTH, HEIGHT
+
+    def __init__(self, boxes):
+        self.all_texts = boxes
+        self.logged = []
+
+    def log_info(self, message):
+        self.logged.append(message)
+
+
+def shop_screen(free=True):
+    """Build the shop screen as the reader sees it.
+
+    Args:
+        free: Whether the free-refresh button is on screen.
+
+    Returns:
+        A `FakeTask`.
+    """
+    boxes = [FakeBox("96", SHELF_X, SHELF_Y)]
+    if free:
+        boxes.append(FakeBox("免费", FREE_X, FREE_Y))
+    return FakeTask(boxes)
+
+
+def recording_handler(seen):
+    """Build a stand-in for `handle_shop` that records the pass it was given.
+
+    Args:
+        seen: The list to append each call's box names to.
+
+    Returns:
+        A handler returning True, the way upstream does when it clicks something.
+    """
+    def handler(task):
+        seen.append([box.name for box in task.all_texts])
+        return True
+
+    return handler
+
+
+class TestWorthRefreshing(unittest.TestCase):
+    """The floor itself."""
+
+    def test_refuses_at_the_floor(self):
+        self.assertFalse(worth_refreshing(SHOP_FLOOR))
+
+    def test_refuses_below_the_floor(self):
+        self.assertFalse(worth_refreshing(29))
+
+    def test_allows_above_the_floor(self):
+        self.assertTrue(worth_refreshing(SHOP_FLOOR + 1))
+
+
+class TestFreeRefreshBox(unittest.TestCase):
+    """Finding the button in an OCR pass."""
+
+    def test_finds_the_button_in_the_refresh_band(self):
+        found = free_refresh_box(shop_screen())
+        self.assertIsNotNone(found)
+        self.assertEqual(found.name, "免费")
+
+    def test_ignores_the_same_word_outside_the_band(self):
+        task = FakeTask([FakeBox("免费", SHELF_X, SHELF_Y)])
+        self.assertIsNone(free_refresh_box(task))
+
+    def test_returns_none_when_the_button_is_absent(self):
+        self.assertIsNone(free_refresh_box(shop_screen(free=False)))
+
+    def test_band_matches_the_handler(self):
+        # Upstream's own filter, so a drift here would silently stop the button being found.
+        self.assertEqual(REFRESH_REGION, (0.012, 0.892, 0.258, 0.979))
+
+
+class TestRefusingFreeRefresh(unittest.TestCase):
+    """What the wrapped handler lets upstream see."""
+
+    def test_hides_the_button_below_the_floor(self):
+        seen = []
+        wrapped = refusing_free_refresh(recording_handler(seen), lambda task: 29)
+        wrapped(shop_screen())
+        self.assertEqual(seen, [["96"]])
+
+    def test_keeps_the_button_above_the_floor(self):
+        seen = []
+        wrapped = refusing_free_refresh(recording_handler(seen), lambda task: 200)
+        wrapped(shop_screen())
+        self.assertEqual(seen, [["96", "免费"]])
+
+    def test_restores_the_pass_afterwards(self):
+        task = shop_screen()
+        before = task.all_texts
+        wrapped = refusing_free_refresh(recording_handler([]), lambda task: 29)
+        wrapped(task)
+        self.assertIs(task.all_texts, before)
+
+    def test_restores_the_pass_when_the_handler_raises(self):
+        task = shop_screen()
+        before = task.all_texts
+
+        def raising(task):
+            raise ValueError("boom")
+
+        wrapped = refusing_free_refresh(raising, lambda task: 29)
+        with self.assertRaises(ValueError):
+            wrapped(task)
+        self.assertIs(task.all_texts, before)
+
+    def test_does_not_read_credits_without_a_button(self):
+        # Reading credits on every frame would cost two lookups for nothing, since the handler declines
+        # immediately on any screen that is not the shop.
+        def unexpected(task):
+            raise AssertionError("credits were read with no refresh button on screen")
+
+        wrapped = refusing_free_refresh(recording_handler([]), unexpected)
+        self.assertTrue(wrapped(shop_screen(free=False)))
+
+    def test_keeps_the_handlers_name(self):
+        # `src/en/rewards.py` wraps this handler by name afterwards, so the name has to survive.
+        wrapped = refusing_free_refresh(recording_handler([]), lambda task: 29)
+        self.assertEqual(wrapped.__name__, "handler")
+
+
+if __name__ == "__main__":
+    unittest.main()

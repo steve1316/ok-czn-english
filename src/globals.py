@@ -12,7 +12,7 @@ class Globals(QObject):
         # Everything English-only lives under src/en/ so upstream's files stay untouched and merges stay clean.
         from src.en import (  # noqa: E501
             battle, dialogue, dice, draft, events, layout, navigation, observe, ocr_text, overrides,
-            picker, rewards, shell, templates, notify, upload,
+            picker, rewards, shell, shop, templates, notify, upload,
         )
 
         layout.apply()
@@ -24,6 +24,9 @@ class Globals(QObject):
         events.apply()
         dice.apply()
         draft.apply()
+        # Before rewards, which wraps `handle_shop` by reading it back off the module, so this one has
+        # to be in place first for both to survive.
+        shop.apply()
         rewards.apply()
         battle.apply()
         observe.apply()
