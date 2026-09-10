@@ -317,6 +317,23 @@ COMBATANT_CLASS_COLUMN = "link_base_class_define_id"
 # and take its rarity with it.
 PLAYER_CARD_TABLES = ("card(*)@card.json", "rarity")
 
+# The one place the game says what kind of deck a piece of equipment serves, and how much each combatant
+# wants that kind. Both columns are filled in for Sortie only - the Chaos copies of the same relics are
+# blank - so a Chaos relic inherits its tags from its Sortie twin.
+#
+# The two are the same row twice, and the id says so: Sortie inserts `_ca` before the number, so `eq_pub_006`
+# and `eq_pub_ca_006` are one relic. Names cannot be used for this - Sortie lists its copies under an upgrade
+# tier, as `Harmonization: Obsidian Sword` - and neither can the shared icon, which several tiers of one
+# relic reuse while carrying different tags.
+RELIC_TAG_COLUMN = "assault_tag"
+COMBATANT_TAG_COLUMN = "assault_relic_tag"
+COMBATANT_TAG_VALUE_COLUMN = "assault_relic_tag_value"
+CA_INFIX = re.compile(r"_ca(?=_)")
+# Written on 95 relics and means "general pool", not a preference, so it says nothing about who an item suits.
+# Dropped from both sides: left on the equipment it would be a near-constant, and left on a combatant it
+# would be a weight that can never match anything.
+UNWEIGHTED_TAG = "public"
+
 # What the client calls each card category, and the short name used here. These are the same five kinds the
 # reader already sees printed under a card in hand, so a category answers "may this be played at all".
 CATEGORIES = {
@@ -371,6 +388,31 @@ def id_list(value):
     return tuple(part.strip() for part in inner.split(",") if part.strip())
 
 
+def collect_equipment_tags(table, rows):
+    """Give each relic the deck-kind tags the game wrote on its Sortie twin.
+
+    Args:
+        table: The localization table.
+        rows: Every relic row, keyed by id.
+
+    Returns:
+        A dict of equipment name to its tags, alphabetical, holding only the relics that earn a real one.
+    """
+    by_relic = {}
+    for row_id, row in rows.items():
+        tags = tuple(sorted(tag for tag in id_list(row.get(RELIC_TAG_COLUMN)) if tag != UNWEIGHTED_TAG))
+        if tags:
+            by_relic.setdefault(CA_INFIX.sub("", row_id), tags)
+
+    tagged = {}
+    for row_id, row in rows.items():
+        name = table.get(row.get("name") or "")
+        tags = by_relic.get(CA_INFIX.sub("", row_id))
+        if name and tags:
+            tagged.setdefault(name, tags)
+    return tagged
+
+
 def collect_quality(table, dump_dir):
     """Pair every card, equipment and combatant with what the client knows about its worth.
 
@@ -382,7 +424,8 @@ def collect_quality(table, dump_dir):
         A dict of constant name to value, ready to render.
     """
     cards = base_rows_by_name(load_data_tables(dump_dir, PLAYER_CARD_TABLES), table)
-    relics = base_rows_by_name(load_data_tables(dump_dir, RELIC_TABLES), table)
+    relic_rows = load_data_tables(dump_dir, RELIC_TABLES)
+    relics = base_rows_by_name(relic_rows, table)
 
     card_rarity = {}
     card_classes = {}
@@ -405,18 +448,27 @@ def collect_quality(table, dump_dir):
             equipment_slot[name] = slot
 
     combatant_class = {}
+    combatant_tag_weights = {}
     for row in json.loads(Path(dump_dir, "db", COMBATANT_TABLE).read_text(encoding="utf-8")):
         name = (table.get(COMBATANT_NAME_ID.format(id=row.get("id"))) or "").strip()
         klass = str(row.get(COMBATANT_CLASS_COLUMN) or "").strip()
         if name and klass and klass != "none":
             combatant_class[name] = klass
+        tags = id_list(row.get(COMBATANT_TAG_COLUMN))
+        values = id_list(row.get(COMBATANT_TAG_VALUE_COLUMN))
+        weights = {tag: int(value) for tag, value in zip(tags, values)
+                   if value.isdigit() and tag != UNWEIGHTED_TAG}
+        if name and weights:
+            combatant_tag_weights[name] = weights
 
     return {
         "CARD_RARITY": card_rarity,
         "CARD_CLASSES": card_classes,
         "EQUIPMENT_RARITY": equipment_rarity,
         "EQUIPMENT_SLOT": equipment_slot,
+        "EQUIPMENT_TAGS": collect_equipment_tags(table, relic_rows),
         "COMBATANT_CLASS": combatant_class,
+        "COMBATANT_TAG_WEIGHTS": combatant_tag_weights,
     }
 
 
@@ -468,13 +520,22 @@ def render_quality(quality):
                         " A card absent from here is unrestricted, and the value is a class, not a combatant.",
         "EQUIPMENT_RARITY": "What the client grades each piece of equipment.",
         "EQUIPMENT_SLOT": "Which of the three equipment slots a piece goes in, numbered as the handlers number them.",
+        "EQUIPMENT_TAGS": "What kind of deck a piece of equipment serves, in the game's own vocabulary. Read off"
+                          " the Sortie copy of the same relic, since the Chaos copies carry no tags at all.",
         "COMBATANT_CLASS": "Each combatant's class, so a team read off the Combatants screen becomes a set of classes.",
+        "COMBATANT_TAG_WEIGHTS": "How much each combatant wants each kind of equipment, on the game's own scale."
+                                 " Weighed against `EQUIPMENT_TAGS` to say who a piece of equipment suits.",
     }
     notes = [
         "Only what the dump actually carries is here. Neither a card nor a piece of equipment names its owner:",
         "the equipment column that looks like one is empty on every row, and the card column is empty on nine",
         "rows in ten and names a class rather than a combatant on the rest. `game_battle.py` rebuilds the card",
         "half of that link from the other side, by inverting the cards each combatant starts and sparks.",
+        "",
+        "The two tag tables are the nearest thing the game has to an opinion about which equipment suits whom.",
+        "They are filled in for Sortie and left blank for Chaos, so a Chaos relic takes the tags of the Sortie",
+        "row that shares its id. That reaches most of the pool but not all of it, and a reader must treat a",
+        "missing entry as 'no opinion' rather than as 'unsuitable'.",
     ]
     return render_tables("What the client knows about the worth of a card, a piece of equipment, or a combatant.",
                          notes, quality, comments)

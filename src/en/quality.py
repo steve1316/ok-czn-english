@@ -1,13 +1,22 @@
 """Grade cards, equipment and combatants from the client's own data.
 
 Names are folded before matching, because neither the reader nor the client spells them predictably.
+
+`suits` is the one judgement here that is about a pairing rather than a thing. The game keeps an opinion on
+which equipment suits which combatant - it labels equipment with the kind of deck it serves, and gives each
+combatant a weight per kind - but only fills that in for Sortie, so `game_quality.py` carries it across to
+the Chaos copies of the same relics. It reaches about a third of what a Chaos run can meet, which is why it
+only ever orders items that rarity has already ranked equal, and never promotes one above a better piece.
 """
 
 import re
 
 from ok import Logger
 
-from src.en.game_quality import CARD_CLASSES, CARD_RARITY, COMBATANT_CLASS, EQUIPMENT_RARITY, EQUIPMENT_SLOT
+from src.en.game_quality import (
+    CARD_CLASSES, CARD_RARITY, COMBATANT_CLASS, COMBATANT_TAG_WEIGHTS, EQUIPMENT_RARITY, EQUIPMENT_SLOT,
+    EQUIPMENT_TAGS,
+)
 
 logger = Logger.get_logger(__name__)
 
@@ -126,13 +135,55 @@ def grade(name, table, lookup):
     return canonical, table[canonical]
 
 
-def worth_taking(names, classes=(), cards=True):
+def wants(combatant):
+    """Read the kinds of equipment a combatant is said to want.
+
+    Args:
+        combatant: The combatant's name, in any spelling.
+
+    Returns:
+        A dict of equipment kind to the weight this combatant puts on it, empty when the data has no opinion
+        about them at all.
+    """
+    return COMBATANT_TAG_WEIGHTS.get(COMBATANT_INDEX.get(fold(combatant))) or {}
+
+
+def tallied(equipment, weights):
+    """Add up what one combatant's weights say about one piece of equipment.
+
+    Args:
+        equipment: The equipment's name as the client spells it, or None when it is not known equipment.
+        weights: That combatant's weights, from `wants`.
+
+    Returns:
+        The total weight, zero when either side carries nothing.
+    """
+    return sum(weights.get(tag, 0) for tag in EQUIPMENT_TAGS.get(equipment) or ())
+
+
+def suits(equipment_name, combatant):
+    """Say how much a piece of equipment suits the combatant who would wear it.
+
+    Args:
+        equipment_name: The equipment name as read off the screen, in any spelling.
+        combatant: The combatant's name, in any spelling.
+
+    Returns:
+        The weight that combatant puts on the kinds this piece serves, on the game's own scale. Zero when
+        either side carries nothing, which reads as "no opinion" rather than as "unsuitable".
+    """
+    return tallied(EQUIPMENT_INDEX.get(fold(equipment_name)), wants(combatant))
+
+
+def worth_taking(names, classes=(), cards=True, suited_to=None):
     """Pick out the names worth spending on, best first.
 
     Args:
         names: Candidate names as read off the screen, which may be concatenated or misspelt.
         classes: The team's classes, used to skip cards nobody could hold.
         cards: True to grade against cards, False for equipment.
+        suited_to: The combatant who would wear the equipment, used to order pieces of equal rarity. None
+            leaves the order exactly as it was.
 
     Returns:
         The canonical names worth taking, Unique before Legend, each appearing once.
@@ -150,7 +201,11 @@ def worth_taking(names, classes=(), cards=True):
             logger.info(f"skipping {canonical}, a {rarity} card no one on this team can hold")
             continue
         found[canonical] = rarity
-    return sorted(found, key=lambda name: (WORTH_TAKING.index(found[name]), name))
+    # Only equipment carries the tags, and only within one rarity, so a preference can never talk the run
+    # into a worse piece than it would have bought anyway. The combatant is the same for every name here, so
+    # their weights are read once rather than per name, and `found` already holds the client's own spelling.
+    weights = {} if cards else wants(suited_to)
+    return sorted(found, key=lambda name: (WORTH_TAKING.index(found[name]), -tallied(name, weights), name))
 
 
 def slot_of(name):

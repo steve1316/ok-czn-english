@@ -8,11 +8,14 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from src.en import rewards  # noqa: E402
+from src.en.game_data import COMBATANTS  # noqa: E402
+from src.en.overrides import FARMED_COMBATANT  # noqa: E402
 from src.en.game_quality import (  # noqa: E402
     CARD_CLASSES, CARD_RARITY, COMBATANT_CLASS, EQUIPMENT_RARITY, EQUIPMENT_SLOT,
 )
+from src.en.game_quality import COMBATANT_TAG_WEIGHTS, EQUIPMENT_TAGS  # noqa: E402
 from src.en.quality import (  # noqa: E402
-    CLASS_NAMES, WORTH_TAKING, fold, named, slot_of, team_classes, usable_by, worth_taking,
+    CLASS_NAMES, WORTH_TAKING, fold, named, slot_of, suits, team_classes, usable_by, worth_taking,
 )
 
 # The shop, twice, exactly as the reader saw it.
@@ -188,3 +191,107 @@ class TestPurchaseAgreesWithTheShop(unittest.TestCase):
         purchase = rewards.generated_list(FakeTask(LOOPING_PURCHASE, team=set()), rewards.CARD_KEY)
         self.assertEqual(["Reorganize"], shelf)
         self.assertEqual(shelf, purchase)
+
+
+class TestSuits(unittest.TestCase):
+    """Weighing a piece of equipment against the combatant who would wear it.
+
+    The game keeps this opinion for Sortie and leaves the Chaos copies of the same relics blank, so the
+    generator carries it across. It covers about a third of what a Chaos run can meet, and a piece with no
+    tags has to read as "no opinion" rather than as "unsuitable" - otherwise two thirds of the pool would
+    quietly sink below the third that happens to be labelled.
+    """
+
+    def test_a_piece_the_combatant_wants_scores_her_own_weight(self):
+        # Arabella wants all-attack equipment, and the game says how much.
+        self.assertEqual(COMBATANT_TAG_WEIGHTS["Arabella"]["allatk"], suits("Nature's Hostility", "Arabella"))
+
+    def test_a_piece_she_does_not_want_scores_nothing(self):
+        self.assertEqual(0, suits("Assault Boots", "Arabella"))
+
+    def test_two_wanted_kinds_on_one_piece_add_up(self):
+        weights = COMBATANT_TAG_WEIGHTS["Nia"]
+        self.assertEqual(weights["discard"] + weights["draw"],
+                         suits("Fragment of the Empty Void", "Nia"))
+
+    def test_an_untagged_piece_is_no_opinion(self):
+        # Not a named piece: coverage grows with every dump, and the test should outlive any one item.
+        untagged = next(name for name in EQUIPMENT_RARITY if name not in EQUIPMENT_TAGS)
+        self.assertEqual(0, suits(untagged, "Arabella"))
+
+    def test_a_combatant_the_data_does_not_know_has_no_opinion(self):
+        self.assertEqual(0, suits("Nature's Hostility", "Someone Unreleased"))
+
+    def test_a_reading_that_is_not_equipment_scores_nothing(self):
+        self.assertEqual(0, suits("Rewards cannot be obtained", "Arabella"))
+
+    def test_a_concatenated_reading_still_matches(self):
+        # The reader runs words together constantly - "Gauntlets ofProtection" is from a real run.
+        self.assertEqual(suits("Fragment of the Empty Void", "Nia"),
+                         suits("Fragment of theEmpty Void", "Nia"))
+
+    def test_every_released_combatant_has_an_opinion(self):
+        # A dump that stopped carrying these would leave the shopping list ordered by name again, silently.
+        self.assertEqual(set(), set(COMBATANTS) - set(COMBATANT_TAG_WEIGHTS))
+
+
+class TestWorthTakingSuited(unittest.TestCase):
+    """Ordering the generated shopping list by who is going to wear the thing."""
+
+    SHELF = ["Nature's Hostility", "Assault Boots", "Blood Giant Claw"]
+
+    def test_the_wanted_piece_comes_first(self):
+        # Compared folded: the client spells this one with a typographic apostrophe.
+        first = worth_taking(self.SHELF, cards=False, suited_to="Arabella")[0]
+        self.assertEqual(fold("Nature's Hostility"), fold(first))
+
+    def test_without_a_combatant_the_order_is_unchanged(self):
+        self.assertEqual(worth_taking(self.SHELF, cards=False),
+                         worth_taking(self.SHELF, cards=False, suited_to=None))
+
+    def test_rarity_still_outranks_the_preference(self):
+        # A Legend she wants must not jump a Unique she does not: the run wants the better item.
+        shelf = ["Nature's Hostility", "Fragment of the Empty Void"]
+        self.assertEqual("Fragment of the Empty Void",
+                         worth_taking(shelf, cards=False, suited_to="Arabella")[0])
+
+    def test_an_unknown_combatant_changes_nothing(self):
+        self.assertEqual(worth_taking(self.SHELF, cards=False),
+                         worth_taking(self.SHELF, cards=False, suited_to="Someone Unreleased"))
+
+    def test_cards_are_untouched_by_it(self):
+        self.assertEqual(worth_taking(SHOP_CARDS), worth_taking(SHOP_CARDS, suited_to="Arabella"))
+
+
+class TestFarmedCombatantReachesTheList(unittest.TestCase):
+    """The farming target reaches the shopping list, read through the reader being stood in for.
+
+    Reading it around that reader would be the easy mistake: this code runs as the stand-in for it, so asking
+    through the module attribute would come straight back here. It also has to survive the slot filter, which
+    is the only thing this layer adds over `worth_taking`.
+    """
+
+    # Two slot-0 Legends: the game says Arabella wants the first kind and says nothing about the second.
+    SHELF = ["Nature's Hostility", "Blood Giant Claw"]
+    SLOT_ONE = next(key for key, slot in rewards.EQUIPMENT_KEYS.items() if slot == 0)
+
+    def offered(self, config):
+        """Read back what the list offers for the first equipment slot.
+
+        Args:
+            config: The settings the run is holding, as the reader would answer them.
+
+        Returns:
+            The names offered, best first.
+        """
+        reader = rewards.filling_in(lambda task, key, default: config.get(key, default), "utils")
+        return reader(FakeTask(self.SHELF), self.SLOT_ONE, [])
+
+    def test_the_configured_combatant_orders_the_equipment(self):
+        self.assertEqual(fold("Nature's Hostility"), fold(self.offered({FARMED_COMBATANT: "Arabella"})[0]))
+
+    def test_an_unset_combatant_leaves_the_name_order_alone(self):
+        self.assertEqual(fold("Blood Giant Claw"), fold(self.offered({})[0]))
+
+    def test_only_this_slot_is_offered(self):
+        self.assertEqual(2, len(self.offered({FARMED_COMBATANT: "Arabella"})))
