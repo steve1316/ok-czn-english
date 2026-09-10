@@ -8,7 +8,7 @@ rows in ten and names a class rather than a combatant on the rest. `game_battle.
 half of that link from the other side, by inverting the cards each combatant starts and sparks.
 
 Source: the Global client's own asset dump.
-Generated: 2026-09-05
+Generated: 2026-09-10
 """
 
 
@@ -79,7 +79,7 @@ CARD_RARITY = {
     'Blessing of Waves': 'RARE',
     'Blissful Oblivion': 'RARE',
     'Blood Stalker': 'COMMON',
-    'Bloom : Instinct Resonance': 'UNIQUE',
+    'Bloom : Instinct Resonance': 'LEGEND',
     'Bloom: Abyssal Bug': 'LEGEND',
     'Bloom: Acid Gas': 'COMMON',
     'Bloom: Aimed Fire': 'LEGEND',
@@ -107,6 +107,7 @@ CARD_RARITY = {
     'Bound At Dusk': 'RARE',
     'Bowguard': 'COMMON',
     'Brand of Annihilation': 'RARE',
+    'Break Apart & Renew': 'RARE',
     'Break Armor': 'RARE',
     'Broken Ebony Lumen': 'RARE',
     'Burn': 'COMMON',
@@ -198,6 +199,7 @@ CARD_RARITY = {
     'Discernment': 'COMMON',
     'Discernment: Deepened': 'COMMON',
     'Discharged Android': 'RARE',
+    'Dispersed Desire': 'RARE',
     'Dispersing Shot': 'COMMON',
     'Disposable Ego': 'LEGEND',
     'Disruption Fire': 'COMMON',
@@ -269,6 +271,7 @@ CARD_RARITY = {
     'Elysium of Blades': 'UNIQUE',
     'Emergency Shielding': 'COMMON',
     'Encore': 'LEGEND',
+    'End of the Line': 'UNIQUE',
     'Energy Barrier': 'RARE',
     'Enforcer Slaughter': 'LEGEND',
     'Engagement Fire': 'COMMON',
@@ -323,6 +326,7 @@ CARD_RARITY = {
     'Flower of Memory': 'COMMON',
     'Flowing Parry': 'COMMON',
     'Fluider': 'RARE',
+    'For My Mistress': 'COMMON',
     'Forbidden Algorithm': 'LEGEND',
     'Forbidden Hypothesis': 'RARE',
     'Forbidden: Disposable Ego': 'LEGEND',
@@ -492,6 +496,7 @@ CARD_RARITY = {
     'Inner Awakening': 'RARE',
     'Inner Corruption': 'RARE',
     'Innos’s Guardian': 'COMMON',
+    'Insatiable Cravings': 'LEGEND',
     'Instant Judgment': 'RARE',
     'Instinct Ignition': 'COMMON',
     'Instinct Resonance': 'LEGEND',
@@ -510,7 +515,6 @@ CARD_RARITY = {
     'Knowledge of Darkness': 'RARE',
     'Kyrken’s Revelation': 'LEGEND',
     'Lame Shaman': 'COMMON',
-    'Lamp': 'LEGEND',
     'Lashing': 'COMMON',
     'Last Resort': 'UNIQUE',
     'Last-Ditch Assault': 'UNIQUE',
@@ -528,6 +532,7 @@ CARD_RARITY = {
     'Lumina Explosion': 'COMMON',
     'Mace of Grudges': 'COMMON',
     'Machine Gun': 'COMMON',
+    'Maelstrom of Oblivion': 'UNIQUE',
     'Magnetic Field': 'COMMON',
     'Magnum Shot': 'COMMON',
     'Mana Field': 'COMMON',
@@ -691,6 +696,8 @@ CARD_RARITY = {
     'Rapid Fire': 'COMMON',
     'Rapid Slash': 'COMMON',
     'Rapier': 'COMMON',
+    'Reaping Slash': 'COMMON',
+    'Reckoning': 'UNIQUE',
     'Recycling\u200b': 'RARE',
     'Refined Chaos Capsule': 'RARE',
     'Reflection: Zero': 'UNIQUE',
@@ -716,6 +723,7 @@ CARD_RARITY = {
     'Rhythm: Fortissimo': 'RARE',
     'Rhythm: Staccato': 'RARE',
     'Rift of Nothingness': 'UNIQUE',
+    'Rift of Severance': 'RARE',
     'Rising Dragon Spire': 'RARE',
     'Rock and Roll': 'UNIQUE',
     'Rocket Punch': 'RARE',
@@ -767,6 +775,7 @@ CARD_RARITY = {
     'Sir Kowalski': 'LEGEND',
     'Skull Bash': 'COMMON',
     'Skyscraper Cleave': 'UNIQUE',
+    'Slake Thirst': 'COMMON',
     'Slash': 'COMMON',
     'Slaughter': 'COMMON',
     'Snack Time': 'RARE',
@@ -2041,6 +2050,7 @@ COMBATANT_CLASS = {
     'Narja': 'controller',
     'Nia': 'controller',
     'Nine': 'knight',
+    'Olga': 'psionic',
     'Orlea': 'controller',
     'Owen': 'striker',
     'Rei': 'controller',
