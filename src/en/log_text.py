@@ -43,9 +43,10 @@ _patched = False
 def compile_template(shape):
     """Turn a written shape into a pattern that matches the line it renders as.
 
-    The literal runs are escaped and the interpolations become `(.+?)`. Non-greedy is safe because no site in
+    The literal runs are escaped and the interpolations become `(.*?)`. Non-greedy is safe because no site in
     `ok_tasks/` writes two interpolations with nothing between them, so every group has a literal on both
-    sides to stop at.
+    sides to stop at, and the whole pattern is anchored. Empty is allowed because an interpolation really can
+    render as nothing: `node_type` starts as `""`, so the run's first status row reads `第1层，第0节点，`.
 
     Args:
         shape: The Chinese line as written, with each interpolation collapsed to `{}`.
@@ -53,7 +54,7 @@ def compile_template(shape):
     Returns:
         A compiled pattern anchored to the whole line.
     """
-    return re.compile("^" + "(.+?)".join(re.escape(part) for part in shape.split("{}")) + r"\Z", re.DOTALL)
+    return re.compile("^" + "(.*?)".join(re.escape(part) for part in shape.split("{}")) + r"\Z", re.DOTALL)
 
 
 def _compile_templates():
@@ -113,8 +114,28 @@ def translating(original):
     return logging_in_english
 
 
+def reporting(original):
+    """Wrap `info_set` so the Tasks tab draws its Info rows in English.
+
+    A row's key and value both reach `og.app.tr` in `TaskTab.update_task_info`, so most of these could have
+    been catalog entries instead. Three could not: the floor and node row, the equipment row and the
+    meditation key are composed at runtime, and `tr` is a whole-string lookup. Doing all of them here keeps
+    one mechanism rather than two, and an English string that is not a msgid comes back from `tr` unchanged.
+
+    Args:
+        original: The unbound `info_set` being replaced.
+
+    Returns:
+        The replacement.
+    """
+    def info_set_in_english(self, key, value):
+        return original(self, translate(key), translate(value))
+
+    return info_set_in_english
+
+
 def apply():
-    """Route every message `ok_tasks/` logs through the translation table."""
+    """Route every message `ok_tasks/` logs, and every row it reports, through the translation table."""
     global _patched
     if _patched:
         return
@@ -133,5 +154,9 @@ def apply():
             logger.warning(f"BaseTask has no {name}, leaving those lines in Chinese")
             continue
         setattr(BaseTask, name, translating(original))
+    if hasattr(BaseTask, "info_set"):
+        # After the logging methods, so `log_info`'s own `info_set("Log", ...)` call hands over a message that
+        # is already English. The second pass costs one failed character test, which is why the order is free.
+        BaseTask.info_set = reporting(BaseTask.info_set)
     logger.info(f"{len(MESSAGES)} log messages and {len(TEMPLATES)} templates installed")
     _patched = True
