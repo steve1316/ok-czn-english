@@ -7,6 +7,7 @@ from ok import Logger
 
 from src.en import quality
 from src.en.handlers import loaded, register, replace
+from src.en.screen import COMBATANT_NAME_POINTS
 
 logger = Logger.get_logger(__name__)
 
@@ -16,8 +17,6 @@ SORTIE_CARD_KEY = "获得卡牌优先级"
 # The three equipment slots, in the order the handlers number them.
 EQUIPMENT_KEYS = {"装备1号位优先级": 0, "装备2号位优先级": 1, "装备3号位优先级": 2}
 
-# Where the Combatants screen writes each team member's name.
-MEMBER_POSITIONS = ((0.159, 0.368), (0.432, 0.368), (0.705, 0.369))
 TEAM = "_en_team"
 
 _patched = False
@@ -35,7 +34,7 @@ def remember_team(task, utils):
         utils: The loaded `utils` module.
     """
     names = []
-    for x, y in MEMBER_POSITIONS:
+    for x, y in COMBATANT_NAME_POINTS:
         box = utils.find_box_at_point(task, x, y)
         if box and box.name.strip():
             names.append(box.name.strip())

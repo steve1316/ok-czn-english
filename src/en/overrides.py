@@ -56,6 +56,8 @@ PLAYS_ITS_OWN_CARDS = "出牌优先级"
 # ships. Anchored on the card-reward list, which both modes carry and which the Desire screens sit alongside.
 DESIRE_FACTION = "Desire Faction"
 RANKS_CARD_REWARDS = "卡牌奖励优先级"
+# The combatant whose save data the run farms. `src/en/navigation.py` reads it to recognise the tab.
+FARMED_COMBATANT = "刷存档主战员"
 # List settings the user picks from, keyed by config name -> the roster it draws on.
 LIST_OPTIONS = {
     "移除卡牌列表": CARDS,
@@ -77,7 +79,7 @@ LIST_OPTIONS = {
 # Single-choice settings, keyed by config name -> the roster and the default to pick from it.
 SINGLE_CHOICE = {
     "游戏语言": (GAME_LANGUAGES, "English"),
-    "刷存档主战员": (COMBATANTS, "Heidemarie"),
+    FARMED_COMBATANT: (COMBATANTS, "Heidemarie"),
 }
 # Free-text settings whose Chinese default cannot carry over. Cleared so the user fills them from what the
 # client actually shows, rather than inheriting a value that can never match.
@@ -114,7 +116,7 @@ DESCRIPTIONS = {
     "出战主战员优先级": "Combatants to deploy, in order of preference.",
     "主战员优先级": "Combatants to pick when the run offers a choice.",
     "拉黑主战员": "Combatants to never pick.",
-    "刷存档主战员": "The combatant whose save data is farmed.",
+    FARMED_COMBATANT: "The combatant whose save data is farmed.",
     "指定面具卡牌": "The Persona Card to hold out for, matched against its name and description.",
     "面具卡牌刻印": "The Engraving to hold out for on that Persona Card.",
     "刷初始卡牌": "Reroll the starting card until this one appears. Cannot be combined with Farm Gaps.",

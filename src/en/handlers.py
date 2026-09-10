@@ -37,6 +37,8 @@ from ok import Logger
 logger = Logger.get_logger(__name__)
 
 HANDLER_LIST = "PAGE_HANDLERS"
+# Stands for "the target had none of its own", which for an object means the name came from its class.
+OWNED_BY_CLASS = object()
 # Records which fork-local changes a function already carries, so each is applied exactly once
 # however many modules wrap the same upstream function and however often the installs re-run.
 WRAPS = "_en_wraps"
@@ -76,6 +78,12 @@ class StandIn:
 def standing_in(target, **replacements):
     """Swap attributes on a module or object for the length of a block.
 
+    What is put back depends on where the name came from, which is why the original is read out of the
+    target's own `__dict__` rather than with `getattr`. A module attribute, or an instance attribute like
+    `all_texts`, is the target's own and is simply restored. A method is not: it lives on the class, and
+    setting it back by name would leave a bound copy on the instance shadowing the class for the rest of the
+    app's life, holding a reference cycle with the task. Removing what was set puts that lookup back.
+
     Args:
         target: The module or object whose attributes are being stood in for.
         **replacements: The attribute names to swap, and what to put in their place.
@@ -83,14 +91,18 @@ def standing_in(target, **replacements):
     Returns:
         A context manager that restores every original on the way out, however the block ends.
     """
-    originals = {name: getattr(target, name) for name in replacements}
+    held = vars(target)
+    originals = {name: held.get(name, OWNED_BY_CLASS) for name in replacements}
     for name, replacement in replacements.items():
         setattr(target, name, replacement)
     try:
         yield
     finally:
         for name, original in originals.items():
-            setattr(target, name, original)
+            if original is OWNED_BY_CLASS:
+                vars(target).pop(name, None)
+            else:
+                setattr(target, name, original)
 
 
 def each_list():

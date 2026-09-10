@@ -8,7 +8,15 @@ across several modules.
 `text_in_region` is the loop those modules actually want. Almost every fork-local handler starts by asking
 "is this caption in that band", and writing the walk out per module is how near-identical copies of it keep
 appearing next to the copies of the arithmetic.
+
+The screen literals two or more modules share live here too, for the same reason. `find_box_at_point` has no
+tolerance at all, so a point that upstream nudges and the fork updates in only one of its copies does not
+fail - it silently reads nothing, forever.
 """
+
+# Where the Combatants tab writes each team member's name. Upstream's own numbers, from the read inside
+# `handle_archive_target_member`. Both `src/en/navigation.py` and `src/en/rewards.py` work from them.
+COMBATANT_NAME_POINTS = ((0.159, 0.368), (0.432, 0.368), (0.705, 0.369))
 
 
 def in_region(box, region, width, height):
