@@ -310,6 +310,16 @@ class TestHandTags(unittest.TestCase):
     def test_every_name_is_real_equipment(self):
         self.assertEqual(set(), set(HAND_TAGS) - set(EQUIPMENT_RARITY))
 
+    def test_no_combatant_wants_a_kind_nothing_can_carry(self):
+        """A preference nothing can satisfy is a dead entry, and the game shipped one.
+
+        Its own table spells `bullet` with three Ls for two combatants, so their strongest preference matched
+        no equipment at all. The generator corrects known misspellings, and this is what notices the next one.
+        """
+        carried = {tag for tags in TAGS.values() for tag in tags}
+        wanted = {tag for weights in COMBATANT_TAG_WEIGHTS.values() for tag in weights}
+        self.assertEqual(set(), wanted - carried)
+
     def test_every_kind_is_one_a_combatant_wants(self):
         wanted = {tag for weights in COMBATANT_TAG_WEIGHTS.values() for tag in weights}
         self.assertEqual(set(), {tag for tags in HAND_TAGS.values() for tag in tags} - wanted)

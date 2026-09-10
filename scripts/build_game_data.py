@@ -333,6 +333,10 @@ CA_INFIX = re.compile(r"_ca(?=_)")
 # Dropped from both sides: left on the equipment it would be a near-constant, and left on a combatant it
 # would be a weight that can never match anything.
 UNWEIGHTED_TAG = "public"
+# The game's own table misspells a kind for two of its combatants, and no relic carries the misspelling, so
+# their strongest preference matched nothing at all. Corrected on the way in rather than left for every
+# reader to trip over. `TestHandTags` fails if a future patch introduces another one.
+TAG_TYPOS = {"bulllet": "bullet"}
 
 # What the client calls each card category, and the short name used here. These are the same five kinds the
 # reader already sees printed under a card in hand, so a category answers "may this be played at all".
@@ -456,7 +460,7 @@ def collect_quality(table, dump_dir):
             combatant_class[name] = klass
         tags = id_list(row.get(COMBATANT_TAG_COLUMN))
         values = id_list(row.get(COMBATANT_TAG_VALUE_COLUMN))
-        weights = {tag: int(value) for tag, value in zip(tags, values)
+        weights = {TAG_TYPOS.get(tag, tag): int(value) for tag, value in zip(tags, values)
                    if value.isdigit() and tag != UNWEIGHTED_TAG}
         if name and weights:
             combatant_tag_weights[name] = weights
