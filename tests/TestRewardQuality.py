@@ -14,8 +14,9 @@ from src.en.game_quality import (  # noqa: E402
     CARD_CLASSES, CARD_RARITY, COMBATANT_CLASS, EQUIPMENT_RARITY, EQUIPMENT_SLOT,
 )
 from src.en.game_quality import COMBATANT_TAG_WEIGHTS, EQUIPMENT_TAGS  # noqa: E402
+from src.en.hand_tags import HAND_TAGS  # noqa: E402
 from src.en.quality import (  # noqa: E402
-    CLASS_NAMES, WORTH_TAKING, fold, named, slot_of, suits, team_classes, usable_by, worth_taking,
+    CLASS_NAMES, TAGS, WORTH_TAKING, fold, named, slot_of, suits, team_classes, usable_by, worth_taking,
 )
 
 # The shop, twice, exactly as the reader saw it.
@@ -295,3 +296,36 @@ class TestFarmedCombatantReachesTheList(unittest.TestCase):
 
     def test_only_this_slot_is_offered(self):
         self.assertEqual(2, len(self.offered({FARMED_COMBATANT: "Arabella"})))
+
+
+class TestHandTags(unittest.TestCase):
+    """The labels read by hand for the pieces the game never labelled.
+
+    The generator reaches a relic only when Sortie carries the same row, and 98 of the pieces a Chaos run can
+    meet have no such row. These are a reading of those pieces' own effect text, so the suite has to pin what
+    a reading can get wrong: a name that is not real equipment, a kind no combatant wants, or an entry that
+    quietly contradicts the developers' own answer.
+    """
+
+    def test_every_name_is_real_equipment(self):
+        self.assertEqual(set(), set(HAND_TAGS) - set(EQUIPMENT_RARITY))
+
+    def test_every_kind_is_one_a_combatant_wants(self):
+        wanted = {tag for weights in COMBATANT_TAG_WEIGHTS.values() for tag in weights}
+        self.assertEqual(set(), {tag for tags in HAND_TAGS.values() for tag in tags} - wanted)
+
+    def test_it_only_fills_gaps(self):
+        # Reading one differently from the developers would be a silent disagreement, so overlap is refused.
+        self.assertEqual(set(), set(HAND_TAGS) & set(EQUIPMENT_TAGS))
+
+    def test_the_generated_answer_wins_where_both_speak(self):
+        overlapping = next(iter(EQUIPMENT_TAGS))
+        self.assertEqual(EQUIPMENT_TAGS[overlapping], TAGS[overlapping])
+
+    def test_a_hand_read_piece_is_scored(self):
+        # Cycle of Circulation heals mid-battle, and Orlea is one of the combatants who want that.
+        self.assertIn("heal", HAND_TAGS["Cycle of Circulation"])
+        self.assertGreater(suits("Cycle of Circulation", "Orlea"), 0)
+
+    def test_it_widens_what_the_run_has_an_opinion_on(self):
+        self.assertEqual(len(EQUIPMENT_TAGS) + len(HAND_TAGS), len(TAGS))

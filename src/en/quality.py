@@ -5,8 +5,12 @@ Names are folded before matching, because neither the reader nor the client spel
 `suits` is the one judgement here that is about a pairing rather than a thing. The game keeps an opinion on
 which equipment suits which combatant - it labels equipment with the kind of deck it serves, and gives each
 combatant a weight per kind - but only fills that in for Sortie, so `game_quality.py` carries it across to
-the Chaos copies of the same relics. It reaches about a third of what a Chaos run can meet, which is why it
-only ever orders items that rarity has already ranked equal, and never promotes one above a better piece.
+the Chaos copies of the same relics and `hand_tags.py` fills the gaps that leaves by reading the effect text.
+
+It still only ever orders pieces that rarity has already ranked equal, and never promotes one above a better
+piece. That is not caution about coverage: upstream treats the priority list as an override rather than a
+tiebreak, so a well-suited Legend ranked above an ill-suited Unique would have the run strip the Unique it is
+already wearing to install the Legend.
 """
 
 import re
@@ -17,6 +21,7 @@ from src.en.game_quality import (
     CARD_CLASSES, CARD_RARITY, COMBATANT_CLASS, COMBATANT_TAG_WEIGHTS, EQUIPMENT_RARITY, EQUIPMENT_SLOT,
     EQUIPMENT_TAGS,
 )
+from src.en.hand_tags import HAND_TAGS
 
 logger = Logger.get_logger(__name__)
 
@@ -67,6 +72,10 @@ def index(names):
     """
     return {folded: name for folded, name in ((fold(name), name) for name in names) if folded}
 
+
+# The game's own labels, with the hand-read ones filling the gaps it left. The generated half wins wherever
+# both speak, since it is the developers' answer and the other is a reading of the effect text.
+TAGS = {**HAND_TAGS, **EQUIPMENT_TAGS}
 
 CARD_INDEX = index(CARD_RARITY)
 EQUIPMENT_INDEX = index(EQUIPMENT_RARITY)
@@ -158,7 +167,7 @@ def tallied(equipment, weights):
     Returns:
         The total weight, zero when either side carries nothing.
     """
-    return sum(weights.get(tag, 0) for tag in EQUIPMENT_TAGS.get(equipment) or ())
+    return sum(weights.get(tag, 0) for tag in TAGS.get(equipment) or ())
 
 
 def suits(equipment_name, combatant):
