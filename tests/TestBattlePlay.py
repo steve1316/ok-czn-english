@@ -298,6 +298,21 @@ class TestInstalling(unittest.TestCase):
             utils_sortie._hand_card_names(task)
             self.assertEqual(len(utils_sortie.name_reads), 2)
 
+    def test_reading_the_hand_does_not_shout_every_box_at_the_log(self):
+        # Upstream prints one line per box on screen from inside this read, plus two summaries - a debugging
+        # aid for its own region filter, shipped at info level, and about a ninth of a day's log.
+        with upstream(hand(ATTACK)) as (utils_sortie, task):
+            quiet_read = utils_sortie._hand_card_names
+
+            def noisy_read(task_):
+                task_.log_info("  OCR: box one")
+                return quiet_read(task_)
+
+            utils_sortie._hand_card_names = noisy_read
+            battle.install()
+            utils_sortie._hand_card_names(task)
+            self.assertEqual([], task.logged)
+
     def test_an_empty_readout_ends_the_turn_without_trying_a_card(self):
         # Nothing in hand is free, and the readout says there is nothing left to spend, so trying each card
         # in turn only to be refused would cost several seconds a turn for an answer already on screen.

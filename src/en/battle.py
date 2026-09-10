@@ -33,7 +33,7 @@ ends at once, instead of after every card has been refused.
 from ok import Logger
 
 from src.en import board, cards
-from src.en.handlers import StandIn, loaded, register, replace
+from src.en.handlers import StandIn, loaded, register, replace, standing_in
 from src.en.overrides import SMART_CARD_PLAY
 
 logger = Logger.get_logger(__name__)
@@ -218,7 +218,11 @@ def install():
         read_for, names = getattr(task, HAND_CACHE, (None, None))
         if read_for is task.all_texts:
             return names
-        names = read_names(task)
+        # Upstream prints one line per box on screen here, plus two summaries - about 26,700 lines of a
+        # 244,000-line day. It is a debugging aid for its own region filter, shipped at info level, so it is
+        # dropped to debug rather than removed: `python main_debug.py` still shows it when the filter misreads.
+        with standing_in(task, log_info=logger.debug):
+            names = read_names(task)
         setattr(task, HAND_CACHE, (task.all_texts, names))
         return names
 
