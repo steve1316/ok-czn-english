@@ -1,25 +1,23 @@
 """Equipment labels read by hand, for the pieces the game never labelled itself.
 
 The game labels equipment with the kind of deck it serves and scores each combatant against those kinds, but
-it only fills that in for Sortie. `game_quality.py` carries the labels across to the Chaos copies of the same
-relics, which reaches 141 of the 239 pieces a Chaos run can meet. The rest have no Sortie counterpart at all,
-and no rule can reach them.
+only fills that in for Sortie. `game_quality.py` carries the labels across to the Chaos copies of the same
+relics, reaching 141 of the 239 pieces a Chaos run can meet. The rest have no Sortie counterpart at all, so no
+rule can reach them. This table is those gaps, read off each piece's own effect text against the worked
+examples in the generated table - a judgement, not the developers' answer, so the generated table wins wherever
+both have an entry and this file is consulted only for a name the generator left out.
 
-This table is those gaps, filled in by reading each piece's own effect text against the worked examples in
-the generated table. It is a judgement, not the developers' answer, so the generated table wins wherever both
-have an entry and this file is only ever consulted for a name the generator left out.
+A piece is left out when its effect does not clearly serve a kind some combatant actually wants. Roughly half
+are: flat stat lines, Stress, Credits, Damage Reduction and Epiphany triggers serve no listed kind, and
+inventing one would steer a purchase on a guess. A missing entry reads as "no opinion" and leaves the run where
+it already was, so silence is the cheaper mistake.
 
-**A piece is left out when its effect does not clearly serve a kind some combatant actually wants.** Roughly
-half of them are: flat stat lines, Stress, Credits, Damage Reduction and Epiphany triggers serve no listed
-kind, and inventing one for them would steer a purchase on a guess. A missing entry reads as "no opinion" and
-leaves the run exactly where it already was, so silence is the cheaper mistake.
+Two were read off the wrong text at first, and the trap is worth knowing: `Flashbang` and `Nature's Gift` name
+a card as well as a relic, and `game_text.py` keeps the card's description for a shared name. The relic's own
+wording is on its Sortie tier, under `Mutation:` or `Harmonization:`.
 
-Two of these were read off the wrong text at first, and the trap is worth knowing: `Flashbang` and
-`Nature's Gift` name a card as well as a relic, and `game_text.py` keeps the card's description for a shared
-name. The relic's own wording is on its Sortie tier, under `Mutation:` or `Harmonization:`.
-
-Hand-maintained - unlike its neighbours, this one is not regenerated. After a game patch, re-run
-`scripts/build_game_data.py` first and then check whether anything here has since been labelled properly, in
+Hand-maintained - unlike its neighbours this one is not regenerated. After a game patch, re-run
+`scripts/build_game_data.py` first, then check whether anything here has since been labelled properly, in
 which case the entry can go.
 """
 

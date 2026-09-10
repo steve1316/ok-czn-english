@@ -1,30 +1,27 @@
 """Take the card the user's build preset pinned, wherever a card screen offers one.
 
 A build preset marks the cards a combatant's build wants, and the client draws a small orange pin in the
-top-right corner of every marked card - on the removal grid, on the Epiphany picker, on the card detail
-screen. Nothing in `ok_tasks/` knows about it, because the mark is a Global-client feature, so the pick has
-always come down to the priority lists alone.
+top-right corner of every marked card. Nothing in `ok_tasks/` knows about it - the mark is a Global-client
+feature - so the pick has always come down to the priority lists alone.
 
-The pin is read off the frame rather than the OCR pass, since it carries no text. It is anchored on the card's
-own type icon, which is the template match the recognizer already builds every card around, so no new template
-and no new search are needed - just a small patch of pixels at a fixed offset from a box that is already in
-hand. Measured across the captured screens the offset is stable to a pixel or two within a layout, and the two
-layouts in use differ enough to need one offset each.
+The pin carries no text, so it is read off the frame, anchored on the card's own type icon: the template match
+the recognizer already builds every card around. That means no new template and no new search, just a small
+patch of pixels at a fixed offset from a box already in hand. Across the captured screens the offset is stable
+to a pixel or two within a layout, and the two layouts in use differ enough to need one offset each.
 
-Colour, not shape. The pin is a solid amber disc and everything that can sit behind it - card art, the frame,
+Colour, not shape. The pin is a solid amber disc, and everything that can sit behind it - card art, the frame,
 the glitter on an Epiphany screen - is either far off that hue or far less saturated. On the worst captured
 case, a card buried in white sparkle, the probe still came back two-thirds amber against nothing at all for an
-unpinned card beside it, so the threshold has room on both sides.
+unpinned card beside it.
 
 Marking and narrowing are kept apart on purpose. Every card the recognizers hand back is marked, since that
-costs one small patch of pixels and nothing reads the mark unless it wants to. Withholding the unpinned ones
-happens only inside the handlers that are about to *choose* a card, because several other callers count what
-they were given rather than ranking it - `handle_mask_card` treats fewer than three cards as "the choice has
-already been made" - and a narrowed list would quietly change what those counts mean.
+costs one patch of pixels and nothing reads the mark unless it wants to. Withholding the unpinned ones happens
+only inside the handlers about to *choose* a card, because several other callers count what they were given
+rather than ranking it - `handle_mask_card` treats fewer than three cards as "the choice has already been
+made" - and a narrowed list would quietly change what those counts mean.
 
-Where it does narrow, upstream then ranks what is left with the user's own priority config, exactly as before.
-A screen with nothing pinned, or with everything pinned, is handed over untouched: a filter that removes all
-of the candidates, or none of them, is not worth applying.
+Where it does narrow, upstream ranks what is left with the user's own priority config exactly as before. A
+screen with nothing pinned, or everything pinned, is handed over untouched.
 """
 
 import numpy as np
