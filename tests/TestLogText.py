@@ -24,7 +24,7 @@ CJK = re.compile(r"[一-鿿]")
 # A stand-in for one interpolated value, distinctive enough that a pattern cannot match it by accident.
 MARKER = "XyZ"
 # What `scan_log_strings.py` finds today. Raise it as each file is translated; the last phase makes it total.
-MINIMUM_COVERAGE = 0
+MINIMUM_COVERAGE = 51
 # The Info rows `log_node_status` and `log_credit` write, which are `info_set` keys rather than logged lines,
 # so the extractor never sees them. Upstream renaming one would leave the row Chinese with nothing to say so.
 DASHBOARD_KEYS = ("当前信用点", "版本号", "游戏语言", "所处层数，节点，类型", "是否到达关底boss",
