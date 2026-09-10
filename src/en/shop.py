@@ -2,18 +2,17 @@
 
 The shop's refresh is free, so `handle_shop` takes it whenever nothing on the shelf matches the user's
 priority lists. That is the right call with money in hand and the wrong one without: a captured run sat in
-front of a 96 / 96 / 200 shelf holding 29 credits, refreshed until the counter ran out, and left with
-nothing. Every refresh in that state is dead time, because no reroll of the shelf can produce something
-29 credits will buy.
+front of a 96 / 96 / 200 shelf holding almost nothing, refreshed until the counter ran out, and left with
+nothing anyway. Every refresh in that state is dead time, because no reroll of the shelf can produce
+something the run can pay for.
 
 A floor fixes it. Below the floor the free-refresh button is withheld for the length of one `handle_shop`
 call, which is not the same as skipping the click afterwards - by the time upstream has clicked, the frame is
 spent. With the button hidden the handler runs out of options and returns False, and `handle_leave`, already
 the next entry in `PAGE_HANDLERS`, walks the run out of the shop on the same frame.
 
-The floor is a constant rather than a setting. It is a property of the game's price list, not a preference:
-the cheapest thing the shop stocks sits above it, so anything at or under the floor buys nothing whatever the
-shelf rerolls into.
+The floor is a constant rather than a setting, and it is where the run has been asked to give up rather than
+where the price list says a purchase becomes possible. Rerolling costs nothing but time, so the bar is low.
 
 `handlers.wrap` puts the wrapper both on the module and in the handler lists, which is what lets it compose
 with `src/en/rewards.py` - that module rebuilds this handler's list entry by reading it back off the module,
@@ -28,8 +27,9 @@ from src.en.screen import text_in_region
 
 logger = Logger.get_logger(__name__)
 
-# Credits at or below which a reroll of the shelf cannot produce anything affordable.
-SHOP_FLOOR = 50
+# The fewest credits still worth rerolling the shelf for. Inclusive: holding exactly this much, the run
+# rerolls. Below it every refresh is dead time, because nothing a reroll produces can be paid for.
+SHOP_FLOOR = 29
 # The bottom-left band `handle_shop` scans for its refresh button, as (x1, y1, x2, y2).
 REFRESH_REGION = (0.012, 0.892, 0.258, 0.979)
 # The caption on that button. `ocr.po` already rewrites the client's "Free" into this literal.
@@ -69,7 +69,7 @@ def refusing_free_refresh(handler, credit_of):
         if free is None:
             return handler(task)
         credit = credit_of(task)
-        if credit > SHOP_FLOOR:
+        if credit >= SHOP_FLOOR:
             return handler(task)
         logger.info(f"holding {credit} credits, so the free refresh is withheld and the shop is left")
         with standing_in(task, all_texts=[box for box in task.all_texts if box is not free]):
