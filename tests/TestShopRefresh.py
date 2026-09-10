@@ -14,9 +14,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.en.shop import (  # noqa: E402
-    REFRESH_REGION, SHOP_FLOOR, free_refresh_box, install, refusing_free_refresh, worth_refreshing,
-)
+from src.en.shop import SHOP_FLOOR, free_refresh_box, install, refusing_free_refresh  # noqa: E402
 
 WIDTH, HEIGHT = 1920, 1080
 # Where the shop draws its free-refresh button, measured off the captured screen.
@@ -79,19 +77,6 @@ def recording_handler(seen):
     return handler
 
 
-class TestWorthRefreshing(unittest.TestCase):
-    """The floor itself."""
-
-    def test_refuses_at_the_floor(self):
-        self.assertFalse(worth_refreshing(SHOP_FLOOR))
-
-    def test_refuses_below_the_floor(self):
-        self.assertFalse(worth_refreshing(29))
-
-    def test_allows_above_the_floor(self):
-        self.assertTrue(worth_refreshing(SHOP_FLOOR + 1))
-
-
 class TestFreeRefreshBox(unittest.TestCase):
     """Finding the button in an OCR pass."""
 
@@ -107,10 +92,6 @@ class TestFreeRefreshBox(unittest.TestCase):
     def test_returns_none_when_the_button_is_absent(self):
         self.assertIsNone(free_refresh_box(shop_screen(free=False)))
 
-    def test_band_matches_the_handler(self):
-        # Upstream's own filter, so a drift here would silently stop the button being found.
-        self.assertEqual(REFRESH_REGION, (0.012, 0.892, 0.258, 0.979))
-
 
 class TestRefusingFreeRefresh(unittest.TestCase):
     """What the wrapped handler lets upstream see."""
@@ -120,6 +101,19 @@ class TestRefusingFreeRefresh(unittest.TestCase):
         wrapped = refusing_free_refresh(recording_handler(seen), lambda task: 29)
         wrapped(shop_screen())
         self.assertEqual(seen, [["96"]])
+
+    def test_hides_the_button_exactly_at_the_floor(self):
+        # The floor is exclusive: the cheapest thing the shop stocks costs more than it.
+        seen = []
+        wrapped = refusing_free_refresh(recording_handler(seen), lambda task: SHOP_FLOOR)
+        wrapped(shop_screen())
+        self.assertEqual(seen, [["96"]])
+
+    def test_keeps_the_button_one_credit_above_the_floor(self):
+        seen = []
+        wrapped = refusing_free_refresh(recording_handler(seen), lambda task: SHOP_FLOOR + 1)
+        wrapped(shop_screen())
+        self.assertEqual(seen, [["96", "免费"]])
 
     def test_keeps_the_button_above_the_floor(self):
         seen = []
@@ -154,11 +148,6 @@ class TestRefusingFreeRefresh(unittest.TestCase):
 
         wrapped = refusing_free_refresh(recording_handler([]), unexpected)
         self.assertTrue(wrapped(shop_screen(free=False)))
-
-    def test_keeps_the_handlers_name(self):
-        # `src/en/rewards.py` wraps this handler by name afterwards, so the name has to survive.
-        wrapped = refusing_free_refresh(recording_handler([]), lambda task: 29)
-        self.assertEqual(wrapped.__name__, "handler")
 
 
 def named(name):

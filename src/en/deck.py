@@ -21,49 +21,67 @@ grid is therefore reordered rather than filtered: where several cards match the 
 combatant's are reached first. Where none match, upstream's own bottom-up fallback still decides, and nothing
 is filtered away, so a row holding no eligible card can never strand the run.
 
-Both changes stand down when the portrait was never captured, which is every Sortie run and any Chaos run that
-has not reached the information screen yet.
+Nothing is changed at all unless the portrait is actually on screen, which is what keeps a Sortie run - where
+no target is ever captured - and a Chaos run that has not reached the information screen behaving exactly as
+before. Finding it costs a template match over the portrait column, and answering the flag makes upstream
+repeat that same match up to twice more in the same call, so the result is handed back to it rather than
+matched again.
 """
 
 from ok import Logger
 
-from src.en.handlers import loaded, register
+from src.en.handlers import loaded, register, standing_in, wrap
 
 logger = Logger.get_logger(__name__)
 
 # The runtime template `handle_archive_target_member` saves for the deck grid.
 PORTRAIT = "target_member_in_select_card"
-# Where that portrait is searched for, as (x1, y1, x2, y2) - upstream's own region.
+# Where that portrait is searched for, and how well it has to match. Upstream's own region and threshold.
 PORTRAIT_REGION = (0.079, 0.092, 0.209, 0.675)
+PORTRAIT_THRESHOLD = 0.6
 # How far from the portrait a card still counts as being on its row. Upstream's own tolerance.
 ROW_TOLERANCE = 0.25
 # The strategy flag upstream gates its row rule on.
 GAP_KEY = "刷空档"
 # The operations worth steering. Duplicating is left alone, since a copy helps whoever holds the original.
 ROW_ACTIONS = ("移除", "闪光", "灵光")
+# Names this change in the shared record of what a function already carries.
+TAG = "kept combatant's row"
 
 _patched = False
 
 
-def target_row_y(task):
-    """Find the height of the kept combatant's row in the deck grid.
+def portrait_of(task):
+    """Find the kept combatant's portrait down the left of the deck grid.
 
     Args:
         task: The running task, which holds the runtime templates and the current frame.
 
     Returns:
-        The row's centre height, normalised, or None when the portrait is not on screen.
+        The portrait's match, or None when it was never captured or is not on screen.
     """
     if not task.feature_exists(PORTRAIT):
         return None
-    found = task.find_one(
+    return task.find_one(
         feature_name=PORTRAIT,
         box=task.box_of_screen(*PORTRAIT_REGION),
-        threshold=0.6,
-    )
-    if not found:
+        threshold=PORTRAIT_THRESHOLD,
+    ) or None
+
+
+def row_of(task, portrait):
+    """Say which height of the grid a portrait's row sits at.
+
+    Args:
+        task: The running task, for the screen's size.
+        portrait: The portrait's match, or None.
+
+    Returns:
+        The row's centre height, normalised, or None when there is no portrait.
+    """
+    if portrait is None:
         return None
-    return (found.y + found.height / 2) / task.height
+    return (portrait.y + portrait.height / 2) / task.height
 
 
 def rows_first(cards, row_y):
@@ -78,8 +96,9 @@ def rows_first(cards, row_y):
     """
     if row_y is None:
         return cards
-    on_row = [c for c in cards if abs(c["y"] - row_y) <= ROW_TOLERANCE]
-    return on_row + [c for c in cards if abs(c["y"] - row_y) > ROW_TOLERANCE] if on_row else cards
+    # A stable sort on the boolean keeps the grid's own order within each group, which is what upstream's
+    # bottom-up fallbacks expect to be handed.
+    return sorted(cards, key=lambda card: abs(card["y"] - row_y) > ROW_TOLERANCE)
 
 
 def preferring_target_row(select_card, utils):
@@ -93,13 +112,16 @@ def preferring_target_row(select_card, utils):
         The wrapped function.
     """
     def wrapped(task, card_names, count=1, action=""):
-        if action not in ROW_ACTIONS:
+        portrait = portrait_of(task) if action in ROW_ACTIONS else None
+        row_y = row_of(task, portrait)
+        if row_y is None:
+            # Nothing to steer towards, so upstream runs exactly as it did. This is also what keeps the flag
+            # from being answered on a frame where upstream's own row rule would have found no portrait.
             return select_card(task, card_names, count=count, action=action)
-        row_y = target_row_y(task)
-        if row_y is not None:
-            logger.info(f"the kept combatant's row is at {row_y:.4f}, so {action} starts there")
+        logger.info(f"the kept combatant's row is at {row_y:.4f}, so {action} starts there")
         original_config = utils._get_config_value
         original_recognise = utils.recognize_cards_in_deck
+        original_find_one = task.find_one
 
         def answering_gap(task_, key, default):
             # Only the row rule reads this inside `select_card`; every other reader is in another handler.
@@ -110,16 +132,29 @@ def preferring_target_row(select_card, utils):
         def ordered(*args, **kwargs):
             return rows_first(original_recognise(*args, **kwargs), row_y)
 
-        utils._get_config_value = answering_gap
-        utils.recognize_cards_in_deck = ordered
-        try:
-            return select_card(task, card_names, count=count, action=action)
-        finally:
-            utils._get_config_value = original_config
-            utils.recognize_cards_in_deck = original_recognise
+        def remembering(feature_name=None, *args, **kwargs):
+            # Answering the flag makes upstream look this same portrait up again, up to twice, and a template
+            # match over the portrait column is worth a few milliseconds each time.
+            if feature_name == PORTRAIT:
+                return portrait
+            return original_find_one(feature_name, *args, **kwargs)
 
-    wrapped.__name__ = select_card.__name__
+        with standing_in(utils, _get_config_value=answering_gap, recognize_cards_in_deck=ordered):
+            with standing_in(task, find_one=remembering):
+                return select_card(task, card_names, count=count, action=action)
+
     return wrapped
+
+
+def install(utils):
+    """Wrap `select_card` wherever the run reaches it.
+
+    Args:
+        utils: The loaded `utils` module, or None when it is not importable yet.
+    """
+    if utils is None:
+        return
+    wrap(utils, "select_card", lambda select_card: preferring_target_row(select_card, utils), TAG)
 
 
 def apply():
@@ -127,15 +162,5 @@ def apply():
     global _patched
     if _patched:
         return
-
-    def install():
-        utils = loaded("utils")
-        if utils is None or getattr(utils.select_card, "_en_prefers_target_row", False):
-            return
-        wrapped = preferring_target_row(utils.select_card, utils)
-        wrapped._en_prefers_target_row = True
-        utils.select_card = wrapped
-        logger.info(f"{', '.join(ROW_ACTIONS)} will start on the kept combatant's row")
-
-    register(install)
+    register(lambda: install(loaded("utils")))
     _patched = True

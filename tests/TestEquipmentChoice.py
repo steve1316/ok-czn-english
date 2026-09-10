@@ -183,13 +183,6 @@ class TestPreferringRecommended(unittest.TestCase):
             preferring_recommended(raising, utils)(equipment_screen(recommended=1))
         self.assertIs(utils._find_member_level_tags, before)
 
-    def test_keeps_the_handlers_name(self):
-        def handle_equipment(task_):
-            return False
-
-        self.assertEqual("handle_equipment",
-                         preferring_recommended(handle_equipment, self.utils_stub()).__name__)
-
 
 class TestMythicOffer(unittest.TestCase):
     """Spotting a Mythic piece."""

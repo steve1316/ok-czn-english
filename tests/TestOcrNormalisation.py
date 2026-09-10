@@ -162,13 +162,25 @@ class TestOcrNormalisation(unittest.TestCase):
         """handle_card_assign excludes a row by this literal, so an unmapped class is clicked anyway."""
         for klass in ("Striker", "Vanguard", "Ranger", "Hunter", "Psionic", "Controller"):
             with self.subTest(klass=klass):
-                self.assertIn("无法获得", ocr_text.pattern_fix(f"{klass} Unobtainable"))
+                self.assertIn("无法获得", self.fix(f"{klass} Unobtainable"))
 
     def test_only_a_real_class_reads_as_unobtainable(self):
         """A loose rule here would exclude every combatant and cancel the purchase."""
         for text in ("Unobtainable", "Loot Unobtainable", "This card is Unobtainable for now"):
             with self.subTest(text=text):
-                self.assertIsNone(ocr_text.pattern_fix(text))
+                self.assertIsNone(self.fix(text))
+
+    def test_every_long_caption_survives_a_dropped_full_stop(self):
+        """The reader drops a trailing full stop about half the time, on any caption long or short."""
+        for msgid, msgstr in self.translation._catalog.items():
+            if not msgid or not msgstr or not msgid.endswith("."):
+                continue
+            with self.subTest(msgid=msgid):
+                self.assertEqual(msgstr, self.fix(msgid.rstrip(".")))
+
+    def test_a_full_stop_is_not_invented(self):
+        """Stripping punctuation must not let an unrelated caption match a shorter msgid."""
+        self.assertIsNone(self.fix("Multishot."))
 
     def test_the_patch_is_idempotent(self):
         """globals.apply() runs once, but a second call must not wrap the patch inside itself."""

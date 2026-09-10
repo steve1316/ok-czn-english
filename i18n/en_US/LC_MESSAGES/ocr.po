@@ -344,6 +344,32 @@ msgstr "购买"
 msgid "Cannot obtain Save Data"
 msgstr "无法获得存储数据"
 
+# From handle_card_assign: "无法获得" in the box probed beside each combatant's level tag. A card locked
+# to other classes says so by naming the class that cannot take it, so all six need an entry - an unmapped
+# one leaves the row looking available and the card is assigned to a combatant who refuses it.
+msgid "Striker Unobtainable"
+msgstr "无法获得"
+
+# From handle_card_assign: the same probe, for a card locked away from the Vanguard.
+msgid "Vanguard Unobtainable"
+msgstr "无法获得"
+
+# From handle_card_assign: the same probe, for a card locked away from the Ranger.
+msgid "Ranger Unobtainable"
+msgstr "无法获得"
+
+# From handle_card_assign: the same probe, for a card locked away from the Hunter.
+msgid "Hunter Unobtainable"
+msgstr "无法获得"
+
+# From handle_card_assign: the same probe, for a card locked away from the Psionic.
+msgid "Psionic Unobtainable"
+msgstr "无法获得"
+
+# From handle_card_assign: the same probe, for a card locked away from the Controller.
+msgid "Controller Unobtainable"
+msgstr "无法获得"
+
 # From handle_trauma_center: "创伤中心" in box.name. A badge sits beside the title and the OCR reads it
 # differently from frame to frame, so the same heading arrives under several spellings.
 msgid "Epione Center ?"

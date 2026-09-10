@@ -15,16 +15,16 @@ The floor is a constant rather than a setting. It is a property of the game's pr
 the cheapest thing the shop stocks sits above it, so anything at or under the floor buys nothing whatever the
 shelf rerolls into.
 
-The wrapper is put in two places, and both are load-bearing. The handler lists hold function objects, so the
-list entry has to be replaced for the run to reach it at all. `src/en/rewards.py` then rebuilds that entry by
-reading `handle_shop` back off the module, so the module attribute has to carry the wrapper too, or that
-rebuild would quietly drop it. Applying this before rewards in `src/globals.py` is what makes the two compose
-rather than fight.
+`handlers.wrap` puts the wrapper both on the module and in the handler lists, which is what lets it compose
+with `src/en/rewards.py` - that module rebuilds this handler's list entry by reading it back off the module,
+so a wrapper that lived only in the list would be quietly dropped. Rewards renames what it builds, so it has
+to run after this one; that ordering is the reason `src/globals.py` applies them in the order it does.
 """
 
 from ok import Logger
 
-from src.en.handlers import loaded, register, replace
+from src.en.handlers import loaded, register, standing_in, wrap
+from src.en.screen import text_in_region
 
 logger = Logger.get_logger(__name__)
 
@@ -34,22 +34,10 @@ SHOP_FLOOR = 50
 REFRESH_REGION = (0.012, 0.892, 0.258, 0.979)
 # The caption on that button. `ocr.po` already rewrites the client's "Free" into this literal.
 FREE = "免费"
-# Marks a handler this module has already wrapped, so a second task load does not wrap it twice.
-GUARD = "_en_shop_floor"
+# Names this change in the shared record of what a function already carries.
+TAG = "shop floor"
 
 _patched = False
-
-
-def worth_refreshing(credit):
-    """Say whether a free refresh can still lead to a purchase.
-
-    Args:
-        credit: The credits the run is holding.
-
-    Returns:
-        True when the shelf is worth rerolling.
-    """
-    return credit > SHOP_FLOOR
 
 
 def free_refresh_box(task):
@@ -61,15 +49,7 @@ def free_refresh_box(task):
     Returns:
         The button's box, or None when it is not on screen.
     """
-    x1, y1, x2, y2 = REFRESH_REGION
-    for box in getattr(task, "all_texts", None) or []:
-        if FREE not in box.name:
-            continue
-        center_x = (box.x + box.width / 2) / task.width
-        center_y = (box.y + box.height / 2) / task.height
-        if x1 <= center_x <= x2 and y1 <= center_y <= y2:
-            return box
-    return None
+    return text_in_region(task, FREE, REFRESH_REGION)
 
 
 def refusing_free_refresh(handler, credit_of):
@@ -89,37 +69,25 @@ def refusing_free_refresh(handler, credit_of):
         if free is None:
             return handler(task)
         credit = credit_of(task)
-        if worth_refreshing(credit):
+        if credit > SHOP_FLOOR:
             return handler(task)
         logger.info(f"holding {credit} credits, so the free refresh is withheld and the shop is left")
-        before = task.all_texts
-        task.all_texts = [box for box in before if box is not free]
-        try:
+        with standing_in(task, all_texts=[box for box in task.all_texts if box is not free]):
             return handler(task)
-        finally:
-            task.all_texts = before
 
-    wrapped.__name__ = handler.__name__
-    setattr(wrapped, GUARD, True)
     return wrapped
 
 
 def install(utils):
     """Wrap the shop handler wherever the run reaches it.
 
-    Runs once per task load, so it has to be idempotent. The module attribute is only wrapped the first time,
-    while the handler lists are re-checked every time - the modes are imported one at a time, so a list that
-    did not exist on the first run still needs the wrapper on a later one.
-
     Args:
         utils: The loaded `utils` module, or None when it is not importable yet.
     """
     if utils is None:
         return
-    if not getattr(utils.handle_shop, GUARD, False):
-        utils.handle_shop = refusing_free_refresh(utils.handle_shop, utils._get_current_credit)
-        logger.info(f"shop will not refresh at or below {SHOP_FLOOR} credits")
-    replace("handle_shop", utils.handle_shop)
+    wrap(utils, "handle_shop",
+         lambda handler: refusing_free_refresh(handler, utils._get_current_credit), TAG)
 
 
 def apply():

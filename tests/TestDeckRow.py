@@ -17,7 +17,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from src.en.deck import (  # noqa: E402
-    GAP_KEY, PORTRAIT, ROW_ACTIONS, ROW_TOLERANCE, preferring_target_row, rows_first, target_row_y,
+    GAP_KEY, PORTRAIT, ROW_ACTIONS, ROW_TOLERANCE, portrait_of, preferring_target_row, row_of, rows_first,
 )
 
 WIDTH, HEIGHT = 1920, 1080
@@ -42,19 +42,17 @@ class FakeTask:
         self.all_texts = []
         self._portrait_y = portrait_y
         self._has_feature = has_feature
-        self.logged = []
+        self.matches = 0
 
     def feature_exists(self, name):
         return self._has_feature and name == PORTRAIT
 
     def find_one(self, feature_name=None, box=None, threshold=None):
+        self.matches += 1
         return None if self._portrait_y is None else FakeFeature(self._portrait_y)
 
     def box_of_screen(self, *region):
         return region
-
-    def log_info(self, message):
-        self.logged.append(message)
 
 
 def card(name, y):
@@ -70,17 +68,34 @@ def card(name, y):
     return {"name": name, "x": 0.5, "y": y}
 
 
-class TestTargetRowY(unittest.TestCase):
+class TestPortraitOf(unittest.TestCase):
     """Finding the kept combatant's row."""
 
+    def row(self, task):
+        """Read the row height the way the wrapper does.
+
+        Args:
+            task: The screen to read.
+
+        Returns:
+            The row's centre height, or None.
+        """
+        return row_of(task, portrait_of(task))
+
     def test_reports_the_portrait_height(self):
-        self.assertAlmostEqual(0.4, target_row_y(FakeTask(portrait_y=0.4)))
+        self.assertAlmostEqual(0.4, self.row(FakeTask(portrait_y=0.4)))
 
     def test_returns_none_without_a_captured_portrait(self):
-        self.assertIsNone(target_row_y(FakeTask(portrait_y=0.4, has_feature=False)))
+        self.assertIsNone(self.row(FakeTask(portrait_y=0.4, has_feature=False)))
 
     def test_returns_none_when_the_portrait_is_off_screen(self):
-        self.assertIsNone(target_row_y(FakeTask(portrait_y=None)))
+        self.assertIsNone(self.row(FakeTask(portrait_y=None)))
+
+    def test_does_not_match_at_all_without_the_template(self):
+        # `feature_exists` is the cheap gate; matching a template that was never saved would just fail slowly.
+        task = FakeTask(portrait_y=0.4, has_feature=False)
+        portrait_of(task)
+        self.assertEqual(0, task.matches)
 
 
 class TestRowsFirst(unittest.TestCase):
@@ -153,11 +168,39 @@ class TestPreferringTargetRow(unittest.TestCase):
     def test_leaves_other_operations_alone(self):
         self.assertEqual((False, ["top", "low"]), self.run_action("复制"))
 
-    def test_leaves_the_grid_alone_without_a_portrait(self):
-        self.assertEqual((True, ["top", "low"]), self.run_action("移除", portrait_y=None))
+    def test_does_not_look_for_the_portrait_on_other_operations(self):
+        task = FakeTask(portrait_y=0.8)
+        preferring_target_row(lambda *a, **k: True, self.utils_stub())(task, [], action="复制")
+        self.assertEqual(0, task.matches)
 
-    def test_actions_are_the_ones_the_user_asked_for(self):
-        self.assertEqual({"移除", "闪光", "灵光"}, set(ROW_ACTIONS))
+    def test_matches_the_portrait_once_and_answers_upstream_from_that(self):
+        # Answering the flag makes upstream look the same portrait up again; it must not be re-matched.
+        utils = self.utils_stub()
+        task = FakeTask(portrait_y=0.8)
+
+        def select_card(task_, card_names, count=1, action=""):
+            for _ in range(2):
+                task_.find_one(feature_name=PORTRAIT, box=None, threshold=0.6)
+            return True
+
+        preferring_target_row(select_card, utils)(task, [], action="移除")
+        self.assertEqual(1, task.matches)
+
+    def test_other_feature_lookups_still_reach_the_task(self):
+        utils = self.utils_stub()
+        task = FakeTask(portrait_y=0.8)
+
+        def select_card(task_, card_names, count=1, action=""):
+            task_.find_one(feature_name="something_else", box=None, threshold=0.6)
+            return True
+
+        preferring_target_row(select_card, utils)(task, [], action="移除")
+        self.assertEqual(2, task.matches)
+
+    def test_stands_right_down_without_a_portrait(self):
+        # Not just the grid: the flag must not be answered either, or upstream would turn on a row rule that
+        # is about to fail its own portrait lookup anyway.
+        self.assertEqual((False, ["top", "low"]), self.run_action("移除", portrait_y=None))
 
     def test_restores_both_seams_afterwards(self):
         utils = self.utils_stub()

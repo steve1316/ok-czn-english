@@ -32,7 +32,7 @@ import numpy as np
 
 from ok import Logger
 
-from src.en.handlers import loaded, register, replace
+from src.en.handlers import loaded, register, standing_in, wrap
 
 logger = Logger.get_logger(__name__)
 
@@ -43,9 +43,10 @@ PICK_OFFSET = (0.1411, -0.0713)
 # The patch sampled at that point, in pixels. The pin is about 29 across, so this stays well inside it and
 # tolerates the pixel or two the offset drifts between screens.
 PROBE = 19
-# The pin's colour, as inclusive HSV bounds. Amber, saturated and bright.
-PIN_LOW = (5, 150, 150)
-PIN_HIGH = (25, 255, 255)
+# The pin's colour, as inclusive HSV bounds. Amber, saturated and bright. Held as arrays because `inRange`
+# would otherwise rebuild them on every card.
+PIN_LOW = np.array((5, 150, 150), dtype=np.uint8)
+PIN_HIGH = np.array((25, 255, 255), dtype=np.uint8)
 # How much of the patch has to be that colour. Measured: about 0.66 on a pin, 0.00 without one.
 MIN_ORANGE = 0.25
 
@@ -61,8 +62,9 @@ CHOOSERS = {
     "handle_card_reward": "recognize_cards",
     "handle_view_original": "recognize_cards",
 }
-# Marks a function this module has already wrapped, so a second task load does not wrap it twice.
-GUARD = "_en_tags_pins"
+# Names each change in the shared record of what a function already carries.
+MARK_TAG = "pin marks"
+NARROW_TAG = "pinned only"
 
 _patched = False
 
@@ -76,13 +78,12 @@ def probe_box(task, feature_box, offset):
         offset: The layout's `(dx, dy)`.
 
     Returns:
-        An `(x, y, width, height)` tuple, clamped to the frame.
+        The patch's top-left `(x, y)`, clamped so the whole square stays on the frame.
     """
     center_x = feature_box.x + feature_box.width / 2 + offset[0] * task.width
     center_y = feature_box.y + feature_box.height / 2 + offset[1] * task.height
-    x = int(min(max(0, round(center_x - PROBE / 2)), task.width - PROBE))
-    y = int(min(max(0, round(center_y - PROBE / 2)), task.height - PROBE))
-    return x, y, PROBE, PROBE
+    return (int(min(max(0, round(center_x - PROBE / 2)), task.width - PROBE)),
+            int(min(max(0, round(center_y - PROBE / 2)), task.height - PROBE)))
 
 
 def is_pinned(task, card, offset):
@@ -99,11 +100,11 @@ def is_pinned(task, card, offset):
     feature_box = card.get("feature_box")
     if task.frame is None or feature_box is None:
         return False
-    x, y, width, height = probe_box(task, feature_box, offset)
-    patch = task.frame[y:y + height, x:x + width, :3]
+    x, y = probe_box(task, feature_box, offset)
+    patch = task.frame[y:y + PROBE, x:x + PROBE, :3]
     if patch.size == 0:
         return False
-    orange = cv2.inRange(cv2.cvtColor(patch, cv2.COLOR_BGR2HSV), np.array(PIN_LOW), np.array(PIN_HIGH))
+    orange = cv2.inRange(cv2.cvtColor(patch, cv2.COLOR_BGR2HSV), PIN_LOW, PIN_HIGH)
     return float(np.count_nonzero(orange)) / orange.size >= MIN_ORANGE
 
 
@@ -153,8 +154,6 @@ def tagging(recognise, offset):
     def wrapped(task, *args, **kwargs):
         return marked(task, recognise(task, *args, **kwargs), offset)
 
-    wrapped.__name__ = recognise.__name__
-    setattr(wrapped, GUARD, True)
     return wrapped
 
 
@@ -175,23 +174,14 @@ def narrowing(chooser, utils, recognizer):
         def narrowed(*inner_args, **inner_kwargs):
             return only_pinned(original(*inner_args, **inner_kwargs))
 
-        setattr(utils, recognizer, narrowed)
-        try:
+        with standing_in(utils, **{recognizer: narrowed}):
             return chooser(*args, **kwargs)
-        finally:
-            setattr(utils, recognizer, original)
 
-    wrapped.__name__ = chooser.__name__
-    setattr(wrapped, GUARD, True)
     return wrapped
 
 
 def install(utils):
     """Mark every card the recognizers return, and narrow the screens that choose one.
-
-    Runs once per task load, so it has to be idempotent. The module attribute is only wrapped the first time,
-    while the handler lists are re-checked every time - the modes are imported one at a time, so a list that
-    did not exist on the first run still needs the handlers on a later one.
 
     Args:
         utils: The loaded `utils` module, or None when it is not importable yet.
@@ -199,19 +189,10 @@ def install(utils):
     if utils is None:
         return
     for name, offset in RECOGNIZERS.items():
-        recognise = getattr(utils, name, None)
-        if recognise is not None and not getattr(recognise, GUARD, False):
-            setattr(utils, name, tagging(recognise, offset))
+        wrap(utils, name, lambda recognise, offset=offset: tagging(recognise, offset), MARK_TAG)
     for name, recognizer in CHOOSERS.items():
-        chooser = getattr(utils, name, None)
-        if chooser is None:
-            continue
-        if not getattr(chooser, GUARD, False):
-            chooser = narrowing(chooser, utils, recognizer)
-            setattr(utils, name, chooser)
-            logger.info(f"{name} will set aside cards the build preset did not pin")
-        # A no-op for `select_card`, which is called as a module global and sits in no handler list.
-        replace(name, chooser)
+        wrap(utils, name,
+             lambda chooser, recognizer=recognizer: narrowing(chooser, utils, recognizer), NARROW_TAG)
 
 
 def apply():

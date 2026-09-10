@@ -40,7 +40,8 @@ priority-list comparison needed moving.
 
 from ok import Logger
 
-from src.en.handlers import loaded, register, replace
+from src.en.handlers import loaded, register, standing_in, wrap
+from src.en.screen import text_in_region
 
 logger = Logger.get_logger(__name__)
 
@@ -59,6 +60,9 @@ MYTHIC = "mythic"
 # Where that caption sits, as (x1, y1, x2, y2). Under the offered piece on the left, well clear of the
 # combatant column, where item names would otherwise supply the same word.
 MYTHIC_REGION = (0.050, 0.660, 0.600, 0.800)
+# Names each change in the shared record of what a function already carries.
+RECOMMENDED_TAG = "recommended combatant"
+MYTHIC_TAG = "mythic equipment"
 # Upstream's top quality bucket. Nothing in `ok_tasks/` knows the word Mythic, but the colour it reads off a
 # Mythic piece - a violet no other tier uses - is the one that falls through to this, so the two coincide.
 TOP_QUALITY = "传说"
@@ -75,15 +79,7 @@ def recommended_banner(task):
     Returns:
         The banner's box, or None when no row carries one.
     """
-    x1, y1, x2, y2 = BANNER_REGION
-    for box in getattr(task, "all_texts", None) or []:
-        if RECOMMENDED not in box.name:
-            continue
-        center_x = (box.x + box.width / 2) / task.width
-        center_y = (box.y + box.height / 2) / task.height
-        if x1 <= center_x <= x2 and y1 <= center_y <= y2:
-            return box
-    return None
+    return text_in_region(task, RECOMMENDED, BANNER_REGION)
 
 
 def recommended_row(task, banner, level_tags):
@@ -121,15 +117,7 @@ def mythic_offer(task):
     Returns:
         True when the client's one-per-combatant caption is under the offered piece.
     """
-    x1, y1, x2, y2 = MYTHIC_REGION
-    for box in getattr(task, "all_texts", None) or []:
-        if MYTHIC not in box.name.casefold():
-            continue
-        center_x = (box.x + box.width / 2) / task.width
-        center_y = (box.y + box.height / 2) / task.height
-        if x1 <= center_x <= x2 and y1 <= center_y <= y2:
-            return True
-    return False
+    return text_in_region(task, MYTHIC, MYTHIC_REGION) is not None
 
 
 def insisting_on_mythic(handler, utils):
@@ -151,24 +139,20 @@ def insisting_on_mythic(handler, utils):
         The wrapped handler.
     """
     def wrapped(task):
-        if not mythic_offer(task):
-            return handler(task)
         original = utils._should_install_equipment
 
         def insisted(task_, current_name, current_quality, new_equipment):
             install, reason = original(task_, current_name, current_quality, new_equipment)
-            if install or current_quality == TOP_QUALITY:
+            # Read here rather than up front: this is only reached on a confirmed equipment page, where the
+            # caption is worth looking for, instead of on every frame of the run.
+            if install or current_quality == TOP_QUALITY or not mythic_offer(task_):
                 return install, reason
             logger.info(f"taking a Mythic over the configured piece, which upstream refused: {reason}")
             return True, "Mythic outranks the configured equipment"
 
-        utils._should_install_equipment = insisted
-        try:
+        with standing_in(utils, _should_install_equipment=insisted):
             return handler(task)
-        finally:
-            utils._should_install_equipment = original
 
-    wrapped.__name__ = handler.__name__
     return wrapped
 
 
@@ -183,29 +167,37 @@ def preferring_recommended(handler, utils):
         The wrapped handler.
     """
     def wrapped(task):
-        # Only the Equipment screen draws this, so its absence skips every other frame without repeating
-        # upstream's page detection.
-        banner = recommended_banner(task)
-        if banner is None:
-            return handler(task)
         original = utils._find_member_level_tags
 
-        def preferred(*args, **kwargs):
-            tags = original(*args, **kwargs)
-            row = recommended_row(task, banner, tags)
+        def preferred(task_, *args, **kwargs):
+            tags = original(task_, *args, **kwargs)
+            # Read here rather than up front: upstream calls this once, on a confirmed install-equipment page,
+            # so the banner is looked for on those frames instead of on every frame of the run. Reading the
+            # task from the call rather than closing over the outer one also keeps a 6MB frame from being
+            # captured by anything that outlives this call.
+            row = recommended_row(task_, recommended_banner(task_), tags)
             if not row:
+                # Row 0 too: it is already where upstream falls back to, so there is nothing to move.
                 return tags
             logger.info(f"the client recommends combatant {row + 1} of {len(tags)}, so it is preferred")
             return [tags[row], *tags[:row], *tags[row + 1:]]
 
-        utils._find_member_level_tags = preferred
-        try:
+        with standing_in(utils, _find_member_level_tags=preferred):
             return handler(task)
-        finally:
-            utils._find_member_level_tags = original
 
-    wrapped.__name__ = handler.__name__
     return wrapped
+
+
+def install(utils):
+    """Wrap the equipment handler wherever the run reaches it.
+
+    Args:
+        utils: The loaded `utils` module, or None when it is not importable yet.
+    """
+    if utils is None:
+        return
+    wrap(utils, "handle_equipment", lambda handler: preferring_recommended(handler, utils), RECOMMENDED_TAG)
+    wrap(utils, "handle_equipment", lambda handler: insisting_on_mythic(handler, utils), MYTHIC_TAG)
 
 
 def apply():
@@ -213,15 +205,5 @@ def apply():
     global _patched
     if _patched:
         return
-
-    def install():
-        utils = loaded("utils")
-        if utils is None:
-            return
-        # Always rebuilt from upstream's own handler, never from a wrapper of it, so running twice on a
-        # second task load cannot nest one inside the other.
-        chosen = preferring_recommended(utils.handle_equipment, utils)
-        replace("handle_equipment", insisting_on_mythic(chosen, utils))
-
-    register(install)
+    register(lambda: install(loaded("utils")))
     _patched = True

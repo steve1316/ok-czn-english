@@ -107,28 +107,16 @@ class TestProbeBox(unittest.TestCase):
     def test_sits_at_the_measured_offset_from_the_icon(self):
         # Within a pixel: an odd-sized patch cannot centre exactly on every point, and the pin it sits in
         # is 29 across, so a pixel of slack costs nothing.
-        task = FakeTask()
-        x, y, w, h = probe_box(task, card(400, 424)["feature_box"], DECK_OFFSET)
-        self.assertAlmostEqual(400 + DECK_OFFSET[0] * WIDTH, x + w / 2, delta=1)
-        self.assertAlmostEqual(424 + DECK_OFFSET[1] * HEIGHT, y + h / 2, delta=1)
-
-    def test_is_the_probe_size(self):
-        task = FakeTask()
-        _, _, w, h = probe_box(task, card(400, 424)["feature_box"], DECK_OFFSET)
-        self.assertEqual((PROBE, PROBE), (w, h))
+        x, y = probe_box(FakeTask(), card(400, 424)["feature_box"], DECK_OFFSET)
+        self.assertAlmostEqual(400 + DECK_OFFSET[0] * WIDTH, x + PROBE / 2, delta=1)
+        self.assertAlmostEqual(424 + DECK_OFFSET[1] * HEIGHT, y + PROBE / 2, delta=1)
 
     def test_is_clamped_to_the_frame(self):
-        task = FakeTask()
-        x, y, w, h = probe_box(task, card(WIDTH - 4, 20)["feature_box"], PICK_OFFSET)
+        x, y = probe_box(FakeTask(), card(WIDTH - 4, 20)["feature_box"], PICK_OFFSET)
         self.assertGreaterEqual(x, 0)
         self.assertGreaterEqual(y, 0)
-        self.assertLessEqual(x + w, WIDTH)
-        self.assertLessEqual(y + h, HEIGHT)
-
-    def test_the_two_layouts_have_different_offsets(self):
-        # The three-card screen draws bigger cards, so its pin is further from the icon.
-        self.assertNotEqual(DECK_OFFSET, PICK_OFFSET)
-        self.assertGreater(PICK_OFFSET[0], DECK_OFFSET[0])
+        self.assertLessEqual(x + PROBE, WIDTH)
+        self.assertLessEqual(y + PROBE, HEIGHT)
 
 
 class TestIsPinned(unittest.TestCase):
@@ -146,9 +134,12 @@ class TestIsPinned(unittest.TestCase):
         task, cards = screen_with([True], PICK_OFFSET)
         self.assertTrue(is_pinned(task, cards[0], PICK_OFFSET))
 
-    def test_needs_more_than_a_speck_of_orange(self):
-        # A stray orange pixel or two is glitter, not a pin.
-        self.assertGreater(MIN_ORANGE, 0.05)
+    def test_a_speck_of_orange_is_not_a_pin(self):
+        # Glitter on the Epiphany screen puts a few amber pixels almost anywhere.
+        task, cards = screen_with([False], DECK_OFFSET)
+        x, y = probe_box(task, cards[0]["feature_box"], DECK_OFFSET)
+        task.frame[y:y + 3, x:x + 3] = PIN_BGR
+        self.assertFalse(is_pinned(task, cards[0], DECK_OFFSET))
 
     def test_declines_without_a_frame(self):
         task, cards = screen_with([True], DECK_OFFSET)
@@ -266,13 +257,6 @@ class TestNarrowing(unittest.TestCase):
             narrowing(raising, utils, "recognize_cards_in_deck")(FakeTask())
         self.assertIs(utils.recognize_cards_in_deck, before)
 
-    def test_keeps_the_choosers_name(self):
-        def select_card(task_):
-            return True
-
-        self.assertEqual("select_card",
-                         narrowing(select_card, self.utils_stub([]), "recognize_cards_in_deck").__name__)
-
     def test_passes_arguments_and_result_through(self):
         utils = self.utils_stub([])
         wrapped = narrowing(lambda task_, names, count=1, action="": (names, count, action),
@@ -304,9 +288,11 @@ class TestInstall(unittest.TestCase):
     """Putting the wrappers where the run will actually reach them."""
 
     def setUp(self):
+        self.recognizers = {"recognize_cards": lambda *a, **k: [],
+                            "recognize_cards_in_deck": lambda *a, **k: []}
         self.utils = types.SimpleNamespace(
-            recognize_cards=lambda *a, **k: [],
-            recognize_cards_in_deck=lambda *a, **k: [],
+            recognize_cards=self.recognizers["recognize_cards"],
+            recognize_cards_in_deck=self.recognizers["recognize_cards_in_deck"],
             select_card=named("select_card"),
             handle_card_reward=named("handle_card_reward"),
             handle_view_original=named("handle_view_original"),
@@ -344,7 +330,8 @@ class TestInstall(unittest.TestCase):
         install(self.utils)
         for name in RECOGNIZERS:
             with self.subTest(name=name):
-                self.assertTrue(hasattr(getattr(self.utils, name), "__name__"))
+                self.assertEqual([], getattr(self.utils, name)(FakeTask()))
+                self.assertIsNot(getattr(self.utils, name), self.recognizers[name])
 
     def test_running_twice_does_not_nest(self):
         install(self.utils)

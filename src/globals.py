@@ -22,14 +22,14 @@ class Globals(QObject):
         # These edit the mode handler lists, so they must run after the task modules are importable.
         navigation.apply()
         events.apply()
-        # Before deck and rewards, both of which wrap what this one patches.
         pins.apply()
         deck.apply()
         dice.apply()
         draft.apply()
         equipment.apply()
-        # Before rewards, which wraps `handle_shop` by reading it back off the module, so this one has
-        # to be in place first for both to survive.
+        # Anything wrapping `handle_shop` or `handle_card_reward` goes before rewards, which renames the
+        # list entry it builds - after that rename, a later wrapper looking for the original name finds
+        # nothing. Order does not otherwise matter: `handlers.wrap` composes rather than replaces.
         shop.apply()
         rewards.apply()
         battle.apply()
