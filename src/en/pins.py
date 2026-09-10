@@ -27,12 +27,12 @@ A screen with nothing pinned, or with everything pinned, is handed over untouche
 of the candidates, or none of them, is not worth applying.
 """
 
-import cv2
 import numpy as np
 
 from ok import Logger
 
 from src.en.handlers import loaded, register, standing_in, wrap
+from src.en.screen import colour_share
 
 logger = Logger.get_logger(__name__)
 
@@ -102,10 +102,7 @@ def is_pinned(task, card, offset):
         return False
     x, y = probe_box(task, feature_box, offset)
     patch = task.frame[y:y + PROBE, x:x + PROBE, :3]
-    if patch.size == 0:
-        return False
-    orange = cv2.inRange(cv2.cvtColor(patch, cv2.COLOR_BGR2HSV), PIN_LOW, PIN_HIGH)
-    return float(np.count_nonzero(orange)) / orange.size >= MIN_ORANGE
+    return colour_share(patch, PIN_LOW, PIN_HIGH) >= MIN_ORANGE
 
 
 def marked(task, cards, offset):

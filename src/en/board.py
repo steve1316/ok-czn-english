@@ -52,6 +52,7 @@ import cv2
 import numpy as np
 
 from src.en.game_battle import ATTRIBUTES
+from src.en.screen import frame_of, hsv_of, patch_of
 
 # The Action Point readout, as a relative box. Deliberately tight on the digit: the hand counter below it and
 # the decorative line through its middle both sit outside, so neither can be counted as a lit reading.
@@ -105,21 +106,6 @@ ATTRIBUTE_HUES = {"RED": 0, "ORANGE": 15, "GREEN": 78, "BLUE": 110, "PURPLE": 13
 HUE_TOLERANCE = 20
 
 
-def frame_of(task):
-    """Take the frame to read, once, for the whole of one answer.
-
-    Reached through the task, `frame` waits out a pause and re-captures once the last frame has been let go,
-    so asking for it twice inside one reading can quietly mix two frames' pixels into a single answer.
-
-    Args:
-        task: The running task.
-
-    Returns:
-        The frame, or None when there is none to read.
-    """
-    return getattr(task, "frame", None)
-
-
 def box_around(centre_x, centre_y, half):
     """Build a relative box of a given size around a point.
 
@@ -133,41 +119,6 @@ def box_around(centre_x, centre_y, half):
     """
     half_x, half_y = half
     return (centre_x - half_x, centre_y - half_y, centre_x + half_x, centre_y + half_y)
-
-
-def patch_of(frame, box):
-    """Cut a relative box out of a frame.
-
-    Args:
-        frame: The frame to cut from, or None when there is none.
-        box: A `(left, top, right, bottom)` tuple in fractions of the frame.
-
-    Returns:
-        The pixels inside the box, or None when there is no frame or the box runs off it. A box that falls
-        partly outside would otherwise come back as a narrow strip of whatever sits at the edge, which reads
-        as a perfectly confident answer about the wrong pixels.
-    """
-    if frame is None:
-        return None
-    left, top, right, bottom = box
-    if not (0 <= left < right <= 1 and 0 <= top < bottom <= 1):
-        return None
-    height, width = frame.shape[:2]
-    return frame[int(top * height):int(bottom * height), int(left * width):int(right * width)]
-
-
-def hsv_of(patch):
-    """Turn a patch into the colour space every reading here judges it in.
-
-    Args:
-        patch: The pixels to convert, in BGR.
-
-    Returns:
-        The patch in HSV, or None when there is nothing to convert.
-    """
-    if patch is None or patch.size == 0:
-        return None
-    return cv2.cvtColor(patch, cv2.COLOR_BGR2HSV)
 
 
 def lit_fraction(patch):
