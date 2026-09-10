@@ -186,7 +186,22 @@ class RankingChoice(StandIn):
     Upstream reaches for `random.choice` once its own ladder has run out of opinions, which is the decision
     worth improving and the only `random` call inside the function. Anything that is not a list of event
     options falls through to the real module, so an unrelated call still behaves normally.
+
+    This is the path most event screens actually reach, so it has to be told which Desire faction the run is
+    chasing. A live Chaos run ranked an option handing out the faction it wanted as an ordinary reward,
+    because the sort that knew about factions was never the thing deciding.
     """
+
+    def __init__(self, original, target=None):
+        """Hold the module being stood in for, and the faction to steer towards.
+
+        Args:
+            original: The `random` module upstream would otherwise have used.
+            target: The Desire faction the run is chasing, or None when it is not being tracked.
+        """
+        super().__init__(original)
+        # Set here rather than lazily: `StandIn.__getattr__` would otherwise forward the lookup to `random`.
+        self.target = target
 
     def choice(self, sequence):
         """Pick the best-ranked event option, or defer when this is not an event choice.
@@ -200,8 +215,8 @@ class RankingChoice(StandIn):
         options = list(sequence)
         if not options or not all(isinstance(option, dict) and "description" in option for option in options):
             return self.original.choice(sequence)
-        best = min(rank(option["description"]) for option in options)
-        candidates = [option for option in options if rank(option["description"]) == best]
+        best = min(rank(option["description"], self.target) for option in options)
+        candidates = [option for option in options if rank(option["description"], self.target) == best]
         # Ties stay random so a repeated event does not always take an identical path.
         chosen = self.original.choice(candidates)
         logger.info(f"ranked {len(options)} options, {len(candidates)} tied at rank {best}, taking: "
@@ -237,6 +252,7 @@ def apply():
         def patched_handle_event_task(task):
             original_find_feature = task.find_feature
             original_random = utils.random
+            target = desire.target_faction(task, utils)
 
             def find_feature(feature_name=None, *args, **kwargs):
                 # Hiding this one feature stops combat being clicked before anything is ranked. Set on the
@@ -246,7 +262,7 @@ def apply():
                 return original_find_feature(feature_name, *args, **kwargs)
 
             task.find_feature = find_feature
-            utils.random = RankingChoice(original_random)
+            utils.random = RankingChoice(original_random, target)
             utils.recognize_event_options = ranked_recognize
             try:
                 return original_handle_event_task(task)

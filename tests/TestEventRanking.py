@@ -9,6 +9,7 @@ Every description here was captured from the 2026-09-04 and 2026-09-07 Chaos run
 is invented.
 """
 
+import random
 import sys
 import unittest
 from pathlib import Path
@@ -18,7 +19,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from src.en.events import (  # noqa: E402
     ATTACK, ATTACK_RANK, DESIRE_RANK, DIALOGUE, DIALOGUE_RANK, MIN_LATIN_MARKER_LENGTH, MIN_MARKER_LENGTH,
-    QUIT, QUIT_RANK, REWARD_RANK, SPARK, SPARK_RANK,
+    QUIT, QUIT_RANK, REWARD_RANK, RankingChoice, SPARK, SPARK_RANK,
     drop_unwanted, fold, order, rank,
 )
 
@@ -234,6 +235,19 @@ class TestDesireOptions(unittest.TestCase):
         options = [option(self.ENDS), option(self.RANDOM), option(self.TARGETED)]
         ordered = order(options, [], is_subsequence, "Control")
         self.assertEqual(self.TARGETED, ordered[0]["description"])
+
+    def test_the_random_stand_in_honours_the_faction_too(self):
+        # This is the path upstream actually lands on for these events: its own ladder runs out of opinions
+        # and it reaches for random.choice. A live Chaos run ranked "Desire: Claim" as an ordinary reward
+        # because the faction never reached here.
+        chooser = RankingChoice(random, "Control")
+        chosen = chooser.choice([option(self.RANDOM), option(self.TARGETED)])
+        self.assertEqual(self.TARGETED, chosen["description"])
+
+    def test_the_random_stand_in_without_a_faction_is_unchanged(self):
+        chooser = RankingChoice(random, None)
+        chosen = chooser.choice([option(self.TARGETED), option(self.RANDOM)])
+        self.assertIn(chosen["description"], (self.TARGETED, self.RANDOM))
 
     def test_a_configured_keyword_still_wins(self):
         # The user's own list has always outranked the ranking, and that does not change here.
