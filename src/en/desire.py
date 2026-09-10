@@ -24,6 +24,13 @@ onto the ordinary card assign screen, which decides on the user's reward priorit
 is named for its effect, so the list never names it, and the run pressed Skip on every one - twice in the
 four minutes of a real run. That screen is claimed here too, but only to the extent of telling upstream the
 card is worth keeping.
+
+**The Desire screen and the assign screen are one decision, not two.** Taking a card on the Desire screen
+drops the run onto the assign screen to hand it over, and judging the faction a second time there threw away
+what the first screen had just chosen - a real run picked `Knowledge Addiction` off three cards none of which
+were the faction being chased, then skipped it four seconds later. So a Desire screen leaves the name of what
+it took on the task, and the assign screen honours it. The purchase guard still outranks that: nothing here
+ever spends credits.
 """
 
 import re
@@ -66,6 +73,8 @@ CONFIRM_POINT = (0.921, 0.931)
 # The Purchase Card screen runs through the same handler as the card assign screen, and taking a card there
 # spends credits. Its title is what tells the two apart.
 PURCHASE_TITLE = "购买卡牌"
+# Where a Desire screen leaves the card it took, for the assign screen that hands the card over to read.
+TAKEN = "_en_desire_taken"
 # Names this change in the shared record of what a function already carries.
 ASSIGN_TAG = "desire cards worth keeping"
 
@@ -242,6 +251,9 @@ def choosing_handler(utils, title, page, choose, name):
         if chosen is None:
             return False
         logger.info(f"{name}: taking 「{chosen['name']}」 tagged {chosen['tags'] or 'nothing'}")
+        # The card assign screen judges the faction again as it hands the card over, and would throw an
+        # off-faction pick straight back out. Leaving the name here tells it the choice is already made.
+        setattr(task, TAKEN, chosen["name"])
         utils._move_and_click(task, chosen["x"], chosen["y"])
         task.sleep(0.5)
         return True
@@ -301,6 +313,10 @@ def keeping_desire_cards(handler, utils):
     card takes one of the team's three Desire slots outright, costing up to three points against a bonus
     that wants seven of nine. Levels run out well before the cards do.
 
+    The exception is a card a Desire screen already chose, which is kept whatever it carries. That screen has
+    no Skip, so something had to be taken; re-judging the faction here only throws the choice away and leaves
+    the run with nothing.
+
     Args:
         handler: The handler to wrap, upstream's or another patch's.
         utils: The module whose `recognize_cards` and card list reader the handler resolves through.
@@ -322,17 +338,23 @@ def keeping_desire_cards(handler, utils):
                 return cards
             read = True
             card = cards[0]
+            chosen = getattr(task_, TAKEN, None) == card["name"]
+            # Reasserted rather than consumed, because this screen shows for as long as it takes to answer and
+            # the handler runs once a second throughout. A different card means the pick was already handed
+            # over, so the name goes.
+            setattr(task_, TAKEN, card["name"] if chosen else None)
             tags = tag_of(task_, card["description_region"])
-            if not tags:
+            if not (chosen or tags):
                 return cards
             target = target_faction(task_, utils)
-            if not tags.get(target):
+            because = "was chosen on the Desire screen" if chosen else f"carries {target}"
+            if not (chosen or tags.get(target)):
                 logger.info(f"「{card['name']}」carries {tags} rather than {target}, so it is left to be skipped")
             elif purchasing(task_):
-                logger.info(f"「{card['name']}」carries {target}, but it is for sale, so it is left alone")
+                logger.info(f"「{card['name']}」{because}, but it is for sale, so it is left alone")
             else:
                 wanted = card["name"]
-                logger.info(f"「{card['name']}」carries {target}, so it is kept rather than skipped")
+                logger.info(f"「{card['name']}」{because}, so it is kept rather than skipped")
             return cards
 
         # `_get_card_list` rather than the reader under it: upstream reaches the list through this in both

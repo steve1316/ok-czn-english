@@ -26,7 +26,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.en.desire import CARD_PRIORITY, PURCHASE_TITLE, keeping_desire_cards  # noqa: E402
+from src.en.desire import CARD_PRIORITY, PURCHASE_TITLE, TAKEN, keeping_desire_cards  # noqa: E402
 
 WIDTH, HEIGHT = 1920, 1080
 # The granted card's slot, measured off the run that skipped one.
@@ -60,7 +60,7 @@ class FakeTask:
         self.all_texts = boxes
 
 
-def screen(tag, target="Claim", configured=(), purchase=False, page=ASSIGN_PAGE, second=None):
+def screen(tag, target="Claim", configured=(), purchase=False, page=ASSIGN_PAGE, second=None, taken=None):
     """Build the card assign screen and the stubs the wrapper reads through.
 
     Args:
@@ -70,6 +70,7 @@ def screen(tag, target="Claim", configured=(), purchase=False, page=ASSIGN_PAGE,
         purchase: Whether this is the Purchase Card screen, which shares the handler.
         page: The page label the handler gives its card read, which nothing is allowed to depend on.
         second: A tag for a further card the handler reads after the granted one, or None for no second read.
+        taken: The card a Desire screen already chose, or None when the run reached this screen without one.
 
     Returns:
         A `(task, utils, seen, handler)` quadruple, where `seen` collects what the handler was offered.
@@ -81,6 +82,7 @@ def screen(tag, target="Claim", configured=(), purchase=False, page=ASSIGN_PAGE,
     if purchase:
         boxes.append(FakeBox(PURCHASE_TITLE, *PURCHASE_POINT))
     task = FakeTask(boxes)
+    setattr(task, TAKEN, taken)
     card = {"name": NAME, "x": CARD_X, "y": CARD_Y, "description_region": DESCRIPTION_REGION}
     seen = {}
 
@@ -102,7 +104,9 @@ def screen(tag, target="Claim", configured=(), purchase=False, page=ASSIGN_PAGE,
                                   _get_card_list=get_card_list)
 
     def handler(task_):
-        # Upstream's own order: it reads the card first, then the list it judges the card against.
+        # Upstream's own order: it reads the card first, then the list it judges the card against. Cleared
+        # per call, because each call is one frame of a screen that shows until the run answers it.
+        reads.clear()
         utils.recognize_cards(task_, region=(0.101, 0.217, 0.291, 0.365), page=page)
         if second is not None:
             boxes.append(FakeBox(second, CARD_X, CARD_Y - 0.1))
@@ -179,6 +183,39 @@ class TestKeepingDesireCards(unittest.TestCase):
         task, _, seen, handler = screen("Claim]", second="Inquiry]")
         handler(task)
         self.assertEqual([NAME], seen["offered"])
+
+    def test_a_card_already_chosen_on_a_desire_screen_is_kept(self):
+        # The faction was weighed one screen earlier; this screen only hands the card over.
+        task, _, seen, handler = screen("Inquiry]", taken=NAME)
+        handler(task)
+        self.assertEqual([NAME], seen["offered"])
+
+    def test_a_chosen_card_with_no_readable_tag_is_still_kept(self):
+        task, _, seen, handler = screen(None, taken=NAME)
+        handler(task)
+        self.assertEqual([NAME], seen["offered"])
+
+    def test_the_pick_survives_a_screen_that_lingers(self):
+        # The handler runs once a second for as long as the screen shows, and must answer the same each time.
+        task, _, seen, handler = screen("Inquiry]", taken=NAME)
+        handler(task)
+        handler(task)
+        self.assertEqual([NAME], seen["offered"])
+
+    def test_a_pick_for_some_other_card_does_not_carry_over(self):
+        task, _, seen, handler = screen("Inquiry]", taken="Some Older Card")
+        handler(task)
+        self.assertEqual([], seen["offered"])
+
+    def test_a_pick_for_some_other_card_is_forgotten(self):
+        task, _, _, handler = screen("Inquiry]", taken="Some Older Card")
+        handler(task)
+        self.assertIsNone(getattr(task, TAKEN))
+
+    def test_a_chosen_card_is_still_not_bought(self):
+        task, _, seen, handler = screen("Claim]", purchase=True, taken=NAME)
+        handler(task)
+        self.assertEqual([], seen["offered"])
 
 
 if __name__ == "__main__":

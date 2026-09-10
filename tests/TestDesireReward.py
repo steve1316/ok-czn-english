@@ -18,7 +18,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.en.desire import REWARD_TITLE, best, reward_handler  # noqa: E402
+from src.en.desire import REWARD_TITLE, TAKEN, best, reward_handler  # noqa: E402
 
 WIDTH, HEIGHT = 1920, 1080
 # The three cards the screen offers, measured off the run that stalled on it.
@@ -192,6 +192,17 @@ class TestRewardHandler(unittest.TestCase):
         task, _, handler = screen(["[ Control ]", "[ Inquiry ]", None], priority=["card1"])
         handler(task)
         self.assertEqual((round(CARD_X[1], 4), round(CARD_Y, 4)), task.clicked)
+
+    def test_the_taken_card_is_remembered_for_the_screen_that_hands_it_over(self):
+        # The card assign screen that follows judges on the faction too, and would skip an off-faction pick.
+        task, _, handler = screen(["[ Control ]", "[ Inquiry ]", None])
+        handler(task)
+        self.assertEqual("card0", getattr(task, TAKEN))
+
+    def test_a_screen_it_declines_remembers_nothing(self):
+        task, _, handler = screen(["[ Claim ]", None, None], title="Card Reward")
+        handler(task)
+        self.assertIsNone(getattr(task, TAKEN, None))
 
 
 if __name__ == "__main__":
