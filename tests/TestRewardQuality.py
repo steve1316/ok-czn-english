@@ -17,7 +17,7 @@ from src.en.game_quality import (  # noqa: E402
 from src.en.game_quality import COMBATANT_TAG_WEIGHTS, EQUIPMENT_TAGS  # noqa: E402
 from src.en.hand_tags import HAND_TAGS  # noqa: E402
 from src.en.quality import (  # noqa: E402
-    CLASS_NAMES, TAGS, WORTH_TAKING, fold, index, look_up, named, slot_of, sorted_letters, suits,
+    CLASS_NAMES, TAGS, WORTH_TAKING, fold, index, named, one_edit_apart, slot_of, sorted_letters, suits,
     team_classes, unconfused, usable_by, worth_taking,
 )
 
@@ -100,8 +100,9 @@ class TestRewardQuality(unittest.TestCase):
         self.assertEqual(set(), in_data - set(CLASS_NAMES))
 
     def test_an_unknown_name_leaves_the_team_unknown(self):
-        """A misread name must not silently narrow the team and filter out usable cards."""
-        self.assertEqual(set(), team_classes(["Nlne", "0rlea"]))
+        """An unreadable name must not silently narrow the team and filter out usable cards."""
+        # Not a misreading of a real name: those are recovered now. This is a name that is simply not there.
+        self.assertEqual(set(), team_classes(["Rewards cannot be obtained", "Skip"]))
 
     def test_only_the_best_grades_are_taken(self):
         """Rare is most of what a shop stocks; buying it is how a run ends with nothing."""
@@ -382,8 +383,8 @@ class TestScrambledReadings(unittest.TestCase):
     def test_an_ambiguous_scramble_is_refused(self):
         # Two names of the same letters cannot be told apart, so neither answers to the scrambled spelling.
         lookup = index(["Dark Star", "Stark Dar"])
-        self.assertIsNone(look_up("StarDark", lookup))
-        self.assertEqual("Dark Star", look_up("Dark Star", lookup))
+        self.assertIsNone(lookup.look_up("StarDark"))
+        self.assertEqual("Dark Star", lookup.look_up("Dark Star"))
 
 
 class TestMisreadLetters(unittest.TestCase):
@@ -394,9 +395,10 @@ class TestMisreadLetters(unittest.TestCase):
     recognise at all. The characters corrected here are only the ones the logs actually show being swapped,
     and only where exactly one name answers to the corrected spelling.
 
-    Deliberately not corrected: `Vute Accent` for `Mute Accent` and `Moon or Destruction` for
-    `Moon of Destruction`. Reading v as m or r as f would turn real words into other real words, and one
-    wrong match is worse than any number of missed ones.
+    `Vute Accent` and `Moon or Destruction` are deliberately not in this table. Reading v as m or r as f
+    would turn real words into other real words, and a blanket swap has no way to know it has. Both readings
+    are still recovered, but by the pass below, which has to agree on every other character and find only one
+    candidate.
     """
 
     # Reading, and the name it was meant to be. All from `logs/`.
@@ -411,7 +413,7 @@ class TestMisreadLetters(unittest.TestCase):
         lookup = index(list(EQUIPMENT_RARITY) + list(CARD_RARITY))
         for reading, real in self.MISREAD.items():
             with self.subTest(reading=reading):
-                self.assertEqual(real, look_up(reading, lookup))
+                self.assertEqual(real, lookup.look_up(reading))
 
     def test_a_misread_piece_of_equipment_is_placed(self):
         # None of the real misreadings happen to be Legends, so this checks recognition rather than grading.
@@ -424,13 +426,7 @@ class TestMisreadLetters(unittest.TestCase):
 
     def test_a_reading_that_is_both_scrambled_and_misread_still_matches(self):
         self.assertEqual("Magic-Infused Sapphire",
-                         look_up("lnfusedSapphireMagic", index(EQUIPMENT_RARITY)))
-
-    def test_letters_that_make_other_words_are_left_alone(self):
-        lookup = index(list(EQUIPMENT_RARITY) + list(CARD_RARITY))
-        for reading in ("Vute Accent", "Harmonization: Moon or Destruction"):
-            with self.subTest(reading=reading):
-                self.assertIsNone(look_up(reading, lookup))
+                         index(EQUIPMENT_RARITY).look_up("lnfusedSapphireMagic"))
 
     def test_no_two_names_collide_once_lookalikes_are_folded(self):
         for table in (EQUIPMENT_RARITY, CARD_RARITY, COMBATANT_CLASS):
@@ -438,3 +434,76 @@ class TestMisreadLetters(unittest.TestCase):
             keys = Counter(sorted_letters(unconfused(name)) for name in folded)
             with self.subTest(table=len(table)):
                 self.assertEqual([], [key for key, count in keys.items() if count > 1])
+
+
+class TestNearestName(unittest.TestCase):
+    """The last resort: a reading one edit away from exactly one real name.
+
+    Everything above this keeps all of a name's letters. This is for the readings that lost one, gained one,
+    or got one plain wrong - `Shuffl`, `arget Spotted`, `1-Devil Dice`, `Vute Accent`. A few dozen readings
+    land here across every log and every one of them is correct, because the pass only answers when a single
+    name is that close. Two candidates and it declines, which is what keeps a short reading like `Dice` from
+    being talked into `Daze`.
+    """
+
+    # Reading, and the name it was meant to be. All from `logs/`.
+    NEAR = {
+        "Shuffl": "Shuffle",
+        "Shuffli": "Shuffle",
+        "arget Spotted": "Target Spotted",
+        "1-Devil Dice": "Devil Dice",
+        "Vute Accent": "Mute Accent",
+        "Harmonization: Moon or Destruction": "Harmonization: Moon of Destruction",
+    }
+
+    def setUp(self):
+        self.lookup = index(list(EQUIPMENT_RARITY) + list(CARD_RARITY))
+
+    def test_the_real_name_is_recovered(self):
+        for reading, real in self.NEAR.items():
+            with self.subTest(reading=reading):
+                self.assertEqual(real, self.lookup.look_up(reading))
+
+    def test_two_candidates_are_refused(self):
+        # `Daze` and `Dice` are both real cards, so a reading of `Dace` belongs to neither.
+        self.assertIsNone(self.lookup.look_up("Dace"))
+
+    def test_a_short_reading_is_never_guessed_at(self):
+        # Below the floor a single edit is most of the name, and the screen is full of stray glyphs.
+        self.assertIsNone(index(["Daze"]).look_up("Dice"))
+        self.assertIsNone(self.lookup.look_up("+60"))
+
+    def test_an_exact_name_still_wins(self):
+        # A name that really is one edit from another, so the tiers have something to get wrong.
+        for name in ("Archetype: □", "Archetype: △"):
+            with self.subTest(name=name):
+                self.assertEqual(name, self.lookup.look_up(name))
+
+    def test_nothing_close_stays_unrecognised(self):
+        self.assertIsNone(self.lookup.look_up("Rewards cannot be obtained"))
+
+
+class TestOneEditApart(unittest.TestCase):
+    """The distance test itself, which has to mean exactly one edit and not zero or two."""
+
+    def test_a_substitution(self):
+        self.assertTrue(one_edit_apart("mute", "vute"))
+
+    def test_a_deletion(self):
+        self.assertTrue(one_edit_apart("shuffle", "shuffl"))
+
+    def test_an_insertion(self):
+        self.assertTrue(one_edit_apart("targetspotted", "argetspotted"))
+
+    def test_the_same_string_is_not_one_edit(self):
+        self.assertFalse(one_edit_apart("shuffle", "shuffle"))
+
+    def test_two_edits_are_too_many(self):
+        self.assertFalse(one_edit_apart("dice", "daze"))
+
+    def test_a_big_difference_in_length_is_too_many(self):
+        self.assertFalse(one_edit_apart("shuffle", "shu"))
+
+    def test_the_order_of_the_pair_does_not_matter(self):
+        self.assertTrue(one_edit_apart("shuffl", "shuffle"))
+        self.assertTrue(one_edit_apart("shuffle", "shuffl"))

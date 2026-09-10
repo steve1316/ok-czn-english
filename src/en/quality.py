@@ -15,6 +15,7 @@ already wearing to install the Legend.
 
 import re
 from collections import Counter
+from typing import NamedTuple
 
 from ok import Logger
 
@@ -55,6 +56,69 @@ INSIGNIFICANT = re.compile(r"[^0-9a-z一-鿿■-◿]+")
 # are deliberately absent: reading v as m or r as f would quietly match the wrong name, and a wrong match is
 # worse than any number of missed ones.
 CONFUSABLE = {letter: group[0] for group in ("il1", "o0", "s5", "gq9", "b6", "z2") for letter in group}
+# Below this many characters a single edit is most of the name, and the screen is full of stray glyphs and
+# fragments that would each find something to be one edit from. `Dice`, `Quick` and `+60` are all real
+# readings that stop here.
+SHORTEST_WORTH_GUESSING = 6
+
+
+class Lookup(NamedTuple):
+    """Everything needed to recognise a name the reader produced.
+
+    The tables are held behind `look_up` rather than beside it because reaching past the tiers is the easy
+    mistake, and a quiet one: a reading repaired on the shop screen would go unrepaired in a battle hand.
+    """
+
+    # Every spelling a name answers to - folded, and the fallbacks - each pointing at the client's own.
+    spellings: dict
+    # Only the exact folded spellings, which is the roster the edit-distance pass walks.
+    exact: dict
+
+    def look_up(self, name):
+        """Find the client's own spelling of a name the reader produced.
+
+        The spellings are tried cheapest first: three dictionary lookups, each keeping every letter of the
+        reading, and only then a walk of the whole roster. That order is about cost alone. Which tier answers
+        cannot change the answer, because `index` gives a name a fallback spelling only where it is the sole
+        owner of it, so a later tier can never name something the reading's own spelling would not.
+
+        Args:
+            name: The name as read off the screen.
+
+        Returns:
+            The canonical name, or None when nothing in the index answers to it.
+        """
+        folded = fold(name)
+        for spell in SPELLINGS:
+            found = self.spellings.get(spell(folded))
+            if found is not None:
+                return found
+        return self.nearest(folded)
+
+    def nearest(self, folded):
+        """Find the one real name a reading is a single edit from.
+
+        The pass of last resort, for readings that lost a character rather than merely rearranging them. It
+        answers only when a single name is that close: two candidates means the reading cannot say which, and
+        guessing there would put a wrong name into a shopping list.
+
+        The floor is on the reading's own length, not the candidate's, and that asymmetry is what keeps the
+        short names safe - a reading long enough to be guessed at is never one edit from a three-letter one.
+
+        Args:
+            folded: The reading, already folded.
+
+        Returns:
+            The canonical name, or None when nothing or too much is close.
+        """
+        if len(folded) < SHORTEST_WORTH_GUESSING:
+            return None
+        found = [name for known, name in self.exact.items() if one_edit_apart(folded, known)]
+        if len(found) != 1:
+            return None
+        logger.info(f"reading 「{folded}」 as {found[0]}, one edit away")
+        return found[0]
+
 
 
 def fold(name):
@@ -93,10 +157,31 @@ def sorted_letters(folded):
     return "".join(sorted(folded))
 
 
-# The spellings a reading is retried under, in falling order of how much of it they take on trust. Sorting
-# comes last because it throws away the order, and it is applied to the unconfused form so a name that was
-# both misread and scrambled still lands.
-FALLBACK_SPELLINGS = (unconfused, lambda folded: sorted_letters(unconfused(folded)))
+# The spellings a reading is retried under, in falling order of how much of it they take on trust. `str`
+# leaves it exactly as read; sorting comes last because it throws away the order, and it is applied to the
+# unconfused form so a name that was both misread and scrambled still lands.
+SPELLINGS = (str, unconfused, lambda folded: sorted_letters(unconfused(folded)))
+
+
+def one_edit_apart(left, right):
+    """Report whether two strings are exactly one insertion, deletion or substitution apart.
+
+    Args:
+        left: One folded name.
+        right: The other.
+
+    Returns:
+        True at a distance of exactly one. Identical strings are False, since nothing was misread.
+    """
+    if abs(len(left) - len(right)) > 1:
+        return False
+    shorter, longer = sorted((left, right), key=len)
+    for position, (here, there) in enumerate(zip(shorter, longer)):
+        if here != there:
+            if len(shorter) == len(longer):
+                return shorter[position + 1:] == longer[position + 1:]
+            return shorter[position:] == longer[position + 1:]
+    return len(longer) - len(shorter) == 1
 
 
 def index(names):
@@ -113,40 +198,19 @@ Several keys per name where it is safe to have them: the folded name first, then
         names: An iterable of canonical names.
 
     Returns:
-        A dict of key to canonical name. A name that folds away to nothing is left out, since that key would
-        match every reading made only of characters the fold discards.
+        A `Lookup`. A name that folds away to nothing is left out, since that key would match every reading
+        made only of characters the fold discards.
     """
     exact = {folded: name for folded, name in ((fold(name), name) for name in names) if folded}
     lookup = dict(exact)
-    for spell in FALLBACK_SPELLINGS:
-        owners = Counter(spell(folded) for folded in exact)
-        for folded, name in exact.items():
-            key = spell(folded)
+    for spell in SPELLINGS[1:]:
+        keyed = [(spell(folded), name) for folded, name in exact.items()]
+        owners = Counter(key for key, _ in keyed)
+        for key, name in keyed:
             # Never over a key already claimed: an exact spelling, and then a nearer guess, both outrank this.
-            if owners[key] == 1 and key not in lookup:
-                lookup[key] = name
-    return lookup
-
-
-def look_up(name, lookup):
-    """Find the client's own spelling of a name the reader produced.
-
-    Tried in order of how much of the reading each spelling trusts: the reading as it stands, then with
-    lookalike characters put right, then with the words allowed to have come back in any order.
-
-    Args:
-        name: The name as read off the screen.
-        lookup: A folded index from `index`.
-
-    Returns:
-        The canonical name, or None when nothing in the index answers to it.
-    """
-    folded = fold(name)
-    for spell in (str, *FALLBACK_SPELLINGS):
-        found = lookup.get(spell(folded))
-        if found is not None:
-            return found
-    return None
+            if owners[key] == 1:
+                lookup.setdefault(key, name)
+    return Lookup(spellings=lookup, exact=exact)
 
 
 # The game's own labels, with the hand-read ones filling the gaps it left. The generated half wins wherever
@@ -169,7 +233,7 @@ def team_classes(names):
     """
     classes = set()
     for name in names:
-        canonical = COMBATANT_INDEX.get(fold(name))
+        canonical = COMBATANT_INDEX.look_up(name)
         if canonical:
             classes.add(COMBATANT_CLASS[canonical])
     return classes
@@ -214,7 +278,7 @@ def grade(name, table, lookup):
     Returns:
         A `(canonical_name, grade)` pair, or None when the name is not in the table.
     """
-    canonical = look_up(name, lookup)
+    canonical = lookup.look_up(name)
     if canonical is None:
         return None
     return canonical, table[canonical]
@@ -230,7 +294,7 @@ def wants(combatant):
         A dict of equipment kind to the weight this combatant puts on it, empty when the data has no opinion
         about them at all.
     """
-    return COMBATANT_TAG_WEIGHTS.get(look_up(combatant, COMBATANT_INDEX)) or {}
+    return COMBATANT_TAG_WEIGHTS.get(COMBATANT_INDEX.look_up(combatant)) or {}
 
 
 def tallied(equipment, weights):
@@ -257,7 +321,7 @@ def suits(equipment_name, combatant):
         The weight that combatant puts on the kinds this piece serves, on the game's own scale. Zero when
         either side carries nothing, which reads as "no opinion" rather than as "unsuitable".
     """
-    return tallied(look_up(equipment_name, EQUIPMENT_INDEX), wants(combatant))
+    return tallied(EQUIPMENT_INDEX.look_up(equipment_name), wants(combatant))
 
 
 def worth_taking(names, classes=(), cards=True, suited_to=None):
@@ -302,4 +366,4 @@ def slot_of(name):
     Returns:
         The slot index, or None when the name is not known equipment.
     """
-    return EQUIPMENT_SLOT.get(look_up(name, EQUIPMENT_INDEX))
+    return EQUIPMENT_SLOT.get(EQUIPMENT_INDEX.look_up(name))

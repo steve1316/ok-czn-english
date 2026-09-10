@@ -113,22 +113,21 @@ def canonical(name):
     Returns:
         The client's spelling, or the name unchanged when nothing matches it.
     """
-    folded = fold(name)
-    known = CARD_INDEX.get(folded)
-    if known:
-        return known
     # The hotkey sits just above the card name, close enough that the reader sometimes returns the two as one
     # box - a real hand came back as "1=Soul Riff". No card in the data is named starting with a digit, so a
-    # leading one is the key rather than part of the name.
-    stub = folded.lstrip("0123456789")
-    known = CARD_INDEX.get(stub)
+    # leading one is the key rather than part of the name. It comes off before anything else, because the
+    # looser spellings read a 1 as a letter and would land "1Homing Laser" on "Homing Laser L".
+    stub = fold(name).lstrip("0123456789")
+    known = CARD_INDEX.look_up(stub)
     if known:
         return known
     # The reader also cuts a name short while the hand animates, so "Knife Tos" arrives for "Knife Toss".
     # Only an unambiguous stub is repaired: two cards start "Attac", and guessing between them would be
     # worse than leaving the reading alone for the label test to deal with.
     if len(stub) >= MIN_STUB:
-        matches = {real for folded_name, real in CARD_INDEX.items() if folded_name.startswith(stub)}
+        # Over the exact spellings only: a stub is a prefix of how the name is really written, and the
+        # fallback spellings in the index rearrange or rewrite letters, so a prefix of one means nothing.
+        matches = {real for folded_name, real in CARD_INDEX.exact.items() if folded_name.startswith(stub)}
         if len(matches) == 1:
             return matches.pop()
     return name
