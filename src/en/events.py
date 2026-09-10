@@ -2,23 +2,19 @@
 
 Upstream chooses in this order: an option in the upper half of the option band is clicked outright, then the
 blacklist and the user's priority lists, then the combat option, then a random pick. A logged Chaos run shows
-what that means in practice - the upper-half shortcut fired 38 times and **chose "End the event" five times**,
-the random pick fired 40 times, and the user's own priority list never ran once.
+what that means - the upper-half shortcut fired 38 times and chose "End the event" five times, the random pick
+fired 40 times, and the user's own priority list never ran once.
 
-So two things change here: the options that give nothing are withheld while anything else is on offer, and
-what is left is ranked spark, then rewards, then combat.
+So options that give nothing are withheld while anything else is on offer, and what is left is ranked spark,
+then rewards, then combat. "Nothing" covers ending the event, and reading lore, which is worse: the screen
+comes back unchanged afterwards, so the shortcut takes the same option again on the next frame. A logged run
+clicked "Examine the mushroom" three times in four seconds, left the event, came back and did it again.
 
-"Nothing" covers two kinds of option. Ending the event is one. Reading lore is the other, and it is worse:
-the screen comes back unchanged afterwards, so the shortcut takes the same option again on the next frame. A
-logged Chaos run clicked "Examine the mushroom" three times in four seconds, left the event, came back to it
-and did the same thing again.
-
-Both changes are made by wrapping `handle_event_task` and adjusting what it sees, rather than copying its two
-hundred lines. Everything it does still runs untouched - the taskreward and treasure features, the
-forbidden-event filter, the blacklist, and the user's priority lists, which are honoured ahead of the ranking.
-
-The keyword lists come from the client's own data (`encounter_option_eff@eff_description@*`), where
-"End the event" and "Initiate Battle" are fixed literals shared by 134 and 174 options.
+Both changes wrap `handle_event_task` and adjust what it sees rather than copying its two hundred lines.
+Everything it does still runs untouched - the taskreward and treasure features, the forbidden-event filter,
+the blacklist, and the user's priority lists, which are honoured ahead of the ranking. The keyword lists come
+from the client's own data (`encounter_option_eff@eff_description@*`), where "End the event" and "Initiate
+Battle" are fixed literals shared by 134 and 174 options.
 """
 
 import re

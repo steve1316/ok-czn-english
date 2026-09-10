@@ -2,15 +2,15 @@
 
 Names are folded before matching, because neither the reader nor the client spells them predictably.
 
-`suits` is the one judgement here that is about a pairing rather than a thing. The game keeps an opinion on
-which equipment suits which combatant - it labels equipment with the kind of deck it serves, and gives each
-combatant a weight per kind - but only fills that in for Sortie, so `game_quality.py` carries it across to
-the Chaos copies of the same relics and `hand_tags.py` fills the gaps that leaves by reading the effect text.
+`suits` is the one judgement about a pairing rather than a thing. The game keeps an opinion on which equipment
+suits which combatant - it labels equipment with the kind of deck it serves and gives each combatant a weight
+per kind - but only fills it in for Sortie, so `game_quality.py` carries it across to the Chaos copies of the
+same relics and `hand_tags.py` fills the gaps by reading effect text.
 
-It still only ever orders pieces that rarity has already ranked equal, and never promotes one above a better
-piece. That is not caution about coverage: upstream treats the priority list as an override rather than a
-tiebreak, so a well-suited Legend ranked above an ill-suited Unique would have the run strip the Unique it is
-already wearing to install the Legend.
+It only ever orders pieces rarity has already ranked equal, and never promotes one above a better piece. That
+is not caution about coverage: upstream treats the priority list as an override rather than a tiebreak, so a
+well-suited Legend ranked above an ill-suited Unique would have the run strip the Unique it is wearing to
+install the Legend.
 """
 
 import re

@@ -1,27 +1,21 @@
 """Re-shape the mode settings for the Global (English) client.
 
-Upstream's task files ship one Chinese player's build as defaults and ask the user to type entity names by
-hand. On the Global client those Chinese names can never match what the OCR reads, so they are replaced with
-English defaults and, wherever the value set is knowable, with pick-from-a-list widgets built from the game's
-own localization table.
+Upstream ships one Chinese player's build as defaults and asks the user to type entity names by hand. Those
+Chinese names can never match what English OCR reads, so they are replaced with English defaults and, wherever
+the value set is knowable, with pick-from-a-list widgets built from the game's own localization table.
 
-This hooks `BaseTask.load_config` and runs *before* it. That is the seam upstream itself uses - `ChaosMode`
-overrides `load_config` to run its migrations and then calls `super()` - and it matters here for two reasons:
-it is the one call that happens exactly once per task, and it happens before `Config` is built, so a fresh
-install is seeded with the English defaults rather than written in Chinese and corrected afterwards.
+This hooks `BaseTask.load_config` and runs *before* it - the seam upstream itself uses, since `ChaosMode`
+overrides `load_config` to run its migrations and then calls `super()`. It is the one call that happens exactly
+once per task, and it happens before `Config` is built, so a fresh install is seeded with English defaults
+rather than written in Chinese and corrected afterwards. `ChaosMode.py` and `SortieMode.py` stay byte-identical
+to upstream, so a merge never conflicts in them.
 
-`ok_tasks/ChaosMode.py` and `ok_tasks/SortieMode.py` stay byte-identical to upstream, so a merge never
-conflicts in them.
-
-Two rules decide whether a setting can become a pick-list:
-
-- The value must be compared against **OCR text**. Card, equipment and combatant names are, so those become
-  lists of English names. Route Priority is not - its values are internal labels produced from template
-  feature names (`enemy_in_map` -> `小怪`), so they stay as upstream writes them and are only translated for
-  display.
-- The match must be on a **whole name**. Epiphany Priority, the Persona settings and Farm Starting Card are
-  matched as subsequences of `name + description`, which is how a user targets an effect rather than a card.
-  Restricting those to full card names would take that away, so they stay free text.
+Two rules decide whether a setting can become a pick-list. The value must be compared against OCR text - card,
+equipment and combatant names are, so those become lists of English names, while Route Priority's values are
+internal labels produced from template feature names (`enemy_in_map` -> `小怪`) and are only translated for
+display. And the match must be on a whole name: Epiphany Priority, the Persona settings and Farm Starting Card
+are matched as subsequences of `name + description`, which is how a user targets an effect rather than a card,
+so they stay free text.
 """
 
 from ok import Logger

@@ -1,24 +1,21 @@
 """Decide which cards to play in a Sortie battle, and in what order.
 
-Sortie has no Auto button, so the bot picks every card itself. Upstream picks by looking each hand card up in
-a list of names the user typed, and plays the first one that matches. On the Global client that list starts
-empty, because upstream's default is Chinese card names that English OCR can never match, so in practice
-every turn falls through to pressing each hotkey in turn and hoping. This module is what replaces the hoping.
+Sortie has no Auto button, so the bot picks every card itself. Upstream looks each hand card up in a list of
+names the user typed and plays the first match, but that list starts empty on the Global client - its default
+is Chinese card names English OCR can never match - so every turn falls through to pressing each hotkey and
+hoping. This module replaces the hoping.
 
-A turn is decided in two steps, because "which cards can I afford" and "what order do they go in" are
-different questions and answering them together gets both wrong. First the Action Points are spent on value
-per point, so 220% damage for two points is bought ahead of 100% for one, and a cheap card that does little
-cannot crowd out a dear one that wins the fight. Then whatever was bought is put in order by phase: a card
-the run has lit up for an Epiphany first, then anything free, then setup that makes the rest of the turn
-better, then damage, and last a card with no fixed price, since it takes whatever is left.
+A turn is decided in two steps, because "which cards can I afford" and "what order do they go in" are different
+questions and answering them together gets both wrong. Action Points are spent first on value per point, so
+220% damage for two points is bought ahead of 100% for one and a cheap card that does little cannot crowd out a
+dear one that wins the fight. What was bought is then ordered by phase: a card lit up for an Epiphany first,
+then anything free, then setup that makes the rest of the turn better, then damage, and last a card with no
+fixed price, since it takes whatever is left.
 
 Nothing here touches the framework. It takes a hand as `_hand_cards` already reads one, plus what is known
-about the moment it is being played in, and returns the cards to play. That keeps the judgement testable
-without a game running, which matters because the judgement is the whole point.
-
-Every fact it reasons from is the client's own, out of `game_battle.py` and `game_text.py`, so none of it is
-guesswork about what a card does. What the reader hands over is not the client's spelling, though, so every
-name is folded through `quality` first, the same way the reward code already matches a name off a screen.
+about the moment it is played in, and returns the cards to play - which keeps the judgement testable without a
+game running. Every fact it reasons from is the client's own, out of `game_battle.py` and `game_text.py`. What
+the reader hands over is not the client's spelling, so every name is folded through `quality` first.
 """
 
 import re
