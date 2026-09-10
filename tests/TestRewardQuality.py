@@ -486,24 +486,17 @@ class TestNearestName(unittest.TestCase):
 class TestOneEditApart(unittest.TestCase):
     """The distance test itself, which has to mean exactly one edit and not zero or two."""
 
-    def test_a_substitution(self):
-        self.assertTrue(one_edit_apart("mute", "vute"))
+    CASES = (
+        ("a substitution", "mute", "vute", True),
+        ("a deletion", "shuffle", "shuffl", True),
+        ("an insertion", "targetspotted", "argetspotted", True),
+        ("the pair the other way round", "shuffl", "shuffle", True),
+        ("the same string", "shuffle", "shuffle", False),
+        ("two edits", "dice", "daze", False),
+        ("a big difference in length", "shuffle", "shu", False),
+    )
 
-    def test_a_deletion(self):
-        self.assertTrue(one_edit_apart("shuffle", "shuffl"))
-
-    def test_an_insertion(self):
-        self.assertTrue(one_edit_apart("targetspotted", "argetspotted"))
-
-    def test_the_same_string_is_not_one_edit(self):
-        self.assertFalse(one_edit_apart("shuffle", "shuffle"))
-
-    def test_two_edits_are_too_many(self):
-        self.assertFalse(one_edit_apart("dice", "daze"))
-
-    def test_a_big_difference_in_length_is_too_many(self):
-        self.assertFalse(one_edit_apart("shuffle", "shu"))
-
-    def test_the_order_of_the_pair_does_not_matter(self):
-        self.assertTrue(one_edit_apart("shuffl", "shuffle"))
-        self.assertTrue(one_edit_apart("shuffle", "shuffl"))
+    def test_counts_exactly_one_edit(self):
+        for why, first, second, expected in self.CASES:
+            with self.subTest(why):
+                self.assertEqual(expected, one_edit_apart(first, second))

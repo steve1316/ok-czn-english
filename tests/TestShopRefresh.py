@@ -98,36 +98,25 @@ class TestFreeRefreshBox(unittest.TestCase):
 class TestRefusingFreeRefresh(unittest.TestCase):
     """What the wrapped handler lets upstream see."""
 
-    def test_hides_the_button_below_the_floor(self):
-        seen = []
-        wrapped = refusing_free_refresh(recording_handler(seen), lambda task: 0)
-        wrapped(shop_screen())
-        self.assertEqual(seen, [["96"]])
+    # Only the button is hidden, never the screen: `handle_leave`, the next handler in the list, still has to
+    # be free to walk out. The floor is inclusive, so holding exactly it is still worth a reroll.
+    SHELF = ["96"]
+    SHELF_AND_BUTTON = ["96", "免费"]
+    CASES = (
+        ("holding nothing", 0, SHELF),
+        ("one credit below the floor", SHOP_FLOOR - 1, SHELF),
+        ("exactly at the floor", SHOP_FLOOR, SHELF_AND_BUTTON),
+        ("one credit above the floor", SHOP_FLOOR + 1, SHELF_AND_BUTTON),
+        ("comfortably above the floor", 200, SHELF_AND_BUTTON),
+    )
 
-    def test_hides_the_button_one_credit_below_the_floor(self):
-        seen = []
-        wrapped = refusing_free_refresh(recording_handler(seen), lambda task: SHOP_FLOOR - 1)
-        wrapped(shop_screen())
-        self.assertEqual(seen, [["96"]])
-
-    def test_keeps_the_button_exactly_at_the_floor(self):
-        # The floor is inclusive: holding exactly it is still worth a reroll.
-        seen = []
-        wrapped = refusing_free_refresh(recording_handler(seen), lambda task: SHOP_FLOOR)
-        wrapped(shop_screen())
-        self.assertEqual(seen, [["96", "免费"]])
-
-    def test_keeps_the_button_one_credit_above_the_floor(self):
-        seen = []
-        wrapped = refusing_free_refresh(recording_handler(seen), lambda task: SHOP_FLOOR + 1)
-        wrapped(shop_screen())
-        self.assertEqual(seen, [["96", "免费"]])
-
-    def test_keeps_the_button_above_the_floor(self):
-        seen = []
-        wrapped = refusing_free_refresh(recording_handler(seen), lambda task: 200)
-        wrapped(shop_screen())
-        self.assertEqual(seen, [["96", "免费"]])
+    def test_the_button_is_hidden_only_below_the_floor(self):
+        for why, credits, expected in self.CASES:
+            with self.subTest(why):
+                seen = []
+                wrapped = refusing_free_refresh(recording_handler(seen), lambda task, c=credits: c)
+                wrapped(shop_screen())
+                self.assertEqual(seen, [expected])
 
     def test_does_not_read_credits_without_a_button(self):
         # Reading credits on every frame would cost two lookups for nothing, since the handler declines
