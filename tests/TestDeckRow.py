@@ -17,7 +17,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from src.en.deck import (  # noqa: E402
-    GAP_KEY, PORTRAIT, ROW_ACTIONS, ROW_TOLERANCE, portrait_of, preferring_target_row, row_of, rows_first,
+    GAP_KEY, PORTRAIT, ROW_TOLERANCE, portrait_of, preferring_target_row, row_of, rows_first,
 )
 
 WIDTH, HEIGHT = 1920, 1080

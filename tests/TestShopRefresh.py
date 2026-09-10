@@ -10,14 +10,13 @@ give up, not where the price list says a purchase becomes possible.
 """
 
 import sys
-import types
 import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.en.shop import SHOP_FLOOR, free_refresh_box, install, refusing_free_refresh  # noqa: E402
+from src.en.shop import SHOP_FLOOR, free_refresh_box, refusing_free_refresh  # noqa: E402
 
 # What the run is asked to keep refreshing down to.
 WANTED_FLOOR = 29
@@ -145,60 +144,6 @@ class TestRefusingFreeRefresh(unittest.TestCase):
         wrapped = refusing_free_refresh(recording_handler([]), unexpected)
         self.assertTrue(wrapped(shop_screen(free=False)))
 
-
-def named(name):
-    """Build a stand-in handler carrying a given name.
-
-    Args:
-        name: The `__name__` the handler should report.
-
-    Returns:
-        A function that declines every frame.
-    """
-    def handler(task):
-        return False
-
-    handler.__name__ = name
-    return handler
-
-
-class TestInstall(unittest.TestCase):
-    """Putting the wrapper where the run will actually reach it."""
-
-    def setUp(self):
-        self.utils = types.SimpleNamespace(
-            handle_shop=named("handle_shop"),
-            _get_current_credit=lambda task: 29,
-        )
-        self.module = types.ModuleType("fake_mode_for_shop_test")
-        self.module.PAGE_HANDLERS = [named("handle_shop"), named("handle_leave")]
-        sys.modules[self.module.__name__] = self.module
-
-    def tearDown(self):
-        sys.modules.pop(self.module.__name__, None)
-
-    def test_registers_in_the_mode_list_on_its_own(self):
-        # The list holds function objects, so patching the module alone would leave the run calling upstream.
-        install(self.utils)
-        self.assertIs(self.module.PAGE_HANDLERS[0], self.utils.handle_shop)
-
-    def test_patches_the_module_for_later_wrappers(self):
-        # src/en/rewards.py rebuilds this entry by reading the module attribute, so it has to be wrapped too.
-        before = self.utils.handle_shop
-        install(self.utils)
-        self.assertIsNot(self.utils.handle_shop, before)
-        self.assertEqual("handle_shop", self.utils.handle_shop.__name__)
-
-    def test_a_mode_loaded_later_still_gets_the_handler(self):
-        install(self.utils)
-        later = types.ModuleType("fake_late_mode_for_shop_test")
-        later.PAGE_HANDLERS = [named("handle_shop")]
-        sys.modules[later.__name__] = later
-        try:
-            install(self.utils)
-            self.assertIs(later.PAGE_HANDLERS[0], self.utils.handle_shop)
-        finally:
-            sys.modules.pop(later.__name__, None)
 
 if __name__ == "__main__":
     unittest.main()

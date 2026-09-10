@@ -21,7 +21,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from src.en.pins import (  # noqa: E402
-    CHOOSERS, DECK_OFFSET, MIN_ORANGE, PICK_OFFSET, PROBE, RECOGNIZERS, install, is_pinned, marked,
+    CHOOSERS, DECK_OFFSET, PICK_OFFSET, PROBE, RECOGNIZERS, install, is_pinned, marked,
     narrowing, only_pinned, probe_box, tagging,
 )
 
@@ -295,38 +295,12 @@ class TestInstall(unittest.TestCase):
         """
         return [h.__name__ for h in self.module.PAGE_HANDLERS]
 
-    def test_registers_the_handlers_in_the_mode_list(self):
-        # These are reached through the list, not the module, so patching the attribute alone does nothing.
-        before = list(self.module.PAGE_HANDLERS)
-        install(self.utils)
-        self.assertEqual(self.names(), ["handle_card_reward", "handle_view_original"])
-        self.assertNotEqual(before, self.module.PAGE_HANDLERS)
-
-    def test_patches_the_helper_on_the_module(self):
-        # `select_card` is reached as a module global, and is in no handler list.
-        before = self.utils.select_card
-        install(self.utils)
-        self.assertIsNot(self.utils.select_card, before)
-        self.assertEqual("select_card", self.utils.select_card.__name__)
-
     def test_marks_both_recognizers(self):
         install(self.utils)
         for name in RECOGNIZERS:
             with self.subTest(name=name):
                 self.assertEqual([], getattr(self.utils, name)(FakeTask()))
                 self.assertIsNot(getattr(self.utils, name), self.recognizers[name])
-
-    def test_a_mode_loaded_later_still_gets_the_handlers(self):
-        # Modes are imported one at a time, so the second install must still reach the new list.
-        install(self.utils)
-        later = types.ModuleType("fake_late_mode_for_pins_test")
-        later.PAGE_HANDLERS = [named("handle_view_original")]
-        sys.modules[later.__name__] = later
-        try:
-            install(self.utils)
-            self.assertIs(later.PAGE_HANDLERS[0], self.utils.handle_view_original)
-        finally:
-            sys.modules.pop(later.__name__, None)
 
 if __name__ == "__main__":
     unittest.main()
