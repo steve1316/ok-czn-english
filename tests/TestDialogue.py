@@ -8,6 +8,10 @@ it, and matching something else means a stray click on a screen the bot has not 
 The event option screen is the one that must never match. Its option text sits in the same band as narration
 and is centred in the same place; only its width tells the two apart.
 
+The auto-advance button in the top right corner is measured here too. Twenty frames of the Global client
+were sampled over its patch: every frame showing it running came back 10.5% to 15.0% amber and every frame
+showing it off came back 0.0%, with the two colours below standing for what those frames actually hold.
+
 The positions come from two places: the screens the 2026-09-07 Chaos run stalled on, and the captures in
 `captures/` that a first, looser version of this rule wrongly matched. The tip banner, the card tooltip and
 the trauma centre's prose are all real frames the corpus turned up.
@@ -17,12 +21,24 @@ import sys
 import unittest
 from pathlib import Path
 
+import numpy as np
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.en.dialogue import AFTER_TAP, MAX_TEXT_BOXES, handle_dialogue, narration_line  # noqa: E402
+from src.en.dialogue import (AFTER_TAP, AFTER_TOGGLE, MAX_TEXT_BOXES, MIN_GLOW,  # noqa: E402
+                            TOGGLE_POINT, TOGGLE_REGION, auto_advance_off, handle_dialogue,
+                            narration_line)
 
 WIDTH, HEIGHT = 1920, 1080
+
+# What the button is drawn in, sampled off the captured frames as OpenCV BGR. The lit ring's amber, and the
+# neutral white of the padlock it shows while it is off.
+GLOW = (77, 111, 156)
+UNLIT = (168, 168, 168)
+# The share of the patch the ring covers when it is lit. The measured frames ran 0.105 to 0.150, so the
+# thinnest of them is what the threshold has to sit under.
+MEASURED_GLOW = 0.105
 
 # The line the run stalled on, and the two-line screen the mushroom event showed.
 SOLDIER = "The Soldier's eyes are fixed on the group. The Weapon in their hand is trembling."
@@ -42,23 +58,51 @@ class FakeBox:
 
 
 class FakeTask:
-    """A task holding one OCR pass, recording what the handler clicked."""
+    """A task holding one OCR pass and one capture, recording what the handler clicked."""
 
     width, height = WIDTH, HEIGHT
 
-    def __init__(self, boxes):
+    def __init__(self, boxes, frame=None):
         self.all_texts = boxes
+        self.frame = frame
         self.clicked = None
+        self.tapped = None
+        self.moved = None
         self.slept = 0
 
     def click_box(self, box):
         self.clicked = box
+
+    def click(self, x, y, after_sleep=0):
+        self.tapped = (x, y)
+        self.slept += after_sleep
+
+    def move_relative(self, x, y):
+        self.moved = (x, y)
 
     def sleep(self, seconds):
         self.slept += seconds
 
     def log_info(self, message):
         pass
+
+
+def frame_with_button(color, share=1.0):
+    """Build a capture whose auto-advance button is drawn in one colour.
+
+    Args:
+        color: The BGR the button is painted in.
+        share: How much of the button's patch that colour covers, the rest left black.
+
+    Returns:
+        A `(height, width, 3)` BGR array.
+    """
+    left, top, right, bottom = TOGGLE_REGION
+    x, y = int(left * WIDTH), int(top * HEIGHT)
+    width, height = int(right * WIDTH) - x, int(bottom * HEIGHT) - y
+    frame = np.zeros((HEIGHT, WIDTH, 3), dtype=np.uint8)
+    frame[y:y + max(1, round(height * share)), x:x + width] = color
+    return frame
 
 
 def narration_screen():
@@ -184,6 +228,58 @@ class TestDialogue(unittest.TestCase):
         task = option_screen()
         self.assertFalse(handle_dialogue(task))
         self.assertIsNone(task.clicked)
+
+
+class TestAutoAdvance(unittest.TestCase):
+    """Reading the auto-advance button, and reaching for it before tapping the prose."""
+
+    def test_the_lit_button_reads_as_running(self):
+        """The thinnest ring the captures measured still has to clear the threshold."""
+        task = FakeTask([], frame_with_button(GLOW, MEASURED_GLOW))
+        self.assertFalse(auto_advance_off(task))
+
+    def test_the_unlit_button_reads_as_off(self):
+        """Off is drawn in a neutral white that carries no amber at all."""
+        self.assertTrue(auto_advance_off(FakeTask([], frame_with_button(UNLIT))))
+
+    def test_a_ring_thinner_than_the_threshold_reads_as_off(self):
+        task = FakeTask([], frame_with_button(GLOW, MIN_GLOW / 2))
+        self.assertTrue(auto_advance_off(task))
+
+    def test_a_frame_the_reader_never_got_is_left_alone(self):
+        """No capture means no reading, and a reading that fails must not put a click somewhere unasked."""
+        self.assertFalse(auto_advance_off(FakeTask([])))
+
+    def test_the_handler_turns_auto_advance_on_instead_of_tapping(self):
+        """One tap on the button and the game plays the rest of the cutscene without the bot in the loop."""
+        task = narration_screen()
+        task.frame = frame_with_button(UNLIT)
+        self.assertTrue(handle_dialogue(task))
+        self.assertEqual(TOGGLE_POINT, task.tapped)
+        self.assertEqual(TOGGLE_POINT, task.moved)
+        self.assertIsNone(task.clicked)
+
+    def test_the_button_gets_the_pointer_before_the_tap(self):
+        """Upstream dwells on every button before clicking it, and this client drops a click that
+        arrives without one."""
+        task = narration_screen()
+        task.frame = frame_with_button(UNLIT)
+        handle_dialogue(task)
+        self.assertEqual(2 * AFTER_TOGGLE, task.slept)
+
+    def test_the_handler_taps_the_line_once_auto_advance_is_running(self):
+        task = narration_screen()
+        task.frame = frame_with_button(GLOW, MEASURED_GLOW)
+        self.assertTrue(handle_dialogue(task))
+        self.assertIsNotNone(task.clicked)
+        self.assertIsNone(task.tapped)
+
+    def test_the_button_is_never_tapped_off_a_narration_screen(self):
+        """The corner is only read once the screen has been recognised, so nothing else can be reached for."""
+        task = option_screen()
+        task.frame = frame_with_button(UNLIT)
+        self.assertFalse(handle_dialogue(task))
+        self.assertIsNone(task.tapped)
 
 
 if __name__ == "__main__":
