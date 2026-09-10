@@ -83,11 +83,18 @@ class TestPatchComposition(unittest.TestCase):
             self.install_all()
         self.assertEqual(2, len(getattr(self.utils.select_card, WRAPS)))
 
-    def test_equipment_carries_both_changes_once(self):
+    def test_equipment_carries_every_change_once(self):
         for _ in range(MODES):
             self.install_all()
-        self.assertEqual([equipment.RECOMMENDED_TAG, equipment.MYTHIC_TAG],
+        self.assertEqual([equipment.RECOMMENDED_TAG, equipment.MYTHIC_TAG, equipment.SLOT_TAG],
                          list(getattr(self.utils.handle_equipment, WRAPS)))
+
+    def test_the_shop_carries_both_floors_once(self):
+        # Two modules wrap this one: the refresh floor and the equipment floor, and neither may drop the
+        # other. They are applied in that order because `src/globals.py` runs equipment before shop.
+        for _ in range(MODES):
+            self.install_all()
+        self.assertEqual([equipment.FLOOR_TAG, shop.TAG], list(getattr(self.utils.handle_shop, WRAPS)))
 
     def test_the_card_reward_screen_carries_the_pin_filter_once(self):
         for _ in range(MODES):
