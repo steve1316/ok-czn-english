@@ -25,6 +25,7 @@ import re
 
 from ok import Logger
 
+from src.en import desire
 from src.en.handlers import StandIn, loaded, register, replace
 
 logger = Logger.get_logger(__name__)
@@ -36,14 +37,20 @@ ATTACK = ("initiate battle", "event encounter")
 # An option that only reads out lore. This phrasing was captured from a run rather than read out of the
 # client's tables, so it is one known wording and not the whole set.
 DIALOGUE = ("check information on",)
+# An event handing out a Desire card says so. The faction is named separately, and both have to be present:
+# "Claim" and "Control" are ordinary English words that turn up in options having nothing to do with Desire.
+DESIRE = ("desire",)
 
 SPARK_RANK = 0
-REWARD_RANK = 1
-ATTACK_RANK = 2
-QUIT_RANK = 3
+# A Desire card of the faction the run is chasing. Below a spark, which permanently upgrades a card, and
+# above an ordinary reward, because points in one faction compound towards a team-wide bonus at 3, 5 and 7.
+DESIRE_RANK = 1
+REWARD_RANK = 2
+ATTACK_RANK = 3
+QUIT_RANK = 4
 # Worse than quitting. Ending the event at least moves the run on, while reading lore puts the same screen
 # straight back up.
-DIALOGUE_RANK = 4
+DIALOGUE_RANK = 5
 
 # `_get_region_text` glues the OCR boxes together with no separator and in an unstable order, and the reader
 # loses or invents spaces at line breaks - the same option was captured as "Spark an Epiphany for a" and
@@ -87,7 +94,7 @@ def contains(text, markers):
     return any(fold(marker) in text for marker in markers)
 
 
-def rank(description):
+def rank(description, target=None):
     """Score how much an event option is worth taking, lowest first.
 
     Plain containment on purpose. The OCR boxes behind a description arrive in an unpredictable order, so
@@ -96,9 +103,10 @@ def rank(description):
 
     Args:
         description: The option text.
+        target: The Desire faction the run is chasing, or None when it is not being tracked.
 
     Returns:
-        `SPARK_RANK`, `REWARD_RANK`, `ATTACK_RANK`, `QUIT_RANK` or `DIALOGUE_RANK`.
+        `SPARK_RANK`, `DESIRE_RANK`, `REWARD_RANK`, `ATTACK_RANK`, `QUIT_RANK` or `DIALOGUE_RANK`.
     """
     text = fold(description)
     if contains(text, SPARK):
@@ -107,6 +115,8 @@ def rank(description):
         return DIALOGUE_RANK
     if contains(text, QUIT):
         return QUIT_RANK
+    if target and contains(text, DESIRE) and contains(text, (target,)):
+        return DESIRE_RANK
     if contains(text, ATTACK):
         return ATTACK_RANK
     # Anything unrecognised counts as a reward. Most options naming no known marker still hand something over,
@@ -114,7 +124,7 @@ def rank(description):
     return REWARD_RANK
 
 
-def drop_unwanted(options):
+def drop_unwanted(options, target=None):
     """Withhold the options that give nothing, unless they are all that is on offer.
 
     This is what makes "never end or stall the event while something else is available" a guarantee rather than
@@ -123,13 +133,14 @@ def drop_unwanted(options):
 
     Args:
         options: Every recognised option.
+        target: The Desire faction the run is chasing, or None.
 
     Returns:
         The options worth considering.
     """
     if not options:
         return options
-    ranked = [(rank(option.get("description", "")), option) for option in options]
+    ranked = [(rank(option.get("description", ""), target), option) for option in options]
     # Every option worth taking ranks at `ATTACK_RANK` or better, so the cutoff only rises above it on a screen
     # offering nothing but ways to end or stall the event - and then only far enough to leave something to click.
     cutoff = max(min(tier for tier, _ in ranked), ATTACK_RANK)
@@ -142,7 +153,7 @@ def drop_unwanted(options):
     return kept
 
 
-def order(options, priority_keywords, is_subsequence):
+def order(options, priority_keywords, is_subsequence, target=None):
     """Sort options so the best one is first.
 
     Upstream's upper-half shortcut takes the first option it can, before the blacklist or the user's lists are
@@ -153,6 +164,7 @@ def order(options, priority_keywords, is_subsequence):
         options: The options to sort.
         priority_keywords: The user's configured keywords, best first.
         is_subsequence: Upstream's matcher, so configured keywords behave exactly as they always have.
+        target: The Desire faction the run is chasing, or None.
 
     Returns:
         A new list, best first. Equal entries keep their original order.
@@ -163,7 +175,7 @@ def order(options, priority_keywords, is_subsequence):
         for position, keyword in enumerate(priority_keywords):
             if keyword and is_subsequence(keyword, description):
                 return (0, position, index)
-        return (1, rank(description), index)
+        return (1, rank(description, target), index)
 
     return [option for _, option in sorted(enumerate(options), key=key)]
 
@@ -219,7 +231,8 @@ def apply():
             for slot in range(1, 4):
                 priority.extend(utils._get_card_list(task, f"装备{slot}号位优先级"))
             priority.extend(utils._get_card_list(task, "任务优先级"))
-            return order(drop_unwanted(options), priority, utils.is_subsequence)
+            target = desire.target_faction(task, utils)
+            return order(drop_unwanted(options, target), priority, utils.is_subsequence, target)
 
         def patched_handle_event_task(task):
             original_find_feature = task.find_feature

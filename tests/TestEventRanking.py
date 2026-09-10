@@ -17,8 +17,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from src.en.events import (  # noqa: E402
-    ATTACK, ATTACK_RANK, DIALOGUE, DIALOGUE_RANK, MIN_LATIN_MARKER_LENGTH, MIN_MARKER_LENGTH, QUIT, QUIT_RANK,
-    REWARD_RANK, SPARK, SPARK_RANK,
+    ATTACK, ATTACK_RANK, DESIRE_RANK, DIALOGUE, DIALOGUE_RANK, MIN_LATIN_MARKER_LENGTH, MIN_MARKER_LENGTH,
+    QUIT, QUIT_RANK, REWARD_RANK, SPARK, SPARK_RANK,
     drop_unwanted, fold, order, rank,
 )
 
@@ -192,6 +192,54 @@ class TestEventRanking(unittest.TestCase):
                    option("Taste the mushroomIncrease max Health by 10%")]
         self.assertEqual([o["description"] for o in options],
                          [o["description"] for o in order(options, [], is_subsequence)])
+
+
+class TestDesireOptions(unittest.TestCase):
+    """Ranking the event that hands out a Desire card.
+
+    Two of these appear together - one naming a faction, one leaving it to chance - alongside an option that
+    just ends the event. Captured wording, from a run's log.
+    """
+
+    TARGETED = "Embrace the DesireObtain 1 random Desire: Control card"
+    RANDOM = "Swept Away by DesireObtain 1 random Desire card"
+    ENDS = "Pull yourself togetherEnd the event"
+
+    def test_an_option_naming_the_faction_being_chased_outranks_a_plain_reward(self):
+        self.assertEqual(DESIRE_RANK, rank(self.TARGETED, "Control"))
+        self.assertLess(DESIRE_RANK, REWARD_RANK)
+
+    def test_an_epiphany_still_outranks_it(self):
+        # An Epiphany permanently upgrades a card, which is worth more than one point of one faction.
+        self.assertLess(SPARK_RANK, DESIRE_RANK)
+
+    def test_another_faction_is_only_an_ordinary_reward(self):
+        # Points spread across factions do not reach a breakpoint, so this is worth no more than credits.
+        self.assertEqual(REWARD_RANK, rank(self.TARGETED, "Claim"))
+
+    def test_an_unnamed_faction_is_only_an_ordinary_reward(self):
+        self.assertEqual(REWARD_RANK, rank(self.RANDOM, "Control"))
+
+    def test_ending_the_event_is_still_worst_of_the_three(self):
+        self.assertEqual(QUIT_RANK, rank(self.ENDS, "Control"))
+
+    def test_the_faction_alone_is_not_enough(self):
+        # "Claim" is an ordinary English word; without Desire beside it this is just a reward.
+        self.assertEqual(REWARD_RANK, rank("Claim the salvageIncrease Credits by 140", "Claim"))
+
+    def test_no_target_leaves_the_ranking_as_it_was(self):
+        self.assertEqual(REWARD_RANK, rank(self.TARGETED))
+
+    def test_the_targeted_option_is_ordered_first(self):
+        options = [option(self.ENDS), option(self.RANDOM), option(self.TARGETED)]
+        ordered = order(options, [], is_subsequence, "Control")
+        self.assertEqual(self.TARGETED, ordered[0]["description"])
+
+    def test_a_configured_keyword_still_wins(self):
+        # The user's own list has always outranked the ranking, and that does not change here.
+        options = [option(self.TARGETED), option(self.RANDOM)]
+        ordered = order(options, ["Swept Away"], is_subsequence, "Control")
+        self.assertEqual(self.RANDOM, ordered[0]["description"])
 
 
 if __name__ == "__main__":
