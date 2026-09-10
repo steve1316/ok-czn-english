@@ -18,13 +18,19 @@ a tag when everything in it is a faction name, a number, or bracket-and-slash pu
 add up to a level a card can actually reach. That turns away a mangled tag, and it turns away a sentence that
 happens to contain the word Control. Turning away a real tag costs one frame of a screen the bot re-reads
 every second; acting on a misread one would steer every card pick for the rest of the run.
+
+**Most Desire cards arrive on a screen that is not a Desire screen.** An event that grants one drops the run
+onto the ordinary card assign screen, which decides on the user's reward priority list alone. A Desire card
+is named for its effect, so the list never names it, and the run pressed Skip on every one - twice in the
+four minutes of a real run. That screen is claimed here too, but only to the extent of telling upstream the
+card is worth keeping.
 """
 
 import re
 
 from ok import Logger
 
-from src.en.handlers import insert_before, loaded, register
+from src.en.handlers import insert_before, loaded, register, standing_in, wrap
 from src.en.screen import in_region, text_in_region
 
 logger = Logger.get_logger(__name__)
@@ -39,6 +45,31 @@ TAGGED = re.compile(rf"({'|'.join(FACTIONS)})\s*(\d*)", re.I)
 # What a tag may contain besides its faction names: the points, and the brackets and slash the client draws.
 # Anything else means the reading has run into the effect text and cannot be trusted.
 DECORATION = re.compile(r"[\s\[\]()/|,.:0-9]*")
+
+# The setting naming the faction to chase. Added fork-side, so it needs no upstream change and no migration.
+FACTION_KEY = "Desire Faction"
+DEFAULT_FACTION = "Claim"
+# The card list already used to rank a card reward, which ranks these too once the faction is settled.
+CARD_PRIORITY = "卡牌奖励优先级"
+
+# The prompt that names the Desire card screen. Matched in English: nothing in `ok_tasks/` looks for this
+# screen, so there is no Chinese literal for the catalog to rewrite it into.
+REWARD_TITLE = "desire card reward"
+# The prompt on the screen where two Desire cards merge. That screen's title is "Card Reward" like any other,
+# so the prompt is the only thing telling it apart from an ordinary card reward.
+INHERIT_TITLE = "desire card to inherit"
+# Where those prompts are drawn, as (x1, y1, x2, y2).
+TITLE_REGION = (0.150, 0.020, 0.850, 0.250)
+# Upstream's own confirm button, which goes live only once a card has been chosen.
+CONFIRM_POINT = (0.921, 0.931)
+
+# The Purchase Card screen runs through the same handler as the card assign screen, and taking a card there
+# spends credits. Its title is what tells the two apart.
+PURCHASE_TITLE = "购买卡牌"
+# Names this change in the shared record of what a function already carries.
+ASSIGN_TAG = "desire cards worth keeping"
+
+_patched = False
 
 
 def tags_of(text):
@@ -76,26 +107,6 @@ def points_of(tags):
         The number of points, zero when there is no tag.
     """
     return sum(tags.values())
-
-
-# The setting naming the faction to chase. Added fork-side, so it needs no upstream change and no migration.
-FACTION_KEY = "Desire Faction"
-DEFAULT_FACTION = "Claim"
-# The card list already used to rank a card reward, which ranks these too once the faction is settled.
-CARD_PRIORITY = "卡牌奖励优先级"
-
-# The prompt that names the Desire card screen. Matched in English: nothing in `ok_tasks/` looks for this
-# screen, so there is no Chinese literal for the catalog to rewrite it into.
-REWARD_TITLE = "desire card reward"
-# The prompt on the screen where two Desire cards merge. That screen's title is "Card Reward" like any other,
-# so the prompt is the only thing telling it apart from an ordinary card reward.
-INHERIT_TITLE = "desire card to inherit"
-# Where those prompts are drawn, as (x1, y1, x2, y2).
-TITLE_REGION = (0.150, 0.020, 0.850, 0.250)
-# Upstream's own confirm button, which goes live only once a card has been chosen.
-CONFIRM_POINT = (0.921, 0.931)
-
-_patched = False
 
 
 def tag_of(task, region):
@@ -257,8 +268,90 @@ def inherit_handler(utils):
     )
 
 
+def purchasing(task):
+    """Report whether the screen showing is the one that spends credits.
+
+    The Purchase Card screen runs through the same handler as the card assign screen, so a card kept there
+    would be bought rather than granted. Matched anywhere on screen rather than in upstream's own title band,
+    because a band copied out of vendored code drifts silently and this is the check standing between the
+    run and its credits.
+
+    Args:
+        task: The running task, whose `all_texts` holds the current OCR pass.
+
+    Returns:
+        True when the card in front of the handler is for sale.
+    """
+    return any(PURCHASE_TITLE in box.name for box in getattr(task, "all_texts", None) or [])
+
+
+def keeping_desire_cards(handler, utils):
+    """Wrap `handle_card_assign` so a granted Desire card is kept instead of skipped.
+
+    That handler judges the card in front of it on one thing: whether its name is on the user's reward
+    priority list. A Desire card's name never is - the card is named for its effect, and what makes it worth
+    keeping is the faction tag printed underneath. So the run reaches the screen, misses, and presses Skip,
+    throwing away points an event had already paid for.
+
+    Rather than re-deciding the screen, the card's name is offered to upstream's own ladder as though the
+    list had asked for it. Everything after that is upstream's, including its preference for handing the card
+    to the save-data combatant.
+
+    Only the faction being chased earns this. Handed to a combatant carrying nothing yet, an off-faction
+    card takes one of the team's three Desire slots outright, costing up to three points against a bonus
+    that wants seven of nine. Levels run out well before the cards do.
+
+    Args:
+        handler: The handler to wrap, upstream's or another patch's.
+        utils: The module whose `recognize_cards` and card list reader the handler resolves through.
+
+    Returns:
+        The wrapped handler.
+    """
+    def wrapped(task):
+        recognize_cards, read_list = utils.recognize_cards, utils._get_card_list
+        read, wanted = False, None
+
+        def recognised(task_, *args, **kwargs):
+            # The first read is the granted card. The handler has to read a card before it can judge one, and
+            # it reads no other, so taking the first is steadier than matching the page label it passes -
+            # that label only reaches a log, and a rebase renaming it would quietly bring the bug back.
+            nonlocal read, wanted
+            cards = recognize_cards(task_, *args, **kwargs)
+            if read or not cards:
+                return cards
+            read = True
+            card = cards[0]
+            tags = tag_of(task_, card["description_region"])
+            if not tags:
+                return cards
+            target = target_faction(task_, utils)
+            if not tags.get(target):
+                logger.info(f"「{card['name']}」carries {tags} rather than {target}, so it is left to be skipped")
+            elif purchasing(task_):
+                logger.info(f"「{card['name']}」carries {target}, but it is for sale, so it is left alone")
+            else:
+                wanted = card["name"]
+                logger.info(f"「{card['name']}」carries {target}, so it is kept rather than skipped")
+            return cards
+
+        # `_get_card_list` rather than the reader under it: upstream reaches the list through this in both
+        # places it reads it, and it has already coerced whatever the config held into a list.
+        def reading(task_, key):
+            listed = read_list(task_, key)
+            return [wanted, *listed] if key == CARD_PRIORITY and wanted else listed
+
+        with standing_in(utils, recognize_cards=recognised, _get_card_list=reading):
+            return handler(task)
+
+    return wrapped
+
+
 def install(utils):
-    """Claim both Desire screens, each ahead of the handler that would otherwise take it.
+    """Claim every screen a Desire card can arrive on.
+
+    The two Desire screens are claimed ahead of the handler that would otherwise take them. The card assign
+    screen stays upstream's, wrapped only so a granted Desire card is not thrown away.
 
     Args:
         utils: The loaded `utils` module, or None when it is not importable yet.
@@ -271,6 +364,8 @@ def install(utils):
     # Ahead of the ordinary card reward: both screens are titled "Card Reward", and upstream's handler finds
     # no priority match on this one and presses Skip, throwing the merge away.
     insert_before("handle_card_reward", inherit_handler(utils))
+    # The screen an event's Desire card actually lands on, which skips anything the user's list did not name.
+    wrap(utils, "handle_card_assign", lambda handler: keeping_desire_cards(handler, utils), ASSIGN_TAG)
 
 
 def apply():

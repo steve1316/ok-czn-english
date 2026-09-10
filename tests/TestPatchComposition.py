@@ -47,6 +47,7 @@ def fake_utils():
         handle_equipment=named("handle_equipment"),
         handle_card_reward=named("handle_card_reward"),
         handle_view_original=named("handle_view_original"),
+        handle_card_assign=named("handle_card_assign"),
         select_card=named("select_card"),
         recognize_cards=named("recognize_cards"),
         recognize_cards_in_deck=named("recognize_cards_in_deck"),
@@ -110,14 +111,15 @@ class TestPatchComposition(unittest.TestCase):
 
 
 class TestDesireRegistration(unittest.TestCase):
-    """Where the two Desire screens are claimed from."""
+    """Where each screen a Desire card can arrive on is claimed from."""
 
     def setUp(self):
         self.utils = fake_utils()
         self.module = types.ModuleType("fake_mode_for_desire_test")
         self.module.PAGE_HANDLERS = [named(name) for name in
                                      ("handle_equipment", "handle_confirm", "handle_shop",
-                                      "handle_card_reward", "handle_view_original")]
+                                      "handle_card_reward", "handle_view_original",
+                                      "handle_card_assign")]
         sys.modules[self.module.__name__] = self.module
 
     def tearDown(self):
@@ -152,6 +154,13 @@ class TestDesireRegistration(unittest.TestCase):
         for name in ("handle_desire_reward", "handle_desire_inherit"):
             with self.subTest(name=name):
                 self.assertEqual(1, listed.count(name))
+
+    def test_the_granted_card_screen_carries_the_change_once(self):
+        # An event's Desire card lands on the card assign screen, not on either of the Desire screens.
+        for _ in range(MODES):
+            desire.install(self.utils)
+        self.assertEqual([desire.ASSIGN_TAG], list(getattr(self.utils.handle_card_assign, WRAPS)))
+        self.assertIn(self.utils.handle_card_assign, self.module.PAGE_HANDLERS)
 
     def test_a_mode_loaded_later_gets_them_too(self):
         desire.install(self.utils)
