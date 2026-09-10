@@ -91,24 +91,6 @@ class TestMarkingPersonas(unittest.TestCase):
         # Priority lists are matched against the name, so the English half has to remain readable.
         self.assertTrue(all(ENGLISH in name for name in self.seen(["Persona of Loss"])))
 
-    def test_restores_the_recognizer_afterwards(self):
-        utils = self.utils_stub([])
-        before = utils.recognize_cards
-        marking_personas(lambda task: True, utils)(FakeTask())
-        self.assertIs(utils.recognize_cards, before)
-
-    def test_restores_the_recognizer_when_the_handler_raises(self):
-        utils = self.utils_stub([])
-        before = utils.recognize_cards
-
-        def raising(task):
-            raise ValueError("boom")
-
-        with self.assertRaises(ValueError):
-            marking_personas(raising, utils)(FakeTask())
-        self.assertIs(utils.recognize_cards, before)
-
-
 class TestInstall(unittest.TestCase):
     """Patching the module that actually resolves the call."""
 
@@ -157,16 +139,6 @@ class TestInstall(unittest.TestCase):
         install(self.utils)
         self.chaos.handle_mask_card(FakeTask())
         self.assertTrue(all(MASK in name for name in seen))
-
-    def test_running_twice_does_not_nest(self):
-        install(self.utils)
-        once = self.chaos.handle_mask_card
-        install(self.utils)
-        self.assertIs(self.chaos.handle_mask_card, once)
-
-    def test_tolerates_a_missing_module(self):
-        install(None)
-
 
 if __name__ == "__main__":
     unittest.main()

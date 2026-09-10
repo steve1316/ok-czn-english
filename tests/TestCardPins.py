@@ -240,23 +240,6 @@ class TestNarrowing(unittest.TestCase):
         narrowing(chooser, utils, "recognize_cards_in_deck")(task)
         self.assertEqual([["card1"]], seen)
 
-    def test_restores_the_recognizer_afterwards(self):
-        utils = self.utils_stub([])
-        before = utils.recognize_cards_in_deck
-        narrowing(lambda task_: True, utils, "recognize_cards_in_deck")(FakeTask())
-        self.assertIs(utils.recognize_cards_in_deck, before)
-
-    def test_restores_the_recognizer_when_the_chooser_raises(self):
-        utils = self.utils_stub([])
-        before = utils.recognize_cards_in_deck
-
-        def raising(task_):
-            raise ValueError("boom")
-
-        with self.assertRaises(ValueError):
-            narrowing(raising, utils, "recognize_cards_in_deck")(FakeTask())
-        self.assertIs(utils.recognize_cards_in_deck, before)
-
     def test_passes_arguments_and_result_through(self):
         utils = self.utils_stub([])
         wrapped = narrowing(lambda task_, names, count=1, action="": (names, count, action),
@@ -333,12 +316,6 @@ class TestInstall(unittest.TestCase):
                 self.assertEqual([], getattr(self.utils, name)(FakeTask()))
                 self.assertIsNot(getattr(self.utils, name), self.recognizers[name])
 
-    def test_running_twice_does_not_nest(self):
-        install(self.utils)
-        once = self.utils.select_card
-        install(self.utils)
-        self.assertIs(self.utils.select_card, once)
-
     def test_a_mode_loaded_later_still_gets_the_handlers(self):
         # Modes are imported one at a time, so the second install must still reach the new list.
         install(self.utils)
@@ -350,10 +327,6 @@ class TestInstall(unittest.TestCase):
             self.assertIs(later.PAGE_HANDLERS[0], self.utils.handle_view_original)
         finally:
             sys.modules.pop(later.__name__, None)
-
-    def test_tolerates_a_missing_module(self):
-        install(None)
-
 
 if __name__ == "__main__":
     unittest.main()

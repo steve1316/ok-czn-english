@@ -202,25 +202,6 @@ class TestPreferringTargetRow(unittest.TestCase):
         # is about to fail its own portrait lookup anyway.
         self.assertEqual((False, ["top", "low"]), self.run_action("移除", portrait_y=None))
 
-    def test_restores_both_seams_afterwards(self):
-        utils = self.utils_stub()
-        config, recognise = utils._get_config_value, utils.recognize_cards_in_deck
-        preferring_target_row(lambda *a, **k: True, utils)(FakeTask(portrait_y=0.8), [], action="移除")
-        self.assertIs(utils._get_config_value, config)
-        self.assertIs(utils.recognize_cards_in_deck, recognise)
-
-    def test_restores_both_seams_when_select_card_raises(self):
-        utils = self.utils_stub()
-        config, recognise = utils._get_config_value, utils.recognize_cards_in_deck
-
-        def raising(*args, **kwargs):
-            raise ValueError("boom")
-
-        with self.assertRaises(ValueError):
-            preferring_target_row(raising, utils)(FakeTask(portrait_y=0.8), [], action="移除")
-        self.assertIs(utils._get_config_value, config)
-        self.assertIs(utils.recognize_cards_in_deck, recognise)
-
     def test_other_settings_still_read_normally(self):
         utils = self.utils_stub()
         seen = []

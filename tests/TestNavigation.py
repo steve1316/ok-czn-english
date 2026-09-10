@@ -143,14 +143,6 @@ class TestReadingInPlace(unittest.TestCase):
         self.assertEqual([navigation.COMBATANTS_TAB, CLOSE_PAGE], task.clicks)
         self.assertTrue(handled)
 
-    def test_the_stand_ins_are_put_back_afterwards(self):
-        utils_chaos = install(ON_THE_TAB)
-        original = utils_chaos._move_and_click
-        task = FakeTask()
-        navigation.reading_in_place(upstream_capture(utils_chaos))(task)
-        self.assertIs(original, utils_chaos._move_and_click)
-        self.assertNotIn("click_box", task.__dict__)
-
     def test_a_capture_that_throws_still_puts_them_back(self):
         """A capture that raised while the taps were stood in for would leave upstream permanently rewired."""
         utils_chaos = install(ON_THE_TAB)

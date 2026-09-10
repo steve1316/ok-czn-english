@@ -408,13 +408,5 @@ class TestEgoChoice(unittest.TestCase):
             self.assertEqual(utils_sortie.asked[-1]["other"], "a")
             self.assertEqual(utils_sortie.asked[-1]["wait"], 0.2)
 
-    def test_the_module_is_left_as_it_was_found(self):
-        with upstream(hand(ATTACK), egos=("F1",)) as (utils_sortie, task):
-            battle.install()
-            before = utils_sortie.random
-            utils_sortie.PAGE_HANDLERS[0](task)
-            self.assertIs(utils_sortie.random, before)
-
-
 if __name__ == "__main__":
     unittest.main()

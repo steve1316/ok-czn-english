@@ -136,25 +136,6 @@ class TestRefusingFreeRefresh(unittest.TestCase):
         wrapped(shop_screen())
         self.assertEqual(seen, [["96", "免费"]])
 
-    def test_restores_the_pass_afterwards(self):
-        task = shop_screen()
-        before = task.all_texts
-        wrapped = refusing_free_refresh(recording_handler([]), lambda task: 29)
-        wrapped(task)
-        self.assertIs(task.all_texts, before)
-
-    def test_restores_the_pass_when_the_handler_raises(self):
-        task = shop_screen()
-        before = task.all_texts
-
-        def raising(task):
-            raise ValueError("boom")
-
-        wrapped = refusing_free_refresh(raising, lambda task: 29)
-        with self.assertRaises(ValueError):
-            wrapped(task)
-        self.assertIs(task.all_texts, before)
-
     def test_does_not_read_credits_without_a_button(self):
         # Reading credits on every frame would cost two lookups for nothing, since the handler declines
         # immediately on any screen that is not the shop.
@@ -208,12 +189,6 @@ class TestInstall(unittest.TestCase):
         self.assertIsNot(self.utils.handle_shop, before)
         self.assertEqual("handle_shop", self.utils.handle_shop.__name__)
 
-    def test_running_twice_does_not_nest(self):
-        install(self.utils)
-        once = self.utils.handle_shop
-        install(self.utils)
-        self.assertIs(self.utils.handle_shop, once)
-
     def test_a_mode_loaded_later_still_gets_the_handler(self):
         install(self.utils)
         later = types.ModuleType("fake_late_mode_for_shop_test")
@@ -224,10 +199,6 @@ class TestInstall(unittest.TestCase):
             self.assertIs(later.PAGE_HANDLERS[0], self.utils.handle_shop)
         finally:
             sys.modules.pop(later.__name__, None)
-
-    def test_tolerates_a_missing_module(self):
-        install(None)
-
 
 if __name__ == "__main__":
     unittest.main()

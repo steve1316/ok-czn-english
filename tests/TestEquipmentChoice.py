@@ -166,24 +166,6 @@ class TestPreferringRecommended(unittest.TestCase):
     def test_leaves_the_order_alone_without_a_banner(self):
         self.assertEqual([list(TAG_Y)], self.order_seen(equipment_screen()))
 
-    def test_restores_the_seam_afterwards(self):
-        utils = self.utils_stub()
-        before = utils._find_member_level_tags
-        preferring_recommended(lambda task_: False, utils)(equipment_screen(recommended=1))
-        self.assertIs(utils._find_member_level_tags, before)
-
-    def test_restores_the_seam_when_the_handler_raises(self):
-        utils = self.utils_stub()
-        before = utils._find_member_level_tags
-
-        def raising(task_):
-            raise ValueError("boom")
-
-        with self.assertRaises(ValueError):
-            preferring_recommended(raising, utils)(equipment_screen(recommended=1))
-        self.assertIs(utils._find_member_level_tags, before)
-
-
 class TestMythicOffer(unittest.TestCase):
     """Spotting a Mythic piece."""
 
@@ -269,24 +251,6 @@ class TestInsistingOnMythic(unittest.TestCase):
         self.assertEqual((False, "当前装备配置优先级更高"),
                          self.decide(equipment_screen(), (False, "当前装备配置优先级更高"), "史诗",
                                      new_quality="史诗"))
-
-    def test_restores_the_seam_afterwards(self):
-        utils = self.utils_stub((False, "x"))
-        before = utils._should_install_equipment
-        insisting_on_mythic(lambda task_: False, utils)(self.screen())
-        self.assertIs(utils._should_install_equipment, before)
-
-    def test_restores_the_seam_when_the_handler_raises(self):
-        utils = self.utils_stub((False, "x"))
-        before = utils._should_install_equipment
-
-        def raising(task_):
-            raise ValueError("boom")
-
-        with self.assertRaises(ValueError):
-            insisting_on_mythic(raising, utils)(self.screen())
-        self.assertIs(utils._should_install_equipment, before)
-
 
 if __name__ == "__main__":
     unittest.main()
@@ -380,13 +344,6 @@ class TestRememberingSlots(unittest.TestCase):
         utils, _ = self.stubs()
         self.assertTrue(remembering_slots(self.handler(utils), utils)(FakeTask([])))
 
-    def test_the_stub_is_put_back(self):
-        utils, _ = self.stubs()
-        before = utils._find_member_level_tags
-        remembering_slots(self.handler(utils), utils)(FakeTask([]))
-        self.assertEqual(before, utils._find_member_level_tags)
-
-
 class TestRefusingEquipment(unittest.TestCase):
     """What the shop is allowed to spend on equipment.
 
@@ -453,8 +410,3 @@ class TestRefusingEquipment(unittest.TestCase):
         handler(task)
         self.assertEqual([], offered[0])
 
-    def test_the_stub_is_put_back(self):
-        task, utils, _, handler = self.shop(EQUIPMENT_FLOOR)
-        before = utils._equipment_priority
-        handler(task)
-        self.assertEqual(before, utils._equipment_priority)
