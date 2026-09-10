@@ -1,51 +1,39 @@
 """Get a narration screen moving, which the Global client needs and no mode does.
 
 Upstream's only tap-the-screen handler, `handle_close_page`, keys off the literal "点击屏幕". The Global client
-prints no such prompt - a narration screen there is a line of prose over a darkened frame with a small caret
-in the corner - so nothing in Chaos or Sortie ever advances one. `ChaosMode.description` asks the user to turn
-the game's own auto-story on instead, which covers it when the setting is found and does nothing when it is not.
+prints no such prompt - a narration screen there is a line of prose over a darkened frame with a small caret in
+the corner - so nothing in Chaos or Sortie ever advances one, and a run that reaches one sits there until it is
+stopped by hand. Upstream's stuck detector works through its fallbacks and misses every time, because its
+general random-click fallback is commented out. `ChaosMode.description` asks the user to turn the game's own
+auto-story on, which covers it when the setting is found and does nothing when it is not.
 
-A logged run shows what that costs. The bot reached "The Soldier's eyes are fixed on the group." at 14:26:39
-and never left: upstream's stuck detector fired at ten seconds and worked through its fallbacks - the close
-button, the secret enemy, card recognition - each of which missed, because its general random-click fallback
-is commented out. The run sat there for 200 more frames until it was stopped by hand.
+The reader gets almost nothing on that screen - the whole OCR pass is the health bar, the credit count and the
+prose - so the line's shape is the only signal: wide, horizontally centred and low. Width is what separates it
+from an event option, which sits in the same band, centred the same, but a third as wide.
 
-The reader gets almost nothing to work with on that screen. The whole OCR pass was the health bar, the credit
-count and the prose, so the line's shape is the only signal available: wide, horizontally centred, and low.
-Width is what separates it from an event option, whose text sits in the same band and is centred in the same
-place but is a third as wide.
+Shape alone was not enough. Over the 702 captures in `captures/` it turned up 18 matches, 15 of them tooltips,
+tip banners and selection prompts rather than prose, so two measured things joined the rule. Narration sits at
+0.834 to 0.880 where those rows sit at 0.908 and below, which is what `NARRATION_REGION` draws the line on, and
+a narration screen darkens the frame and takes the HUD with it, carrying three to six readable boxes where a
+tip banner's screen carries seventeen to fifty-six, which is `MAX_TEXT_BOXES`. With both, the corpus yields
+three matches and all three are prose. Every threshold's measurement is in `tests/TestDialogue.py`.
 
-Shape alone was not enough. Running this over the 702 captures in `captures/` turned up 18 matches, of which
-15 were tooltips, tip banners and selection prompts rather than prose - so two things the corpus measured are
-part of the rule. Narration sits at 0.834 to 0.880 while those rows sit at 0.908 and below, which is what
-`NARRATION_REGION` draws the line on. And a narration screen darkens the frame and takes the HUD down with it,
-so it carries three to six readable boxes where a tip banner's screen carries seventeen to fifty-six - which
-is what `MAX_TEXT_BOXES` is for. With both, the corpus yields three matches and all three are prose.
+Tapping every line is not the cheapest way through. The game advances narration itself when its auto-advance
+setting is on, and that button sits in the same screen's top right corner - a ring drawn white with a padlock
+while off, amber once running. One tap plays the rest of the cutscene out without the bot in the loop, so
+`handle_dialogue` reaches for it first and only taps prose when auto-advance is already going. Across twenty
+captured frames its patch is 10.5% to 15.0% amber every time it is running and 0.0% every time it is off.
 
-The measurements behind every threshold are in `tests/TestDialogue.py`.
+A screen that draws no button reads the same as one drawn off, and the tap that follows lands on empty space in
+the top corner - which on a narration screen advances the line anyway. That ambiguity is why the button is only
+read once `narration_line` has recognised the screen, and it caps what the button can do: a narration screen
+the shape rule misses gets no tap and no toggle, so this makes a recognised cutscene cheaper rather than
+widening what is recognised. The handler runs last, after everything that recognises a screen by name, which is
+what keeps an immediate tap safe.
 
-Tapping every line is not the cheapest way through, though. The game advances narration by itself when its
-auto-advance setting is on, and the button for it sits in the top right corner of the same screen - a ring
-drawn white with a padlock through it while it is off, and in amber once it is running. One tap on that
-plays the rest of the cutscene out without the bot in the loop, so `handle_dialogue` reaches for it first
-and only taps the prose when auto-advance is already going.
-
-Amber is the whole reading. Across twenty captured frames the button's patch is 10.5% to 15.0% amber every
-time it is running and 0.0% every time it is off, so nothing finer than a colour share is needed. A screen
-that draws no button at all reads the same as one drawn off, and the tap that follows then lands on empty
-space in the top corner - which on a narration screen advances the line, which is what the handler was
-about to do anyway.
-
-That ambiguity is why the button is only read once `narration_line` has recognised the screen. It also
-caps what the button can do: a narration screen the shape rule misses gets no tap and no toggle either,
-so this makes a recognised cutscene cheaper rather than widening what is recognised.
-
-The handler runs last, after the ones that recognise a screen by name. That ordering is what keeps an
-immediate tap safe: a frame only reaches here once nothing else has claimed it.
-
-Chaos and Sortie get it, and Story does not. Story has its own skip and auto-dialogue handlers, and none of
-the screens measured here came from it, so it is left as it was rather than given a handler tuned on another
-mode's captures. `handle_event_task` is what picks the two out: both carry it and Story does not.
+Chaos and Sortie get it and Story does not: Story has its own skip and auto-dialogue handlers, and none of the
+screens measured here came from it. `handle_event_task` is what picks the two out - both carry it, Story does
+not.
 """
 
 import numpy as np

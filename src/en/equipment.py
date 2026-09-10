@@ -1,53 +1,23 @@
 """Decide who gets a piece of equipment, what is worth buying, and refuse to pass over a Mythic one.
 
-Four fork-local changes, all narrow: two move a preference inside `handle_equipment`, one reads more of what
-that screen already shows, and one withholds the shop's equipment list. None copies any of a handler.
+Four narrow changes inside `handle_equipment` and the shop. None copies a handler.
 
-**Who gets it.**
+The Equipment screen marks the row with a free slot of the right kind "Recommended". Upstream never reads it,
+picking by the save-scum target instead, or by whoever is listed first on every Sortie run since only Chaos
+carries that setting. The banner is paired to a row by taking the nearest level tag *below* it, which leaves
+most of a row's height of slack either way. Only the preference moves, so upstream's own quality comparison
+still decides install-versus-give-away. A log trap follows from it: upstream numbers combatants by that list,
+so `第N号主战员` counts from the recommended row rather than the top of the screen.
 
-The Equipment screen marks one of the three rows "Recommended", and the mark is not decoration: it lands on
-the combatant with a free slot of the kind the piece being offered fills. Upstream never reads it, because the
-Chinese client the handlers were written against is read through the save-scum target instead. Where no target
-is set - every Sortie run, since only Chaos carries the setting - the fallback is simply "whoever is listed
-first", so the pick has always been arbitrary.
+A Mythic is always worth taking, but upstream weighs the per-slot priority list ahead of quality, so a
+configured piece already in the slot turns one away. Only that comparison is overridden. Not visible from
+`ok_tasks/`: its top bucket already *is* Mythic here, because quality is read from one pixel of the item frame
+and a Mythic's violet matches none of its constants and falls through to `传说`.
 
-The banner is paired with a row by geometry rather than by guessing at the panel edges. It is drawn in the
-top-right of its row's panel and that row's level tag sits below it, one measured gap away, with the next
-row's tag a full row further down again. Taking the nearest tag *below* the banner therefore has most of a
-row's height of slack in both directions, where taking the nearest tag either way would have had about a
-third of that.
-
-What changes is only which combatant is preferred, never whether the piece is worth installing. The banner is
-put at the front of the level-tag list for the length of one `handle_equipment` call, which is exactly the
-position upstream falls back to, so its own quality comparison still decides install-versus-give-away and a
-save-scum target still outranks the banner wherever one is set.
-
-One knock-on worth knowing when reading a log: upstream numbers combatants by their position in that list, so
-on a frame where the banner moved a row, its `第N号主战员` counts from the recommended row rather than from the
-top of the screen.
-
-**Mythic pieces.** Only one may be worn per combatant and there is nothing better to hold out for, so one is
-always worth taking. Upstream weighs the user's per-slot priority list ahead of quality, though, which means
-a configured piece already in the slot turns a Mythic away. That one comparison is overridden while a Mythic
-is on offer.
-
-Worth recording, because it is not obvious from `ok_tasks/`: upstream's top quality bucket already *is*
-Mythic on this client. It reads quality from a single pixel of the item's frame, and the violet a Mythic
-draws is the one colour that matches none of its constants and falls through to `传说`. So the existing
-one-per-combatant rule and the existing top ranking both apply to Mythic pieces already, and only the
-priority-list comparison needed moving.
-
-**What the shop may spend on.** Upstream buys any equipment its priority list names and the run can afford,
-which is how a run's credits go on replacing gear it is already wearing. Equipment is now bought only with
-at least `EQUIPMENT_FLOOR` credits in hand and only for a slot standing empty on somebody.
-
-Knowing that second part takes a memory, because the shop shows no combatants at all. Upstream keeps the
-slots of the save-data combatant alone, and only for the slot it happens to be filling, so a slot bare on
-either of the other two read as spoken for. The install screen is the one place all three are on screen
-together and upstream is already standing there with their rows in hand - it reads one and drops the rest.
-All three are read instead, which costs three pixel probes each and is what the shop then decides on. A run
-that has not seen that screen yet counts every slot as bare, which is the truth rather than a guess: a run
-opens with all three combatants stripped.
+Equipment is bought only with `EQUIPMENT_FLOOR` credits in hand and only for a slot standing empty on somebody.
+The shop shows no combatants, and upstream keeps only the save-data combatant's slots, so all three rows are
+read off the install screen where they appear together. A run that has not reached it counts every slot bare,
+which is the truth rather than a guess - a run opens with all three stripped.
 """
 
 from ok import Logger

@@ -1,51 +1,32 @@
 """Read what the battle screen says about the moment a card is being chosen in.
 
-`SortieMode.run` pays for one full-frame OCR a second and every handler reads the result for free, so anything
-here has to come out of that pass or out of raw pixels. Nothing in this module runs OCR.
+`SortieMode.run` pays for one full-frame OCR a second and every handler reads the result for free, so
+everything here comes out of that pass or out of raw pixels. Nothing in this module runs OCR.
 
-Action Points are the first thing it reads, and they are read from colour rather than from text. The readout
-is a single large digit above the hand counter, and the OCR engine does not return a box for it at all - not
-in a full frame, and not on a tight upscaled crop either, which was checked before settling for this. What
-the game does give away is how it draws the digit: bright blue with a glow while there are points to spend,
-and a thin grey outline once there are none. Counting how much of that small patch is lit tells the two apart
-without reading anything.
+Action Points are read from colour, because OCR returns no box for the digit at all - not in a full frame and
+not on a tight upscaled crop, both checked. The game draws it bright blue with a glow while there are points
+to spend and a thin grey outline once there are none, so how much of the patch is lit tells the two apart.
+Behind `LIT_ENOUGH`: across 30 real frames, 25 empty and 5 with points, the lit share came out at most 0.031
+empty and at least 0.130 full - four times over - and it holds from 1280x720 to 2560x1440. `LIT` is 200 rather
+than the obvious 170 because one frame's background sits at exactly 170 across a large flat area, which would
+have read an empty turn as a full one. `tests/TestBoard.py` pins the tightest pair, so anything narrowing the
+gap fails there first. This says whether any points remain, not how many, which is all the planner needs and
+all the screen gives away.
 
-The figures behind `LIT_ENOUGH`: across 30 real frames - 25 with no points left, 5 with points - the lit
-share came out at most 0.031 for an empty readout and at least 0.130 for a full one, a gap of four times over,
-and it holds at every resolution the app supports from 1280x720 to 2560x1440. The threshold sits between the
-two with room on both sides. `tests/TestBoard.py` pins the tightest pair of those frames, so anything that
-narrows the gap fails there first.
+The Ego panel is the same question. Each slot's cost badge is blue while the EP bar can pay for it and flat
+grey once it cannot. Over 30 badges an affordable one is at least 21% blue and an unaffordable one exactly 0%
+at every supported resolution - the widest margin anything here is judged on.
 
-`LIT` is 200 rather than the more obvious 170 because one frame's background sits at exactly 170 across a
-large flat area, and counting that would have read an empty turn as a full one.
+Enemy weakness too. The client stores attributes as colours, so `ATTRIBUTES` already says which is which. The
+hues measured sit at 15, 78 and 133 out of 180 with a spread of about three each, and only the orange one has
+been confirmed against the game, as Instinct. Enemies are found by their action counter, a magenta diamond of
+consistent size, with the badge at a fixed offset. `tests/images/enemy_instinct.png` pins both against the
+game's own rendering, and `attack_flash.png` holds the burst that passes every other test and fails on height.
 
-This says whether any points remain, not how many. That is enough for the planner, which only needs to know
-whether a card costing something can still be played, and it is all the screen actually gives away.
-
-The Ego panel is read the same way. Each of the three slots carries a cost badge, drawn blue while the EP bar
-can pay for it and flat grey once it cannot, so which Ego skills are actually available is a colour question
-too. Measured over 30 badges, an affordable one is at least 21% blue and one that cannot be paid for is
-exactly 0% at every supported resolution - the widest margin anything here is judged on.
-
-The attribute an enemy is weak to is read the same way again. Each enemy carries a small coloured badge just
-below and right of its action counter, and the colour is the attribute: the client stores attributes as
-colours in the first place, so `ATTRIBUTES` already says which is which. Only the orange one has been checked
-against the game - it is Instinct - but the rest come from the client's own table rather than from guesswork.
-The badge hues measured so far sit far apart, at 15, 78 and 133 out of 180, with a spread of about three each.
-
-Enemies are found by their action counter, a magenta diamond of a consistent size, and the badge is taken at
-a fixed offset from it. `tests/images/enemy_instinct.png` holds one real enemy, counter and badge together, so
-the sizes and the offset are pinned against the game's own rendering rather than against a square drawn to
-match them, and `attack_flash.png` holds the burst that passes every other test and fails only on height.
-
-When the enemies disagree the answer is that there is no preference. The attribute only ever raises what a
-matching card is worth, so taking the majority would be defensible, but no capture so far shows a mixed fight
-to check a majority against, and having no opinion is the answer that cannot be wrong.
-
-All of this assumes it is being asked about a battle screen, which is the only place it is ever called from.
-Swept over every screen in `captures/`, the 22 battle frames read Instinct or nothing at all, but red artwork
-elsewhere in the game - a Card Epiphany screen, a full-screen character portrait - throws up shapes that pass
-for counters and reads as Passion. Nothing calls it there, and it is not built to be robust to it.
+When enemies disagree the answer is no preference, because no capture yet shows a mixed fight to check a
+majority against. All of this assumes a battle screen, the only place it is called from: swept over
+`captures/`, the 22 battle frames read Instinct or nothing, but red artwork elsewhere - a Card Epiphany
+screen, a full-screen portrait - throws up shapes that pass for counters and reads as Passion.
 """
 
 import cv2
