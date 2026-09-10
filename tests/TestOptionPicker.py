@@ -49,11 +49,13 @@ class EchoApp:
         return key
 
 
-@unittest.skipIf(ModifyListDialog is None, "ok-script does not provide ModifyListDialog")
 class TestOptionPicker(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        # Not a skip. If ok-script moves this dialog the patch in picker.py is dead and the settings list goes
+        # back to taking seconds per keystroke, so a missing class has to fail rather than quietly pass.
+        assert ModifyListDialog is not None, "ok-script no longer provides ModifyListDialog"
         cls.qt_app = QApplication.instance() or QApplication([])
         og.app = EchoApp()
         # Called twice on purpose: the guard has to hold, or a second call would wrap the patch in itself.
