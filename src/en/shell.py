@@ -33,7 +33,6 @@ def looping(task):
     """
     original_run = task.run
     original_enable = task.enable
-    interval = task.trigger_interval
 
     def run():
         # The Start button sets `_enabled` directly rather than calling `enable`, so the mode's own override
@@ -52,7 +51,9 @@ def looping(task):
             task.executor.reset_scene()
             # Upstream paced from the start of one pass to the start of the next. Sleeping the whole interval
             # on top of the pass would stretch every cycle by however long the pass took.
-            remaining = interval - (time.time() - started)
+            # Read fresh each pass rather than captured once, so a handler can change the pace while the mode
+            # runs - `src/en/observe.py` looks more often while a battle is on screen.
+            remaining = task.trigger_interval - (time.time() - started)
             if remaining > 0:
                 task.sleep(remaining)
 

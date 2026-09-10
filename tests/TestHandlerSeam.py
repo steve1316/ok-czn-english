@@ -116,5 +116,123 @@ class TestHandlerSeam(unittest.TestCase):
             sys.modules.pop(other.__name__, None)
 
 
+class TestStandingIn(unittest.TestCase):
+    """Swapping attributes for the length of one call."""
+
+    def setUp(self):
+        self.module = types.SimpleNamespace(first="a", second="b")
+
+    def test_swaps_for_the_length_of_the_block(self):
+        with handlers.standing_in(self.module, first="x"):
+            self.assertEqual("x", self.module.first)
+        self.assertEqual("a", self.module.first)
+
+    def test_swaps_several_at_once(self):
+        with handlers.standing_in(self.module, first="x", second="y"):
+            self.assertEqual(("x", "y"), (self.module.first, self.module.second))
+        self.assertEqual(("a", "b"), (self.module.first, self.module.second))
+
+    def test_restores_when_the_block_raises(self):
+        # A handler that throws must not leave upstream's module permanently rewired.
+        with self.assertRaises(ValueError):
+            with handlers.standing_in(self.module, first="x", second="y"):
+                raise ValueError("boom")
+        self.assertEqual(("a", "b"), (self.module.first, self.module.second))
+
+    def test_leaves_untouched_attributes_alone(self):
+        with handlers.standing_in(self.module, first="x"):
+            self.assertEqual("b", self.module.second)
+
+    def test_nests(self):
+        with handlers.standing_in(self.module, first="x"):
+            with handlers.standing_in(self.module, first="y"):
+                self.assertEqual("y", self.module.first)
+            self.assertEqual("x", self.module.first)
+        self.assertEqual("a", self.module.first)
+
+    def test_swapping_nothing_is_allowed(self):
+        with handlers.standing_in(self.module):
+            self.assertEqual("a", self.module.first)
+
+
+class TestWrap(unittest.TestCase):
+    """Composing fork-local wrappers over one upstream function."""
+
+    def setUp(self):
+        self.utils = types.SimpleNamespace(handle_thing=named("handle_thing"))
+        self.module = types.ModuleType("fake_mode_for_wrap_test")
+        self.module.PAGE_HANDLERS = [named("handle_thing"), named("handle_other")]
+        sys.modules[self.module.__name__] = self.module
+
+    def tearDown(self):
+        sys.modules.pop(self.module.__name__, None)
+
+    @staticmethod
+    def marking(mark):
+        """Build a factory whose wrapper records that it ran.
+
+        Args:
+            mark: What the wrapper appends to the list it is given.
+
+        Returns:
+            A factory taking the function to wrap.
+        """
+        def factory(inner):
+            def wrapped(seen):
+                seen.append(mark)
+                return inner(seen)
+
+            return wrapped
+
+        return factory
+
+    def test_installs_on_the_module_and_in_the_list(self):
+        handlers.wrap(self.utils, "handle_thing", self.marking("a"), "a")
+        self.assertIs(self.module.PAGE_HANDLERS[0], self.utils.handle_thing)
+        self.assertEqual("handle_thing", self.utils.handle_thing.__name__)
+
+    def test_a_second_module_composes_rather_than_replacing(self):
+        handlers.wrap(self.utils, "handle_thing", self.marking("a"), "a")
+        handlers.wrap(self.utils, "handle_thing", self.marking("b"), "b")
+        seen = []
+        self.utils.handle_thing(seen)
+        self.assertEqual(["b", "a"], seen)
+
+    def test_running_every_install_again_does_not_stack(self):
+        # The installs run once per task load, and two modules wrapping the same function used to grow the
+        # stack by one layer each every time, because neither could see the other's marker.
+        for _ in range(3):
+            handlers.wrap(self.utils, "handle_thing", self.marking("a"), "a")
+            handlers.wrap(self.utils, "handle_thing", self.marking("b"), "b")
+        seen = []
+        self.utils.handle_thing(seen)
+        self.assertEqual(["b", "a"], seen)
+
+    def test_a_mode_loaded_later_still_gets_the_wrapper(self):
+        handlers.wrap(self.utils, "handle_thing", self.marking("a"), "a")
+        later = types.ModuleType("fake_late_mode_for_wrap_test")
+        later.PAGE_HANDLERS = [named("handle_thing")]
+        sys.modules[later.__name__] = later
+        try:
+            handlers.wrap(self.utils, "handle_thing", self.marking("a"), "a")
+            self.assertIs(later.PAGE_HANDLERS[0], self.utils.handle_thing)
+        finally:
+            sys.modules.pop(later.__name__, None)
+
+    def test_leaves_the_other_handlers_alone(self):
+        handlers.wrap(self.utils, "handle_thing", self.marking("a"), "a")
+        self.assertEqual("handle_other", self.module.PAGE_HANDLERS[1].__name__)
+
+    def test_a_helper_in_no_list_is_still_wrapped_on_the_module(self):
+        self.utils.select_card = named("select_card")
+        handlers.wrap(self.utils, "select_card", self.marking("a"), "a")
+        self.assertEqual("select_card", self.utils.select_card.__name__)
+        self.assertEqual(["handle_thing", "handle_other"], [h.__name__ for h in self.module.PAGE_HANDLERS])
+
+    def test_a_missing_function_is_skipped(self):
+        handlers.wrap(self.utils, "not_there", self.marking("a"), "a")
+        self.assertFalse(hasattr(self.utils, "not_there"))
+
+
 if __name__ == "__main__":
     unittest.main()

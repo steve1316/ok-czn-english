@@ -1,0 +1,331 @@
+"""Play a Sortie battle from what the cards do, instead of pressing every hotkey and hoping.
+
+Upstream's `handle_battle_page` plays the first hand card that matches the user's Play Priority list. When
+nothing matches - which on the Global client is every turn, since that list starts empty - it falls through
+to `_try_all_card_keys`, which presses each hotkey from the hand size down to one at about a second and a
+half a press. At nine cards that is thirteen seconds of blind input per turn, and whatever it plays is
+whatever happened to be under the last key that worked.
+
+That fallback is the only thing replaced here. Upstream keeps the frame: the Ego check, the end-of-turn
+button, the stuck detection, the final-boss flag. A card the user's Play Priority list names is still played
+by upstream, unchanged, so a tuned list keeps behaving as it did.
+
+The Ego skill is picked here too. Upstream fires one of `F1`, `F2` and `F3` at random once it reads the EP
+bar as full, without checking whether the EP will actually cover the one it picked - and in a real frame with
+the bar full, one of the three routinely costs more than the bar holds. `board.py` can see which are
+affordable, because the game draws that badge blue, so the shortlist shrinks to those. The pick itself stays
+random, because picking one it cannot pay for is the defect and picking at random is not. The mechanism is
+upstream's own `random` swapped out for the length of one frame, which is the same thing `src/en/events.py`
+does to rank event options, and every other use of `random` in that module passes straight through.
+
+The attribute the enemies are weak to comes from `board.py` as well, and goes to the planner rather than being
+acted on here: it raises what a card of that attribute is worth, so a matching attack is played first when
+two are otherwise equal. A card only has an attribute if the data knows who owns it, which is true of about a
+third of them, so this reorders some turns and leaves the rest as they were. It is read once a turn and kept,
+since it describes the fight rather than the frame.
+
+`_try_all_card_keys` has two callers, though, and rebinding it takes over both. One is the fallback proper,
+reached when the list matched nothing. The other is the escape hatch upstream reaches for after a card the
+list *did* name has failed to play three times running - and taking that one over is wanted rather than
+tolerated, because a card that will not play three times is usually one there are no Action Points for, and
+choosing a different card is a better answer than flailing at every key.
+
+The budget comes from `board.py`, which can tell a spent turn from one with Action Points left but not how
+many are left. So a turn that still has points is planned against the full three, which may be more than it
+really has. That is safe rather than sloppy: the game refuses a card there is no room for, and a card still
+sitting in hand after being tried is recorded as refused and passed over for the rest of the turn. The turn
+corrects itself against the game rather than against a number this module believes in. What the readout adds
+is the other end - once it goes dark, the turn ends at once instead of after every card has been refused.
+"""
+
+from ok import Logger
+
+from src.en import board, cards
+from src.en.handlers import StandIn, loaded, register, replace
+from src.en.overrides import SMART_CARD_PLAY
+
+logger = Logger.get_logger(__name__)
+
+# Parked on the task for the length of a battle, the way upstream parks `_play_stuck_count` and
+# `_last_attempted_card`. One attribute, so starting a fresh turn is one assignment rather than three that
+# have to agree. The prefix keeps it clear of anything upstream owns.
+TURN = "_en_turn"
+# Remembers one frame's hand reading, keyed on the OCR pass it came from. `SortieMode.run` builds a fresh
+# `all_texts` list every frame, so identity tells frames apart, and a matching list can only ever produce a
+# matching hand. Upstream reads the hand twice a frame already; this makes all of those one reading.
+HAND_CACHE = "_en_hand_for"
+
+# Upstream's own timings for playing a card, kept so the two paths feel the same to the game.
+AFTER_KEY = 1
+AFTER_CONFIRM = 2
+# The key that ends a turn, as upstream sends it.
+END_TURN_KEY = "e"
+CONFIRM_KEY = "enter"
+
+_patched = False
+
+
+class EgoChoice(StandIn):
+    """Stands in for the module's `random` while one battle frame runs.
+
+    Only the Ego question is answered here. Every other call - and there are several in that module, for
+    picking a card to drag at a Secret Enemy and for the hand-select screens - is handed to the real `random`
+    untouched, which is what `StandIn` is for.
+    """
+
+    def __init__(self, task, original):
+        """Stand in for one frame.
+
+        Args:
+            task: The task the frame is running against, whose screen holds the answer.
+            original: The module's real `random`, which everything else still goes to.
+        """
+        super().__init__(original)
+        self.task = task
+
+    def choice(self, options):
+        """Answer a random choice, narrowing the Ego question to what the EP bar can pay for.
+
+        The defect being fixed is that upstream picks an Ego it cannot afford, not that it picks at random.
+        So the choice stays random and only the shortlist changes, which keeps a repeated fight from always
+        firing the same Ego.
+
+        Args:
+            options: What upstream is choosing between.
+
+        Returns:
+            One of the affordable Ego keys when that is the question being asked and the screen gives an
+            answer, otherwise whatever the real `random` says.
+        """
+        if list(options) == list(board.EGO_KEYS):
+            ready = board.affordable_egos(self.task)
+            if ready:
+                return self.original.choice(ready)
+        return self.original.choice(options)
+
+
+def choose(hand, board, refused):
+    """Pick the card to play next, or nothing when the turn is done.
+
+    Args:
+        hand: Hand cards as `_hand_cards` reads them.
+        board: The `cards.Board` to decide against.
+        refused: Names the game has already declined to play this turn.
+
+    Returns:
+        The hand card to play, or None when nothing is left worth playing.
+    """
+    playable = [card for card in hand if card.get("key") and card["name"] not in refused]
+    chosen = cards.plan(playable, board)
+    return chosen[0] if chosen else None
+
+
+def was_refused(attempted, copies, hand_names):
+    """Say whether the card tried last frame is still sitting in hand.
+
+    Neither the size of the hand nor the presence of the card answers this on its own. A card that draws
+    replaces itself, so the hand can be the same size after one played perfectly well. And a deck holds
+    several copies of a card, so the name can still be there because another copy is. How many copies are
+    left is what actually settles it: one fewer than there were means the game took it.
+
+    Args:
+        attempted: The card name tried last frame, or None when nothing was.
+        copies: How many of that card were in hand when its key was pressed.
+        hand_names: The names now in hand.
+
+    Returns:
+        True when the game would not play it, so it should be passed over for the rest of the turn.
+    """
+    return attempted is not None and hand_names.count(attempted) >= copies
+
+
+def new_turn(before, after):
+    """Say whether the hand has been dealt again since the last frame.
+
+    Args:
+        before: The hand size last frame, or None on the first frame of a battle.
+        after: The hand size now.
+
+    Returns:
+        True when a fresh turn has started, so what the last turn refused no longer applies.
+    """
+    return before is None or after > before
+
+
+class Turn:
+    """What one turn has learnt: the hand it last saw, the card it tried, and what the game would not play.
+
+    The weakness the enemies show belongs here rather than to the frame. It is a property of the fight, it
+    costs a pass over a third of the screen to read, and an attack landing over an enemy hides its badge for
+    a frame or two - so it is read once and kept, and a turn that never manages to read one keeps trying.
+    """
+
+    def __init__(self, hand_count):
+        """Start a turn that has learnt nothing yet.
+
+        Args:
+            hand_count: The hand size this turn opened with.
+        """
+        self.hand_count = hand_count
+        self.attempted = None
+        self.attempted_copies = 0
+        self.refused = set()
+        self.weakness = None
+
+
+def turn_of(task, hand_count):
+    """Bring the per-turn bookkeeping up to date and hand it back.
+
+    Args:
+        task: The running task, which the state is parked on.
+        hand_count: The hand size read this frame.
+
+    Returns:
+        The `Turn` in progress, fresh when the hand has just been dealt again.
+    """
+    turn = getattr(task, TURN, None)
+    if turn is None or new_turn(turn.hand_count, hand_count):
+        turn = Turn(hand_count)
+        setattr(task, TURN, turn)
+    turn.hand_count = hand_count
+    return turn
+
+
+def install():
+    """Put the card picker in place of upstream's press-every-key fallback.
+
+    `handle_battle_page` reaches `_try_all_card_keys` as a module global, which Python resolves when the call
+    is made, so rebinding it on the module is enough. That leaves every other line of upstream's battle frame
+    running exactly as it did.
+
+    Runs once per task load, so it has to be safe to call again: a replacement already in place is left alone
+    rather than wrapped in a second one.
+    """
+    utils = loaded("utils")
+    utils_sortie = loaded("utils_sortie")
+    if utils is None or utils_sortie is None:
+        return
+    if getattr(utils_sortie._try_all_card_keys, "_en_picker", False):
+        return
+    blind_fallback = utils_sortie._try_all_card_keys
+    read_names = utils_sortie._hand_card_names
+
+    def _hand_card_names(task):
+        """Read the hand's card names once per OCR pass rather than once per caller.
+
+        Upstream calls this twice a frame - directly, and again inside `_hand_cards` - and the picker would
+        have made it three. Each call walks `all_texts` and logs a line for every box on screen, which on a
+        battle screen is the noisiest thing the bot does.
+
+        Args:
+            task: The running task.
+
+        Returns:
+            The name boxes, from this frame's reading or the one already taken from the same OCR pass.
+        """
+        read_for, names = getattr(task, HAND_CACHE, (None, None))
+        if read_for is task.all_texts:
+            return names
+        names = read_names(task)
+        setattr(task, HAND_CACHE, (task.all_texts, names))
+        return names
+
+    def _try_all_card_keys(task, count):
+        """Play the best card in hand, in place of pressing every key in turn.
+
+        Args:
+            task: The running task.
+            count: The hand size upstream read, kept for the signature this is called with.
+        """
+        if not utils._get_config_value(task, SMART_CARD_PLAY, True):
+            blind_fallback(task, count)
+            return
+
+        hand = utils_sortie._hand_cards(task) or []
+        names = [card["name"] for card in hand]
+        turn = turn_of(task, len(names))
+
+        if was_refused(turn.attempted, turn.attempted_copies, names):
+            turn.refused.add(turn.attempted)
+            task.log_info(f"the game would not play {turn.attempted}, leaving it for the rest of this turn")
+
+        # The readout says whether anything is left to spend, not how much, so a turn with points left is
+        # planned against a full three and corrected by what the game will actually accept.
+        points = cards.BASE_ACTION_POINTS if board.has_action_points(task) else 0
+        if turn.weakness is None:
+            turn.weakness = board.weakness(task)
+        state = cards.Board(action_points=points, weakness=turn.weakness)
+        card = choose(hand, state, turn.refused)
+        if card is None:
+            if not names:
+                # Upstream ends an empty hand itself, so there is nothing here to do and nothing to say.
+                return
+            spent = "" if points else ", no Action Points left"
+            task.log_info(f"nothing left worth playing in {names}{spent}, ending the turn")
+            turn.attempted = None
+            task.send_key(END_TURN_KEY)
+            task.sleep(AFTER_KEY)
+            return
+
+        name = card["name"]
+        task.log_info(f"playing {name} for {cards.cost(name)} AP on key {card['key']}, "
+                      f"worth {cards.value(name, state):.0f}")
+        turn.attempted = name
+        turn.attempted_copies = names.count(name)
+        task.send_key(card["key"])
+        task.sleep(AFTER_KEY)
+        task.send_key(CONFIRM_KEY)
+        task.sleep(AFTER_CONFIRM)
+
+    original_page = utils_sortie.handle_battle_page
+
+    def handle_battle_page(task):
+        """Run upstream's battle frame with the Ego choice answered from the screen.
+
+        Args:
+            task: The running task.
+
+        Returns:
+            Whatever upstream's own handler returns.
+        """
+        was = utils_sortie.random
+        utils_sortie.random = EgoChoice(task, was)
+        try:
+            return original_page(task)
+        finally:
+            utils_sortie.random = was
+
+    replace("handle_battle_page", handle_battle_page)
+
+    # Marked so a later task load recognises the replacement and does not wrap it in itself.
+    _try_all_card_keys._en_picker = True
+    utils_sortie._try_all_card_keys = _try_all_card_keys
+    utils_sortie._hand_card_names = _hand_card_names
+    # Upstream's own card-name filter excludes the type label printed under each card, but it lists only the
+    # Chinese labels. On the Global client they are drawn in English, so every one of them passed straight
+    # through and was read as a card in hand. Wrapped rather than replaced: the catalog rewrites some English
+    # labels back into Chinese, and upstream's list is what catches those.
+    reads_as_card = utils_sortie._is_card_name
+
+    def _is_card_name(name):
+        """Say whether a reading off the hand names a card, in either language.
+
+        Args:
+            name: The text the reader returned for one hand card.
+
+        Returns:
+            True when both upstream's filter and this fork's agree it is a card.
+        """
+        return bool(reads_as_card(name)) and cards.is_card_name(name)
+
+    utils_sortie._is_card_name = _is_card_name
+    logger.info("sortie battles now pick a card instead of pressing every key")
+
+
+def apply():
+    """Have the card picker stand in for upstream's fallback, once the modes have been imported."""
+    global _patched
+    if _patched:
+        return
+    register(install)
+    _patched = True

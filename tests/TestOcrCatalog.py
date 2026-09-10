@@ -115,6 +115,16 @@ class TestOcrCatalog(unittest.TestCase):
         # handle_card_reward joins every box in the title strip before testing, hence the trailing text.
         self.assertIn("卡牌奖励", title + "666")
 
+    def test_the_purchase_card_title_is_mapped(self):
+        """Without it handle_card_assign never sees a purchase, so it picks a combatant and never buys."""
+        translation = gettext.translation("ocr", str(I18N_ROOT), languages=["en_US"])
+        self.assertIn("购买卡牌", translation.gettext("Purchase Card"))
+
+    def test_the_recommended_banner_is_mapped(self):
+        """src/en/equipment.py pairs this banner with a combatant row; unmapped, the row is never preferred."""
+        translation = gettext.translation("ocr", str(I18N_ROOT), languages=["en_US"])
+        self.assertEqual("推荐", translation.gettext("Recommended"))
+
     def test_compiled_catalog_is_current(self):
         """Read the catalog the way the framework does, since the app only ever loads the compiled .mo.
 

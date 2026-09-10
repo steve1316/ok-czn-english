@@ -105,13 +105,18 @@ def upstream_described():
     return keys
 
 
-def reshaped():
+def reshaped(default_config=None):
     """Build a task and re-shape it.
+
+    Args:
+        default_config: Settings to declare instead of the full mode's, for a test about one of them.
 
     Returns:
         The re-shaped `FakeTask`.
     """
     task = FakeTask()
+    if default_config is not None:
+        task.default_config = dict(default_config)
     overrides.reshape(task)
     return task
 
@@ -176,6 +181,29 @@ class TestGameData(unittest.TestCase):
         """Route Priority is described with node-type names, so those must exist in the game data."""
         for expected in ("Safe Zones", "Unidentified Area", "Normal Battle Area", "Elite Battle Area"):
             self.assertIn(expected, NODE_TYPES)
+
+
+class TestSmartCardPlay(unittest.TestCase):
+    """The switch this fork adds, which belongs only on the mode that has to choose its own cards."""
+
+    def test_sortie_gets_it_switched_on(self):
+        task = reshaped({overrides.PLAYS_ITS_OWN_CARDS: []})
+        self.assertIs(task.default_config[overrides.SMART_CARD_PLAY], True)
+
+    def test_it_is_explained_to_the_user(self):
+        task = reshaped({overrides.PLAYS_ITS_OWN_CARDS: []})
+        self.assertIn(overrides.SMART_CARD_PLAY, task.config_description)
+
+    def test_a_mode_that_plays_no_cards_does_not_carry_it(self):
+        # Chaos leaves the game's own Auto to play its cards, so the switch would mean nothing there.
+        task = reshaped({"游戏语言": "简体中文"})
+        self.assertNotIn(overrides.SMART_CARD_PLAY, task.default_config)
+
+    def test_the_label_reaches_the_ui_through_the_catalog(self):
+        # An English key renders untranslated by luck on the English UI and in English on the Chinese one,
+        # which is exactly what the identity entries in zh_CN exist to stop.
+        catalog = polib.pofile(str(REPO_ROOT / "i18n" / "zh_CN" / "LC_MESSAGES" / "ok.po"))
+        self.assertIn(overrides.SMART_CARD_PLAY, {entry.msgid for entry in catalog})
 
 
 class TestReshape(unittest.TestCase):

@@ -98,6 +98,11 @@ msgstr "继续"
 msgid "Select combatant."
 msgstr "请选择主战员"
 
+# From src/en/equipment.py: the banner the client draws on the combatant row with a free slot of the
+# right kind. Upstream has no notion of it, so without this the fallback stays "whoever is listed first".
+msgid "Recommended"
+msgstr "推荐"
+
 # From handle_assign_card: _get_game_text(task, "请选择要接受卡牌的主战员")
 msgid "Select the combatant to receive the card."
 msgstr "请选择要接受卡牌的主战员"
@@ -197,6 +202,12 @@ msgstr "失败"
 msgid "Card Reward"
 msgstr "卡牌奖励"
 
+# From handle_card_assign: "购买卡牌" in the title strip (0.326, 0.057, 0.671, 0.210).
+# Without it the screen reads as a plain card assignment, so the handler picks a combatant, never presses
+# Buy, and the run sits there clicking the same row once a second until it is stopped by hand.
+msgid "Purchase Card"
+msgstr "购买卡牌"
+
 # From _read_member_slots: level_boxes keeps only boxes reading exactly "等级", and the combatant draft
 # screen labels each card "LV". Without this no slot is found, so the handler never reaches its random
 # pick and refreshes the same three candidates forever. The equipment screen writes "LEVEL" instead and
@@ -223,6 +234,11 @@ msgstr "生命值"
 # From _card_has_type_below: matched against _CARD_TYPE_KEYWORDS.
 msgid "Skill"
 msgstr "技能"
+
+# From _is_card_name: the one card type label the catalog never covered, so it reached the hand as a card
+# name 24 times in a single Chaos recording.
+msgid "Status Ailment"
+msgstr "状态异常"
 
 # From select_card: _get_game_text(task, "基础") drives the basic-card removal pass.
 msgid "Basic Attack"
@@ -327,6 +343,32 @@ msgstr "购买"
 # From handle_card_assign: "无法获得" in box.name
 msgid "Cannot obtain Save Data"
 msgstr "无法获得存储数据"
+
+# From handle_card_assign: "无法获得" in the box probed beside each combatant's level tag. A card locked
+# to other classes says so by naming the class that cannot take it, so all six need an entry - an unmapped
+# one leaves the row looking available and the card is assigned to a combatant who refuses it.
+msgid "Striker Unobtainable"
+msgstr "无法获得"
+
+# From handle_card_assign: the same probe, for a card locked away from the Vanguard.
+msgid "Vanguard Unobtainable"
+msgstr "无法获得"
+
+# From handle_card_assign: the same probe, for a card locked away from the Ranger.
+msgid "Ranger Unobtainable"
+msgstr "无法获得"
+
+# From handle_card_assign: the same probe, for a card locked away from the Hunter.
+msgid "Hunter Unobtainable"
+msgstr "无法获得"
+
+# From handle_card_assign: the same probe, for a card locked away from the Psionic.
+msgid "Psionic Unobtainable"
+msgstr "无法获得"
+
+# From handle_card_assign: the same probe, for a card locked away from the Controller.
+msgid "Controller Unobtainable"
+msgstr "无法获得"
 
 # From handle_trauma_center: "创伤中心" in box.name. A badge sits beside the title and the OCR reads it
 # differently from frame to frame, so the same heading arrives under several spellings.

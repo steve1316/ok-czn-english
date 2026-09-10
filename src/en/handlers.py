@@ -16,8 +16,20 @@ The modes are found by shape rather than by name. They are imported flat (`utils
 `ok_tasks.utils_chaos`), a future mode would be missed by a hardcoded list, and `utils_story` has a
 `PAGE_HANDLERS` of its own that happens to contain neither handler we touch - all three cases fall out of
 looking for the attribute instead of the module name.
+
+`StandIn` covers a second shape that has come up twice. Upstream reaches for `random.choice` in several
+places in the same module, and a fork change usually wants exactly one of them. Standing in for the whole
+module for the length of one call is how both `src/en/events.py` and `src/en/battle.py` do that, and the
+part they share - hold the real module, hand everything else to it - lives here.
+
+`standing_in` is the third shape, and the most common of all. Most fork changes do not want to reimplement a
+two-hundred-line upstream handler; they want it to run exactly as it does, over a slightly different answer
+to one question. Swapping the function that answers it for the length of one call is how that is done, and
+the save-set-restore around it has to be exception-safe every time, because a handler that throws while a
+module attribute is swapped would leave upstream permanently rewired.
 """
 
+import contextlib
 import sys
 
 from ok import Logger
@@ -25,9 +37,60 @@ from ok import Logger
 logger = Logger.get_logger(__name__)
 
 HANDLER_LIST = "PAGE_HANDLERS"
+# Records which fork-local changes a function already carries, so each is applied exactly once
+# however many modules wrap the same upstream function and however often the installs re-run.
+WRAPS = "_en_wraps"
 
 _pending = []
 _hooked = False
+
+
+class StandIn:
+    """Stands in for a module upstream calls, answering one question and passing the rest along.
+
+    A subclass overrides the one call it wants to take over and leaves everything else to the passthrough,
+    so an unrelated use of the same module carries on behaving exactly as it did.
+    """
+
+    def __init__(self, original):
+        """Hold the module being stood in for.
+
+        Args:
+            original: The module upstream would otherwise have used.
+        """
+        self.original = original
+
+    def __getattr__(self, name):
+        """Hand anything the subclass does not answer straight to the real module.
+
+        Args:
+            name: The attribute being looked up.
+
+        Returns:
+            The real module's attribute.
+        """
+        return getattr(self.original, name)
+
+
+@contextlib.contextmanager
+def standing_in(target, **replacements):
+    """Swap attributes on a module or object for the length of a block.
+
+    Args:
+        target: The module or object whose attributes are being stood in for.
+        **replacements: The attribute names to swap, and what to put in their place.
+
+    Returns:
+        A context manager that restores every original on the way out, however the block ends.
+    """
+    originals = {name: getattr(target, name) for name in replacements}
+    for name, replacement in replacements.items():
+        setattr(target, name, replacement)
+    try:
+        yield
+    finally:
+        for name, original in originals.items():
+            setattr(target, name, original)
 
 
 def each_list():
@@ -56,6 +119,41 @@ def loaded(module_name):
         The module, or None when it has not been imported yet.
     """
     return sys.modules.get(module_name)
+
+
+def wrap(module, name, factory, tag):
+    """Compose a fork-local change over an upstream function, everywhere the run reaches it.
+
+    Two modules wrapping the same function is normal here, and so is the install running once per task load.
+    Both used to be handled with a per-module marker attribute, which fails as soon as a second module wraps
+    the same function: neither can see the other's marker, so each re-wraps on every load and the stack grows
+    without bound. One shared record of what a function already carries fixes that for every caller at once.
+
+    The wrapper is put in two places because the two are reached differently. A page handler is only ever
+    called through a mode's list, which holds function objects, so the list entry has to be replaced. A helper
+    like `select_card` is called as a module global and is in no list. Doing both covers either kind, and
+    covers a handler that other patches rebuild by reading the module attribute back.
+
+    Args:
+        module: The module holding the function, normally `utils`.
+        name: The function's name on that module.
+        factory: Takes the function currently installed and returns the wrapper to put in its place.
+        tag: Names this particular change, so it is applied once and no more.
+    """
+    current = getattr(module, name, None)
+    if current is None:
+        return
+    if tag not in getattr(current, WRAPS, ()):
+        wrapped = factory(current)
+        # Position is the priority scheme and `replace` matches by name, so the name has to survive.
+        wrapped.__name__ = getattr(current, "__name__", name)
+        setattr(wrapped, WRAPS, (*getattr(current, WRAPS, ()), tag))
+        setattr(module, name, wrapped)
+        current = wrapped
+        logger.info(f"{name} now carries {tag}")
+    # Re-checked on every load rather than only on the first: the modes are imported one at a time, so a list
+    # that did not exist when this ran before still needs the wrapper now.
+    replace(name, current)
 
 
 def replace(original_name, replacement):

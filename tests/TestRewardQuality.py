@@ -140,6 +140,19 @@ class TestRewardQuality(unittest.TestCase):
         self.assertEqual(["Prepare for Battle"],
                          reader(FakeTask(SHOP_CARDS, {"knight", "controller"}), rewards.CARD_KEY, []))
 
+    def test_a_reading_with_no_letters_in_it_matches_nothing(self):
+        # One real card is named with three geometric symbols, and folding used to reduce it to an empty
+        # string - which every punctuation-only box the reader produces also folds to. A bare "-" was read
+        # 310 times in one run, and each one resolved to that card and was offered as a Unique to take.
+        for reading in ("-", "+", "•", "」", "?"):
+            with self.subTest(reading=reading):
+                self.assertEqual([], worth_taking([reading], ()))
+
+    def test_a_card_named_only_in_symbols_still_matches_itself(self):
+        # Tiphereth's Archetype payoff card. Dropping it from the index would be the easy fix, but it is a
+        # cost-0 Unique and worth taking, so the fold keeps the shapes instead.
+        self.assertEqual(["○ △ □"], worth_taking(["○ △ □"], ()))
+
     def test_nothing_worth_taking_leaves_the_list_empty(self):
         """A shop of Commons must stay a shop of Commons, not become one it buys from."""
         reader = rewards.filling_in(lambda task, key, default: [], "utils")

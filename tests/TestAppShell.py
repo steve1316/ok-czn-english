@@ -68,6 +68,8 @@ class FakeTask:
         self._paused = False
         # Set to stop the mode from inside its own run, the way a round limit or a finished story does.
         self.stop_after = None
+        # Set to change the pace from inside a pass, the way the battle recorder does on a battle screen.
+        self.hurry_to = None
 
     @property
     def enabled(self):
@@ -79,6 +81,8 @@ class FakeTask:
 
     def run(self):
         self.passes += 1
+        if self.hurry_to is not None:
+            self.trigger_interval = self.hurry_to
         if self.passes == self.stop_after:
             self._enabled = False
 
@@ -204,6 +208,20 @@ class TestAppShell(unittest.TestCase):
         for slept in executor.sleeps:
             self.assertGreater(slept, 0)
             self.assertLessEqual(slept, 1)
+
+    def test_the_pace_can_be_changed_while_the_mode_runs(self):
+        """Capturing the interval once meant nothing could ever repace the loop.
+
+        `src/en/observe.py` looks more often while a battle is on screen, because the game's own Auto AI
+        plays several cards a second and a one second pace cannot see them one at a time.
+        """
+        executor, _, tasks = moved(ChaosMode)
+        tasks[0].hurry_to = 0.25
+        with self.assertRaises(TaskDisabledException):
+            tasks[0].run()
+        self.assertTrue(executor.sleeps)
+        for slept in executor.sleeps:
+            self.assertLessEqual(slept, 0.25)
 
     def test_a_mode_with_no_interval_does_not_sleep(self):
         executor, _, tasks = moved(ChaosMode, interval=0)

@@ -4,6 +4,10 @@ Handlers here describe a place as a `(left, top, right, bottom)` box in screen f
 shape upstream uses for `task.box_of_screen` and for its own region literals. The reader hands back pixels,
 so something has to convert, and doing it inline is how the same four lines of arithmetic ended up copied
 across several modules.
+
+`text_in_region` is the loop those modules actually want. Almost every fork-local handler starts by asking
+"is this caption in that band", and writing the walk out per module is how near-identical copies of it keep
+appearing next to the copies of the arithmetic.
 """
 
 
@@ -26,3 +30,24 @@ def in_region(box, region, width, height):
     center_x = (box.x + box.width / 2) / width
     center_y = (box.y + box.height / 2) / height
     return left <= center_x <= right and top <= center_y <= bottom
+
+
+def text_in_region(task, needle, region):
+    """Find the first OCR box in a region whose text contains a caption.
+
+    Case is ignored, which costs nothing on the Chinese literals the catalog produces and saves the callers
+    that read English straight off the screen from spelling the fold out themselves.
+
+    Args:
+        task: The running task, whose `all_texts` holds the current OCR pass.
+        needle: The caption to look for, matched as a substring.
+        region: A `(left, top, right, bottom)` tuple in screen fractions.
+
+    Returns:
+        The matching box, or None when the caption is not in that part of the screen.
+    """
+    wanted = needle.casefold()
+    for box in getattr(task, "all_texts", None) or []:
+        if wanted in box.name.casefold() and in_region(box, region, task.width, task.height):
+            return box
+    return None
