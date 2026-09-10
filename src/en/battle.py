@@ -92,7 +92,11 @@ class EgoChoice(StandIn):
         if list(options) == list(board.EGO_KEYS):
             ready = board.affordable_egos(self.task)
             if ready:
-                return self.original.choice(ready)
+                firing = self.original.choice(ready)
+                logger.info(f"the EP bar covers {', '.join(ready)}, firing {firing}")
+                return firing
+            # Upstream reads the bar as full and fires anyway, so this is the case worth naming.
+            logger.info("the EP bar covers no Ego, so upstream's pick would not have played")
         return self.original.choice(options)
 
 
@@ -249,7 +253,11 @@ def install():
         # planned against a full three and corrected by what the game will actually accept.
         points = cards.BASE_ACTION_POINTS if board.has_action_points(task) else 0
         if turn.weakness is None:
+            # Read once a turn, so this is also the one frame a turn to say what it opened holding.
             turn.weakness = board.weakness(task)
+            against = f"enemies weak to {turn.weakness}" if turn.weakness else "no shared enemy weakness"
+            budget = "Action Points to spend" if points else "no Action Points"
+            task.log_info(f"turn opens with {budget}, {against}, hand {names}")
         state = cards.Board(action_points=points, weakness=turn.weakness)
         card = choose(hand, state, turn.refused)
         if card is None:

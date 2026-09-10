@@ -24,6 +24,7 @@ from ok import Logger
 
 from src.en.handlers import loaded, register, standing_in, wrap
 from src.en.screen import text_in_region
+from src.en.state import GEAR, say_once
 
 logger = Logger.get_logger(__name__)
 
@@ -259,11 +260,14 @@ def refusing_equipment(handler, utils):
                 return listed
             credit = utils._get_current_credit(task_)
             if credit < EQUIPMENT_FLOOR:
-                logger.info(f"holding {credit} credits, so the shelf's equipment is left where it is")
+                say_once(task_, GEAR, f"{credit} credits is under the {EQUIPMENT_FLOOR} floor, "
+                                      f"so the shelf's equipment is left where it is")
                 return []
             if slot not in bare_slots(task_):
-                logger.info(f"slot {slot + 1} is filled on every combatant, so its equipment is left")
+                say_once(task_, GEAR, f"slot {slot + 1} is filled on every combatant, so its equipment is left")
                 return []
+            say_once(task_, GEAR, f"slot {slot + 1} is bare and there are {credit} credits, "
+                                  f"so the shelf's equipment is on offer for it")
             return listed
 
         with standing_in(utils, _equipment_priority=gated):

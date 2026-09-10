@@ -22,6 +22,7 @@ from ok import Logger
 
 from src.en.handlers import loaded, register, standing_in, wrap
 from src.en.screen import text_in_region
+from src.en.state import GEAR, say_once
 
 logger = Logger.get_logger(__name__)
 
@@ -68,8 +69,10 @@ def refusing_free_refresh(handler, credit_of):
             return handler(task)
         credit = credit_of(task)
         if credit >= SHOP_FLOOR:
+            say_once(task, GEAR, f"{credit} credits is over the {SHOP_FLOOR} floor, so the free refresh stands")
             return handler(task)
-        logger.info(f"holding {credit} credits, so the free refresh is withheld and the shop is left")
+        say_once(task, GEAR, f"{credit} credits is under the {SHOP_FLOOR} floor, "
+                             f"so the free refresh is withheld and the shop is left")
         with standing_in(task, all_texts=[box for box in task.all_texts if box is not free]):
             return handler(task)
 

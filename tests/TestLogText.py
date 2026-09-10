@@ -1,4 +1,4 @@
-"""Check that upstream's Chinese comes out as English, and that a line with no entry comes out unchanged.
+"""Check what reaches the log: that upstream's Chinese comes out English, and that nothing repeats per frame.
 
 The table is hand-written and will end up carrying every one of the 454 shapes `ok_tasks/` logs, so the tests
 that matter are the ones a wordlist gets wrong: a shape whose pattern does not match the line it renders as,
@@ -17,7 +17,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from scan_log_strings import collect_shapes  # noqa: E402
 
-from src.en import log_text  # noqa: E402
+from src.en import log_text, state  # noqa: E402
 from src.en.log_strings import MESSAGES, TEMPLATES, VALUES  # noqa: E402
 
 CJK = re.compile(r"[一-鿿]")
@@ -160,6 +160,44 @@ class TestReporting(unittest.TestCase):
         # last interpolation missing entirely.
         log_text._compile_templates()
         self.assertEqual("floor 1, node 0, ", log_text.translate("第1层，第0节点，"))
+
+
+class TestSayOnce(unittest.TestCase):
+    """Decisions the judging handlers reach on every tick the screen is up."""
+
+    class Task:
+        """A task carrying only the Info dict `say_once` reads the start of a run from."""
+
+        def __init__(self):
+            self.info = {"Version": "dev"}
+
+    def setUp(self):
+        self.task = self.Task()
+        self.said = []
+        state.logger.info = self.said.append
+
+    def test_a_decision_that_has_not_changed_is_said_once(self):
+        for _ in range(4):
+            state.say_once(self.task, state.GEAR, "slot 2 is filled on every combatant")
+        self.assertEqual(["[gear] slot 2 is filled on every combatant"], self.said)
+
+    def test_a_different_decision_is_said(self):
+        state.say_once(self.task, state.GEAR, "24 credits is under the 29 floor")
+        state.say_once(self.task, state.GEAR, "96 credits is over the 29 floor")
+        self.assertEqual(2, len(self.said))
+
+    def test_each_tag_is_remembered_on_its_own(self):
+        state.say_once(self.task, state.GEAR, "the same words")
+        state.say_once(self.task, state.BATTLE, "the same words")
+        self.assertEqual(["[gear] the same words", "[battle] the same words"], self.said)
+
+    def test_a_new_run_says_it_again(self):
+        # The framework clears `info` on Start. Without reading that, a second run opening on the state the
+        # first one ended in would report none of it - which is the bug `src/en/stuck.py` exists for.
+        state.say_once(self.task, state.GEAR, "slot 1 is bare and there are 300 credits")
+        self.task.info.clear()
+        state.say_once(self.task, state.GEAR, "slot 1 is bare and there are 300 credits")
+        self.assertEqual(2, len(self.said))
 
 
 class TestUpstreamStillWritesWhatWeTranslate(unittest.TestCase):
