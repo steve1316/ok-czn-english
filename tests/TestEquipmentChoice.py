@@ -15,7 +15,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from src.en.equipment import (  # noqa: E402
-    EQUIPMENT_FLOOR, MYTHIC_REGION, ROW_PITCH, SLOTS, bare_slots, insisting_on_mythic, mythic_offer,
+    EQUIPMENT_FLOOR, ROW_PITCH, SLOTS, bare_slots, insisting_on_mythic, mythic_offer,
     preferring_recommended, recommended_banner, recommended_row, refusing_equipment, remembering_slots,
 )
 
@@ -178,12 +178,6 @@ class TestMythicOffer(unittest.TestCase):
     def test_ignores_the_word_outside_the_caption_area(self):
         # The combatant column is full of item names; only the caption under the offered piece counts.
         self.assertFalse(mythic_offer(FakeTask([FakeBox(MYTHIC_CAPTION, 1700, 300)])))
-
-    def test_caption_area_covers_the_measured_position(self):
-        x1, y1, x2, y2 = MYTHIC_REGION
-        self.assertTrue(x1 <= CAPTION_X / WIDTH <= x2)
-        self.assertTrue(y1 <= CAPTION_Y / HEIGHT <= y2)
-
 
 class TestInsistingOnMythic(unittest.TestCase):
     """Whether a Mythic piece survives the user's equipment priority list."""

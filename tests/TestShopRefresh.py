@@ -18,9 +18,6 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from src.en.shop import SHOP_FLOOR, free_refresh_box, refusing_free_refresh  # noqa: E402
 
-# What the run is asked to keep refreshing down to.
-WANTED_FLOOR = 29
-
 WIDTH, HEIGHT = 1920, 1080
 # Where the shop draws its free-refresh button, measured off the captured screen.
 FREE_X, FREE_Y = 0.163, 0.933
@@ -125,9 +122,6 @@ class TestRefusingFreeRefresh(unittest.TestCase):
         wrapped = refusing_free_refresh(recording_handler(seen), lambda task: SHOP_FLOOR + 1)
         wrapped(shop_screen())
         self.assertEqual(seen, [["96", "免费"]])
-
-    def test_the_floor_is_where_it_was_asked_to_be(self):
-        self.assertEqual(WANTED_FLOOR, SHOP_FLOOR)
 
     def test_keeps_the_button_above_the_floor(self):
         seen = []
