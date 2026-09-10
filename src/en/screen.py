@@ -1,23 +1,20 @@
 """Read positions off the screen the way the handlers talk about them.
 
-Handlers here describe a place as a `(left, top, right, bottom)` box in screen fractions, which is the same
-shape upstream uses for `task.box_of_screen` and for its own region literals. The reader hands back pixels,
-so something has to convert, and doing it inline is how the same four lines of arithmetic ended up copied
-across several modules.
+Handlers describe a place as a `(left, top, right, bottom)` box in screen fractions, the same shape upstream
+uses for `task.box_of_screen` and its own region literals. The reader hands back pixels, so something has to
+convert, and doing it inline is how the same four lines of arithmetic ended up copied across several modules.
+`text_in_region` is the loop those modules actually wanted, since almost every fork-local handler starts by
+asking whether a caption is in a band.
 
-`text_in_region` is the loop those modules actually want. Almost every fork-local handler starts by asking
-"is this caption in that band", and writing the walk out per module is how near-identical copies of it keep
-appearing next to the copies of the arithmetic.
-
-The screen literals two or more modules share live here too, for the same reason. `find_box_at_point` has no
+The screen literals two or more modules share live here for a sharper reason. `find_box_at_point` has no
 tolerance at all, so a point that upstream nudges and the fork updates in only one of its copies does not
 fail - it silently reads nothing, forever.
 
-Reading raw pixels is the other half of it. Three modules now judge a patch of frame by its colour -
-`src/en/board.py` for Action Points and Ego costs, `src/en/pins.py` for a build preset's pin, and
-`src/en/dialogue.py` for the auto-advance button - and every one of them wants the same four steps: take
-the frame, cut a relative box out of it, convert to HSV, count what falls inside a pair of bounds. Those
-four live here now so the next colour reading is a call rather than a fourth copy.
+Reading raw pixels is the other half. Three modules judge a patch of frame by its colour - `board.py` for
+Action Points and Ego costs, `pins.py` for a build preset's pin, `dialogue.py` for the auto-advance button -
+and all four steps are the same every time: take the frame, cut a relative box out of it, convert to HSV,
+count what falls inside a pair of bounds. Those live here so the next colour reading is a call rather than a
+fourth copy.
 """
 
 import cv2

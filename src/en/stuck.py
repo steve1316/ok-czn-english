@@ -5,16 +5,15 @@ picture last changed, and `_prev_frame_gray`, the picture it last compared again
 change and `handle_stuck_log` starts clicking its way out, beginning with the page's close button.
 
 Neither is cleared when a run ends, and the mode object outlives the run - the Start button re-enables the
-same instance - so the clock keeps counting through however long the app sat stopped. Start a run on the
-screen the last one left up and the very first frame reports the whole idle spell as frozen time, closing a
-page the run was about to read. One session shut the Combatants screen on four restarts running, each
-reporting a longer freeze than the last (11s, 17s, 26s, 44s), every one of them measured from the first frame
-of the first run.
+same instance - so the clock keeps counting through however long the app sat stopped. Start a run on the screen
+the last one left up and the first frame reports the whole idle spell as frozen time, closing a page the run
+was about to read. One session shut the Combatants screen on four restarts running, each reporting a longer
+freeze than the last (11s, 17s, 26s, 44s), every one measured from the first frame of the first run.
 
 Clearing both on the way into a run is the whole fix: nothing was watched while the task was stopped, so
-nothing about that time can be counted as a frozen screen. What is knowingly left alone is the same staleness
-inside a run - the detector only looks on frames that reach it, so a spell where a higher-priority handler
-keeps taking the frame is unwatched too, and is still counted.
+nothing about that time can be counted as a frozen screen. Knowingly left alone is the same staleness inside a
+run - the detector only looks at frames that reach it, so a spell where a higher-priority handler keeps taking
+the frame is unwatched too, and is still counted.
 """
 
 from ok import Logger

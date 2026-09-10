@@ -1,13 +1,13 @@
 """Stand in for the one image template that is a picture of a Chinese word.
 
-`ok_tasks/assets/` ships 79 templates and 77 of them are icons, which match the Global client unchanged. Only
-two are pictures of Chinese words, and one of those - `xuanwo_in_deck`, a crop of 漩涡 - is declared in the
+`ok_tasks/assets/` ships 79 templates and 77 of them are icons, which match the Global client unchanged. Two
+are pictures of Chinese words, and one of those - `xuanwo_in_deck`, a crop of 漩涡 - is declared in the
 annotations but referenced by no code at all, which leaves `leveltag`: a crop of 等级, the caption the client
 draws as "LEVEL" beside a combatant portrait.
 
-Losing it is not cosmetic. `_find_member_level_tags` counts those captions to learn how many combatants
-are on screen, so zero matches reads as "nobody can take this equipment" and the equipment gets extracted for
-credits instead of equipped.
+Losing it is not cosmetic. `_find_member_level_tags` counts those captions to learn how many combatants are on
+screen, so zero matches reads as "nobody can take this equipment" and the piece is extracted for credits
+instead of equipped.
 
 The catalog cannot help here - it rewrites OCR text, and this is template matching - so the fallback reads the
 English caption out of the OCR pass the handler has already run and hands back boxes shaped like the ones the

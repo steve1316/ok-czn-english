@@ -1,23 +1,21 @@
 """Stop the Dellang shop spending refreshes on a shelf the run cannot afford.
 
 The shop's refresh is free, so `handle_shop` takes it whenever nothing on the shelf matches the user's
-priority lists. That is the right call with money in hand and the wrong one without: a captured run sat in
-front of a 96 / 96 / 200 shelf holding almost nothing, refreshed until the counter ran out, and left with
-nothing anyway. Every refresh in that state is dead time, because no reroll of the shelf can produce
-something the run can pay for.
+priority lists. That is right with money in hand and wrong without: a captured run sat in front of a
+96 / 96 / 200 shelf holding almost nothing, refreshed until the counter ran out, and left with nothing anyway.
+No reroll can produce something the run can pay for, so every refresh in that state is dead time.
 
-A floor fixes it. Below the floor the free-refresh button is withheld for the length of one `handle_shop`
-call, which is not the same as skipping the click afterwards - by the time upstream has clicked, the frame is
-spent. With the button hidden the handler runs out of options and returns False, and `handle_leave`, already
-the next entry in `PAGE_HANDLERS`, walks the run out of the shop on the same frame.
-
-The floor is a constant rather than a setting, and it is where the run has been asked to give up rather than
-where the price list says a purchase becomes possible. Rerolling costs nothing but time, so the bar is low.
+Below the floor the free-refresh button is withheld for one `handle_shop` call, which is not the same as
+skipping the click afterwards - by the time upstream has clicked, the frame is spent. With the button hidden
+the handler runs out of options and returns False, and `handle_leave`, already the next entry in
+`PAGE_HANDLERS`, walks the run out on the same frame. The floor is a constant rather than a setting, set where
+the run has been asked to give up rather than where a purchase becomes possible, since rerolling costs nothing
+but time.
 
 `handlers.wrap` puts the wrapper both on the module and in the handler lists, which is what lets it compose
-with `src/en/rewards.py` - that module rebuilds this handler's list entry by reading it back off the module,
-so a wrapper that lived only in the list would be quietly dropped. Rewards renames what it builds, so it has
-to run after this one; that ordering is the reason `src/globals.py` applies them in the order it does.
+with `src/en/rewards.py`: that module rebuilds this handler's list entry by reading it back off the module, so
+a wrapper living only in the list would be quietly dropped. Rewards renames what it builds, so it has to run
+after this one - that ordering is why `src/globals.py` applies them in the order it does.
 """
 
 from ok import Logger
