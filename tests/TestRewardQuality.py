@@ -17,8 +17,8 @@ from src.en.game_quality import (  # noqa: E402
 from src.en.game_quality import COMBATANT_TAG_WEIGHTS, EQUIPMENT_TAGS  # noqa: E402
 from src.en.hand_tags import HAND_TAGS  # noqa: E402
 from src.en.quality import (  # noqa: E402
-    CLASS_NAMES, TAGS, WORTH_TAKING, fold, index, look_up, named, slot_of, suits, team_classes, usable_by,
-    worth_taking,
+    CLASS_NAMES, TAGS, WORTH_TAKING, fold, index, look_up, named, slot_of, sorted_letters, suits,
+    team_classes, unconfused, usable_by, worth_taking,
 )
 
 # The shop, twice, exactly as the reader saw it.
@@ -384,3 +384,57 @@ class TestScrambledReadings(unittest.TestCase):
         lookup = index(["Dark Star", "Stark Dar"])
         self.assertIsNone(look_up("StarDark", lookup))
         self.assertEqual("Dark Star", look_up("Dark Star", lookup))
+
+
+class TestMisreadLetters(unittest.TestCase):
+    """Names the reader spelled with a lookalike letter.
+
+    A capital I comes back as a lowercase l constantly - `Magic-lnfused Sapphire`, `Instinct lgnition`,
+    `Mutation: lron Wall` are all from real logs - and every one of those was a name the run then failed to
+    recognise at all. The characters corrected here are only the ones the logs actually show being swapped,
+    and only where exactly one name answers to the corrected spelling.
+
+    Deliberately not corrected: `Vute Accent` for `Mute Accent` and `Moon or Destruction` for
+    `Moon of Destruction`. Reading v as m or r as f would turn real words into other real words, and one
+    wrong match is worse than any number of missed ones.
+    """
+
+    # Reading, and the name it was meant to be. All from `logs/`.
+    MISREAD = {
+        "Magic-lnfusedSapphire": "Magic-Infused Sapphire",
+        "Instinct lgnition": "Instinct Ignition",
+        "Mutation: lron Wall": "Mutation: Iron Wall",
+        "Bloom: Strateqic Starting Point": "Bloom: Strategic Starting Point",
+    }
+
+    def test_the_real_name_is_recovered(self):
+        lookup = index(list(EQUIPMENT_RARITY) + list(CARD_RARITY))
+        for reading, real in self.MISREAD.items():
+            with self.subTest(reading=reading):
+                self.assertEqual(real, look_up(reading, lookup))
+
+    def test_a_misread_piece_of_equipment_is_placed(self):
+        # None of the real misreadings happen to be Legends, so this checks recognition rather than grading.
+        self.assertEqual(slot_of("Magic-Infused Sapphire"), slot_of("Magic-lnfusedSapphire"))
+        self.assertIsNotNone(slot_of("Magic-lnfusedSapphire"))
+
+    def test_a_misread_piece_still_carries_its_kinds(self):
+        # Magic-Infused Sapphire is initiation equipment, and Lucas is one of the combatants who want that.
+        self.assertGreater(suits("Magic-lnfusedSapphire", "Lucas"), 0)
+
+    def test_a_reading_that_is_both_scrambled_and_misread_still_matches(self):
+        self.assertEqual("Magic-Infused Sapphire",
+                         look_up("lnfusedSapphireMagic", index(EQUIPMENT_RARITY)))
+
+    def test_letters_that_make_other_words_are_left_alone(self):
+        lookup = index(list(EQUIPMENT_RARITY) + list(CARD_RARITY))
+        for reading in ("Vute Accent", "Harmonization: Moon or Destruction"):
+            with self.subTest(reading=reading):
+                self.assertIsNone(look_up(reading, lookup))
+
+    def test_no_two_names_collide_once_lookalikes_are_folded(self):
+        for table in (EQUIPMENT_RARITY, CARD_RARITY, COMBATANT_CLASS):
+            folded = {fold(name) for name in table if fold(name)}
+            keys = Counter(sorted_letters(unconfused(name)) for name in folded)
+            with self.subTest(table=len(table)):
+                self.assertEqual([], [key for key, count in keys.items() if count > 1])

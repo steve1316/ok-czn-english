@@ -48,6 +48,14 @@ CLASS_NAMES = {
 # the same nothing and matches it.
 INSIGNIFICANT = re.compile(r"[^0-9a-z一-鿿■-◿]+")
 
+# Characters the reader hands back for one another, grouped by what they look like on screen. The first of
+# each group is the spelling the rest fold into. Only what the logs actually show being swapped is here, and
+# a capital I read as a lowercase l is far the commonest of them - `Magic-lnfused Sapphire`, `Instinct
+# lgnition`, `Mutation: lron Wall` are all real readings. Letters that would turn one real word into another
+# are deliberately absent: reading v as m or r as f would quietly match the wrong name, and a wrong match is
+# worse than any number of missed ones.
+CONFUSABLE = {letter: group[0] for group in ("il1", "o0", "s5", "gq9", "b6", "z2") for letter in group}
+
 
 def fold(name):
     """Reduce a name to the form used for matching.
@@ -59,6 +67,18 @@ def fold(name):
         The name, lower cased with punctuation and spacing removed.
     """
     return INSIGNIFICANT.sub("", (name or "").casefold())
+
+
+def unconfused(folded):
+    """Rewrite the characters the reader swaps for one another into one spelling each.
+
+    Args:
+        folded: A name that has been through `fold`.
+
+    Returns:
+        The same name with every lookalike character replaced by the one standing for its group.
+    """
+    return "".join(CONFUSABLE.get(character, character) for character in folded)
 
 
 def sorted_letters(folded):
@@ -73,14 +93,21 @@ def sorted_letters(folded):
     return "".join(sorted(folded))
 
 
+# The spellings a reading is retried under, in falling order of how much of it they take on trust. Sorting
+# comes last because it throws away the order, and it is applied to the unconfused form so a name that was
+# both misread and scrambled still lands.
+FALLBACK_SPELLINGS = (unconfused, lambda folded: sorted_letters(unconfused(folded)))
+
+
 def index(names):
     """Build a folded lookup for a set of names.
 
-    Two keys per name where it is safe to have them: the folded name, and the same letters sorted. The reader
-    hands back a name's words out of order often enough to matter - `Assault Gauntlets` came back as
-    `GauntletsAssault` in a real run - and sorting is what lets those still be recognised. A sorted key is
-    only added where exactly one name owns it, so two names made of the same letters keep their exact
-    spellings and answer to nothing else.
+Several keys per name where it is safe to have them: the folded name first, then one per fallback spelling.
+    The reader mangles a name in two ways that keep all of its letters - it swaps lookalike characters, and it
+    hands the words back out of order - so `Magic-Infused Sapphire` arrives as `Magic-lnfusedSapphire` and
+    `Assault Gauntlets` as `GauntletsAssault`. Both were simply lost before. A fallback key is only added
+    where exactly one name owns it and nothing nearer has claimed it, so names that would collide keep their
+    exact spellings and answer to nothing else.
 
     Args:
         names: An iterable of canonical names.
@@ -90,18 +117,22 @@ def index(names):
         match every reading made only of characters the fold discards.
     """
     exact = {folded: name for folded, name in ((fold(name), name) for name in names) if folded}
-    owners = Counter(sorted_letters(folded) for folded in exact)
     lookup = dict(exact)
-    for folded, name in exact.items():
-        key = sorted_letters(folded)
-        # Never over an exact spelling: a real name outranks a guess at a scrambled one.
-        if owners[key] == 1 and key not in lookup:
-            lookup[key] = name
+    for spell in FALLBACK_SPELLINGS:
+        owners = Counter(spell(folded) for folded in exact)
+        for folded, name in exact.items():
+            key = spell(folded)
+            # Never over a key already claimed: an exact spelling, and then a nearer guess, both outrank this.
+            if owners[key] == 1 and key not in lookup:
+                lookup[key] = name
     return lookup
 
 
 def look_up(name, lookup):
     """Find the client's own spelling of a name the reader produced.
+
+    Tried in order of how much of the reading each spelling trusts: the reading as it stands, then with
+    lookalike characters put right, then with the words allowed to have come back in any order.
 
     Args:
         name: The name as read off the screen.
@@ -111,7 +142,11 @@ def look_up(name, lookup):
         The canonical name, or None when nothing in the index answers to it.
     """
     folded = fold(name)
-    return lookup.get(folded) or lookup.get(sorted_letters(folded))
+    for spell in (str, *FALLBACK_SPELLINGS):
+        found = lookup.get(spell(folded))
+        if found is not None:
+            return found
+    return None
 
 
 # The game's own labels, with the hand-read ones filling the gaps it left. The generated half wins wherever
