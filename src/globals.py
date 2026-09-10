@@ -13,7 +13,7 @@ class Globals(QObject):
         from src.en import (  # noqa: E501
             battle, deck, desire, dialogue, dice, draft, equipment, events, layout, navigation,
             observe, ocr_text, overrides, persona, picker, pins, rewards, shell, shop, templates,
-            notify, upload,
+            notify, stuck, upload,
         )
 
         layout.apply()
@@ -41,5 +41,6 @@ class Globals(QObject):
         overrides.apply()
         upload.apply()
         notify.apply()
+        stuck.apply()
         # Re-shapes the task lists, so it hooks the window rather than the tasks.
         shell.apply()

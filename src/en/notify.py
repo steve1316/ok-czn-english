@@ -8,6 +8,7 @@ import time
 from ok import Logger
 
 from src.en.handlers import loaded, register, replace
+from src.en.stuck import CLOCK
 
 logger = Logger.get_logger(__name__)
 
@@ -106,7 +107,7 @@ def stuck(original):
     """
     def handle_stuck_log_announcing(task):
         handled = original(task)
-        changed = getattr(task, "_last_change_time", None)
+        changed = getattr(task, CLOCK, None)
         if changed is None:
             return handled
         seconds = time.time() - changed
