@@ -26,9 +26,12 @@ import re
 from ok import Logger
 
 from src.en import desire
-from src.en.handlers import StandIn, loaded, register, replace
+from src.en.handlers import StandIn, loaded, register, wrap
 
 logger = Logger.get_logger(__name__)
+
+# Names this change in the shared record of what a function already carries, so it is applied once.
+TAG = "ranked events"
 
 # Ranks, best first. Descriptions are folded to lower case before matching, so these are lower case too.
 SPARK = ("epiphany", "闪光")
@@ -224,18 +227,16 @@ class RankingChoice(StandIn):
         return chosen
 
 
-def apply():
-    """Rank event options wherever `handle_event_task` is registered."""
-    global _patched
-    if _patched:
-        return
+def ranking(utils):
+    """Build the fork-local change to wrap `handle_event_task` in.
 
-    def install():
-        utils = loaded("utils")
-        if utils is None:
-            return
+    Args:
+        utils: Upstream's `utils` module, which the wrapper stands in on for the length of each call.
 
-        original_handle_event_task = utils.handle_event_task
+    Returns:
+        A factory taking the handler currently installed and returning the one to run in its place.
+    """
+    def factory(original_handle_event_task):
         original_recognize = utils.recognize_event_options
 
         def ranked_recognize(task, *args, **kwargs):
@@ -271,8 +272,26 @@ def apply():
                 utils.random = original_random
                 del task.find_feature
 
-        patched_handle_event_task._en_ranked = True
-        replace("handle_event_task", patched_handle_event_task)
+        return patched_handle_event_task
 
-    register(install)
+    return factory
+
+
+def install(utils):
+    """Rank event options wherever `handle_event_task` is registered.
+
+    Args:
+        utils: Upstream's `utils` module, or None when it has not been imported yet.
+    """
+    if utils is None:
+        return
+    wrap(utils, "handle_event_task", ranking(utils), TAG)
+
+
+def apply():
+    """Rank event options wherever `handle_event_task` is registered."""
+    global _patched
+    if _patched:
+        return
+    register(lambda: install(loaded("utils")))
     _patched = True

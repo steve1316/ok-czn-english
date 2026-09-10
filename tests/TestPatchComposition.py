@@ -14,7 +14,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.en import deck, desire, equipment, pins, shop  # noqa: E402
+from src.en import deck, desire, dialogue, equipment, events, handlers, pins, shop  # noqa: E402
 from src.en.handlers import WRAPS  # noqa: E402
 
 MODES = 3
@@ -34,6 +34,18 @@ def named(name):
 
     handler.__name__ = name
     return handler
+
+
+def names(module):
+    """Read a mode's handler names in order.
+
+    Args:
+        module: The stand-in mode holding a `PAGE_HANDLERS` list.
+
+    Returns:
+        A list of names.
+    """
+    return [handler.__name__ for handler in module.PAGE_HANDLERS]
 
 
 def fake_utils():
@@ -144,20 +156,20 @@ class TestDesireRegistration(unittest.TestCase):
         # The screen's Confirm is greyed until a card is chosen, so the confirm handler spinning on it is
         # exactly what stalled the run for ten seconds.
         desire.install(self.utils)
-        listed = self.names()
+        listed = names(self.module)
         self.assertLess(listed.index("handle_desire_reward"), listed.index("handle_confirm"))
 
     def test_the_inherit_screen_outranks_the_ordinary_card_reward(self):
         # Both screens are titled "Card Reward"; whichever handler runs first claims it, and upstream's
         # presses Skip.
         desire.install(self.utils)
-        listed = self.names()
+        listed = names(self.module)
         self.assertLess(listed.index("handle_desire_inherit"), listed.index("handle_card_reward"))
 
     def test_installing_again_does_not_duplicate(self):
         for _ in range(MODES):
             desire.install(self.utils)
-        listed = self.names()
+        listed = names(self.module)
         for name in ("handle_desire_reward", "handle_desire_inherit"):
             with self.subTest(name=name):
                 self.assertEqual(1, listed.count(name))
@@ -184,6 +196,44 @@ class TestDesireRegistration(unittest.TestCase):
 
     def test_tolerates_a_missing_module(self):
         desire.install(None)
+
+
+class TestAnchorSurvivesWrapping(unittest.TestCase):
+    """Keeping the name a later patch anchors itself to.
+
+    `src/en/dialogue.py` appends its narration handler after `handle_event_task`, which `src/en/events.py`
+    has already wrapped. For two days that wrapper reported a name of its own, so the anchor was gone by the
+    time the append looked for it and the narration handler was never installed at all - silently, because a
+    missing anchor is also how a handler is kept out of a mode it was never measured on.
+    """
+
+    def setUp(self):
+        self.utils = types.SimpleNamespace(handle_event_task=named("handle_event_task"),
+                                           recognize_event_options=named("recognize_event_options"))
+        self.module = types.ModuleType("fake_mode_for_anchor_test")
+        self.module.PAGE_HANDLERS = [named("handle_confirm"), named("handle_event_task")]
+        sys.modules[self.module.__name__] = self.module
+
+    def tearDown(self):
+        sys.modules.pop(self.module.__name__, None)
+
+    def test_the_ranking_wrapper_answers_to_the_name_it_stands_in_for(self):
+        events.install(self.utils)
+        self.assertEqual(["handle_confirm", "handle_event_task"], names(self.module))
+
+    def test_the_narration_handler_still_finds_its_anchor(self):
+        events.install(self.utils)
+        self.assertEqual(1, handlers.append(dialogue.handle_dialogue, dialogue.MODE_ANCHOR))
+        self.assertEqual("handle_dialogue", names(self.module)[-1])
+
+    def test_the_change_is_carried_once_however_many_times_it_installs(self):
+        for _ in range(MODES):
+            events.install(self.utils)
+        self.assertEqual([events.TAG], list(getattr(self.utils.handle_event_task, WRAPS)))
+        self.assertEqual(["handle_confirm", "handle_event_task"], names(self.module))
+
+    def test_tolerates_a_missing_module(self):
+        events.install(None)
 
 
 if __name__ == "__main__":
