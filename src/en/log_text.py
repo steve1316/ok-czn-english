@@ -37,6 +37,9 @@ LOG_METHODS = ("log_info", "log_debug", "log_warning", "log_error")
 BY_FIRST_CHARACTER = {}
 ANCHORLESS = ()
 
+# Stands for a row that has never been reported, so that a genuine None is still a change worth echoing once.
+UNREPORTED = object()
+
 _patched = False
 
 
@@ -115,12 +118,19 @@ def translating(original):
 
 
 def reporting(original):
-    """Wrap `info_set` so the Tasks tab draws its Info rows in English.
+    """Wrap `info_set` so the Tasks tab draws its Info rows in English, and stops shouting them at the log.
 
     A row's key and value both reach `og.app.tr` in `TaskTab.update_task_info`, so most of these could have
     been catalog entries instead. Three could not: the floor and node row, the equipment row and the
     meditation key are composed at runtime, and `tr` is a whole-string lookup. Doing all of them here keeps
     one mechanism rather than two, and an English string that is not a msgid comes back from `tr` unchanged.
+
+    The echo is the other half. `log_node_status` reports about thirteen rows every tick whether or not any of
+    them moved, and the framework logs each at INFO - 80,035 lines of a 243,857-line day, nearly all of them
+    the same row saying the same thing. The row itself is always written, so the tab is unchanged; only the
+    echo waits for the value to actually differ. `self.info` is the record of what it last was, and the
+    framework clears it in `_mark_task_enabled` when a run starts, so a new run reports everything afresh
+    rather than inheriting the last one's idea of what has already been said.
 
     Args:
         original: The unbound `info_set` being replaced.
@@ -129,7 +139,11 @@ def reporting(original):
         The replacement.
     """
     def info_set_in_english(self, key, value):
-        return original(self, translate(key), translate(value))
+        key, value = translate(key), translate(value)
+        reported = getattr(self, "info", None)
+        if reported is None or reported.get(key, UNREPORTED) != value:
+            return original(self, key, value)
+        reported[key] = value
 
     return info_set_in_english
 
