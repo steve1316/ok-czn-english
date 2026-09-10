@@ -14,6 +14,7 @@ already wearing to install the Legend.
 """
 
 import re
+from collections import Counter
 
 from ok import Logger
 
@@ -60,17 +61,57 @@ def fold(name):
     return INSIGNIFICANT.sub("", (name or "").casefold())
 
 
+def sorted_letters(folded):
+    """Reduce an already-folded name to its letters in order, so word order stops mattering.
+
+    Args:
+        folded: A name that has been through `fold`.
+
+    Returns:
+        The same characters, sorted.
+    """
+    return "".join(sorted(folded))
+
+
 def index(names):
     """Build a folded lookup for a set of names.
+
+    Two keys per name where it is safe to have them: the folded name, and the same letters sorted. The reader
+    hands back a name's words out of order often enough to matter - `Assault Gauntlets` came back as
+    `GauntletsAssault` in a real run - and sorting is what lets those still be recognised. A sorted key is
+    only added where exactly one name owns it, so two names made of the same letters keep their exact
+    spellings and answer to nothing else.
 
     Args:
         names: An iterable of canonical names.
 
     Returns:
-        A dict of folded name to canonical name. A name that folds away to nothing is left out, since that
-        key would match every reading made only of characters the fold discards.
+        A dict of key to canonical name. A name that folds away to nothing is left out, since that key would
+        match every reading made only of characters the fold discards.
     """
-    return {folded: name for folded, name in ((fold(name), name) for name in names) if folded}
+    exact = {folded: name for folded, name in ((fold(name), name) for name in names) if folded}
+    owners = Counter(sorted_letters(folded) for folded in exact)
+    lookup = dict(exact)
+    for folded, name in exact.items():
+        key = sorted_letters(folded)
+        # Never over an exact spelling: a real name outranks a guess at a scrambled one.
+        if owners[key] == 1 and key not in lookup:
+            lookup[key] = name
+    return lookup
+
+
+def look_up(name, lookup):
+    """Find the client's own spelling of a name the reader produced.
+
+    Args:
+        name: The name as read off the screen.
+        lookup: A folded index from `index`.
+
+    Returns:
+        The canonical name, or None when nothing in the index answers to it.
+    """
+    folded = fold(name)
+    return lookup.get(folded) or lookup.get(sorted_letters(folded))
 
 
 # The game's own labels, with the hand-read ones filling the gaps it left. The generated half wins wherever
@@ -138,7 +179,7 @@ def grade(name, table, lookup):
     Returns:
         A `(canonical_name, grade)` pair, or None when the name is not in the table.
     """
-    canonical = lookup.get(fold(name))
+    canonical = look_up(name, lookup)
     if canonical is None:
         return None
     return canonical, table[canonical]
@@ -154,7 +195,7 @@ def wants(combatant):
         A dict of equipment kind to the weight this combatant puts on it, empty when the data has no opinion
         about them at all.
     """
-    return COMBATANT_TAG_WEIGHTS.get(COMBATANT_INDEX.get(fold(combatant))) or {}
+    return COMBATANT_TAG_WEIGHTS.get(look_up(combatant, COMBATANT_INDEX)) or {}
 
 
 def tallied(equipment, weights):
@@ -181,7 +222,7 @@ def suits(equipment_name, combatant):
         The weight that combatant puts on the kinds this piece serves, on the game's own scale. Zero when
         either side carries nothing, which reads as "no opinion" rather than as "unsuitable".
     """
-    return tallied(EQUIPMENT_INDEX.get(fold(equipment_name)), wants(combatant))
+    return tallied(look_up(equipment_name, EQUIPMENT_INDEX), wants(combatant))
 
 
 def worth_taking(names, classes=(), cards=True, suited_to=None):
@@ -226,5 +267,4 @@ def slot_of(name):
     Returns:
         The slot index, or None when the name is not known equipment.
     """
-    canonical = EQUIPMENT_INDEX.get(fold(name))
-    return EQUIPMENT_SLOT.get(canonical) if canonical else None
+    return EQUIPMENT_SLOT.get(look_up(name, EQUIPMENT_INDEX))

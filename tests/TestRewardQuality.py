@@ -2,6 +2,7 @@
 
 import sys
 import unittest
+from collections import Counter
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -16,7 +17,8 @@ from src.en.game_quality import (  # noqa: E402
 from src.en.game_quality import COMBATANT_TAG_WEIGHTS, EQUIPMENT_TAGS  # noqa: E402
 from src.en.hand_tags import HAND_TAGS  # noqa: E402
 from src.en.quality import (  # noqa: E402
-    CLASS_NAMES, TAGS, WORTH_TAKING, fold, named, slot_of, suits, team_classes, usable_by, worth_taking,
+    CLASS_NAMES, TAGS, WORTH_TAKING, fold, index, look_up, named, slot_of, suits, team_classes, usable_by,
+    worth_taking,
 )
 
 # The shop, twice, exactly as the reader saw it.
@@ -339,3 +341,46 @@ class TestHandTags(unittest.TestCase):
 
     def test_it_widens_what_the_run_has_an_opinion_on(self):
         self.assertEqual(len(EQUIPMENT_TAGS) + len(HAND_TAGS), len(TAGS))
+
+
+class TestScrambledReadings(unittest.TestCase):
+    """Names whose words came back out of order.
+
+    The reader does this constantly, and until now every one was simply lost: `Assault Gauntlets` read as
+    `GauntletsAssault` matched no equipment, so the run had no rarity and no opinion for it and walked past.
+    Six of the 62 distinct pieces the shop has offered across the logs came back this way.
+
+    Sorting a name's letters is what makes those match, and it is safe here because no two equipment names
+    are anagrams of each other. Where two names would collide, only their exact spellings are kept.
+    """
+
+    # Real readings, from the shop lines in `logs/`.
+    SCRAMBLED = {
+        "GauntletsAssault": "Assault Gauntlets",
+        "CarapaceGrowing": "Growing Carapace",
+        "Night ButterfliesDance of the": "Dance of the Night Butterflies",
+    }
+
+    def test_the_client_spelling_is_recovered(self):
+        for reading, real in self.SCRAMBLED.items():
+            with self.subTest(reading=reading):
+                self.assertEqual(slot_of(real), slot_of(reading))
+                self.assertIsNotNone(slot_of(reading))
+
+    def test_a_scrambled_name_still_carries_its_kinds(self):
+        # Magna wants counter equipment, and Assault Gauntlets is counter equipment.
+        self.assertGreater(suits("GauntletsAssault", "Magna"), 0)
+
+    def test_a_scrambled_name_is_still_graded(self):
+        # Growing Carapace is a Legend, so recognising it is the difference between buying it and walking past.
+        self.assertEqual(["Growing Carapace"], worth_taking(["CarapaceGrowing"], cards=False))
+
+    def test_no_two_pieces_of_equipment_are_anagrams(self):
+        letters = Counter("".join(sorted(fold(name))) for name in EQUIPMENT_RARITY if fold(name))
+        self.assertEqual([], [key for key, count in letters.items() if count > 1])
+
+    def test_an_ambiguous_scramble_is_refused(self):
+        # Two names of the same letters cannot be told apart, so neither answers to the scrambled spelling.
+        lookup = index(["Dark Star", "Stark Dar"])
+        self.assertIsNone(look_up("StarDark", lookup))
+        self.assertEqual("Dark Star", look_up("Dark Star", lookup))
