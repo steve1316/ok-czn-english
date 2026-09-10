@@ -1,31 +1,27 @@
 """Skip the trip to the Combatants screen when the run already starts there.
 
-At the start of a run the bot captures the target combatant's portrait, and getting there takes two handlers.
-`handle_save_target_member` taps the menu icon and waits two seconds for the page to open. It has no idea
-whether the page is open already - its only guard is a "have I done this yet" flag - so starting a run from
-that screen costs the tap and the wait for nothing.
+Capturing the target combatant's portrait takes two handlers. `handle_save_target_member` taps the menu icon
+and waits two seconds, guarded only by a "have I done this yet" flag, so starting a run from that screen costs
+the tap and the wait for nothing. `handle_archive_target_member`, a few places further down the same list, does
+the capture once the page is up - so there is nothing to reimplement for the first tap. When the page is
+already showing, decline the frame and upstream's own handler picks it up immediately.
 
-`handle_archive_target_member` is registered a few places further down the same list and does the capture once
-the page is up. So there is nothing to reimplement for the first tap: when the page is already showing,
-decline the frame and upstream's own handler picks it up immediately.
+The capture repeats the mistake one level down, tapping the 3-person icon and the Combatants tab before
+reading anything, which on a run started there shuts the page and reopens it. The log is plain about the cost:
+the OCR before those taps and the OCR after list the same sixty boxes, three seconds apart. Dropping them
+recovers about 1.6s, most of it `click_box`'s own `after_sleep`. Upstream's two half-second waits and its
+second OCR are left alone, because removing them would mean owning the read as well as the way in.
 
-The capture then repeats the mistake one level down. Before reading anything it taps the 3-person icon and
-taps the Combatants tab, which on a run started there shuts the page and opens it again for no gain. The log
-is plain about the cost: the OCR taken before those two taps and the OCR taken after them list the same sixty
-boxes, three seconds apart. Dropping the taps recovers about 1.6s of that, most of it the time `click_box`
-spends in its own `after_sleep`. The rest is upstream's two half-second waits and its second OCR, left alone
-because removing them would mean owning the read as well as the way in.
-
-Dropping the taps has to be self-verifying, because the information screen has sibling tabs - Partners and
-Fate draw names in the same three places - and reading the wrong one would quietly cost the run its portrait.
-The proof used is the configured combatant's own name: seeing it at one of the three slots says both that
-this is the tab listing combatants and that it is open now. Anything else navigates the long way round, and
-the only run that pays the full cost is the run whose round trip would have found nothing either.
+Dropping the taps has to be self-verifying, because the information screen has sibling tabs - Partners and Fate
+draw names in the same three places - and reading the wrong one would quietly cost the run its portrait. The
+proof is the configured combatant's own name: seeing it in one of the three slots says both that this is the
+tab listing combatants and that it is open now. Anything else navigates the long way round, and the only run
+paying the full cost is the one whose round trip would have found nothing either.
 
 What cannot be checked from here is upstream's shape. The two taps are recognised by coordinate and by being
 the capture's only box click, both read off a function body with nothing to import, so a rebase moving either
-would slip past in silence. `Dropped` is the answer to that: the stand-ins count what they swallowed, and the
-wrapper says so when the tally is not the one tap each that upstream makes today.
+would slip past in silence. `Dropped` is the answer: the stand-ins count what they swallowed, and the wrapper
+says so when the tally is not the one tap each upstream makes today.
 """
 
 import dataclasses

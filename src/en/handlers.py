@@ -1,32 +1,23 @@
 """Change which page handlers a mode runs, without touching `ok_tasks/`.
 
-Each mode keeps an ordered list of page handlers - `PAGE_HANDLERS` in `ok_tasks/utils_chaos.py` and
-`ok_tasks/utils_sortie.py` - and its run loop takes the first one that returns True. Two things make editing
-those lists fiddlier than it looks, and both are handled here.
-
-**They are lists of function objects.** Rebinding a name on the module changes nothing, because the list still
-holds the original function. Any fork-local change has to edit the list itself.
-
-**They do not exist yet when `Globals` is built.** ok-script constructs `my_app` before `TaskManager` puts
-`ok_tasks/` on `sys.path` and imports the modes - four milliseconds apart in a real launch, but an ordering
-all the same. So an edit made from `apply()` would silently find nothing. Registering the edit here defers it
-until `BaseTask.after_init`, which runs once per task after its module has been imported.
+Each mode keeps an ordered `PAGE_HANDLERS` list and its run loop takes the first handler returning True. Two
+things make editing those lists fiddlier than it looks. They hold function objects, so rebinding a name on the
+module changes nothing and the list itself has to be edited. And they do not exist yet when `Globals` is built:
+ok-script constructs `my_app` before `TaskManager` puts `ok_tasks/` on `sys.path` and imports the modes - four
+milliseconds apart in a real launch, but an ordering all the same - so an edit made from `apply()` would
+silently find nothing. Registering it here defers it to `BaseTask.after_init`, which runs once per task after
+that module has been imported.
 
 The modes are found by shape rather than by name. They are imported flat (`utils_chaos`, not
 `ok_tasks.utils_chaos`), a future mode would be missed by a hardcoded list, and `utils_story` has a
-`PAGE_HANDLERS` of its own that happens to contain neither handler we touch - all three cases fall out of
-looking for the attribute instead of the module name.
+`PAGE_HANDLERS` of its own containing neither handler we touch. All three fall out of looking for the attribute.
 
-`StandIn` covers a second shape that has come up twice. Upstream reaches for `random.choice` in several
-places in the same module, and a fork change usually wants exactly one of them. Standing in for the whole
-module for the length of one call is how both `src/en/events.py` and `src/en/battle.py` do that, and the
-part they share - hold the real module, hand everything else to it - lives here.
-
-`standing_in` is the third shape, and the most common of all. Most fork changes do not want to reimplement a
-two-hundred-line upstream handler; they want it to run exactly as it does, over a slightly different answer
-to one question. Swapping the function that answers it for the length of one call is how that is done, and
-the save-set-restore around it has to be exception-safe every time, because a handler that throws while a
-module attribute is swapped would leave upstream permanently rewired.
+`StandIn` covers a second shape. Upstream reaches for `random.choice` in several places in one module and a
+fork change usually wants exactly one of them, so both `src/en/events.py` and `src/en/battle.py` stand in for
+the whole module for the length of one call. `standing_in` is the third and most common: rather than
+reimplement a two-hundred-line handler, run it exactly as it is over a different answer to one question. Its
+save-set-restore has to be exception-safe every time, because a handler that throws while a module attribute is
+swapped would leave upstream permanently rewired.
 """
 
 import contextlib

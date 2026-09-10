@@ -1,26 +1,21 @@
 """Make the option picker open instantly on the Global client's long rosters.
 
-ok-script builds the "Available Options" pane of `ModifyListDialog` as one real `PushButton` per option, laid
-out in a `FlowLayout`. Nothing is virtualized, so every button exists whether or not it is on screen. Upstream's
-Chinese rosters are short enough for that to pass unnoticed. The Global client's are not: Cards to Remove offers
-1,472 options, which costs about 2.6 seconds to open the dialog and another 2.9 on the first search keystroke,
-because filtering calls `setVisible` on all 1,472 widgets.
+ok-script builds the "Available Options" pane of `ModifyListDialog` as one real `PushButton` per option in a
+`FlowLayout`, with no virtualization. Upstream's Chinese rosters are short enough for that to pass unnoticed;
+the Global client's are not. Cards to Remove offers 1,472 options, costing about 2.6 seconds to open the dialog
+and another 2.9 on the first search keystroke, because filtering calls `setVisible` on all 1,472 widgets. A
+`ListWidget` only builds delegates for rows actually on screen, so the same roster is ready in about 2 ms and
+filters in about 3 ms, and every row spans the pane's full width, which a grid of fixed-width buttons never did.
 
-Swapping the grid for a `ListWidget` fixes both. `QListView` only builds delegates for the rows actually on
-screen, so the same roster is ready in about 2 ms and filters in about 3 ms, and every row spans the full width
-of the pane, which a grid of fixed-width buttons never did.
+Building the rows here is what makes a useful tooltip possible, so each carries the card's or equipment's own
+effect text from `game_text.py` on both sides of the dialog, shown without the wait Qt normally puts in front of
+one. The setting's help text is repeated at the top, since the dialog covers the row that would explain it.
 
-Building the rows here is also what makes a useful tooltip possible, so each one carries the card's or the
-equipment's own effect text from `game_text.py` rather than just repeating the name, on both sides of the
-dialog, and shows it without the wait Qt normally puts in front of a tooltip. The setting's own help text is
-repeated at the top of the dialog too, since the dialog covers the row that would otherwise explain it.
+Only the methods touching the option pane are replaced, and the grid is swapped only when the roster is long -
+Route Priority's four node types fall through to upstream's buttons, so nothing changes where nothing was slow.
 
-Only the methods that touch the option pane are replaced, and the grid itself is only swapped out when the
-roster is long. A short one - Route Priority's four node types - falls through to upstream's buttons, so
-nothing changes where nothing was slow.
-
-The virtualization half of this is not really about the English client. It works around a framework performance
-bug that only happens to bite at Global-client roster sizes, so it belongs in ok-script's own `ModifyListDialog`
+The virtualization half is not really about the English client. It works around a framework performance bug
+that only happens to bite at Global-client roster sizes, so it belongs in ok-script's own `ModifyListDialog`
 and should go once a release carries the fix. The tooltips are fork-local and stay either way.
 
 One thing is knowingly given up: upstream wires touch drag-scrolling to the `QScrollArea` the list now sits in,

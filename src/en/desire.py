@@ -1,36 +1,31 @@
 """Read and steer Season 4's Desire cards.
 
-Season 4 gives every combatant one Desire card. Obtaining another of the same faction levels the card up;
-obtaining a different one opens an inherit screen where the two merge into a single card carrying both tags.
-Each card caps at level three, so a team of three carries nine points, and reaching three, five or seven
-points in one faction unlocks a team-wide bonus. Concentrating on one faction is therefore worth much more
-than spreading across four, which is what the target-faction setting is for.
+Reaching three, five or seven points in one faction unlocks a team-wide bonus, so concentrating beats
+spreading across four. That is what the target-faction setting is for.
 
-**The tag is the whole state.** The client prints it on the card itself: `[ Inquiry ]` at level one,
-`[ Inquiry 2 ]` at level two, `[ Control / Inquiry 2 ]` once two factions have merged. Faction and points are
-both there, and the points total is the card's level. Nothing has to be remembered between frames, which
-matters because a run can be resumed, or the bot restarted, part way through a node.
+The tag is the whole state. The client prints it on the card - `[ Inquiry ]`, `[ Inquiry 2 ]`, or
+`[ Control / Inquiry 2 ]` once two factions have merged - so faction and points are both on screen and the
+points total is the card's level. Nothing has to be remembered between frames, which matters because a run can
+be resumed, or the bot restarted, part way through a node.
 
-**Reading it is the hard part.** The tag shares a region with the effect text below it, and the reader loses
-brackets, drops spaces and sometimes glues the tag straight onto the sentence under it - one captured frame
-produced `Control200% Damage to all...`. So the shape is tested rather than searched: a reading only counts as
-a tag when everything in it is a faction name, a number, or bracket-and-slash punctuation, and when its points
-add up to a level a card can actually reach. That turns away a mangled tag, and it turns away a sentence that
-happens to contain the word Control. Turning away a real tag costs one frame of a screen the bot re-reads
-every second; acting on a misread one would steer every card pick for the rest of the run.
+Reading it is the hard part. The tag shares a region with the effect text below it, and the reader loses
+brackets, drops spaces, and sometimes glues the tag onto the sentence under it - one captured frame produced
+`Control200% Damage to all...`. So the shape is tested rather than searched: a reading counts as a tag only
+when everything in it is a faction name, a number, or bracket-and-slash punctuation, and its points add up to
+a level a card can reach. That turns away a mangled tag and a sentence that merely contains the word Control.
+The asymmetry is the point - turning away a real tag costs one frame of a screen re-read every second, while
+acting on a misread one steers every card pick for the rest of the run.
 
-**Most Desire cards arrive on a screen that is not a Desire screen.** An event that grants one drops the run
-onto the ordinary card assign screen, which decides on the user's reward priority list alone. A Desire card
-is named for its effect, so the list never names it, and the run pressed Skip on every one - twice in the
-four minutes of a real run. That screen is claimed here too, but only to the extent of telling upstream the
-card is worth keeping.
+Most Desire cards arrive on a screen that is not a Desire screen. An event granting one drops the run onto the
+ordinary card assign screen, which decides on the reward priority list alone, and a Desire card is named for
+its effect so the list never names it - a real run pressed Skip on two in four minutes. That screen is claimed
+here too, but only far enough to tell upstream the card is worth keeping.
 
-**The Desire screen and the assign screen are one decision, not two.** Taking a card on the Desire screen
-drops the run onto the assign screen to hand it over, and judging the faction a second time there threw away
-what the first screen had just chosen - a real run picked `Knowledge Addiction` off three cards none of which
-were the faction being chased, then skipped it four seconds later. So a Desire screen leaves the name of what
-it took on the task, and the assign screen honours it. The purchase guard still outranks that: nothing here
-ever spends credits.
+The Desire screen and the assign screen are one decision, not two. Taking a card on the first drops the run
+onto the second to hand it over, and judging the faction again there threw away what the first had just
+chosen: a real run picked `Knowledge Addiction` off three cards, none of the faction being chased, then
+skipped it four seconds later. So a Desire screen leaves the name of what it took on the task and the assign
+screen honours it. The purchase guard still outranks that - nothing here ever spends credits.
 """
 
 import re

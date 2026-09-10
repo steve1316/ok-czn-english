@@ -1,41 +1,33 @@
 """Play a Sortie battle from what the cards do, instead of pressing every hotkey and hoping.
 
-Upstream's `handle_battle_page` plays the first hand card that matches the user's Play Priority list. When
-nothing matches - which on the Global client is every turn, since that list starts empty - it falls through
-to `_try_all_card_keys`, which presses each hotkey from the hand size down to one at about a second and a
-half a press. At nine cards that is thirteen seconds of blind input per turn, and whatever it plays is
-whatever happened to be under the last key that worked.
+Upstream's `handle_battle_page` plays the first hand card matching the user's Play Priority list. That list
+starts empty on the Global client, so every turn falls through to `_try_all_card_keys`, which presses each
+hotkey from the hand size down at about a second and a half a press - thirteen seconds of blind input at nine
+cards, playing whatever sat under the last key that worked. That fallback is the only thing replaced. Upstream
+keeps the frame around it, and a card the Play Priority list names is still played by upstream unchanged.
 
-That fallback is the only thing replaced here. Upstream keeps the frame: the Ego check, the end-of-turn
-button, the stuck detection, the final-boss flag. A card the user's Play Priority list names is still played
-by upstream, unchanged, so a tuned list keeps behaving as it did.
+The Ego skill is picked here too. Upstream fires one of `F1`, `F2`, `F3` at random once the EP bar reads full,
+without checking the bar covers the one it picked - and in a real frame with the bar full, one of the three
+routinely costs more than it holds. `board.py` can see which are affordable, so the shortlist shrinks to those
+and the pick stays random, because picking one it cannot pay for is the defect and picking at random is not.
+The mechanism is upstream's own `random` swapped out for one frame, the same thing `src/en/events.py` does.
 
-The Ego skill is picked here too. Upstream fires one of `F1`, `F2` and `F3` at random once it reads the EP
-bar as full, without checking whether the EP will actually cover the one it picked - and in a real frame with
-the bar full, one of the three routinely costs more than the bar holds. `board.py` can see which are
-affordable, because the game draws that badge blue, so the shortlist shrinks to those. The pick itself stays
-random, because picking one it cannot pay for is the defect and picking at random is not. The mechanism is
-upstream's own `random` swapped out for the length of one frame, which is the same thing `src/en/events.py`
-does to rank event options, and every other use of `random` in that module passes straight through.
+Enemy weakness comes from `board.py` and goes to the planner rather than being acted on here, raising what a
+matching card is worth so an attack of that attribute goes first when two are otherwise equal. Only about a
+third of cards have an attribute at all - it needs the data to know who owns the card - so this reorders some
+turns and leaves the rest alone. It is read once a turn, since it describes the fight rather than the frame.
 
-The attribute the enemies are weak to comes from `board.py` as well, and goes to the planner rather than being
-acted on here: it raises what a card of that attribute is worth, so a matching attack is played first when
-two are otherwise equal. A card only has an attribute if the data knows who owns it, which is true of about a
-third of them, so this reorders some turns and leaves the rest as they were. It is read once a turn and kept,
-since it describes the fight rather than the frame.
+`_try_all_card_keys` has two callers, and rebinding it takes over both. The other is the escape hatch upstream
+reaches for after a card the list *did* name has failed to play three times running. Taking that one over is
+wanted rather than tolerated: a card that will not play three times is usually one there are no Action Points
+for, and choosing a different card beats flailing at every key.
 
-`_try_all_card_keys` has two callers, though, and rebinding it takes over both. One is the fallback proper,
-reached when the list matched nothing. The other is the escape hatch upstream reaches for after a card the
-list *did* name has failed to play three times running - and taking that one over is wanted rather than
-tolerated, because a card that will not play three times is usually one there are no Action Points for, and
-choosing a different card is a better answer than flailing at every key.
-
-The budget comes from `board.py`, which can tell a spent turn from one with Action Points left but not how
-many are left. So a turn that still has points is planned against the full three, which may be more than it
-really has. That is safe rather than sloppy: the game refuses a card there is no room for, and a card still
-sitting in hand after being tried is recorded as refused and passed over for the rest of the turn. The turn
-corrects itself against the game rather than against a number this module believes in. What the readout adds
-is the other end - once it goes dark, the turn ends at once instead of after every card has been refused.
+The budget comes from `board.py`, which can tell a spent turn from one with points left but not how many. So a
+turn with points is planned against the full three, which may be more than it has. That is safe rather than
+sloppy - the game refuses a card there is no room for, and a card still in hand after being tried is recorded
+as refused and passed over for the rest of the turn, so the turn corrects itself against the game rather than
+against a number this module believes in. What the readout adds is the other end: once it goes dark the turn
+ends at once, instead of after every card has been refused.
 """
 
 from ok import Logger
