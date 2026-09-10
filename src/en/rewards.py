@@ -16,6 +16,11 @@ CARD_KEY = "卡牌奖励优先级"
 SORTIE_CARD_KEY = "获得卡牌优先级"
 # The three equipment slots, in the order the handlers number them.
 EQUIPMENT_KEYS = {"装备1号位优先级": 0, "装备2号位优先级": 1, "装备3号位优先级": 2}
+# The handlers in `utils` that judge something against a priority list, and so need one filled in when the
+# user left it empty. `handle_card_assign` belongs here because it is the screen that confirms a purchase the
+# shop's own handler already decided on: without the same list, the shop buys and the purchase screen
+# cancels, forever.
+FILLED_IN = ("handle_shop", "handle_card_reward", "handle_card_assign")
 
 TEAM = "_en_team"
 
@@ -158,7 +163,7 @@ def apply():
         if utils is None:
             return
 
-        for name in ("handle_shop", "handle_card_reward"):
+        for name in FILLED_IN:
             handler = getattr(utils, name, None)
             if handler is not None:
                 replace(name, with_generated_lists(handler, [utils]))

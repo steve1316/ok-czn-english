@@ -30,7 +30,7 @@ class Globals(QObject):
         dice.apply()
         draft.apply()
         equipment.apply()
-        # Anything wrapping `handle_shop` or `handle_card_reward` goes before rewards, which renames the
+        # Anything wrapping a handler in `rewards.FILLED_IN` goes before rewards, which renames the
         # list entry it builds - after that rename, a later wrapper looking for the original name finds
         # nothing. Order does not otherwise matter: `handlers.wrap` composes rather than replaces.
         shop.apply()

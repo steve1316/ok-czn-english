@@ -23,6 +23,13 @@ SHOP_EQUIPMENT = ["Cloud-WalkingShoes", "Sadism", "TacticalReformation", "Gladia
 # The game calls these a Vanguard and two Controllers. "knight" is the data's name for Vanguard.
 TEAM = ["Nine", "Orlea", "Tiphera"]
 
+# One Dellang Shop shelf and the Purchase Card screen that confirms buying from it, both exactly as the
+# reader saw them in the run that looped between the two for seventy seconds.
+LOOPING_SHELF = ["售罄", "Gauntlets of", "Protection", "Reorganize", "Rally", "Big Game Hunter", "技能",
+                 "On sale", "200140", "105", "35", "96", "3/3", "免费", "Remaining: 5", "离开"]
+LOOPING_PURCHASE = ["购买卡牌", "请选择要接受卡牌的主战员", "无法获得", "攻击力", "Reorganize", "防御力",
+                    "技能", "LEVEL", "60", "等级", "[Exhaust ]", "Draw 3", "取消", "购买", "105"]
+
 
 def unusable_by(classes):
     """Find a card worth buying that the given classes cannot hold.
@@ -161,3 +168,23 @@ class TestRewardQuality(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestPurchaseAgreesWithTheShop(unittest.TestCase):
+    """The shop decides to buy, and the screen that confirms the buy has to reach the same answer.
+
+    The shelf and the Purchase Card screen are two views of one decision, judged against the same setting.
+    When that setting is filled in from what is on screen, both views have to fill it in the same way. They
+    did not: the shelf's handler had the fallback and the purchase screen's did not, so the shop clicked buy,
+    the purchase screen found an empty list, cancelled, and the shelf clicked buy again - sixteen times in
+    seventy seconds, with nothing detecting it as stuck because the screen kept changing.
+    """
+
+    def test_the_purchase_screen_gets_the_fallback_too(self):
+        self.assertIn("handle_card_assign", rewards.FILLED_IN)
+
+    def test_both_views_of_one_shelf_pick_the_same_card(self):
+        shelf = rewards.generated_list(FakeTask(LOOPING_SHELF, team=set()), rewards.CARD_KEY)
+        purchase = rewards.generated_list(FakeTask(LOOPING_PURCHASE, team=set()), rewards.CARD_KEY)
+        self.assertEqual(["Reorganize"], shelf)
+        self.assertEqual(shelf, purchase)
