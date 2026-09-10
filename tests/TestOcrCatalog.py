@@ -125,6 +125,11 @@ class TestOcrCatalog(unittest.TestCase):
         translation = gettext.translation("ocr", str(I18N_ROOT), languages=["en_US"])
         self.assertEqual("推荐", translation.gettext("Recommended"))
 
+    def test_the_refresh_button_is_mapped(self):
+        """handle_card_assign looks for this to reroll a card reward; unmapped, it has never once fired."""
+        translation = gettext.translation("ocr", str(I18N_ROOT), languages=["en_US"])
+        self.assertEqual("刷新", translation.gettext("Refresh"))
+
     def test_compiled_catalog_is_current(self):
         """Read the catalog the way the framework does, since the app only ever loads the compiled .mo.
 

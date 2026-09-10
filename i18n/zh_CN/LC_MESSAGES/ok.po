@@ -572,3 +572,18 @@ msgstr "自动模式仅在内存不少于12GB的Intel设备上使用OpenVINO，�
 
 msgid "自动"
 msgstr "自动"
+
+msgid "Desire Faction"
+msgstr "Desire Faction"
+
+msgid "Claim"
+msgstr "Claim"
+
+msgid "Inquiry"
+msgstr "Inquiry"
+
+msgid "Control"
+msgstr "Control"
+
+msgid "Survival"
+msgstr "Survival"

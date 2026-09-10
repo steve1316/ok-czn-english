@@ -28,6 +28,7 @@ from ok import Logger
 from ok.util.config import Config
 from ok.util.file import get_relative_path, read_json_file, write_json_file
 
+from src.en.desire import DEFAULT_FACTION, FACTIONS
 from src.en.game_data import CARDS, COMBATANTS, EQUIPMENT
 from src.en.framework import import_ui
 
@@ -51,6 +52,10 @@ GAME_LANGUAGES = ["English", "简体中文", "繁体中文"]
 # to choose its own cards, and so the only one this belongs on.
 SMART_CARD_PLAY = "Smart Card Play"
 PLAYS_ITS_OWN_CARDS = "出牌优先级"
+# Season 4's Desire faction, added the same way and for the same reason: it postdates the settings upstream
+# ships. Anchored on the card-reward list, which both modes carry and which the Desire screens sit alongside.
+DESIRE_FACTION = "Desire Faction"
+RANKS_CARD_REWARDS = "卡牌奖励优先级"
 # List settings the user picks from, keyed by config name -> the roster it draws on.
 LIST_OPTIONS = {
     "移除卡牌列表": CARDS,
@@ -96,6 +101,9 @@ DESCRIPTIONS = {
     "丢弃卡牌优先级": "Cards to throw away first when the run asks you to discard.",
     PLAYS_ITS_OWN_CARDS: "Order to play cards in battle. Needs shortcut key display turned on in the game's"
                          " settings.",
+    DESIRE_FACTION: "Which Desire faction to build towards. Every Desire card and event option is chosen to"
+                    " push this one higher, because reaching 3, 5 or 7 points in a single faction is worth"
+                    " far more than points spread across several.",
     SMART_CARD_PLAY: "Choose battle cards on what they actually do - what they cost, what kind they are, and"
                      " what their effect text says - rather than pressing every hotkey in turn and taking whatever"
                      " plays. Your Play Priority list still comes first and is unaffected; this decides the"
@@ -166,6 +174,10 @@ def reshape(task):
     # `default_config`, and an existing config simply gains it switched on.
     if PLAYS_ITS_OWN_CARDS in task.default_config:
         task.default_config[SMART_CARD_PLAY] = True
+
+    if RANKS_CARD_REWARDS in task.default_config:
+        task.default_config[DESIRE_FACTION] = DEFAULT_FACTION
+        task.config_type[DESIRE_FACTION] = {"type": "drop_down", "options": list(FACTIONS)}
 
     for key, text in DESCRIPTIONS.items():
         if key in task.default_config:
