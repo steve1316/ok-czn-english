@@ -33,7 +33,7 @@ ends at once, instead of after every card has been refused.
 from ok import Logger
 
 from src.en import board, cards
-from src.en.handlers import StandIn, loaded, register, replace
+from src.en.handlers import StandIn, loaded, register, replace, standing_in
 from src.en.overrides import SMART_CARD_PLAY
 
 logger = Logger.get_logger(__name__)
@@ -92,7 +92,11 @@ class EgoChoice(StandIn):
         if list(options) == list(board.EGO_KEYS):
             ready = board.affordable_egos(self.task)
             if ready:
-                return self.original.choice(ready)
+                firing = self.original.choice(ready)
+                logger.info(f"the EP bar covers {', '.join(ready)}, firing {firing}")
+                return firing
+            # Upstream reads the bar as full and fires anyway, so this is the case worth naming.
+            logger.info("the EP bar covers no Ego, so upstream's pick would not have played")
         return self.original.choice(options)
 
 
@@ -218,7 +222,11 @@ def install():
         read_for, names = getattr(task, HAND_CACHE, (None, None))
         if read_for is task.all_texts:
             return names
-        names = read_names(task)
+        # Upstream prints one line per box on screen here, plus two summaries - about 26,700 lines of a
+        # 244,000-line day. It is a debugging aid for its own region filter, shipped at info level, so it is
+        # dropped to debug rather than removed: `python main_debug.py` still shows it when the filter misreads.
+        with standing_in(task, log_info=logger.debug):
+            names = read_names(task)
         setattr(task, HAND_CACHE, (task.all_texts, names))
         return names
 
@@ -245,7 +253,11 @@ def install():
         # planned against a full three and corrected by what the game will actually accept.
         points = cards.BASE_ACTION_POINTS if board.has_action_points(task) else 0
         if turn.weakness is None:
+            # Read once a turn, so this is also the one frame a turn to say what it opened holding.
             turn.weakness = board.weakness(task)
+            against = f"enemies weak to {turn.weakness}" if turn.weakness else "no shared enemy weakness"
+            budget = "Action Points to spend" if points else "no Action Points"
+            task.log_info(f"turn opens with {budget}, {against}, hand {names}")
         state = cards.Board(action_points=points, weakness=turn.weakness)
         card = choose(hand, state, turn.refused)
         if card is None:
