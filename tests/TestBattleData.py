@@ -24,9 +24,6 @@ EXPECTED_CATEGORIES = {"ATK", "SKILL", "POWER", "ABNORM", "CURSE"}
 # The dearest fixed price in the data. `X_COST` comes from the module under test, since what it stands for
 # is the generator's to decide.
 MOST_EXPENSIVE = 9
-# Released after the rip this data was built from, so the dump has never heard of her. The picker has to cope
-# with a combatant it knows nothing about, and she is the one that actually occurs.
-UNRELEASED = "Olga"
 
 
 class TestAttributes(unittest.TestCase):
@@ -42,8 +39,9 @@ class TestAttributes(unittest.TestCase):
         self.assertLessEqual(set(COMBATANT_ATTRIBUTE.values()), EXPECTED_ATTRIBUTES)
 
     def test_the_released_roster_is_covered(self):
-        missing = set(COMBATANTS) - set(COMBATANT_ATTRIBUTE)
-        self.assertEqual(missing, {UNRELEASED})
+        # Every combatant a run can field, with no exceptions - a name the dump has not caught up with yet
+        # would leave the picker guessing at that combatant's attribute for a whole run.
+        self.assertEqual(set(), set(COMBATANTS) - set(COMBATANT_ATTRIBUTE))
 
 
 class TestCards(unittest.TestCase):

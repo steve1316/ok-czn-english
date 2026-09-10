@@ -154,6 +154,44 @@ class TestStandingIn(unittest.TestCase):
         with handlers.standing_in(self.module):
             self.assertEqual("a", self.module.first)
 
+    def test_a_method_goes_back_to_the_class_rather_than_onto_the_instance(self):
+        """Setting a bound copy back by name would shadow the class for the rest of the object's life, and
+        hold a reference cycle with it. Both matter here: the objects stood in for are the modes, which live
+        as long as the app does."""
+        class Task:
+            def click_box(self, box):
+                return "upstream"
+
+        task = Task()
+        with handlers.standing_in(task, click_box=lambda box: "stood in"):
+            self.assertEqual("stood in", task.click_box(None))
+        self.assertEqual("upstream", task.click_box(None))
+        self.assertNotIn("click_box", vars(task))
+
+    def test_an_attribute_the_object_owns_is_put_back_on_it(self):
+        """The other half of the same rule: `all_texts` is the mode's own, so it has to be restored, not
+        removed."""
+        class Task:
+            def __init__(self):
+                self.all_texts = ["a", "b"]
+
+        task = Task()
+        with handlers.standing_in(task, all_texts=["c"]):
+            self.assertEqual(["c"], task.all_texts)
+        self.assertEqual(["a", "b"], task.all_texts)
+        self.assertIn("all_texts", vars(task))
+
+    def test_a_method_is_put_back_when_the_block_raises(self):
+        class Task:
+            def click_box(self, box):
+                return "upstream"
+
+        task = Task()
+        with self.assertRaises(ValueError):
+            with handlers.standing_in(task, click_box=lambda box: "stood in"):
+                raise ValueError("boom")
+        self.assertNotIn("click_box", vars(task))
+
 
 class TestWrap(unittest.TestCase):
     """Composing fork-local wrappers over one upstream function."""

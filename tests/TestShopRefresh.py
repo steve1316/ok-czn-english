@@ -1,9 +1,12 @@
 """Check that the shop stops spending refreshes it can never afford to use.
 
-The shop's refresh is free, so upstream takes it whenever nothing on the shelf matches. A run captured with
-29 credits in front of a 96-credit shelf burned every refresh that way and then left anyway. The floor is what
-stops that, and hiding the button rather than skipping the click afterwards is what keeps `handle_leave` - the
-next handler in the list - free to walk out.
+The shop's refresh is free, so upstream takes it whenever nothing on the shelf matches. A run holding almost
+nothing burns every refresh that way and then leaves anyway. The floor is what stops that, and hiding the
+button rather than skipping the click afterwards is what keeps `handle_leave` - the next handler in the list -
+free to walk out.
+
+The floor is inclusive: holding exactly it is still worth a reroll. It is set where the user wants the run to
+give up, not where the price list says a purchase becomes possible.
 """
 
 import sys
@@ -15,6 +18,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from src.en.shop import SHOP_FLOOR, free_refresh_box, install, refusing_free_refresh  # noqa: E402
+
+# What the run is asked to keep refreshing down to.
+WANTED_FLOOR = 29
 
 WIDTH, HEIGHT = 1920, 1080
 # Where the shop draws its free-refresh button, measured off the captured screen.
@@ -98,22 +104,31 @@ class TestRefusingFreeRefresh(unittest.TestCase):
 
     def test_hides_the_button_below_the_floor(self):
         seen = []
-        wrapped = refusing_free_refresh(recording_handler(seen), lambda task: 29)
+        wrapped = refusing_free_refresh(recording_handler(seen), lambda task: 0)
         wrapped(shop_screen())
         self.assertEqual(seen, [["96"]])
 
-    def test_hides_the_button_exactly_at_the_floor(self):
-        # The floor is exclusive: the cheapest thing the shop stocks costs more than it.
+    def test_hides_the_button_one_credit_below_the_floor(self):
+        seen = []
+        wrapped = refusing_free_refresh(recording_handler(seen), lambda task: SHOP_FLOOR - 1)
+        wrapped(shop_screen())
+        self.assertEqual(seen, [["96"]])
+
+    def test_keeps_the_button_exactly_at_the_floor(self):
+        # The floor is inclusive: holding exactly it is still worth a reroll.
         seen = []
         wrapped = refusing_free_refresh(recording_handler(seen), lambda task: SHOP_FLOOR)
         wrapped(shop_screen())
-        self.assertEqual(seen, [["96"]])
+        self.assertEqual(seen, [["96", "免费"]])
 
     def test_keeps_the_button_one_credit_above_the_floor(self):
         seen = []
         wrapped = refusing_free_refresh(recording_handler(seen), lambda task: SHOP_FLOOR + 1)
         wrapped(shop_screen())
         self.assertEqual(seen, [["96", "免费"]])
+
+    def test_the_floor_is_where_it_was_asked_to_be(self):
+        self.assertEqual(WANTED_FLOOR, SHOP_FLOOR)
 
     def test_keeps_the_button_above_the_floor(self):
         seen = []

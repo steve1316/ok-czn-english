@@ -2,17 +2,23 @@
 
 import sys
 import unittest
+from collections import Counter
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from src.en import rewards  # noqa: E402
+from src.en.game_data import COMBATANTS  # noqa: E402
+from src.en.overrides import FARMED_COMBATANT  # noqa: E402
 from src.en.game_quality import (  # noqa: E402
     CARD_CLASSES, CARD_RARITY, COMBATANT_CLASS, EQUIPMENT_RARITY, EQUIPMENT_SLOT,
 )
+from src.en.game_quality import COMBATANT_TAG_WEIGHTS, EQUIPMENT_TAGS  # noqa: E402
+from src.en.hand_tags import HAND_TAGS  # noqa: E402
 from src.en.quality import (  # noqa: E402
-    CLASS_NAMES, WORTH_TAKING, fold, named, slot_of, team_classes, usable_by, worth_taking,
+    CLASS_NAMES, TAGS, WORTH_TAKING, fold, index, named, one_edit_apart, slot_of, sorted_letters, suits,
+    team_classes, unconfused, usable_by, worth_taking,
 )
 
 # The shop, twice, exactly as the reader saw it.
@@ -22,6 +28,13 @@ SHOP_EQUIPMENT = ["Cloud-WalkingShoes", "Sadism", "TacticalReformation", "Gladia
 
 # The game calls these a Vanguard and two Controllers. "knight" is the data's name for Vanguard.
 TEAM = ["Nine", "Orlea", "Tiphera"]
+
+# One Dellang Shop shelf and the Purchase Card screen that confirms buying from it, both exactly as the
+# reader saw them in the run that looped between the two for seventy seconds.
+LOOPING_SHELF = ["售罄", "Gauntlets of", "Protection", "Reorganize", "Rally", "Big Game Hunter", "技能",
+                 "On sale", "200140", "105", "35", "96", "3/3", "免费", "Remaining: 5", "离开"]
+LOOPING_PURCHASE = ["购买卡牌", "请选择要接受卡牌的主战员", "无法获得", "攻击力", "Reorganize", "防御力",
+                    "技能", "LEVEL", "60", "等级", "[Exhaust ]", "Draw 3", "取消", "购买", "105"]
 
 
 def unusable_by(classes):
@@ -87,8 +100,9 @@ class TestRewardQuality(unittest.TestCase):
         self.assertEqual(set(), in_data - set(CLASS_NAMES))
 
     def test_an_unknown_name_leaves_the_team_unknown(self):
-        """A misread name must not silently narrow the team and filter out usable cards."""
-        self.assertEqual(set(), team_classes(["Nlne", "0rlea"]))
+        """An unreadable name must not silently narrow the team and filter out usable cards."""
+        # Not a misreading of a real name: those are recovered now. This is a name that is simply not there.
+        self.assertEqual(set(), team_classes(["Rewards cannot be obtained", "Skip"]))
 
     def test_only_the_best_grades_are_taken(self):
         """Rare is most of what a shop stocks; buying it is how a run ends with nothing."""
@@ -161,3 +175,335 @@ class TestRewardQuality(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestPurchaseAgreesWithTheShop(unittest.TestCase):
+    """The shop decides to buy, and the screen that confirms the buy has to reach the same answer.
+
+    The shelf and the Purchase Card screen are two views of one decision, judged against the same setting.
+    When that setting is filled in from what is on screen, both views have to fill it in the same way. They
+    did not: the shelf's handler had the fallback and the purchase screen's did not, so the shop clicked buy,
+    the purchase screen found an empty list, cancelled, and the shelf clicked buy again - sixteen times in
+    seventy seconds, with nothing detecting it as stuck because the screen kept changing.
+    """
+
+    def test_the_purchase_screen_gets_the_fallback_too(self):
+        self.assertIn("handle_card_assign", rewards.FILLED_IN)
+
+    def test_both_views_of_one_shelf_pick_the_same_card(self):
+        shelf = rewards.generated_list(FakeTask(LOOPING_SHELF, team=set()), rewards.CARD_KEY)
+        purchase = rewards.generated_list(FakeTask(LOOPING_PURCHASE, team=set()), rewards.CARD_KEY)
+        self.assertEqual(["Reorganize"], shelf)
+        self.assertEqual(shelf, purchase)
+
+
+class TestSuits(unittest.TestCase):
+    """Weighing a piece of equipment against the combatant who would wear it.
+
+    The game keeps this opinion for Sortie and leaves the Chaos copies of the same relics blank, so the
+    generator carries it across. It covers about a third of what a Chaos run can meet, and a piece with no
+    tags has to read as "no opinion" rather than as "unsuitable" - otherwise two thirds of the pool would
+    quietly sink below the third that happens to be labelled.
+    """
+
+    def test_a_piece_the_combatant_wants_scores_her_own_weight(self):
+        # Arabella wants all-attack equipment, and the game says how much.
+        self.assertEqual(COMBATANT_TAG_WEIGHTS["Arabella"]["allatk"], suits("Nature's Hostility", "Arabella"))
+
+    def test_a_piece_she_does_not_want_scores_nothing(self):
+        self.assertEqual(0, suits("Assault Boots", "Arabella"))
+
+    def test_two_wanted_kinds_on_one_piece_add_up(self):
+        weights = COMBATANT_TAG_WEIGHTS["Nia"]
+        self.assertEqual(weights["discard"] + weights["draw"],
+                         suits("Fragment of the Empty Void", "Nia"))
+
+    def test_an_untagged_piece_is_no_opinion(self):
+        # Not a named piece: coverage grows with every dump, and the test should outlive any one item.
+        untagged = next(name for name in EQUIPMENT_RARITY if name not in EQUIPMENT_TAGS)
+        self.assertEqual(0, suits(untagged, "Arabella"))
+
+    def test_a_combatant_the_data_does_not_know_has_no_opinion(self):
+        self.assertEqual(0, suits("Nature's Hostility", "Someone Unreleased"))
+
+    def test_a_reading_that_is_not_equipment_scores_nothing(self):
+        self.assertEqual(0, suits("Rewards cannot be obtained", "Arabella"))
+
+    def test_a_concatenated_reading_still_matches(self):
+        # The reader runs words together constantly - "Gauntlets ofProtection" is from a real run.
+        self.assertEqual(suits("Fragment of the Empty Void", "Nia"),
+                         suits("Fragment of theEmpty Void", "Nia"))
+
+    def test_every_released_combatant_has_an_opinion(self):
+        # A dump that stopped carrying these would leave the shopping list ordered by name again, silently.
+        self.assertEqual(set(), set(COMBATANTS) - set(COMBATANT_TAG_WEIGHTS))
+
+
+class TestWorthTakingSuited(unittest.TestCase):
+    """Ordering the generated shopping list by who is going to wear the thing."""
+
+    SHELF = ["Nature's Hostility", "Assault Boots", "Blood Giant Claw"]
+
+    def test_the_wanted_piece_comes_first(self):
+        # Compared folded: the client spells this one with a typographic apostrophe.
+        first = worth_taking(self.SHELF, cards=False, suited_to="Arabella")[0]
+        self.assertEqual(fold("Nature's Hostility"), fold(first))
+
+    def test_without_a_combatant_the_order_is_unchanged(self):
+        self.assertEqual(worth_taking(self.SHELF, cards=False),
+                         worth_taking(self.SHELF, cards=False, suited_to=None))
+
+    def test_rarity_still_outranks_the_preference(self):
+        # A Legend she wants must not jump a Unique she does not: the run wants the better item.
+        shelf = ["Nature's Hostility", "Fragment of the Empty Void"]
+        self.assertEqual("Fragment of the Empty Void",
+                         worth_taking(shelf, cards=False, suited_to="Arabella")[0])
+
+    def test_an_unknown_combatant_changes_nothing(self):
+        self.assertEqual(worth_taking(self.SHELF, cards=False),
+                         worth_taking(self.SHELF, cards=False, suited_to="Someone Unreleased"))
+
+    def test_cards_are_untouched_by_it(self):
+        self.assertEqual(worth_taking(SHOP_CARDS), worth_taking(SHOP_CARDS, suited_to="Arabella"))
+
+
+class TestFarmedCombatantReachesTheList(unittest.TestCase):
+    """The farming target reaches the shopping list, read through the reader being stood in for.
+
+    Reading it around that reader would be the easy mistake: this code runs as the stand-in for it, so asking
+    through the module attribute would come straight back here. It also has to survive the slot filter, which
+    is the only thing this layer adds over `worth_taking`.
+    """
+
+    # Two slot-0 Legends: the game says Arabella wants the first kind and says nothing about the second.
+    SHELF = ["Nature's Hostility", "Blood Giant Claw"]
+    SLOT_ONE = next(key for key, slot in rewards.EQUIPMENT_KEYS.items() if slot == 0)
+
+    def offered(self, config):
+        """Read back what the list offers for the first equipment slot.
+
+        Args:
+            config: The settings the run is holding, as the reader would answer them.
+
+        Returns:
+            The names offered, best first.
+        """
+        reader = rewards.filling_in(lambda task, key, default: config.get(key, default), "utils")
+        return reader(FakeTask(self.SHELF), self.SLOT_ONE, [])
+
+    def test_the_configured_combatant_orders_the_equipment(self):
+        self.assertEqual(fold("Nature's Hostility"), fold(self.offered({FARMED_COMBATANT: "Arabella"})[0]))
+
+    def test_an_unset_combatant_leaves_the_name_order_alone(self):
+        self.assertEqual(fold("Blood Giant Claw"), fold(self.offered({})[0]))
+
+    def test_only_this_slot_is_offered(self):
+        self.assertEqual(2, len(self.offered({FARMED_COMBATANT: "Arabella"})))
+
+
+class TestHandTags(unittest.TestCase):
+    """The labels read by hand for the pieces the game never labelled.
+
+    The generator reaches a relic only when Sortie carries the same row, and 98 of the pieces a Chaos run can
+    meet have no such row. These are a reading of those pieces' own effect text, so the suite has to pin what
+    a reading can get wrong: a name that is not real equipment, a kind no combatant wants, or an entry that
+    quietly contradicts the developers' own answer.
+    """
+
+    def test_every_name_is_real_equipment(self):
+        self.assertEqual(set(), set(HAND_TAGS) - set(EQUIPMENT_RARITY))
+
+    def test_no_combatant_wants_a_kind_nothing_can_carry(self):
+        """A preference nothing can satisfy is a dead entry, and the game shipped one.
+
+        Its own table spells `bullet` with three Ls for two combatants, so their strongest preference matched
+        no equipment at all. The generator corrects known misspellings, and this is what notices the next one.
+        """
+        carried = {tag for tags in TAGS.values() for tag in tags}
+        wanted = {tag for weights in COMBATANT_TAG_WEIGHTS.values() for tag in weights}
+        self.assertEqual(set(), wanted - carried)
+
+    def test_every_kind_is_one_a_combatant_wants(self):
+        wanted = {tag for weights in COMBATANT_TAG_WEIGHTS.values() for tag in weights}
+        self.assertEqual(set(), {tag for tags in HAND_TAGS.values() for tag in tags} - wanted)
+
+    def test_it_only_fills_gaps(self):
+        # Reading one differently from the developers would be a silent disagreement, so overlap is refused.
+        self.assertEqual(set(), set(HAND_TAGS) & set(EQUIPMENT_TAGS))
+
+    def test_the_generated_answer_wins_where_both_speak(self):
+        overlapping = next(iter(EQUIPMENT_TAGS))
+        self.assertEqual(EQUIPMENT_TAGS[overlapping], TAGS[overlapping])
+
+    def test_a_hand_read_piece_is_scored(self):
+        # Cycle of Circulation heals mid-battle, and Orlea is one of the combatants who want that.
+        self.assertIn("heal", HAND_TAGS["Cycle of Circulation"])
+        self.assertGreater(suits("Cycle of Circulation", "Orlea"), 0)
+
+    def test_it_widens_what_the_run_has_an_opinion_on(self):
+        self.assertEqual(len(EQUIPMENT_TAGS) + len(HAND_TAGS), len(TAGS))
+
+
+class TestScrambledReadings(unittest.TestCase):
+    """Names whose words came back out of order.
+
+    The reader does this constantly, and until now every one was simply lost: `Assault Gauntlets` read as
+    `GauntletsAssault` matched no equipment, so the run had no rarity and no opinion for it and walked past.
+    Six of the 62 distinct pieces the shop has offered across the logs came back this way.
+
+    Sorting a name's letters is what makes those match, and it is safe here because no two equipment names
+    are anagrams of each other. Where two names would collide, only their exact spellings are kept.
+    """
+
+    # Real readings, from the shop lines in `logs/`.
+    SCRAMBLED = {
+        "GauntletsAssault": "Assault Gauntlets",
+        "CarapaceGrowing": "Growing Carapace",
+        "Night ButterfliesDance of the": "Dance of the Night Butterflies",
+    }
+
+    def test_the_client_spelling_is_recovered(self):
+        for reading, real in self.SCRAMBLED.items():
+            with self.subTest(reading=reading):
+                self.assertEqual(slot_of(real), slot_of(reading))
+                self.assertIsNotNone(slot_of(reading))
+
+    def test_a_scrambled_name_still_carries_its_kinds(self):
+        # Magna wants counter equipment, and Assault Gauntlets is counter equipment.
+        self.assertGreater(suits("GauntletsAssault", "Magna"), 0)
+
+    def test_a_scrambled_name_is_still_graded(self):
+        # Growing Carapace is a Legend, so recognising it is the difference between buying it and walking past.
+        self.assertEqual(["Growing Carapace"], worth_taking(["CarapaceGrowing"], cards=False))
+
+    def test_no_two_pieces_of_equipment_are_anagrams(self):
+        letters = Counter("".join(sorted(fold(name))) for name in EQUIPMENT_RARITY if fold(name))
+        self.assertEqual([], [key for key, count in letters.items() if count > 1])
+
+    def test_an_ambiguous_scramble_is_refused(self):
+        # Two names of the same letters cannot be told apart, so neither answers to the scrambled spelling.
+        lookup = index(["Dark Star", "Stark Dar"])
+        self.assertIsNone(lookup.look_up("StarDark"))
+        self.assertEqual("Dark Star", lookup.look_up("Dark Star"))
+
+
+class TestMisreadLetters(unittest.TestCase):
+    """Names the reader spelled with a lookalike letter.
+
+    A capital I comes back as a lowercase l constantly - `Magic-lnfused Sapphire`, `Instinct lgnition`,
+    `Mutation: lron Wall` are all from real logs - and every one of those was a name the run then failed to
+    recognise at all. The characters corrected here are only the ones the logs actually show being swapped,
+    and only where exactly one name answers to the corrected spelling.
+
+    `Vute Accent` and `Moon or Destruction` are deliberately not in this table. Reading v as m or r as f
+    would turn real words into other real words, and a blanket swap has no way to know it has. Both readings
+    are still recovered, but by the pass below, which has to agree on every other character and find only one
+    candidate.
+    """
+
+    # Reading, and the name it was meant to be. All from `logs/`.
+    MISREAD = {
+        "Magic-lnfusedSapphire": "Magic-Infused Sapphire",
+        "Instinct lgnition": "Instinct Ignition",
+        "Mutation: lron Wall": "Mutation: Iron Wall",
+        "Bloom: Strateqic Starting Point": "Bloom: Strategic Starting Point",
+    }
+
+    def test_the_real_name_is_recovered(self):
+        lookup = index(list(EQUIPMENT_RARITY) + list(CARD_RARITY))
+        for reading, real in self.MISREAD.items():
+            with self.subTest(reading=reading):
+                self.assertEqual(real, lookup.look_up(reading))
+
+    def test_a_misread_piece_of_equipment_is_placed(self):
+        # None of the real misreadings happen to be Legends, so this checks recognition rather than grading.
+        self.assertEqual(slot_of("Magic-Infused Sapphire"), slot_of("Magic-lnfusedSapphire"))
+        self.assertIsNotNone(slot_of("Magic-lnfusedSapphire"))
+
+    def test_a_misread_piece_still_carries_its_kinds(self):
+        # Magic-Infused Sapphire is initiation equipment, and Lucas is one of the combatants who want that.
+        self.assertGreater(suits("Magic-lnfusedSapphire", "Lucas"), 0)
+
+    def test_a_reading_that_is_both_scrambled_and_misread_still_matches(self):
+        self.assertEqual("Magic-Infused Sapphire",
+                         index(EQUIPMENT_RARITY).look_up("lnfusedSapphireMagic"))
+
+    def test_no_two_names_collide_once_lookalikes_are_folded(self):
+        for table in (EQUIPMENT_RARITY, CARD_RARITY, COMBATANT_CLASS):
+            folded = {fold(name) for name in table if fold(name)}
+            keys = Counter(sorted_letters(unconfused(name)) for name in folded)
+            with self.subTest(table=len(table)):
+                self.assertEqual([], [key for key, count in keys.items() if count > 1])
+
+
+class TestNearestName(unittest.TestCase):
+    """The last resort: a reading one edit away from exactly one real name.
+
+    Everything above this keeps all of a name's letters. This is for the readings that lost one, gained one,
+    or got one plain wrong - `Shuffl`, `arget Spotted`, `1-Devil Dice`, `Vute Accent`. A few dozen readings
+    land here across every log and every one of them is correct, because the pass only answers when a single
+    name is that close. Two candidates and it declines, which is what keeps a short reading like `Dice` from
+    being talked into `Daze`.
+    """
+
+    # Reading, and the name it was meant to be. All from `logs/`.
+    NEAR = {
+        "Shuffl": "Shuffle",
+        "Shuffli": "Shuffle",
+        "arget Spotted": "Target Spotted",
+        "1-Devil Dice": "Devil Dice",
+        "Vute Accent": "Mute Accent",
+        "Harmonization: Moon or Destruction": "Harmonization: Moon of Destruction",
+    }
+
+    def setUp(self):
+        self.lookup = index(list(EQUIPMENT_RARITY) + list(CARD_RARITY))
+
+    def test_the_real_name_is_recovered(self):
+        for reading, real in self.NEAR.items():
+            with self.subTest(reading=reading):
+                self.assertEqual(real, self.lookup.look_up(reading))
+
+    def test_two_candidates_are_refused(self):
+        # `Daze` and `Dice` are both real cards, so a reading of `Dace` belongs to neither.
+        self.assertIsNone(self.lookup.look_up("Dace"))
+
+    def test_a_short_reading_is_never_guessed_at(self):
+        # Below the floor a single edit is most of the name, and the screen is full of stray glyphs.
+        self.assertIsNone(index(["Daze"]).look_up("Dice"))
+        self.assertIsNone(self.lookup.look_up("+60"))
+
+    def test_an_exact_name_still_wins(self):
+        # A name that really is one edit from another, so the tiers have something to get wrong.
+        for name in ("Archetype: □", "Archetype: △"):
+            with self.subTest(name=name):
+                self.assertEqual(name, self.lookup.look_up(name))
+
+    def test_nothing_close_stays_unrecognised(self):
+        self.assertIsNone(self.lookup.look_up("Rewards cannot be obtained"))
+
+
+class TestOneEditApart(unittest.TestCase):
+    """The distance test itself, which has to mean exactly one edit and not zero or two."""
+
+    def test_a_substitution(self):
+        self.assertTrue(one_edit_apart("mute", "vute"))
+
+    def test_a_deletion(self):
+        self.assertTrue(one_edit_apart("shuffle", "shuffl"))
+
+    def test_an_insertion(self):
+        self.assertTrue(one_edit_apart("targetspotted", "argetspotted"))
+
+    def test_the_same_string_is_not_one_edit(self):
+        self.assertFalse(one_edit_apart("shuffle", "shuffle"))
+
+    def test_two_edits_are_too_many(self):
+        self.assertFalse(one_edit_apart("dice", "daze"))
+
+    def test_a_big_difference_in_length_is_too_many(self):
+        self.assertFalse(one_edit_apart("shuffle", "shu"))
+
+    def test_the_order_of_the_pair_does_not_matter(self):
+        self.assertTrue(one_edit_apart("shuffl", "shuffle"))
+        self.assertTrue(one_edit_apart("shuffle", "shuffl"))

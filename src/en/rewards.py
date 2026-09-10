@@ -7,6 +7,8 @@ from ok import Logger
 
 from src.en import quality
 from src.en.handlers import loaded, register, replace
+from src.en.overrides import FARMED_COMBATANT
+from src.en.screen import COMBATANT_NAME_POINTS
 
 logger = Logger.get_logger(__name__)
 
@@ -16,8 +18,12 @@ SORTIE_CARD_KEY = "获得卡牌优先级"
 # The three equipment slots, in the order the handlers number them.
 EQUIPMENT_KEYS = {"装备1号位优先级": 0, "装备2号位优先级": 1, "装备3号位优先级": 2}
 
-# Where the Combatants screen writes each team member's name.
-MEMBER_POSITIONS = ((0.159, 0.368), (0.432, 0.368), (0.705, 0.369))
+# The handlers in `utils` that judge something against a priority list, and so need one filled in when the
+# user left it empty. `handle_card_assign` belongs here because it is the screen that confirms a purchase the
+# shop's own handler already decided on: without the same list, the shop buys and the purchase screen
+# cancels, forever.
+FILLED_IN = ("handle_shop", "handle_card_reward", "handle_card_assign")
+
 TEAM = "_en_team"
 
 _patched = False
@@ -35,7 +41,7 @@ def remember_team(task, utils):
         utils: The loaded `utils` module.
     """
     names = []
-    for x, y in MEMBER_POSITIONS:
+    for x, y in COMBATANT_NAME_POINTS:
         box = utils.find_box_at_point(task, x, y)
         if box and box.name.strip():
             names.append(box.name.strip())
@@ -71,12 +77,14 @@ def on_screen(task):
     return [box.name for box in (task.all_texts or []) if box.name]
 
 
-def generated_list(task, key):
+def generated_list(task, key, farmed=""):
     """Build the priority list for a setting the user left empty.
 
     Args:
         task: The running task.
         key: The config key being read.
+        farmed: The combatant whose save data the run is farming, who is the one equipment is bought for.
+            Empty leaves equipment in the order rarity alone puts it.
 
     Returns:
         The names worth taking, best first, or None when this key is not one we fill in.
@@ -90,7 +98,9 @@ def generated_list(task, key):
     slot = EQUIPMENT_KEYS.get(key)
     if slot is None:
         return None
-    return [name for name in quality.worth_taking(names, classes, cards=False)
+    # Ordered by who is going to wear it. Rarity still decides, so this only separates pieces that were
+    # otherwise going to be picked between on their names.
+    return [name for name in quality.worth_taking(names, classes, cards=False, suited_to=farmed)
             if quality.slot_of(name) == slot]
 
 
@@ -108,7 +118,9 @@ def filling_in(original, task_module):
         configured = original(task, key, default)
         if configured:
             return configured
-        generated = generated_list(task, key)
+        # Through `original` rather than the module attribute, which is this function for the length of the
+        # call - asking through that would come straight back here.
+        generated = generated_list(task, key, original(task, FARMED_COMBATANT, ""))
         if not generated:
             return configured
         logger.info(f"{task_module}: {key} is empty, offering {generated}")
@@ -159,7 +171,7 @@ def apply():
         if utils is None:
             return
 
-        for name in ("handle_shop", "handle_card_reward"):
+        for name in FILLED_IN:
             handler = getattr(utils, name, None)
             if handler is not None:
                 replace(name, with_generated_lists(handler, [utils]))

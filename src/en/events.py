@@ -25,9 +25,13 @@ import re
 
 from ok import Logger
 
-from src.en.handlers import StandIn, loaded, register, replace
+from src.en import desire
+from src.en.handlers import StandIn, loaded, register, wrap
 
 logger = Logger.get_logger(__name__)
+
+# Names this change in the shared record of what a function already carries, so it is applied once.
+TAG = "ranked events"
 
 # Ranks, best first. Descriptions are folded to lower case before matching, so these are lower case too.
 SPARK = ("epiphany", "闪光")
@@ -36,14 +40,20 @@ ATTACK = ("initiate battle", "event encounter")
 # An option that only reads out lore. This phrasing was captured from a run rather than read out of the
 # client's tables, so it is one known wording and not the whole set.
 DIALOGUE = ("check information on",)
+# An event handing out a Desire card says so. The faction is named separately, and both have to be present:
+# "Claim" and "Control" are ordinary English words that turn up in options having nothing to do with Desire.
+DESIRE = ("desire",)
 
 SPARK_RANK = 0
-REWARD_RANK = 1
-ATTACK_RANK = 2
-QUIT_RANK = 3
+# A Desire card of the faction the run is chasing. Below a spark, which permanently upgrades a card, and
+# above an ordinary reward, because points in one faction compound towards a team-wide bonus at 3, 5 and 7.
+DESIRE_RANK = 1
+REWARD_RANK = 2
+ATTACK_RANK = 3
+QUIT_RANK = 4
 # Worse than quitting. Ending the event at least moves the run on, while reading lore puts the same screen
 # straight back up.
-DIALOGUE_RANK = 4
+DIALOGUE_RANK = 5
 
 # `_get_region_text` glues the OCR boxes together with no separator and in an unstable order, and the reader
 # loses or invents spaces at line breaks - the same option was captured as "Spark an Epiphany for a" and
@@ -87,7 +97,7 @@ def contains(text, markers):
     return any(fold(marker) in text for marker in markers)
 
 
-def rank(description):
+def rank(description, target=None):
     """Score how much an event option is worth taking, lowest first.
 
     Plain containment on purpose. The OCR boxes behind a description arrive in an unpredictable order, so
@@ -96,9 +106,10 @@ def rank(description):
 
     Args:
         description: The option text.
+        target: The Desire faction the run is chasing, or None when it is not being tracked.
 
     Returns:
-        `SPARK_RANK`, `REWARD_RANK`, `ATTACK_RANK`, `QUIT_RANK` or `DIALOGUE_RANK`.
+        `SPARK_RANK`, `DESIRE_RANK`, `REWARD_RANK`, `ATTACK_RANK`, `QUIT_RANK` or `DIALOGUE_RANK`.
     """
     text = fold(description)
     if contains(text, SPARK):
@@ -107,6 +118,8 @@ def rank(description):
         return DIALOGUE_RANK
     if contains(text, QUIT):
         return QUIT_RANK
+    if target and contains(text, DESIRE) and contains(text, (target,)):
+        return DESIRE_RANK
     if contains(text, ATTACK):
         return ATTACK_RANK
     # Anything unrecognised counts as a reward. Most options naming no known marker still hand something over,
@@ -114,7 +127,7 @@ def rank(description):
     return REWARD_RANK
 
 
-def drop_unwanted(options):
+def drop_unwanted(options, target=None):
     """Withhold the options that give nothing, unless they are all that is on offer.
 
     This is what makes "never end or stall the event while something else is available" a guarantee rather than
@@ -123,13 +136,14 @@ def drop_unwanted(options):
 
     Args:
         options: Every recognised option.
+        target: The Desire faction the run is chasing, or None.
 
     Returns:
         The options worth considering.
     """
     if not options:
         return options
-    ranked = [(rank(option.get("description", "")), option) for option in options]
+    ranked = [(rank(option.get("description", ""), target), option) for option in options]
     # Every option worth taking ranks at `ATTACK_RANK` or better, so the cutoff only rises above it on a screen
     # offering nothing but ways to end or stall the event - and then only far enough to leave something to click.
     cutoff = max(min(tier for tier, _ in ranked), ATTACK_RANK)
@@ -142,7 +156,7 @@ def drop_unwanted(options):
     return kept
 
 
-def order(options, priority_keywords, is_subsequence):
+def order(options, priority_keywords, is_subsequence, target=None):
     """Sort options so the best one is first.
 
     Upstream's upper-half shortcut takes the first option it can, before the blacklist or the user's lists are
@@ -153,6 +167,7 @@ def order(options, priority_keywords, is_subsequence):
         options: The options to sort.
         priority_keywords: The user's configured keywords, best first.
         is_subsequence: Upstream's matcher, so configured keywords behave exactly as they always have.
+        target: The Desire faction the run is chasing, or None.
 
     Returns:
         A new list, best first. Equal entries keep their original order.
@@ -163,7 +178,7 @@ def order(options, priority_keywords, is_subsequence):
         for position, keyword in enumerate(priority_keywords):
             if keyword and is_subsequence(keyword, description):
                 return (0, position, index)
-        return (1, rank(description), index)
+        return (1, rank(description, target), index)
 
     return [option for _, option in sorted(enumerate(options), key=key)]
 
@@ -174,7 +189,22 @@ class RankingChoice(StandIn):
     Upstream reaches for `random.choice` once its own ladder has run out of opinions, which is the decision
     worth improving and the only `random` call inside the function. Anything that is not a list of event
     options falls through to the real module, so an unrelated call still behaves normally.
+
+    This is the path most event screens actually reach, so it has to be told which Desire faction the run is
+    chasing. A live Chaos run ranked an option handing out the faction it wanted as an ordinary reward,
+    because the sort that knew about factions was never the thing deciding.
     """
+
+    def __init__(self, original, target=None):
+        """Hold the module being stood in for, and the faction to steer towards.
+
+        Args:
+            original: The `random` module upstream would otherwise have used.
+            target: The Desire faction the run is chasing, or None when it is not being tracked.
+        """
+        super().__init__(original)
+        # Set here rather than lazily: `StandIn.__getattr__` would otherwise forward the lookup to `random`.
+        self.target = target
 
     def choice(self, sequence):
         """Pick the best-ranked event option, or defer when this is not an event choice.
@@ -188,8 +218,8 @@ class RankingChoice(StandIn):
         options = list(sequence)
         if not options or not all(isinstance(option, dict) and "description" in option for option in options):
             return self.original.choice(sequence)
-        best = min(rank(option["description"]) for option in options)
-        candidates = [option for option in options if rank(option["description"]) == best]
+        best = min(rank(option["description"], self.target) for option in options)
+        candidates = [option for option in options if rank(option["description"], self.target) == best]
         # Ties stay random so a repeated event does not always take an identical path.
         chosen = self.original.choice(candidates)
         logger.info(f"ranked {len(options)} options, {len(candidates)} tied at rank {best}, taking: "
@@ -197,18 +227,16 @@ class RankingChoice(StandIn):
         return chosen
 
 
-def apply():
-    """Rank event options wherever `handle_event_task` is registered."""
-    global _patched
-    if _patched:
-        return
+def ranking(utils):
+    """Build the fork-local change to wrap `handle_event_task` in.
 
-    def install():
-        utils = loaded("utils")
-        if utils is None:
-            return
+    Args:
+        utils: Upstream's `utils` module, which the wrapper stands in on for the length of each call.
 
-        original_handle_event_task = utils.handle_event_task
+    Returns:
+        A factory taking the handler currently installed and returning the one to run in its place.
+    """
+    def factory(original_handle_event_task):
         original_recognize = utils.recognize_event_options
 
         def ranked_recognize(task, *args, **kwargs):
@@ -219,11 +247,13 @@ def apply():
             for slot in range(1, 4):
                 priority.extend(utils._get_card_list(task, f"装备{slot}号位优先级"))
             priority.extend(utils._get_card_list(task, "任务优先级"))
-            return order(drop_unwanted(options), priority, utils.is_subsequence)
+            target = desire.target_faction(task, utils)
+            return order(drop_unwanted(options, target), priority, utils.is_subsequence, target)
 
         def patched_handle_event_task(task):
             original_find_feature = task.find_feature
             original_random = utils.random
+            target = desire.target_faction(task, utils)
 
             def find_feature(feature_name=None, *args, **kwargs):
                 # Hiding this one feature stops combat being clicked before anything is ranked. Set on the
@@ -233,7 +263,7 @@ def apply():
                 return original_find_feature(feature_name, *args, **kwargs)
 
             task.find_feature = find_feature
-            utils.random = RankingChoice(original_random)
+            utils.random = RankingChoice(original_random, target)
             utils.recognize_event_options = ranked_recognize
             try:
                 return original_handle_event_task(task)
@@ -242,8 +272,26 @@ def apply():
                 utils.random = original_random
                 del task.find_feature
 
-        patched_handle_event_task._en_ranked = True
-        replace("handle_event_task", patched_handle_event_task)
+        return patched_handle_event_task
 
-    register(install)
+    return factory
+
+
+def install(utils):
+    """Rank event options wherever `handle_event_task` is registered.
+
+    Args:
+        utils: Upstream's `utils` module, or None when it has not been imported yet.
+    """
+    if utils is None:
+        return
+    wrap(utils, "handle_event_task", ranking(utils), TAG)
+
+
+def apply():
+    """Rank event options wherever `handle_event_task` is registered."""
+    global _patched
+    if _patched:
+        return
+    register(lambda: install(loaded("utils")))
     _patched = True

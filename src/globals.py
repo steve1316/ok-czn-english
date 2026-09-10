@@ -11,8 +11,9 @@ class Globals(QObject):
         super().__init__()
         # Everything English-only lives under src/en/ so upstream's files stay untouched and merges stay clean.
         from src.en import (  # noqa: E501
-            battle, deck, dialogue, dice, draft, equipment, events, layout, navigation, observe,
-            ocr_text, overrides, picker, pins, rewards, shell, shop, templates, notify, upload,
+            battle, deck, desire, dialogue, dice, draft, equipment, events, layout, navigation,
+            observe, ocr_text, overrides, persona, picker, pins, rewards, shell, shop, templates,
+            notify, stuck, upload,
         )
 
         layout.apply()
@@ -24,10 +25,12 @@ class Globals(QObject):
         events.apply()
         pins.apply()
         deck.apply()
+        desire.apply()
+        persona.apply()
         dice.apply()
         draft.apply()
         equipment.apply()
-        # Anything wrapping `handle_shop` or `handle_card_reward` goes before rewards, which renames the
+        # Anything wrapping a handler in `rewards.FILLED_IN` goes before rewards, which renames the
         # list entry it builds - after that rename, a later wrapper looking for the original name finds
         # nothing. Order does not otherwise matter: `handlers.wrap` composes rather than replaces.
         shop.apply()
@@ -38,5 +41,6 @@ class Globals(QObject):
         overrides.apply()
         upload.apply()
         notify.apply()
+        stuck.apply()
         # Re-shapes the task lists, so it hooks the window rather than the tasks.
         shell.apply()

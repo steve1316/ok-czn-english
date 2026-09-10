@@ -1,13 +1,29 @@
 """Grade cards, equipment and combatants from the client's own data.
 
 Names are folded before matching, because neither the reader nor the client spells them predictably.
+
+`suits` is the one judgement here that is about a pairing rather than a thing. The game keeps an opinion on
+which equipment suits which combatant - it labels equipment with the kind of deck it serves, and gives each
+combatant a weight per kind - but only fills that in for Sortie, so `game_quality.py` carries it across to
+the Chaos copies of the same relics and `hand_tags.py` fills the gaps that leaves by reading the effect text.
+
+It still only ever orders pieces that rarity has already ranked equal, and never promotes one above a better
+piece. That is not caution about coverage: upstream treats the priority list as an override rather than a
+tiebreak, so a well-suited Legend ranked above an ill-suited Unique would have the run strip the Unique it is
+already wearing to install the Legend.
 """
 
 import re
+from collections import Counter
+from typing import NamedTuple
 
 from ok import Logger
 
-from src.en.game_quality import CARD_CLASSES, CARD_RARITY, COMBATANT_CLASS, EQUIPMENT_RARITY, EQUIPMENT_SLOT
+from src.en.game_quality import (
+    CARD_CLASSES, CARD_RARITY, COMBATANT_CLASS, COMBATANT_TAG_WEIGHTS, EQUIPMENT_RARITY, EQUIPMENT_SLOT,
+    EQUIPMENT_TAGS,
+)
+from src.en.hand_tags import HAND_TAGS
 
 logger = Logger.get_logger(__name__)
 
@@ -33,6 +49,77 @@ CLASS_NAMES = {
 # the same nothing and matches it.
 INSIGNIFICANT = re.compile(r"[^0-9a-z一-鿿■-◿]+")
 
+# Characters the reader hands back for one another, grouped by what they look like on screen. The first of
+# each group is the spelling the rest fold into. Only what the logs actually show being swapped is here, and
+# a capital I read as a lowercase l is far the commonest of them - `Magic-lnfused Sapphire`, `Instinct
+# lgnition`, `Mutation: lron Wall` are all real readings. Letters that would turn one real word into another
+# are deliberately absent: reading v as m or r as f would quietly match the wrong name, and a wrong match is
+# worse than any number of missed ones.
+CONFUSABLE = {letter: group[0] for group in ("il1", "o0", "s5", "gq9", "b6", "z2") for letter in group}
+# Below this many characters a single edit is most of the name, and the screen is full of stray glyphs and
+# fragments that would each find something to be one edit from. `Dice`, `Quick` and `+60` are all real
+# readings that stop here.
+SHORTEST_WORTH_GUESSING = 6
+
+
+class Lookup(NamedTuple):
+    """Everything needed to recognise a name the reader produced.
+
+    The tables are held behind `look_up` rather than beside it because reaching past the tiers is the easy
+    mistake, and a quiet one: a reading repaired on the shop screen would go unrepaired in a battle hand.
+    """
+
+    # Every spelling a name answers to - folded, and the fallbacks - each pointing at the client's own.
+    spellings: dict
+    # Only the exact folded spellings, which is the roster the edit-distance pass walks.
+    exact: dict
+
+    def look_up(self, name):
+        """Find the client's own spelling of a name the reader produced.
+
+        The spellings are tried cheapest first: three dictionary lookups, each keeping every letter of the
+        reading, and only then a walk of the whole roster. That order is about cost alone. Which tier answers
+        cannot change the answer, because `index` gives a name a fallback spelling only where it is the sole
+        owner of it, so a later tier can never name something the reading's own spelling would not.
+
+        Args:
+            name: The name as read off the screen.
+
+        Returns:
+            The canonical name, or None when nothing in the index answers to it.
+        """
+        folded = fold(name)
+        for spell in SPELLINGS:
+            found = self.spellings.get(spell(folded))
+            if found is not None:
+                return found
+        return self.nearest(folded)
+
+    def nearest(self, folded):
+        """Find the one real name a reading is a single edit from.
+
+        The pass of last resort, for readings that lost a character rather than merely rearranging them. It
+        answers only when a single name is that close: two candidates means the reading cannot say which, and
+        guessing there would put a wrong name into a shopping list.
+
+        The floor is on the reading's own length, not the candidate's, and that asymmetry is what keeps the
+        short names safe - a reading long enough to be guessed at is never one edit from a three-letter one.
+
+        Args:
+            folded: The reading, already folded.
+
+        Returns:
+            The canonical name, or None when nothing or too much is close.
+        """
+        if len(folded) < SHORTEST_WORTH_GUESSING:
+            return None
+        found = [name for known, name in self.exact.items() if one_edit_apart(folded, known)]
+        if len(found) != 1:
+            return None
+        logger.info(f"reading 「{folded}」 as {found[0]}, one edit away")
+        return found[0]
+
+
 
 def fold(name):
     """Reduce a name to the form used for matching.
@@ -46,18 +133,89 @@ def fold(name):
     return INSIGNIFICANT.sub("", (name or "").casefold())
 
 
+def unconfused(folded):
+    """Rewrite the characters the reader swaps for one another into one spelling each.
+
+    Args:
+        folded: A name that has been through `fold`.
+
+    Returns:
+        The same name with every lookalike character replaced by the one standing for its group.
+    """
+    return "".join(CONFUSABLE.get(character, character) for character in folded)
+
+
+def sorted_letters(folded):
+    """Reduce an already-folded name to its letters in order, so word order stops mattering.
+
+    Args:
+        folded: A name that has been through `fold`.
+
+    Returns:
+        The same characters, sorted.
+    """
+    return "".join(sorted(folded))
+
+
+# The spellings a reading is retried under, in falling order of how much of it they take on trust. `str`
+# leaves it exactly as read; sorting comes last because it throws away the order, and it is applied to the
+# unconfused form so a name that was both misread and scrambled still lands.
+SPELLINGS = (str, unconfused, lambda folded: sorted_letters(unconfused(folded)))
+
+
+def one_edit_apart(left, right):
+    """Report whether two strings are exactly one insertion, deletion or substitution apart.
+
+    Args:
+        left: One folded name.
+        right: The other.
+
+    Returns:
+        True at a distance of exactly one. Identical strings are False, since nothing was misread.
+    """
+    if abs(len(left) - len(right)) > 1:
+        return False
+    shorter, longer = sorted((left, right), key=len)
+    for position, (here, there) in enumerate(zip(shorter, longer)):
+        if here != there:
+            if len(shorter) == len(longer):
+                return shorter[position + 1:] == longer[position + 1:]
+            return shorter[position:] == longer[position + 1:]
+    return len(longer) - len(shorter) == 1
+
+
 def index(names):
     """Build a folded lookup for a set of names.
+
+Several keys per name where it is safe to have them: the folded name first, then one per fallback spelling.
+    The reader mangles a name in two ways that keep all of its letters - it swaps lookalike characters, and it
+    hands the words back out of order - so `Magic-Infused Sapphire` arrives as `Magic-lnfusedSapphire` and
+    `Assault Gauntlets` as `GauntletsAssault`. Both were simply lost before. A fallback key is only added
+    where exactly one name owns it and nothing nearer has claimed it, so names that would collide keep their
+    exact spellings and answer to nothing else.
 
     Args:
         names: An iterable of canonical names.
 
     Returns:
-        A dict of folded name to canonical name. A name that folds away to nothing is left out, since that
-        key would match every reading made only of characters the fold discards.
+        A `Lookup`. A name that folds away to nothing is left out, since that key would match every reading
+        made only of characters the fold discards.
     """
-    return {folded: name for folded, name in ((fold(name), name) for name in names) if folded}
+    exact = {folded: name for folded, name in ((fold(name), name) for name in names) if folded}
+    lookup = dict(exact)
+    for spell in SPELLINGS[1:]:
+        keyed = [(spell(folded), name) for folded, name in exact.items()]
+        owners = Counter(key for key, _ in keyed)
+        for key, name in keyed:
+            # Never over a key already claimed: an exact spelling, and then a nearer guess, both outrank this.
+            if owners[key] == 1:
+                lookup.setdefault(key, name)
+    return Lookup(spellings=lookup, exact=exact)
 
+
+# The game's own labels, with the hand-read ones filling the gaps it left. The generated half wins wherever
+# both speak, since it is the developers' answer and the other is a reading of the effect text.
+TAGS = {**HAND_TAGS, **EQUIPMENT_TAGS}
 
 CARD_INDEX = index(CARD_RARITY)
 EQUIPMENT_INDEX = index(EQUIPMENT_RARITY)
@@ -75,7 +233,7 @@ def team_classes(names):
     """
     classes = set()
     for name in names:
-        canonical = COMBATANT_INDEX.get(fold(name))
+        canonical = COMBATANT_INDEX.look_up(name)
         if canonical:
             classes.add(COMBATANT_CLASS[canonical])
     return classes
@@ -120,19 +278,61 @@ def grade(name, table, lookup):
     Returns:
         A `(canonical_name, grade)` pair, or None when the name is not in the table.
     """
-    canonical = lookup.get(fold(name))
+    canonical = lookup.look_up(name)
     if canonical is None:
         return None
     return canonical, table[canonical]
 
 
-def worth_taking(names, classes=(), cards=True):
+def wants(combatant):
+    """Read the kinds of equipment a combatant is said to want.
+
+    Args:
+        combatant: The combatant's name, in any spelling.
+
+    Returns:
+        A dict of equipment kind to the weight this combatant puts on it, empty when the data has no opinion
+        about them at all.
+    """
+    return COMBATANT_TAG_WEIGHTS.get(COMBATANT_INDEX.look_up(combatant)) or {}
+
+
+def tallied(equipment, weights):
+    """Add up what one combatant's weights say about one piece of equipment.
+
+    Args:
+        equipment: The equipment's name as the client spells it, or None when it is not known equipment.
+        weights: That combatant's weights, from `wants`.
+
+    Returns:
+        The total weight, zero when either side carries nothing.
+    """
+    return sum(weights.get(tag, 0) for tag in TAGS.get(equipment) or ())
+
+
+def suits(equipment_name, combatant):
+    """Say how much a piece of equipment suits the combatant who would wear it.
+
+    Args:
+        equipment_name: The equipment name as read off the screen, in any spelling.
+        combatant: The combatant's name, in any spelling.
+
+    Returns:
+        The weight that combatant puts on the kinds this piece serves, on the game's own scale. Zero when
+        either side carries nothing, which reads as "no opinion" rather than as "unsuitable".
+    """
+    return tallied(EQUIPMENT_INDEX.look_up(equipment_name), wants(combatant))
+
+
+def worth_taking(names, classes=(), cards=True, suited_to=None):
     """Pick out the names worth spending on, best first.
 
     Args:
         names: Candidate names as read off the screen, which may be concatenated or misspelt.
         classes: The team's classes, used to skip cards nobody could hold.
         cards: True to grade against cards, False for equipment.
+        suited_to: The combatant who would wear the equipment, used to order pieces of equal rarity. None
+            leaves the order exactly as it was.
 
     Returns:
         The canonical names worth taking, Unique before Legend, each appearing once.
@@ -150,7 +350,11 @@ def worth_taking(names, classes=(), cards=True):
             logger.info(f"skipping {canonical}, a {rarity} card no one on this team can hold")
             continue
         found[canonical] = rarity
-    return sorted(found, key=lambda name: (WORTH_TAKING.index(found[name]), name))
+    # Only equipment carries the tags, and only within one rarity, so a preference can never talk the run
+    # into a worse piece than it would have bought anyway. The combatant is the same for every name here, so
+    # their weights are read once rather than per name, and `found` already holds the client's own spelling.
+    weights = {} if cards else wants(suited_to)
+    return sorted(found, key=lambda name: (WORTH_TAKING.index(found[name]), -tallied(name, weights), name))
 
 
 def slot_of(name):
@@ -162,5 +366,4 @@ def slot_of(name):
     Returns:
         The slot index, or None when the name is not known equipment.
     """
-    canonical = EQUIPMENT_INDEX.get(fold(name))
-    return EQUIPMENT_SLOT.get(canonical) if canonical else None
+    return EQUIPMENT_SLOT.get(EQUIPMENT_INDEX.look_up(name))

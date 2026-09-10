@@ -90,6 +90,12 @@ msgstr "德朗商店"
 msgid "Free"
 msgstr "免费"
 
+# From handle_card_assign: _get_game_text(task, "刷新") over the buttons along the bottom of a card
+# reward. Without it the reroll never fired at all, so a card the priority list did not want was skipped
+# rather than rerolled, even with all three rerolls still in hand.
+msgid "Refresh"
+msgstr "刷新"
+
 # From handle_continue: _get_game_text(task, "继续") compared into box.name
 msgid "Continue"
 msgstr "继续"

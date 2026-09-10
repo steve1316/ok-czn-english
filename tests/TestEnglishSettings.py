@@ -206,6 +206,33 @@ class TestSmartCardPlay(unittest.TestCase):
         self.assertIn(overrides.SMART_CARD_PLAY, {entry.msgid for entry in catalog})
 
 
+class TestDesireFaction(unittest.TestCase):
+    """The faction the run chases, added fork-side because Season 4 postdates the settings upstream ships."""
+
+    def test_a_mode_that_ranks_card_rewards_gets_it(self):
+        task = reshaped({overrides.RANKS_CARD_REWARDS: []})
+        self.assertEqual(overrides.DEFAULT_FACTION, task.default_config[overrides.DESIRE_FACTION])
+
+    def test_it_offers_every_faction(self):
+        task = reshaped({overrides.RANKS_CARD_REWARDS: []})
+        self.assertEqual(list(overrides.FACTIONS), task.config_type[overrides.DESIRE_FACTION]["options"])
+
+    def test_it_is_explained_to_the_user(self):
+        task = reshaped({overrides.RANKS_CARD_REWARDS: []})
+        self.assertIn(overrides.DESIRE_FACTION, task.config_description)
+
+    def test_a_mode_that_ranks_no_card_rewards_does_not_carry_it(self):
+        task = reshaped({"游戏语言": "简体中文"})
+        self.assertNotIn(overrides.DESIRE_FACTION, task.default_config)
+
+    def test_the_label_and_its_options_reach_the_ui_through_the_catalog(self):
+        catalog = polib.pofile(str(REPO_ROOT / "i18n" / "zh_CN" / "LC_MESSAGES" / "ok.po"))
+        msgids = {entry.msgid for entry in catalog}
+        for label in (overrides.DESIRE_FACTION, *overrides.FACTIONS):
+            with self.subTest(label=label):
+                self.assertIn(label, msgids)
+
+
 class TestReshape(unittest.TestCase):
 
     def test_game_language_defaults_to_english(self):

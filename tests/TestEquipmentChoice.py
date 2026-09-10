@@ -15,8 +15,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from src.en.equipment import (  # noqa: E402
-    MYTHIC_REGION, ROW_PITCH, insisting_on_mythic, mythic_offer, preferring_recommended,
-    recommended_banner, recommended_row,
+    EQUIPMENT_FLOOR, MYTHIC_REGION, ROW_PITCH, SLOTS, bare_slots, insisting_on_mythic, mythic_offer,
+    preferring_recommended, recommended_banner, recommended_row, refusing_equipment, remembering_slots,
 )
 
 WIDTH, HEIGHT = 1920, 1080
@@ -290,3 +290,171 @@ class TestInsistingOnMythic(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestBareSlots(unittest.TestCase):
+    """Reading back which equipment slots are still empty on somebody.
+
+    Upstream keeps this for the save-data combatant alone, so a slot standing empty on either of the other
+    two counted as filled. All three are read here, because a piece bought for a bare slot is worth far more
+    than one that replaces something already worn - and the run is being asked not to spend on the latter.
+    """
+
+    def test_nothing_seen_yet_reads_as_every_slot_bare(self):
+        # A run opens with all three combatants stripped, so this is the truth and not merely permissive.
+        self.assertEqual({0, 1, 2}, bare_slots(FakeTask([])))
+
+    def test_a_slot_empty_on_anybody_counts(self):
+        task = FakeTask([])
+        setattr(task, SLOTS, [["传说", "传说", "传说"],
+                              ["传说", "", "传说"],
+                              ["传说", "传说", "传说"]])
+        self.assertEqual({1}, bare_slots(task))
+
+    def test_a_full_team_leaves_nothing_bare(self):
+        task = FakeTask([])
+        setattr(task, SLOTS, [["传说"] * 3] * 3)
+        self.assertEqual(set(), bare_slots(task))
+
+    def test_a_slot_that_could_not_be_read_is_not_called_bare(self):
+        # The colour read hands back None when it cannot see the frame, which is not the same as empty.
+        task = FakeTask([])
+        setattr(task, SLOTS, [[None, None, None]])
+        self.assertEqual(set(), bare_slots(task))
+
+
+class TestRememberingSlots(unittest.TestCase):
+    """Reading every combatant's slots off the screen that shows all three."""
+
+    def stubs(self, rows=3):
+        """Build a `utils` stand-in for the install screen.
+
+        Args:
+            rows: How many combatant rows the screen shows.
+
+        Returns:
+            A `(utils, seen)` pair, where `seen` records which rows were read for their slots.
+        """
+        seen = []
+
+        def find_tags(task_, region, page=None):
+            return [f"row{index}" for index in range(rows)]
+
+        def qualities(task_, row):
+            seen.append(row)
+            return ["", "传说", ""]
+
+        return types.SimpleNamespace(_find_member_level_tags=find_tags,
+                                     _member_equipment_qualities=qualities), seen
+
+    def handler(self, utils):
+        """Build a stand-in for upstream, which reads the rows once and equips one of them."""
+        def handle(task_):
+            utils._find_member_level_tags(task_, (0.6, 0.3, 0.7, 0.8), page="安装装备页面")
+            return True
+
+        handle.__name__ = "handle_equipment"
+        return handle
+
+    def test_every_row_is_read(self):
+        utils, seen = self.stubs()
+        task = FakeTask([])
+        remembering_slots(self.handler(utils), utils)(task)
+        self.assertEqual(["row0", "row1", "row2"], seen)
+        self.assertEqual(3, len(getattr(task, SLOTS)))
+
+    def test_the_slots_are_kept_on_the_task(self):
+        utils, _ = self.stubs()
+        task = FakeTask([])
+        remembering_slots(self.handler(utils), utils)(task)
+        self.assertEqual({0, 2}, bare_slots(task))
+
+    def test_a_screen_with_no_rows_leaves_what_was_known(self):
+        utils, _ = self.stubs(rows=0)
+        task = FakeTask([])
+        setattr(task, SLOTS, [["", "", ""]])
+        remembering_slots(self.handler(utils), utils)(task)
+        self.assertEqual([["", "", ""]], getattr(task, SLOTS))
+
+    def test_the_handler_answer_is_passed_through(self):
+        utils, _ = self.stubs()
+        self.assertTrue(remembering_slots(self.handler(utils), utils)(FakeTask([])))
+
+    def test_the_stub_is_put_back(self):
+        utils, _ = self.stubs()
+        before = utils._find_member_level_tags
+        remembering_slots(self.handler(utils), utils)(FakeTask([]))
+        self.assertEqual(before, utils._find_member_level_tags)
+
+
+class TestRefusingEquipment(unittest.TestCase):
+    """What the shop is allowed to spend on equipment.
+
+    Two conditions, both asked for: the run has to be holding real money, and the piece has to be going into
+    a slot that is empty on somebody. Upgrading a slot that already has something is what this is meant to
+    stop, so a shelf full of Legends is walked past when every slot is spoken for.
+    """
+
+    def shop(self, credit, slots=None, listed=("Crimson Sword",)):
+        """Build the shop screen and the stubs the gate reads through.
+
+        Args:
+            credit: What the run is holding.
+            slots: What was last seen of each combatant's slots, or None for a screen never seen.
+            listed: What the priority list offers for every slot.
+
+        Returns:
+            A `(task, utils, offered, handler)` quadruple, where `offered` collects what upstream was given.
+        """
+        task = FakeTask([])
+        if slots is not None:
+            setattr(task, SLOTS, slots)
+        offered = {}
+        utils = types.SimpleNamespace(
+            _equipment_priority=lambda task_, slot: list(listed),
+            _get_current_credit=lambda task_: credit,
+        )
+
+        def handle(task_):
+            offered.update({slot: utils._equipment_priority(task_, slot) for slot in range(3)})
+            return True
+
+        handle.__name__ = "handle_shop"
+        return task, utils, offered, refusing_equipment(handle, utils)
+
+    def test_a_rich_run_fills_a_bare_slot(self):
+        task, _, offered, handler = self.shop(EQUIPMENT_FLOOR, slots=[["", "传说", "传说"]])
+        handler(task)
+        self.assertEqual(["Crimson Sword"], offered[0])
+
+    def test_a_slot_somebody_has_filled_is_not_upgraded(self):
+        task, _, offered, handler = self.shop(EQUIPMENT_FLOOR, slots=[["", "传说", "传说"]])
+        handler(task)
+        self.assertEqual([], offered[1])
+        self.assertEqual([], offered[2])
+
+    def test_a_poor_run_buys_no_equipment_at_all(self):
+        task, _, offered, handler = self.shop(EQUIPMENT_FLOOR - 1)
+        handler(task)
+        self.assertEqual([[], [], []], [offered[slot] for slot in range(3)])
+
+    def test_the_floor_is_inclusive(self):
+        task, _, offered, handler = self.shop(EQUIPMENT_FLOOR)
+        handler(task)
+        self.assertEqual(["Crimson Sword"], offered[0])
+
+    def test_a_run_that_has_seen_no_equipment_screen_may_still_buy(self):
+        task, _, offered, handler = self.shop(EQUIPMENT_FLOOR + 100)
+        handler(task)
+        self.assertEqual(["Crimson Sword"], offered[0])
+
+    def test_an_empty_list_is_left_empty(self):
+        task, _, offered, handler = self.shop(EQUIPMENT_FLOOR + 100, listed=())
+        handler(task)
+        self.assertEqual([], offered[0])
+
+    def test_the_stub_is_put_back(self):
+        task, utils, _, handler = self.shop(EQUIPMENT_FLOOR)
+        before = utils._equipment_priority
+        handler(task)
+        self.assertEqual(before, utils._equipment_priority)
