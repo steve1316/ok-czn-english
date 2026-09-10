@@ -11,10 +11,13 @@ give up, not where the price list says a purchase becomes possible.
 
 import sys
 import unittest
+from functools import partial
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
+
+from tests.fakes import FakeBox as Box  # noqa: E402
 
 from src.en.shop import SHOP_FLOOR, free_refresh_box, refusing_free_refresh  # noqa: E402
 
@@ -25,14 +28,8 @@ FREE_X, FREE_Y = 0.163, 0.933
 SHELF_X, SHELF_Y = 0.500, 0.850
 
 
-class FakeBox:
-    """An OCR box positioned by its centre, the way the shop reads one."""
-
-    def __init__(self, name, center_x, center_y):
-        self.name = name
-        self.width, self.height = 90, 30
-        self.x = center_x * WIDTH - self.width / 2
-        self.y = center_y * HEIGHT - self.height / 2
+# The shop places its boxes by share of the screen.
+FakeBox = partial(Box, width=90, height=30, units="fraction")
 
 
 class FakeTask:

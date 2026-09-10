@@ -18,10 +18,13 @@ All positions here are measured off the runs that hit each screen.
 import sys
 import types
 import unittest
+from functools import partial
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
+
+from tests.fakes import FakeBox as Box  # noqa: E402
 
 from src.en.desire import (  # noqa: E402
     CARD_PRIORITY, INHERIT_TITLE, PURCHASE_TITLE, REWARD_TITLE, TAKEN, best, inherit_handler,
@@ -49,14 +52,8 @@ ASSIGN_PAGE = "卡牌分配页面"
 NAME = "It's All Mine"
 
 
-class FakeBox:
-    """An OCR box positioned by its centre."""
-
-    def __init__(self, name, center_x, center_y):
-        self.name = name
-        self.width, self.height = 200, 30
-        self.x = center_x * WIDTH - self.width / 2
-        self.y = center_y * HEIGHT - self.height / 2
+# The Desire screens place their boxes by share of the screen.
+FakeBox = partial(Box, width=200, height=30, units="fraction")
 
 
 class FakeTask:

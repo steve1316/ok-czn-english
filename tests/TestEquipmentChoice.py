@@ -9,10 +9,13 @@ each row's level tag 116px below the banner that would mark it.
 import sys
 import types
 import unittest
+from functools import partial
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
+
+from tests.fakes import FakeBox as Box  # noqa: E402
 
 from src.en.equipment import (  # noqa: E402
     EQUIPMENT_FLOOR, ROW_PITCH, SLOTS, bare_slots, insisting_on_mythic, mythic_offer,
@@ -31,14 +34,8 @@ CAPTION_X, CAPTION_Y = 586, 780
 TOP_QUALITY = "传说"
 
 
-class FakeBox:
-    """An OCR box positioned by its centre, the way the equipment code reads one."""
-
-    def __init__(self, name, center_x, center_y):
-        self.name = name
-        self.width, self.height = 100, 30
-        self.x = center_x - self.width / 2
-        self.y = center_y - self.height / 2
+# The equipment code reads pixel positions, not fractions.
+FakeBox = partial(Box, width=100, height=30, units="pixels")
 
 
 class FakeTask:

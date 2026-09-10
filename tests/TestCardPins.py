@@ -31,8 +31,8 @@ PIN_BGR = (41, 120, 239)
 PLAIN_BGR = (115, 115, 113)
 
 
-class FakeBox:
-    """A template match, positioned the way `find_feature` reports one."""
+class FakeMatch:
+    """A template match, positioned the way `find_feature` reports one, in pixels."""
 
     def __init__(self, center_x, center_y):
         self.width, self.height = 21, 21
@@ -77,7 +77,7 @@ def card(center_x, center_y, name="Joker"):
         A dict carrying the feature box the pin is measured from.
     """
     return {"name": name, "x": center_x / WIDTH, "y": center_y / HEIGHT,
-            "feature_box": FakeBox(center_x, center_y)}
+            "feature_box": FakeMatch(center_x, center_y)}
 
 
 def screen_with(pinned, offset):

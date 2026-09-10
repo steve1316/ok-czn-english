@@ -6,10 +6,13 @@ both the badge-to-card pairing and the spend condition are pinned here. Position
 
 import sys
 import unittest
+from functools import partial
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
+
+from tests.fakes import FakeBox as Box  # noqa: E402
 
 from src.en.draft import GOOD_ENOUGH, ROLES, badges, rank, rerollable, role_for, role_of  # noqa: E402
 
@@ -19,14 +22,8 @@ CARDS = (("Rin", 0.322), ("Beryl", 0.586), ("Magna", 0.851))
 BADGE_Y, NAME_Y, REROLL_Y = 0.675, 0.724, 0.807
 
 
-class FakeBox:
-    """An OCR box positioned by its centre, the way the draft code reads one."""
-
-    def __init__(self, name, center_x, center_y):
-        self.name = name
-        self.width, self.height = 80, 26
-        self.x = center_x * WIDTH - self.width / 2
-        self.y = center_y * HEIGHT - self.height / 2
+# The draft screen places its boxes by share of the screen.
+FakeBox = partial(Box, width=80, height=26, units="fraction")
 
 
 class FakeTask:

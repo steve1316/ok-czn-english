@@ -12,12 +12,15 @@ about the wrong pixels.
 
 import sys
 import unittest
+from functools import partial
 from pathlib import Path
 
 import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
+
+from tests.fakes import FakeBox as Box  # noqa: E402
 
 from src.en.screen import colour_share, frame_of, in_region, patch_of, text_in_region  # noqa: E402
 
@@ -29,14 +32,8 @@ AMBER_LOW = np.array((10, 90, 120), dtype=np.uint8)
 AMBER_HIGH = np.array((35, 255, 255), dtype=np.uint8)
 
 
-class FakeBox:
-    """An OCR box positioned by its centre."""
-
-    def __init__(self, name, center_x, center_y):
-        self.name = name
-        self.width, self.height = 90, 30
-        self.x = center_x * WIDTH - self.width / 2
-        self.y = center_y * HEIGHT - self.height / 2
+# These helpers take boxes placed by share of the screen.
+FakeBox = partial(Box, width=90, height=30, units="fraction")
 
 
 class FakeTask:
