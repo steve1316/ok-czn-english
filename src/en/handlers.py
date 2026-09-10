@@ -127,15 +127,13 @@ def loaded(module_name):
 def wrap(module, name, factory, tag):
     """Compose a fork-local change over an upstream function, everywhere the run reaches it.
 
-    Two modules wrapping the same function is normal here, and so is the install running once per task load.
-    Both used to be handled with a per-module marker attribute, which fails as soon as a second module wraps
-    the same function: neither can see the other's marker, so each re-wraps on every load and the stack grows
-    without bound. One shared record of what a function already carries fixes that for every caller at once.
+    Two modules wrapping the same function is normal here, and so is the install running once per task load, so
+    one shared record of what a function already carries is what keeps the stack from growing per module per load.
 
-    The wrapper is put in two places because the two are reached differently. A page handler is only ever
-    called through a mode's list, which holds function objects, so the list entry has to be replaced. A helper
-    like `select_card` is called as a module global and is in no list. Doing both covers either kind, and
-    covers a handler that other patches rebuild by reading the module attribute back.
+    The wrapper goes in two places because the two are reached differently. A page handler is only ever called
+    through a mode's list, which holds function objects, so the list entry has to be replaced. A helper like
+    `select_card` is called as a module global and is in no list. Doing both covers either kind, and covers a
+    handler that other patches rebuild by reading the module attribute back.
 
     Args:
         module: The module holding the function, normally `utils`.
@@ -216,13 +214,12 @@ def insert_before(anchor_name, handler):
 def append(handler, anchor_name):
     """Register a handler to run after every existing one, in the modes carrying a given handler.
 
-    Last is its own kind of precedence: a handler here only sees a frame that every handler recognising a
-    screen by name has already declined, which is what makes acting on shape alone safe.
+    Last is its own kind of precedence: a handler here only sees a frame every handler recognising a screen by
+    name has already declined, which is what makes acting on shape alone safe.
 
-    The anchor is what keeps that from spreading. `replace` and `insert_before` scope themselves - a list
-    without the handler they name is left alone - and appending has no such brake of its own, so it would
-    reach every mode loaded now and every mode added later. Naming a handler the target modes carry restores
-    the property. The anchor only decides *which* lists are changed, never where in them the handler lands.
+    The anchor is what keeps that from spreading. `replace` and `insert_before` scope themselves to lists holding
+    the handler they name, and appending has no such brake, so it would reach every mode loaded now and every mode
+    added later. The anchor only decides *which* lists change, never where in them the handler lands.
 
     Args:
         handler: The function to append.

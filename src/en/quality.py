@@ -187,19 +187,18 @@ def one_edit_apart(left, right):
 def index(names):
     """Build a folded lookup for a set of names.
 
-Several keys per name where it is safe to have them: the folded name first, then one per fallback spelling.
-    The reader mangles a name in two ways that keep all of its letters - it swaps lookalike characters, and it
-    hands the words back out of order - so `Magic-Infused Sapphire` arrives as `Magic-lnfusedSapphire` and
-    `Assault Gauntlets` as `GauntletsAssault`. Both were simply lost before. A fallback key is only added
-    where exactly one name owns it and nothing nearer has claimed it, so names that would collide keep their
-    exact spellings and answer to nothing else.
+    The reader mangles a name in two ways that keep all its letters - it swaps lookalike characters and it hands
+    the words back out of order - so `Magic-Infused Sapphire` arrives as `Magic-lnfusedSapphire` and
+    `Assault Gauntlets` as `GauntletsAssault`, and both were simply lost before. So there are several keys per
+    name: the folded name first, then one per fallback spelling. A fallback key is added only where exactly one
+    name owns it and nothing nearer has claimed it, so names that would collide keep their exact spellings.
 
     Args:
         names: An iterable of canonical names.
 
     Returns:
-        A `Lookup`. A name that folds away to nothing is left out, since that key would match every reading
-        made only of characters the fold discards.
+        A `Lookup`. A name that folds away to nothing is left out, since that key would match every reading made
+        only of characters the fold discards.
     """
     exact = {folded: name for folded, name in ((fold(name), name) for name in names) if folded}
     lookup = dict(exact)

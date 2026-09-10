@@ -56,17 +56,13 @@ def departures(before, after):
 def dealt_again(before, after):
     """Say whether the hand was dealt again between two frames.
 
-    A growing hand is not enough on its own, because a card that draws grows it too. What separates the two
-    is what happened to the cards already held: a fresh deal discards the lot first, while a draw leaves them
-    where they were. So the hand has to grow and everything in it has to have gone.
-
-    A deal that redraws a name the old hand held would still look like a draw on that test alone, and with a
-    deck holding several copies of a card that is not rare. So the Action Point readout is asked as well:
-    points refresh when a turn starts, so a readout going from dark to lit alongside a growing hand is a
-    fresh turn even when some names carried over.
-
-    What remains unresolvable is a turn ended early, with points still lit, into a deal that redrew a name.
-    Both signals miss that one, and the cost is a turn boundary read as a draw.
+    A growing hand is not enough, because a card that draws grows it too. What separates them is what happened to
+    the cards already held: a fresh deal discards the lot first, a draw leaves them where they were. So the hand
+    has to grow and everything in it has to have gone. A deal that redraws a name the old hand held would still
+    look like a draw on that test, and with several copies of a card in a deck that is not rare, so the Action
+    Point readout is asked as well - points refresh when a turn starts. What stays unresolvable is a turn ended
+    early, with points still lit, into a deal that redrew a name: both signals miss it, and the cost is a turn
+    boundary read as a draw.
 
     Args:
         before: The earlier frame.

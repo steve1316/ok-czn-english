@@ -125,13 +125,10 @@ class InstantTooltipStyle(QProxyStyle):
 def balance_dialog_columns(dialog):
     """Give Available Options and Selected Options an equal share of the dialog width.
 
-    Upstream splits that row two to one. Its Chinese option names are short enough for the wider column to be
-    worth it, but English card names are not, and the narrow side ends up holding a list plus its buttons in a
-    third of the dialog. The split is set inside `__init__`, so it is corrected afterwards instead.
-
-    The row is found by shape rather than by position: it is the only child of the view layout whose own two
-    children are both layouts. The selected list's row looks similar but holds a widget and a layout, so this
-    cannot pick it by mistake.
+    Upstream splits that row two to one, which suits its short Chinese option names but leaves English card names
+    holding a list plus its buttons in a third of the dialog. The split is set inside `__init__`, so it is
+    corrected afterwards. The row is found by shape rather than position - it is the only child of the view layout
+    whose own two children are both layouts, where the selected list's row holds a widget and a layout.
 
     Args:
         dialog: The `ModifyListDialog` being set up.

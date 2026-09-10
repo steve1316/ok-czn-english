@@ -117,13 +117,10 @@ def mythic_offer(task):
 def insisting_on_mythic(handler, utils):
     """Wrap `handle_equipment` so a Mythic piece is never passed over for a configured one.
 
-    Upstream weighs the user's per-slot priority list before quality, so a configured piece already in the
-    slot refuses anything not on that list - a Mythic included. A Mythic is worth more than any list entry,
-    because there is no way to obtain a better one and only one may be worn at a time.
-
-    The override stops at the slot already holding a Mythic. Swapping one for another gains nothing, and
-    upstream's own one-per-combatant rule runs after this and still moves the piece to another combatant when
-    the preferred one is already wearing one.
+    Upstream weighs the per-slot priority list before quality, so a configured piece already in the slot refuses
+    anything not on that list, a Mythic included. A Mythic outranks any list entry, since there is no way to get a
+    better one and only one may be worn at a time. The override stops at a slot already holding a Mythic, where
+    swapping gains nothing, and upstream's one-per-combatant rule still runs after this.
 
     Args:
         handler: The handler to wrap, upstream's or another patch's.
