@@ -15,15 +15,16 @@ The floor is a constant rather than a setting. It is a property of the game's pr
 the cheapest thing the shop stocks sits above it, so anything at or under the floor buys nothing whatever the
 shelf rerolls into.
 
-This patches `utils.handle_shop` rather than the handler list, because `src/en/rewards.py` wraps the same
-handler by reading it back off the module. Going through the module attribute means that wrapper composes
-over this one instead of replacing it, so the order in `src/globals.py` - this before rewards - is what keeps
-both changes alive.
+The wrapper is put in two places, and both are load-bearing. The handler lists hold function objects, so the
+list entry has to be replaced for the run to reach it at all. `src/en/rewards.py` then rebuilds that entry by
+reading `handle_shop` back off the module, so the module attribute has to carry the wrapper too, or that
+rebuild would quietly drop it. Applying this before rewards in `src/globals.py` is what makes the two compose
+rather than fight.
 """
 
 from ok import Logger
 
-from src.en.handlers import loaded, register
+from src.en.handlers import loaded, register, replace
 
 logger = Logger.get_logger(__name__)
 
@@ -103,18 +104,28 @@ def refusing_free_refresh(handler, credit_of):
     return wrapped
 
 
+def install(utils):
+    """Wrap the shop handler wherever the run reaches it.
+
+    Runs once per task load, so it has to be idempotent. The module attribute is only wrapped the first time,
+    while the handler lists are re-checked every time - the modes are imported one at a time, so a list that
+    did not exist on the first run still needs the wrapper on a later one.
+
+    Args:
+        utils: The loaded `utils` module, or None when it is not importable yet.
+    """
+    if utils is None:
+        return
+    if not getattr(utils.handle_shop, GUARD, False):
+        utils.handle_shop = refusing_free_refresh(utils.handle_shop, utils._get_current_credit)
+        logger.info(f"shop will not refresh at or below {SHOP_FLOOR} credits")
+    replace("handle_shop", utils.handle_shop)
+
+
 def apply():
     """Withhold the shop's free refresh when the credits cannot use it."""
     global _patched
     if _patched:
         return
-
-    def install():
-        utils = loaded("utils")
-        if utils is None or getattr(utils.handle_shop, GUARD, False):
-            return
-        utils.handle_shop = refusing_free_refresh(utils.handle_shop, utils._get_current_credit)
-        logger.info(f"shop will not refresh at or below {SHOP_FLOOR} credits")
-
-    register(install)
+    register(lambda: install(loaded("utils")))
     _patched = True
