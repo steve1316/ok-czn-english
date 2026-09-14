@@ -11,18 +11,23 @@ comes back unchanged afterwards, so the shortcut takes the same option again on 
 clicked "Examine the mushroom" three times in four seconds, left the event, came back and did it again.
 
 Both changes wrap `handle_event_task` and adjust what it sees rather than copying its two hundred lines.
-Everything it does still runs untouched - the taskreward and treasure features, the forbidden-event filter,
-the blacklist, and the user's priority lists, which are honoured ahead of the ranking. The keyword lists come
+Unopened Treasure Trove chests are clicked before upstream runs, since its chest template misses two of the
+three and its shortcut ends the event first. Everything else still runs untouched - the taskreward feature, the
+forbidden-event filter, the blacklist, and the user's priority lists, which are honoured ahead of the ranking. The keyword lists come
 from the client's own data (`encounter_option_eff@eff_description@*`), where "End the event" and "Initiate
 Battle" are fixed literals shared by 134 and 174 options.
 """
 
 import re
+from functools import lru_cache
+from pathlib import Path
 
+import cv2
 from ok import Logger
 
 from src.en import desire
 from src.en.handlers import StandIn, loaded, register, wrap
+from src.en.screen import frame_of, hsv_of, patch_of
 
 logger = Logger.get_logger(__name__)
 
@@ -64,6 +69,24 @@ MIN_MARKER_LENGTH = 2
 # Latin markers have no such excuse - a two-letter fragment would match far too much, so they are
 # written as whole phrases and held to a longer floor.
 MIN_LATIN_MARKER_LENGTH = 4
+
+# Upstream's `treasure` template: the download arrow drawn over an unopened chest, cropped in pixels from the
+# image its annotations name. An opened chest loses the arrow, so every arrow still on screen is a chest to open.
+TREASURE_IMAGE = Path(__file__).resolve().parents[2] / "ok_tasks" / "assets" / "images" / "0.png"
+TREASURE_CROP = (1205, 481, 1268, 551)
+# Where upstream looks for that arrow. It already spans all three chests, it just never matched two of them.
+TREASURE_REGION = (0.477, 0.336, 0.841, 0.540)
+# The template is the arrow on the gold pile behind the middle chest, and the side chests draw it on dark purple,
+# so upstream's colour match scored them 0.648 and 0.675 against its 0.7 cutoff. Matching only the near-white
+# pixels drops the background: the two arrows in `tests/images/treasure_band.png` score 0.731 and 0.795, while
+# the best hit in the same region across 703 other captured frames is 0.550.
+ARROW_MIN_SCORE = 0.65
+ARROW_MAX_SATURATION = 60
+ARROW_MIN_VALUE = 200
+# Pixels between two hits for them to count as separate arrows. The chests sit ~530px apart, the arrow is 63px.
+ARROW_SEPARATION = 60
+# Chests are only opened on the event screen, which always offers "End the event" while any are left.
+LEAVE_MARKERS = ("离开", *QUIT)
 
 _patched = False
 
@@ -179,6 +202,98 @@ def order(options, priority_keywords, is_subsequence, target=None):
     return [option for _, option in sorted(enumerate(options), key=key)]
 
 
+def white_mask(patch):
+    """Keep only the near-white pixels of a patch, so an icon matches whatever it is drawn over.
+
+    Args:
+        patch: The pixels to reduce, in BGR.
+
+    Returns:
+        A single-channel image, 255 where the pixel is near white and 0 elsewhere.
+    """
+    return cv2.inRange(hsv_of(patch), (0, 0, ARROW_MIN_VALUE), (180, ARROW_MAX_SATURATION, 255))
+
+
+@lru_cache(maxsize=1)
+def arrow_mask():
+    """Build the arrow template once, from the same crop upstream matches in colour.
+
+    Returns:
+        The white mask of the arrow, or None when the image cannot be read.
+    """
+    image = cv2.imread(str(TREASURE_IMAGE))
+    if image is None:
+        logger.warning(f"could not read the treasure template from {TREASURE_IMAGE}")
+        return None
+    left, top, right, bottom = TREASURE_CROP
+    return white_mask(image[top:bottom, left:right])
+
+
+def find_chests(frame):
+    """Find the arrows over the chests that have not been opened yet.
+
+    Args:
+        frame: The frame to read, or None when there is none.
+
+    Returns:
+        A list of `(x, y)` arrow centres in fractions of the frame, left to right. Empty when there is no frame.
+    """
+    patch = patch_of(frame, TREASURE_REGION)
+    template = arrow_mask()
+    if patch is None or template is None:
+        return []
+    scores = cv2.matchTemplate(white_mask(patch), template, cv2.TM_CCOEFF_NORMED)
+    frame_height, frame_width = frame.shape[:2]
+    template_height, template_width = template.shape
+    left, top = TREASURE_REGION[0] * frame_width, TREASURE_REGION[1] * frame_height
+    centres = []
+    # Take the best hit, blank the arrow it sits on, and repeat until nothing left clears the cutoff.
+    while True:
+        _, best, _, (x, y) = cv2.minMaxLoc(scores)
+        if best < ARROW_MIN_SCORE:
+            break
+        centres.append(((left + x + template_width / 2) / frame_width, (top + y + template_height / 2) / frame_height))
+        scores[max(0, y - ARROW_SEPARATION):y + ARROW_SEPARATION, max(0, x - ARROW_SEPARATION):x + ARROW_SEPARATION] = -1
+    return sorted(centres)
+
+
+def offers_leave(task):
+    """Report whether the frame's OCR shows the option that ends an event.
+
+    Args:
+        task: The running task, whose `all_texts` holds the current OCR pass.
+
+    Returns:
+        True when "End the event", or the catalog's rewrite of it, is on screen.
+    """
+    return any(contains(fold(box.name), LEAVE_MARKERS) for box in getattr(task, "all_texts", None) or [])
+
+
+def open_a_chest(task, utils):
+    """Click the next unopened chest on a Treasure Trove screen.
+
+    Upstream checks for chests only after its upper-half shortcut, which clicks "End the event" first whenever
+    that option is detected high enough, so this has to run before upstream does.
+
+    Args:
+        task: The running task.
+        utils: Upstream's `utils` module, for its `_move_and_click`.
+
+    Returns:
+        True when a chest was clicked.
+    """
+    if not offers_leave(task):
+        return False
+    chests = find_chests(frame_of(task))
+    if not chests:
+        return False
+    x, y = chests[0]
+    logger.info(f"{len(chests)} unopened chest(s) left, opening the one at ({x:.3f}, {y:.3f})")
+    utils._move_and_click(task, x, y)
+    task.sleep(2)
+    return True
+
+
 class RankingChoice(StandIn):
     """Stands in for the `random` module for one call, ranking event options instead of picking blindly.
 
@@ -247,6 +362,8 @@ def ranking(utils):
             return order(drop_unwanted(options, target), priority, utils.is_subsequence, target)
 
         def patched_handle_event_task(task):
+            if open_a_chest(task, utils):
+                return True
             original_find_feature = task.find_feature
             original_random = utils.random
             target = desire.target_faction(task, utils)
