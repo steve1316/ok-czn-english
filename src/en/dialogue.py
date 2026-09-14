@@ -21,8 +21,9 @@ three matches and all three are prose. Every threshold's measurement is in `test
 Tapping every line is not the cheapest way through. The game advances narration itself when its auto-advance
 setting is on, and that button sits in the same screen's top right corner - a ring drawn white with a padlock
 while off, amber once running. One tap plays the rest of the cutscene out without the bot in the loop, so
-`handle_dialogue` reaches for it first and only taps prose when auto-advance is already going. Across twenty
-captured frames its patch is 10.5% to 15.0% amber every time it is running and 0.0% every time it is off.
+`handle_dialogue` reaches for it first and taps prose when auto-advance is already going. Some screens draw
+the button but never let it turn on, so a tap that does not take is not repeated for `TOGGLE_RETRY` seconds.
+Across twenty captured frames its patch is 10.5% to 15.0% amber every time it is running and 0.0% every time it is off.
 
 A screen that draws no button reads the same as one drawn off, and the tap that follows lands on empty space in
 the top corner - which on a narration screen advances the line anyway. That ambiguity is why the button is only
@@ -35,6 +36,8 @@ Chaos and Sortie get it and Story does not: Story has its own skip and auto-dial
 screens measured here came from it. `handle_event_task` is what picks the two out - both carry it, Story does
 not.
 """
+
+import time
 
 import numpy as np
 
@@ -72,6 +75,12 @@ MIN_GLOW = 0.05
 # How long the button gets to notice the pointer, and then to redraw before the corner is read again. The
 # hover matters: upstream taps every button this way and the client can drop a click that arrives without one.
 AFTER_TOGGLE = 0.5
+# How long after tapping the button to keep tapping the prose instead of tapping the button again. Some screens
+# draw the button but never let it turn on, and tapping it again every frame left one run on the same line for
+# over a minute. Long enough to carry a whole cutscene, short enough that the next one tries the button again.
+TOGGLE_RETRY = 30
+# Set on the task: when the button was last tapped, so a tap that did not take is not repeated every frame.
+TOGGLED_AT = "_en_auto_advance_toggled_at"
 # A handler Chaos and Sortie both carry and Story does not, which is how the tap reaches those two alone.
 MODE_ANCHOR = "handle_event_task"
 
@@ -124,6 +133,7 @@ def turn_auto_advance_on(task):
         task: The running task.
     """
     task.log_info("narration screen with auto-advance off, turning it on")
+    setattr(task, TOGGLED_AT, time.monotonic())
     task.move_relative(*TOGGLE_POINT)
     task.sleep(AFTER_TOGGLE)
     task.click(*TOGGLE_POINT, after_sleep=AFTER_TOGGLE)
@@ -141,7 +151,7 @@ def handle_dialogue(task):
     line = narration_line(task)
     if line is None:
         return False
-    if auto_advance_off(task):
+    if auto_advance_off(task) and time.monotonic() - getattr(task, TOGGLED_AT, float("-inf")) >= TOGGLE_RETRY:
         turn_auto_advance_on(task)
         return True
     task.log_info(f"narration screen, tapping to advance: {line.name}")
