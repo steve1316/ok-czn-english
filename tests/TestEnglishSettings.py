@@ -1,13 +1,14 @@
 """Guard the Global-client settings overrides.
 
-`src/en/overrides.py` re-shapes the mode settings before the framework builds their config. No widget is built
-here - these assert the things that fail silently at runtime if they drift: an entity name leaking into the
-reverse OCR catalog, a route value getting translated, a long default turning a text box into a multi-line
-editor, the one-shot migration either not running or running forever, and a roster quietly dropping back to the
-option picker's slow path.
+`src/en/overrides.py` re-shapes the mode settings before the framework builds their config. These assert the
+things that fail silently at runtime if they drift: an entity name leaking into the reverse OCR catalog, a route
+value getting translated, a long default turning a text box into a multi-line editor, the one-shot migration
+either not running or running forever, a roster quietly dropping back to the option picker's slow path, and a
+season's settings coming unfolded. Only that last one builds a widget.
 """
 
 import json
+import os
 import re
 import sys
 import tempfile
@@ -20,10 +21,11 @@ import polib
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.en import overrides, picker  # noqa: E402
+from src.en import overrides, picker, sections  # noqa: E402
 from src.en.game_data import CARDS, COMBATANTS, EQUIPMENT, NODE_TYPES  # noqa: E402
 from src.en.game_text import DESCRIPTIONS  # noqa: E402
 from src.en.framework import import_ui  # noqa: E402
+from tests.fakes import EchoApp  # noqa: E402
 
 # Resolved the same way the patch resolves it, so the test cannot drift from what ships.
 SEARCH_THRESHOLD = import_ui("tasks.ModifyListDialog", "SHOW_SEARCH_OPTIONS_THRESHOLD")
@@ -231,6 +233,55 @@ class TestDesireFaction(unittest.TestCase):
         for label in (overrides.DESIRE_FACTION, *overrides.FACTIONS):
             with self.subTest(label=label):
                 self.assertIn(label, msgids)
+
+
+class TestSeasonSections(unittest.TestCase):
+    """The collapsible headers that fold each season's settings away."""
+
+    @classmethod
+    def setUpClass(cls):
+        # Offscreen has to be chosen before `QApplication` exists.
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PySide6.QtWidgets import QApplication
+        from ok import og
+        from ok.util.config import Config
+
+        cls.qt_app = QApplication.instance() or QApplication([])
+        og.app = EchoApp()
+        sections.apply()
+        config_card = import_ui("tasks.ConfigCard", "ConfigCard")
+        assert config_card is not None, "ok-script no longer provides ConfigCard"
+        default = {"进入商店": False, "指定面具卡牌": "", "面具卡牌刻印": "", "几轮后停止(0为不停止)": 0}
+        cls.folder = tempfile.TemporaryDirectory()
+        config = Config("ChaosMode", default, folder=cls.folder.name)
+        cls.card = config_card(None, "ChaosMode", config, "", default, {}, {}, None)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.folder.cleanup()
+
+    def test_every_folded_setting_is_still_declared_upstream(self):
+        # A renamed key is not folded and no error says so - the setting just reappears in the flat list.
+        declared = mode_setting_keys() | {overrides.DESIRE_FACTION}
+        for _, keys in sections.SECTIONS:
+            for key in keys:
+                with self.subTest(key=key):
+                    self.assertIn(key, declared)
+
+    def test_the_titles_reach_the_ui_through_the_catalog(self):
+        catalog = polib.pofile(str(REPO_ROOT / "i18n" / "zh_CN" / "LC_MESSAGES" / "ok.po"))
+        msgids = {entry.msgid for entry in catalog}
+        for title, _ in sections.SECTIONS:
+            with self.subTest(title=title):
+                self.assertIn(title, msgids)
+
+    def test_a_reset_keeps_the_section_folded_under_its_header(self):
+        # Reset Config and config-code imports re-sort every row to the top and show them all.
+        (section,) = getattr(self.card, sections.SECTIONS_ATTR)
+        self.card.update_config()
+        layout = self.card.viewLayout
+        self.assertEqual(layout.indexOf(section.header) + 1, layout.indexOf(section.rows[0]))
+        self.assertTrue(all(row.isHidden() for row in section.rows))
 
 
 class TestReshape(unittest.TestCase):

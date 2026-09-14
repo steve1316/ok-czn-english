@@ -352,6 +352,13 @@ msgstr "Card Play Priority"
 msgid "Smart Card Play"
 msgstr "Smart Card Play"
 
+# Section headers this fork draws over the seasonal settings, English for the same reason.
+msgid "Season 3 - Persona"
+msgstr "Season 3 - Persona"
+
+msgid "Season 4 - Desire"
+msgstr "Season 4 - Desire"
+
 msgid "优先移除基础牌"
 msgstr "Remove Basic Cards First"
 
