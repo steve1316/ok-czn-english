@@ -12,7 +12,7 @@ class Globals(QObject):
         # Everything English-only lives under src/en/ so upstream's files stay untouched and merges stay clean.
         from src.en import (  # noqa: E501
             battle, deck, desire, dialogue, dice, draft, equipment, events, layout, log_text,
-            navigation, observe, ocr_text, overrides, persona, picker, pins, rewards, shell, shop,
+            navigation, observe, ocr_text, overrides, persona, picker, pins, rest, rewards, shell, shop,
             templates, notify, stuck, upload,
         )
 
@@ -43,5 +43,6 @@ class Globals(QObject):
         upload.apply()
         notify.apply()
         stuck.apply()
+        rest.apply()
         # Re-shapes the task lists, so it hooks the window rather than the tasks.
         shell.apply()

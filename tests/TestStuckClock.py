@@ -1,4 +1,4 @@
-"""Check that a new run starts its own stuck clock instead of inheriting the last one's.
+"""Check that a new run starts fresh: its own stuck clock, and free to take the first rest area it reaches.
 
 Upstream decides a screen has frozen by keeping two things on the task, and the task outlives the run - the
 Start button re-enables the same object. Nothing cleared them between runs, so the clock kept counting through
@@ -11,6 +11,7 @@ import sys
 import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 
@@ -20,7 +21,7 @@ sys.path.insert(0, str(REPO_ROOT / "ok_tasks"))
 
 import utils  # noqa: E402
 
-from src.en import notify, stuck  # noqa: E402
+from src.en import notify, rest, stuck  # noqa: E402
 
 # Small enough to keep the detector's resize and diff cheap, large enough to survive dividing by four.
 SHAPE = (60, 80, 3)
@@ -189,6 +190,22 @@ class TestStartButtonReachesIt(unittest.TestCase):
         """The same seam carries the start-of-run notification, which must survive sharing it."""
         self.start()
         self.assertIn(("log", "Run started."), self.run_order)
+
+
+class TestRestFlag(unittest.TestCase):
+    """A Chaos run started inside an event walked past the rest area after it, because the flag starts off."""
+
+    @classmethod
+    def setUpClass(cls):
+        rest.install(utils)
+
+    def test_every_upstream_reset_leaves_the_next_rest_area_usable(self):
+        # Against upstream's own resets, so one that stops building its status through the wrapped builder fails here.
+        for reset in (utils.reset_all_status, utils.reset_mission_status, utils.reset_layer_status):
+            with self.subTest(reset=reset.__name__):
+                task = SimpleNamespace(node_status={rest.FLAG: False}, config={}, default_config={})
+                reset(task)
+                self.assertIs(True, task.node_status[rest.FLAG])
 
 
 if __name__ == "__main__":
