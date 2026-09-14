@@ -576,6 +576,12 @@ msgstr "自动"
 msgid "Desire Faction"
 msgstr "Desire Faction"
 
+msgid "Season 3 - Persona"
+msgstr "第三赛季 - 人格面具"
+
+msgid "Season 4 - Desire"
+msgstr "第四赛季 - Desire"
+
 msgid "Claim"
 msgstr "Claim"
 

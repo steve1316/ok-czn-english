@@ -35,3 +35,18 @@ class FakeBox:
         scale_x, scale_y = (WIDTH, HEIGHT) if units == "fraction" else (1, 1)
         self.x = center_x * scale_x - self.width / 2
         self.y = center_y * scale_y - self.height / 2
+
+
+class EchoApp:
+    """Stands in for the running app's translator, which leaves English game names alone."""
+
+    def tr(self, key):
+        """Return the key untouched.
+
+        Args:
+            key: The string being translated.
+
+        Returns:
+            The same string.
+        """
+        return key

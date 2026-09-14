@@ -29,24 +29,10 @@ from src.en.framework import import_ui  # noqa: E402
 from src.en.game_data import CARDS  # noqa: E402
 from src.en.game_text import DESCRIPTIONS  # noqa: E402
 from src.en.overrides import ROUTE_NODES  # noqa: E402
+from tests.fakes import EchoApp  # noqa: E402
 
 ModifyListDialog = import_ui("tasks.ModifyListDialog", "ModifyListDialog")
 ModifyListItem = import_ui("tasks.ModifyListItem", "ModifyListItem")
-
-
-class EchoApp:
-    """Stands in for the running app's translator, which leaves English game names alone."""
-
-    def tr(self, key):
-        """Return the key untouched.
-
-        Args:
-            key: The string being translated.
-
-        Returns:
-            The same string.
-        """
-        return key
 
 
 class TestOptionPicker(unittest.TestCase):

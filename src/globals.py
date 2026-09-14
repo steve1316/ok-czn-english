@@ -12,11 +12,12 @@ class Globals(QObject):
         # Everything English-only lives under src/en/ so upstream's files stay untouched and merges stay clean.
         from src.en import (  # noqa: E501
             battle, deck, desire, dialogue, dice, draft, equipment, events, layout, log_text,
-            navigation, observe, ocr_text, overrides, persona, picker, pins, rest, rewards, shell, shop,
+            navigation, observe, ocr_text, overrides, persona, picker, pins, rest, rewards, sections, shell, shop,
             templates, notify, stuck, upload,
         )
 
         layout.apply()
+        sections.apply()
         picker.apply()
         ocr_text.apply()
         log_text.apply()
