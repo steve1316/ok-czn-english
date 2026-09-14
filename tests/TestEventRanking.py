@@ -13,6 +13,10 @@ import random
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+
+import cv2
+import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
@@ -20,8 +24,9 @@ sys.path.insert(0, str(REPO_ROOT))
 from src.en.events import (  # noqa: E402
     ATTACK, ATTACK_RANK, DESIRE_RANK, DIALOGUE, DIALOGUE_RANK, MIN_LATIN_MARKER_LENGTH, MIN_MARKER_LENGTH,
     QUIT, QUIT_RANK, REWARD_RANK, RankingChoice, SPARK, SPARK_RANK,
-    drop_unwanted, fold, order, rank,
+    drop_unwanted, find_chests, fold, open_a_chest, order, rank,
 )
+from tests.fakes import HEIGHT, WIDTH, FakeBox  # noqa: E402
 
 # The three the mushroom event offers, which is where the lore option was caught looping.
 MUSHROOM_LORE = "Examine the mushroomPheromonesCheck information on Types of"
@@ -254,6 +259,48 @@ class TestDesireOptions(unittest.TestCase):
         options = [option(self.TARGETED), option(self.RANDOM)]
         ordered = order(options, ["Swept Away"], is_subsequence, "Control")
         self.assertEqual(self.RANDOM, ordered[0]["description"])
+
+
+class TestTreasureChests(unittest.TestCase):
+    """The Treasure Trove offers three chests, and a live run opened one and then ended the event."""
+
+    @staticmethod
+    def frame_with_band():
+        """Paste the captured chest band back where it came from, in an otherwise black frame.
+
+        Returns:
+            A 1920x1080 frame showing the two chests left unopened after the middle one was taken.
+        """
+        frame = np.zeros((HEIGHT, WIDTH, 3), np.uint8)
+        band = cv2.imread(str(REPO_ROOT / "tests" / "images" / "treasure_band.png"))
+        frame[362:362 + band.shape[0], 915:915 + band.shape[1]] = band
+        return frame
+
+    def test_both_side_chests_are_found(self):
+        # Upstream's colour template scores these two 0.648 and 0.675 and matches neither.
+        chests = find_chests(self.frame_with_band())
+        self.assertEqual(2, len(chests))
+        for (x, y), expected_x in zip(chests, (0.523, 0.800)):
+            self.assertAlmostEqual(expected_x, x, delta=0.01)
+            self.assertAlmostEqual(0.43, y, delta=0.02)
+
+    def test_a_frame_without_chests_finds_none(self):
+        frame = cv2.imread(str(REPO_ROOT / "tests" / "images" / "main.png"))
+        self.assertEqual([], find_chests(frame))
+
+    def test_a_chest_is_opened_before_upstream_can_end_the_event(self):
+        # Upstream's upper-half shortcut clicks "End the event" before it ever looks for chests.
+        clicks = []
+        task = SimpleNamespace(frame=self.frame_with_band(), all_texts=[FakeBox("End the event", 0.44, 0.84)],
+                               sleep=lambda seconds: None)
+        utils = SimpleNamespace(_move_and_click=lambda _, x, y: clicks.append((x, y)))
+        self.assertTrue(open_a_chest(task, utils))
+        self.assertEqual(1, len(clicks))
+
+    def test_chests_are_left_alone_off_the_event_screen(self):
+        task = SimpleNamespace(frame=self.frame_with_band(), all_texts=[], sleep=lambda seconds: None)
+        utils = SimpleNamespace(_move_and_click=lambda *_: self.fail("clicked off the event screen"))
+        self.assertFalse(open_a_chest(task, utils))
 
 
 if __name__ == "__main__":

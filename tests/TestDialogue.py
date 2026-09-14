@@ -27,7 +27,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from src.en.dialogue import (AFTER_TAP, AFTER_TOGGLE, MAX_TEXT_BOXES, MIN_GLOW,  # noqa: E402
-                            TOGGLE_POINT, TOGGLE_REGION, auto_advance_off, handle_dialogue,
+                            TOGGLE_POINT, TOGGLE_REGION, TOGGLE_RETRY, TOGGLED_AT, auto_advance_off, handle_dialogue,
                             narration_line)
 
 WIDTH, HEIGHT = 1920, 1080
@@ -273,6 +273,25 @@ class TestAutoAdvance(unittest.TestCase):
         self.assertTrue(handle_dialogue(task))
         self.assertIsNotNone(task.clicked)
         self.assertIsNone(task.tapped)
+
+    def test_a_button_that_will_not_turn_on_gives_way_to_tapping_the_line(self):
+        """A live run tapped a button that never lit for over a minute and never advanced the line."""
+        task = narration_screen()
+        task.frame = frame_with_button(UNLIT)
+        handle_dialogue(task)
+        task.tapped = None
+        self.assertTrue(handle_dialogue(task))
+        self.assertIsNone(task.tapped)
+        self.assertIsNotNone(task.clicked)
+
+    def test_the_button_is_tried_again_once_the_retry_wait_has_passed(self):
+        task = narration_screen()
+        task.frame = frame_with_button(UNLIT)
+        handle_dialogue(task)
+        task.tapped = None
+        setattr(task, TOGGLED_AT, getattr(task, TOGGLED_AT) - TOGGLE_RETRY)
+        handle_dialogue(task)
+        self.assertEqual(TOGGLE_POINT, task.tapped)
 
     def test_the_button_is_never_tapped_off_a_narration_screen(self):
         """The corner is only read once the screen has been recognised, so nothing else can be reached for."""
