@@ -399,8 +399,8 @@ msgstr "面具卡牌刻印"
 msgid "Acquire a Persona Card"
 msgstr "获得面具卡牌"
 
-# From handle_discovery_select: "获得法典" in title.name. Seen at (0.501, 0.081) against the handler's
-# (0.498, 0.078).
+# From handle_discovery_select: "获得法典" anywhere in the title region (0.313, 0.010, 0.670, 0.193). Seen at
+# (0.501, 0.081).
 msgid "Codex Obtained"
 msgstr "获得法典"
 
