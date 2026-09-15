@@ -201,7 +201,7 @@ class TestSayOnce(unittest.TestCase):
 
 
 class TestReadingOrder(unittest.TestCase):
-    """The Info rows as drawn, after `log_node_status` has written them in upstream's order."""
+    """The Info rows as drawn, once every row has been written in upstream's order."""
 
     def test_upstream_write_order_comes_out_in_reading_order(self):
         # Every dashboard row gets a rank of its own. One that falls through to the bottom would mean ORDER
@@ -210,12 +210,12 @@ class TestReadingOrder(unittest.TestCase):
         written = ["Log", *(MESSAGES[key] for key in DASHBOARD_KEYS[:-1]), *meditations, MESSAGES["当前胜率"],
                    dashboard.COMBATANTS, "Something new"]
         task = TestReporting.Task()
-        task.info = {key: "" for key in written}
+        info_set = dashboard.ordering(TestReporting.Task.info_set)
+        for key in written:
+            info_set(task, key, "")
 
-        dashboard.reordering(lambda _: False)(task)
-
-        expected = [*dashboard.ORDER[:dashboard.ORDER.index(dashboard.MEDITATING)], *meditations,
-                    *dashboard.ORDER[dashboard.ORDER.index(dashboard.MEDITATING) + 1:], "Something new"]
+        position = dashboard.RANKS[dashboard.MEDITATING]
+        expected = [*dashboard.ORDER[:position], *meditations, *dashboard.ORDER[position + 1:], "Something new"]
         self.assertEqual(expected, list(task.info))
 
 

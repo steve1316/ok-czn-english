@@ -5,15 +5,14 @@ ok-script draws one row per `task.info` entry in insertion order, so upstream's 
 at the very bottom, and the run's position buried under five yes/no flags. The team's names are read once per
 run and never shown at all.
 
-Rows are re-sorted after `log_node_status` runs rather than written in order, because a row keeps the slot of
-its first write and several are written by other handlers. The sort is stable, so the meditation rows keep their
-own order and a row nobody ranked falls to the bottom instead of vanishing. A fresh dict is assigned rather than
-the old one re-filled, so the GUI thread never sees `task.info` half empty.
+Rows are re-sorted in `info_set` whenever a new one appears, since a row keeps the slot of its first write and
+they are written by several handlers. It wraps the raw method, under `log_text`'s translation, so keys arrive in
+English. The sort is stable, so meditation rows keep their own order and an unranked row falls to the bottom
+instead of vanishing. A fresh dict is assigned rather than the old one re-filled, so the GUI never sees it half empty.
 """
 
 from ok import Logger
 
-from src.en.handlers import loaded, register, wrap
 from src.en.log_strings import MESSAGES, TEMPLATES
 
 logger = Logger.get_logger(__name__)
@@ -44,8 +43,8 @@ ORDER = (
     MESSAGES["游戏语言"],
     MESSAGES["版本号"],
 )
-# Names this change in the shared record of what a function already carries.
-TAG = "reading order"
+# Each ranked row's position in `ORDER`.
+RANKS = {key: position for position, key in enumerate(ORDER)}
 
 _patched = False
 
@@ -59,53 +58,26 @@ def rank(key):
     Returns:
         Its position, or one past the end for a row `ORDER` does not name.
     """
-    if isinstance(key, str) and key.startswith(MEDITATING):
-        return ORDER.index(MEDITATING)
-    return ORDER.index(key) if key in ORDER else len(ORDER)
+    return RANKS[MEDITATING] if key.startswith(MEDITATING) else RANKS.get(key, len(ORDER))
 
 
-def in_reading_order(info):
-    """Sort the Info rows into `ORDER`.
+def ordering(original):
+    """Wrap `info_set` so a new row is drawn in its place in `ORDER` rather than at the bottom.
 
     Args:
-        info: The task's `info` dict.
+        original: The unbound `info_set` being replaced.
 
     Returns:
-        A new dict holding the same rows in reading order.
+        The replacement.
     """
-    return dict(sorted(info.items(), key=lambda item: rank(item[0])))
+    def info_set_in_order(self, key, value):
+        new = key not in self.info
+        result = original(self, key, value)
+        if new:
+            self.info = dict(sorted(self.info.items(), key=lambda item: rank(item[0])))
+        return result
 
-
-def reordering(handler):
-    """Wrap `log_node_status` so the rows it has just written are drawn in reading order.
-
-    Args:
-        handler: The handler to wrap, upstream's or another patch's.
-
-    Returns:
-        The wrapped handler.
-    """
-    def wrapped(task):
-        handled = handler(task)
-        info = getattr(task, "info", None)
-        if info:
-            ordered = in_reading_order(info)
-            if list(ordered) != list(info):
-                task.info = ordered
-        return handled
-
-    return wrapped
-
-
-def install(utils):
-    """Wrap the status reporter wherever the run reaches it.
-
-    Args:
-        utils: The loaded `utils` module, or None when it is not importable yet.
-    """
-    if utils is None:
-        return
-    wrap(utils, "log_node_status", reordering, TAG)
+    return info_set_in_order
 
 
 def apply():
@@ -113,5 +85,13 @@ def apply():
     global _patched
     if _patched:
         return
-    register(lambda: install(loaded("utils")))
+
+    try:
+        from ok.task.task import BaseTask
+    except ImportError:
+        logger.warning("could not import BaseTask, the Info rows will stay in upstream's order")
+        _patched = True
+        return
+
+    BaseTask.info_set = ordering(BaseTask.info_set)
     _patched = True

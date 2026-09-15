@@ -20,9 +20,10 @@ class Globals(QObject):
         sections.apply()
         picker.apply()
         ocr_text.apply()
+        # Before log_text, so its translation wraps this ordering and the keys arrive here already in English.
+        dashboard.apply()
         log_text.apply()
         templates.apply()
-        dashboard.apply()
         # These edit the mode handler lists, so they must run after the task modules are importable.
         navigation.apply()
         events.apply()
