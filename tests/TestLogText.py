@@ -17,7 +17,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from scan_log_strings import collect_shapes  # noqa: E402
 
-from src.en import log_text, state  # noqa: E402
+from src.en import dashboard, log_text, state  # noqa: E402
 from src.en.log_strings import MESSAGES, TEMPLATES, VALUES  # noqa: E402
 
 CJK = re.compile(r"[一-鿿]")
@@ -198,6 +198,25 @@ class TestSayOnce(unittest.TestCase):
         self.task.info.clear()
         state.say_once(self.task, state.GEAR, "slot 1 is bare and there are 300 credits")
         self.assertEqual(2, len(self.said))
+
+
+class TestReadingOrder(unittest.TestCase):
+    """The Info rows as drawn, once every row has been written in upstream's order."""
+
+    def test_upstream_write_order_comes_out_in_reading_order(self):
+        # Every dashboard row gets a rank of its own. One that falls through to the bottom would mean ORDER
+        # stopped naming it, which is what an added or re-keyed upstream row would look like.
+        meditations = ["Meditating on Shock", "Meditating on Rally"]
+        written = ["Log", *(MESSAGES[key] for key in DASHBOARD_KEYS[:-1]), *meditations, MESSAGES["当前胜率"],
+                   dashboard.COMBATANTS, "Something new"]
+        task = TestReporting.Task()
+        info_set = dashboard.ordering(TestReporting.Task.info_set)
+        for key in written:
+            info_set(task, key, "")
+
+        position = dashboard.RANKS[dashboard.MEDITATING]
+        expected = [*dashboard.ORDER[:position], *meditations, *dashboard.ORDER[position + 1:], "Something new"]
+        self.assertEqual(expected, list(task.info))
 
 
 class TestUpstreamStillWritesWhatWeTranslate(unittest.TestCase):

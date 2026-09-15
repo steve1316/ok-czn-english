@@ -1,7 +1,9 @@
 """Check that the game modes run from a Start button and that the scaffold tabs are gone."""
 
 import sys
+import types
 import unittest
+from functools import partial
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -10,7 +12,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from ok.task.exceptions import TaskDisabledException  # noqa: E402
 
 from src.config import config  # noqa: E402
-from src.en import shell  # noqa: E402
+from src.en import dashboard, shell  # noqa: E402
 
 # How many passes the fake executor allows before it stops the loop, standing in for a press of Stop.
 PASSES = 3
@@ -244,6 +246,42 @@ class TestAppShell(unittest.TestCase):
     def test_the_demo_hotkey_setting_is_gone_from_the_settings_tab(self):
         names = [option.name for option in config["global_configs"]]
         self.assertNotIn("Game Hotkey Config", names)
+
+
+class TestIdleDashboard(unittest.TestCase):
+    """The Info table before any task has run, which upstream hides until the first run."""
+
+    class Tab:
+        """A task tab reduced to what the idle table reads and draws, with upstream's own methods as no-ops."""
+
+        def __init__(self, tasks):
+            self.tasks = tasks
+            self.last_task = None
+            self.drawn = None
+            self.title = types.SimpleNamespace(text="", setText=lambda text: setattr(self.title, "text", text))
+            self.task_info_container = types.SimpleNamespace(titleLabel=self.title)
+            self.update_info_table = partial(dashboard.showing_while_idle(lambda tab: None), self)
+            self.close_task_info = partial(dashboard.dismissing_while_idle(lambda tab: None), self)
+
+        def update_task_info(self, task):
+            self.drawn = dict(task.info)
+
+    def test_idle_shows_the_static_rows_until_the_x_or_a_run(self):
+        # Each step is a regression on its own: hidden at launch, the X ignored, or idle rows over a real run.
+        tab = self.Tab([types.SimpleNamespace(config={"游戏语言": "English"})])
+        tab.update_info_table()
+        self.assertEqual({"Game Language": "English", "Version": "dev"}, tab.drawn)
+        self.assertEqual(dashboard.IDLE, tab.title.text)
+
+        tab.drawn = None
+        tab.last_task = object()
+        tab.update_info_table()
+        self.assertIsNone(tab.drawn)
+
+        tab = self.Tab([types.SimpleNamespace(config={})])
+        tab.close_task_info()
+        tab.update_info_table()
+        self.assertIsNone(tab.drawn)
 
 
 if __name__ == "__main__":

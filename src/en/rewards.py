@@ -6,6 +6,7 @@ A list you configured is used unchanged.
 from ok import Logger
 
 from src.en import quality
+from src.en.dashboard import COMBATANTS
 from src.en.handlers import loaded, register, replace
 from src.en.overrides import FARMED_COMBATANT
 from src.en.screen import COMBATANT_NAME_POINTS
@@ -45,6 +46,8 @@ def remember_team(task, utils):
         box = utils.find_box_at_point(task, x, y)
         if box and box.name.strip():
             names.append(box.name.strip())
+    if names:
+        task.info_set(COMBATANTS, ", ".join(names))
     classes = quality.team_classes(names)
     if classes:
         setattr(task, TEAM, classes)
