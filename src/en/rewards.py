@@ -6,6 +6,7 @@ A list you configured is used unchanged.
 from ok import Logger
 
 from src.en import quality
+from src.en.dashboard import COMBATANTS
 from src.en.handlers import loaded, register, replace
 from src.en.overrides import FARMED_COMBATANT
 from src.en.screen import COMBATANT_NAME_POINTS
@@ -48,6 +49,7 @@ def remember_team(task, utils):
     classes = quality.team_classes(names)
     if classes:
         setattr(task, TEAM, classes)
+        task.info_set(COMBATANTS, ", ".join(names))
         logger.info(f"team is {names}, covering {quality.named(classes)}")
     else:
         logger.info(f"team {names} matched no known combatant, so cards will not be class filtered")
