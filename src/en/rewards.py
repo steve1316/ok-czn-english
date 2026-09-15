@@ -25,9 +25,6 @@ EQUIPMENT_KEYS = {"装备1号位优先级": 0, "装备2号位优先级": 1, "装
 FILLED_IN = ("handle_shop", "handle_card_reward", "handle_card_assign")
 
 TEAM = "_en_team"
-# The attribute a filling-in reader carries its original under, so a patch running inside the call can still
-# tell a list the user configured from one generated off the screen.
-UNFILLED = "unfilled"
 
 _patched = False
 
@@ -129,7 +126,6 @@ def filling_in(original, task_module):
         logger.info(f"{task_module}: {key} is empty, offering {generated}")
         return generated
 
-    setattr(patched, UNFILLED, original)
     return patched
 
 
