@@ -17,8 +17,9 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from tests.fakes import FakeBox as Box  # noqa: E402
 
+from src.en.rewards import filling_in  # noqa: E402
 from src.en.equipment import (  # noqa: E402
-    EQUIPMENT_FLOOR, ROW_PITCH, SLOTS, bare_slots, insisting_on_mythic, mythic_offer,
+    ROW_PITCH, SLOTS, SPREE, SPREE_END, SPREE_START, bare_slots, configured, insisting_on_mythic, mythic_offer,
     preferring_recommended, recommended_banner, recommended_row, refusing_equipment, remembering_slots,
 )
 
@@ -338,29 +339,32 @@ class TestRememberingSlots(unittest.TestCase):
 class TestRefusingEquipment(unittest.TestCase):
     """What the shop is allowed to spend on equipment.
 
-    Two conditions, both asked for: the run has to be holding real money, and the piece has to be going into
-    a slot that is empty on somebody. Upgrading a slot that already has something is what this is meant to
-    stop, so a shelf full of Legends is walked past when every slot is spoken for.
+    A generated list is only bought from on a spree - opened at `SPREE_START` with a slot bare, held for the visit
+    until `SPREE_END` - and only for a slot empty on somebody. A list the user configured is bought from as listed.
     """
 
-    def shop(self, credit, slots=None, listed=("Crimson Sword",)):
+    def shop(self, credit, slots=None, listed=("Crimson Sword",), config=None):
         """Build the shop screen and the stubs the gate reads through.
 
         Args:
-            credit: What the run is holding.
+            credit: What the run is holding. `self.credit` can be changed between calls to spend it.
             slots: What was last seen of each combatant's slots, or None for a screen never seen.
             listed: What the priority list offers for every slot.
+            config: The settings the user saved, as a dict. Empty lists count as left empty.
 
         Returns:
-            A `(task, utils, offered, handler)` quadruple, where `offered` collects what upstream was given.
+            A `(task, offered, handler)` triple, where `offered` collects what upstream was given.
         """
         task = FakeTask([])
+        task.start_time, task.node_status = 1.0, {"pass_final_boss_count": 0, "node_count": 4}
         if slots is not None:
             setattr(task, SLOTS, slots)
+        self.credit = credit
         offered = {}
         utils = types.SimpleNamespace(
             _equipment_priority=lambda task_, slot: list(listed),
-            _get_current_credit=lambda task_: credit,
+            _get_current_credit=lambda task_: self.credit,
+            _get_config_value=lambda task_, key, default: (config or {}).get(key, default),
         )
 
         def handle(task_):
@@ -368,36 +372,54 @@ class TestRefusingEquipment(unittest.TestCase):
             return True
 
         handle.__name__ = "handle_shop"
-        return task, utils, offered, refusing_equipment(handle, utils)
+        return task, offered, refusing_equipment(handle, utils)
 
-    def test_a_rich_run_fills_a_bare_slot(self):
-        task, _, offered, handler = self.shop(EQUIPMENT_FLOOR, slots=[["", "传说", "传说"]])
+    def test_a_rich_run_fills_a_bare_slot_and_leaves_filled_ones(self):
+        task, offered, handler = self.shop(SPREE_START, slots=[["", "传说", "传说"]])
         handler(task)
-        self.assertEqual(["Crimson Sword"], offered[0])
+        self.assertEqual([["Crimson Sword"], [], []], [offered[slot] for slot in range(3)])
 
-    def test_a_slot_somebody_has_filled_is_not_upgraded(self):
-        task, _, offered, handler = self.shop(EQUIPMENT_FLOOR, slots=[["", "传说", "传说"]])
-        handler(task)
-        self.assertEqual([], offered[1])
-        self.assertEqual([], offered[2])
-
-    def test_a_poor_run_buys_no_equipment_at_all(self):
-        task, _, offered, handler = self.shop(EQUIPMENT_FLOOR - 1)
+    def test_under_the_start_nothing_is_bought_without_a_spree(self):
+        task, offered, handler = self.shop(SPREE_START - 1)
         handler(task)
         self.assertEqual([[], [], []], [offered[slot] for slot in range(3)])
 
-    def test_the_floor_is_inclusive(self):
-        task, _, offered, handler = self.shop(EQUIPMENT_FLOOR)
-        handler(task)
-        self.assertEqual(["Crimson Sword"], offered[0])
+    def test_a_spree_holds_below_the_start_and_ends_at_the_end(self):
+        task, offered, handler = self.shop(SPREE_START)
+        for credit, expected in ((SPREE_START, ["Crimson Sword"]), (SPREE_END + 1, ["Crimson Sword"]),
+                                 (SPREE_END, []), (SPREE_END + 1, [])):
+            with self.subTest(credit=credit):
+                self.credit = credit
+                handler(task)
+                self.assertEqual(expected, offered[0])
 
-    def test_a_run_that_has_seen_no_equipment_screen_may_still_buy(self):
-        task, _, offered, handler = self.shop(EQUIPMENT_FLOOR + 100)
+    def test_a_spree_ends_with_the_shop_visit(self):
+        task, offered, handler = self.shop(SPREE_START)
         handler(task)
-        self.assertEqual(["Crimson Sword"], offered[0])
-
-    def test_an_empty_list_is_left_empty(self):
-        task, _, offered, handler = self.shop(EQUIPMENT_FLOOR + 100, listed=())
+        task.node_status["node_count"] += 1
+        self.credit = SPREE_START - 1
         handler(task)
         self.assertEqual([], offered[0])
 
+    def test_no_spree_opens_with_every_slot_filled(self):
+        task, offered, handler = self.shop(SPREE_START + 100, slots=[["传说", "传说", "传说"]])
+        handler(task)
+        self.assertIsNone(getattr(task, SPREE, None))
+
+    def test_a_configured_list_is_bought_from_as_listed(self):
+        # The user's own list skips every condition, the way upstream always bought.
+        task, offered, handler = self.shop(0, slots=[["传说", "传说", "传说"]], config={"装备2号位优先级": ["Crimson Sword"]})
+        handler(task)
+        self.assertEqual([[], ["Crimson Sword"], []], [offered[slot] for slot in range(3)])
+
+    def test_a_configured_list_is_seen_through_the_filling_in_reader(self):
+        # Inside the shop's call the reader is `rewards`' one, which would answer with a generated list.
+        task = FakeTask([FakeBox("Crimson Sword", 400, 800)])
+        utils = types.SimpleNamespace(_get_config_value=filling_in(lambda task_, key, default: default, "utils"))
+        self.assertEqual(["Crimson Sword"], utils._get_config_value(task, "装备1号位优先级", []))
+        self.assertFalse(configured(task, utils, 0))
+
+    def test_an_empty_list_is_left_empty(self):
+        task, offered, handler = self.shop(SPREE_START + 100, listed=())
+        handler(task)
+        self.assertEqual([], offered[0])
