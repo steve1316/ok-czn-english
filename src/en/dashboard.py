@@ -1,4 +1,4 @@
-"""Draw the Tasks tab's Info rows in reading order, and name the team above its equipment.
+"""Draw the Tasks tab's Info rows in reading order, name the team above its equipment, and show the table while idle.
 
 ok-script draws one row per `task.info` entry in insertion order, so upstream's order is simply the order
 `log_credit` and `log_node_status` happen to write in: the version and game language near the top, the win rate
@@ -9,10 +9,16 @@ Rows are re-sorted in `info_set` whenever a new one appears, since a row keeps t
 they are written by several handlers. It wraps the raw method, under `log_text`'s translation, so keys arrive in
 English. The sort is stable, so meditation rows keep their own order and an unranked row falls to the bottom
 instead of vanishing. A fresh dict is assigned rather than the old one re-filled, so the GUI never sees it half empty.
+
+ok-script hides the table until a task first runs. Before then it shows the rows a run would not change, under an
+"Idle" title, drawn by the framework's own `update_task_info` from a stand-in task. Its X still hides it.
 """
+
+import types
 
 from ok import Logger
 
+from src.en.framework import import_ui
 from src.en.log_strings import MESSAGES, TEMPLATES
 
 logger = Logger.get_logger(__name__)
@@ -43,6 +49,12 @@ ORDER = (
     MESSAGES["游戏语言"],
     MESSAGES["版本号"],
 )
+# The mode setting the Game Language row reads, the same one `log_node_status` reports.
+GAME_LANGUAGE = "游戏语言"
+# The table's title before any task has run.
+IDLE = "Idle"
+# Where a tab remembers its X was clicked before any run, when upstream's own dismissal has no run to key on.
+IDLE_DISMISSED = "_en_idle_dismissed"
 # Each ranked row's position in `ORDER`.
 RANKS = {key: position for position, key in enumerate(ORDER)}
 
@@ -80,8 +92,67 @@ def ordering(original):
     return info_set_in_order
 
 
+def idle_rows(tasks):
+    """Build the rows that are known before any run, in reading order.
+
+    Args:
+        tasks: The tab's tasks. The first one carrying a game language setting supplies that row.
+
+    Returns:
+        The rows, as the dict `update_task_info` draws.
+    """
+    from src.config import version
+
+    rows = {MESSAGES[GAME_LANGUAGE]: None, MESSAGES["版本号"]: str(version).strip() or "dev"}
+    for task in tasks:
+        language = (getattr(task, "config", None) or {}).get(GAME_LANGUAGE)
+        if language:
+            rows[MESSAGES[GAME_LANGUAGE]] = language
+            break
+    return {key: value for key, value in rows.items() if value is not None}
+
+
+def showing_while_idle(original):
+    """Wrap `TaskTab.update_info_table` so the table is on screen before any task has run.
+
+    Args:
+        original: The unbound `update_info_table` being replaced.
+
+    Returns:
+        The replacement.
+    """
+    def update_info_table(self):
+        original(self)
+        if self.last_task is not None or getattr(self, IDLE_DISMISSED, False):
+            return
+        tasks = getattr(self, "tasks", None)
+        if not tasks:
+            return
+        self.update_task_info(types.SimpleNamespace(info=idle_rows(tasks), enabled=False, start_time=0, name=""))
+        self.task_info_container.titleLabel.setText(IDLE)
+
+    return update_info_table
+
+
+def dismissing_while_idle(original):
+    """Wrap `TaskTab.close_task_info` so the X also hides the idle table, which has no run to remember it by.
+
+    Args:
+        original: The unbound `close_task_info` being replaced.
+
+    Returns:
+        The replacement.
+    """
+    def close_task_info(self):
+        if self.last_task is None:
+            setattr(self, IDLE_DISMISSED, True)
+        return original(self)
+
+    return close_task_info
+
+
 def apply():
-    """Draw the Info rows in reading order."""
+    """Draw the Info rows in reading order, and keep the table on screen while idle."""
     global _patched
     if _patched:
         return
@@ -90,8 +161,11 @@ def apply():
         from ok.task.task import BaseTask
     except ImportError:
         logger.warning("could not import BaseTask, the Info rows will stay in upstream's order")
-        _patched = True
-        return
+    else:
+        BaseTask.info_set = ordering(BaseTask.info_set)
 
-    BaseTask.info_set = ordering(BaseTask.info_set)
+    task_tab = import_ui("tasks.TaskTab", "TaskTab")
+    if task_tab is not None:
+        task_tab.update_info_table = showing_while_idle(task_tab.update_info_table)
+        task_tab.close_task_info = dismissing_while_idle(task_tab.close_task_info)
     _patched = True
