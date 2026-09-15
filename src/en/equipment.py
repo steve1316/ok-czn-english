@@ -14,15 +14,18 @@ configured piece already in the slot turns one away. Only that comparison is ove
 `ok_tasks/`: its top bucket already *is* Mythic here, because quality is read from one pixel of the item frame
 and a Mythic's violet matches none of its constants and falls through to `传说`.
 
-Equipment is bought only with `EQUIPMENT_FLOOR` credits in hand and only for a slot standing empty on somebody.
-The shop shows no combatants, and upstream keeps only the save-data combatant's slots, so all three rows are
-read off the install screen where they appear together. A run that has not reached it counts every slot bare,
-which is the truth rather than a guess - a run opens with all three stripped.
+Generated equipment lists are bought from only on a spree, and only for a slot standing empty on somebody. A spree
+opens when a shop visit sees `SPREE_START` credits, and holds for that visit until credits fall to `SPREE_END`. Upstream refreshes whenever nothing matches, so a bare slot with nothing on the shelf rerolls for more.
+A list the user configured is bought from as upstream always did. The shop shows no combatants, and upstream keeps
+only the save-data combatant's slots, so all three rows are read off the install screen where they appear together.
+A run that has not reached it counts every slot bare, which is the truth - a run opens with all three stripped.
 """
 
 from ok import Logger
 
+from src.en import rewards
 from src.en.handlers import loaded, register, standing_in, wrap
+from src.en.rewards import EQUIPMENT_KEYS
 from src.en.screen import text_in_region
 from src.en.state import GEAR, say_once
 
@@ -47,14 +50,17 @@ MYTHIC_REGION = (0.050, 0.660, 0.600, 0.800)
 RECOMMENDED_TAG = "recommended combatant"
 MYTHIC_TAG = "mythic equipment"
 SLOT_TAG = "every combatant's slots"
-FLOOR_TAG = "equipment floor"
 
 # Where the run keeps what it last saw of every combatant's three equipment slots, as a list per combatant.
 # Upstream keeps the same thing for the save-data combatant alone, and only ever for the slot it is filling.
 SLOTS = "_en_slots"
-# The fewest credits worth spending on equipment. Below this the run leaves the shelf's equipment alone and
-# keeps what it has for the cards, which are cheaper and which it can always use.
-EQUIPMENT_FLOOR = 300
+# The credits a shop visit needs in hand to start buying generated equipment. Below this, without a spree already
+# open, the run leaves the shelf's equipment alone and keeps what it has for the cards.
+SPREE_START = 600
+# Where an open spree stops. Inclusive: at exactly this many credits the spree is over.
+SPREE_END = 300
+# Where the run keeps the shop visit its spree belongs to, so the spree ends with the visit.
+SPREE = "_en_spree"
 # What the colour read hands back for a slot with nothing in it. `None` means it could not see, which is a
 # different thing and must not be read as room to spare.
 EMPTY_SLOT = ""
@@ -233,47 +239,62 @@ def remembering_slots(handler, utils):
     return wrapped
 
 
-def refusing_equipment(handler, utils):
-    """Wrap `handle_shop` so equipment is only bought to fill a slot nobody has filled, with money to spare.
-
-    Upstream buys any equipment its priority list names and the run can afford, which spends a run's credits
-    on replacing gear it is already wearing. Both conditions are asked for rather than derived: the run holds
-    real money, and the piece has somewhere bare to go.
-
-    Withholding the list rather than intercepting the click is what keeps the rest of upstream's shop intact
-    - it simply finds no match and moves on to the cards, or leaves.
+def on_spree(task, credit):
+    """Open, hold or close this shop visit's equipment spree.
 
     Args:
-        handler: The handler to wrap, upstream's or another patch's.
-        utils: The module whose priority reader and credit reader the handler resolves through.
+        task: The running task. The spree is kept on it, keyed by the run and the node the shop is on.
+        credit: The credits the shop screen shows now.
 
     Returns:
-        The wrapped handler.
+        True while the spree is open.
     """
-    def wrapped(task):
-        priority = utils._equipment_priority
+    status = getattr(task, "node_status", None) or {}
+    visit = (getattr(task, "start_time", None), status.get("pass_final_boss_count"), status.get("node_count"))
+    if credit <= SPREE_END:
+        setattr(task, SPREE, None)
+        return False
+    if getattr(task, SPREE, None) == visit:
+        return True
+    if credit >= SPREE_START:
+        setattr(task, SPREE, visit)
+        return True
+    return False
 
-        def gated(task_, slot):
-            listed = priority(task_, slot)
-            # Read after the list, so a slot nothing is offered for costs no reading at all.
-            if not listed:
-                return listed
-            credit = utils._get_current_credit(task_)
-            if credit < EQUIPMENT_FLOOR:
-                say_once(task_, GEAR, f"{credit} credits is under the {EQUIPMENT_FLOOR} floor, "
-                                      f"so the shelf's equipment is left where it is")
-                return []
-            if slot not in bare_slots(task_):
-                say_once(task_, GEAR, f"slot {slot + 1} is filled on every combatant, so its equipment is left")
-                return []
-            say_once(task_, GEAR, f"slot {slot + 1} is bare and there are {credit} credits, "
-                                  f"so the shelf's equipment is on offer for it")
+
+def buying_on_spree(generate, utils_of):
+    """Wrap `rewards.generated_list` so a generated equipment list only offers anything on a spree, for a bare slot.
+
+    Upstream buys any equipment its priority list names and the run can afford, which spends a run's credits
+    on replacing gear it is already wearing. Gating the generated list, rather than the list the shop reads, is what
+    leaves a list the user configured alone - it never passes through here. Withholding the list rather than
+    intercepting the click keeps the rest of upstream's shop intact: it finds no match and refreshes, or leaves.
+
+    Args:
+        generate: The list builder to wrap, `rewards`' own.
+        utils_of: Returns the loaded `utils` module, whose credit reader the shop's own reading goes through.
+
+    Returns:
+        The wrapped builder.
+    """
+    def generated(task, key, farmed=""):
+        listed = generate(task, key, farmed)
+        slot = EQUIPMENT_KEYS.get(key)
+        # Read after the list, so a slot nothing is offered for costs no reading at all.
+        if slot is None or not listed:
             return listed
+        credit = utils_of()._get_current_credit(task)
+        if not on_spree(task, credit):
+            say_once(task, GEAR, f"{credit} credits and no spree open, so the shelf's equipment is left")
+            return []
+        if slot not in bare_slots(task):
+            say_once(task, GEAR, f"slot {slot + 1} is filled on every combatant, so its equipment is left")
+            return []
+        say_once(task, GEAR, f"slot {slot + 1} is bare and there are {credit} credits, "
+                             f"so the shelf's equipment is on offer until {SPREE_END}")
+        return listed
 
-        with standing_in(utils, _equipment_priority=gated):
-            return handler(task)
-
-    return wrapped
+    return generated
 
 
 def install(utils):
@@ -287,13 +308,13 @@ def install(utils):
     wrap(utils, "handle_equipment", lambda handler: preferring_recommended(handler, utils), RECOMMENDED_TAG)
     wrap(utils, "handle_equipment", lambda handler: insisting_on_mythic(handler, utils), MYTHIC_TAG)
     wrap(utils, "handle_equipment", lambda handler: remembering_slots(handler, utils), SLOT_TAG)
-    wrap(utils, "handle_shop", lambda handler: refusing_equipment(handler, utils), FLOOR_TAG)
 
 
 def apply():
-    """Prefer the recommended combatant, and never pass over a Mythic piece."""
+    """Prefer the recommended combatant, never pass over a Mythic piece, and buy generated equipment on a spree."""
     global _patched
     if _patched:
         return
     register(lambda: install(loaded("utils")))
+    rewards.generated_list = buying_on_spree(rewards.generated_list, lambda: loaded("utils"))
     _patched = True

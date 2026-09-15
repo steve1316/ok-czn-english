@@ -17,9 +17,10 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from tests.fakes import FakeBox as Box  # noqa: E402
 
+from src.en.rewards import EQUIPMENT_KEYS  # noqa: E402
 from src.en.equipment import (  # noqa: E402
-    EQUIPMENT_FLOOR, ROW_PITCH, SLOTS, bare_slots, insisting_on_mythic, mythic_offer,
-    preferring_recommended, recommended_banner, recommended_row, refusing_equipment, remembering_slots,
+    ROW_PITCH, SLOTS, SPREE_END, SPREE_START, bare_slots, buying_on_spree, insisting_on_mythic, mythic_offer,
+    preferring_recommended, recommended_banner, recommended_row, remembering_slots,
 )
 
 WIDTH, HEIGHT = 1920, 1080
@@ -335,69 +336,56 @@ class TestRememberingSlots(unittest.TestCase):
         utils, _ = self.stubs()
         self.assertTrue(remembering_slots(self.handler(utils), utils)(FakeTask([])))
 
-class TestRefusingEquipment(unittest.TestCase):
-    """What the shop is allowed to spend on equipment.
+class TestBuyingOnSpree(unittest.TestCase):
+    """What a generated equipment list may offer the shop.
 
-    Two conditions, both asked for: the run has to be holding real money, and the piece has to be going into
-    a slot that is empty on somebody. Upgrading a slot that already has something is what this is meant to
-    stop, so a shelf full of Legends is walked past when every slot is spoken for.
+    Only on a spree - opened at `SPREE_START`, held for the visit until `SPREE_END` - and only for a slot empty on
+    somebody. A configured list never reaches the builder, so it is not gated here at all.
     """
 
-    def shop(self, credit, slots=None, listed=("Crimson Sword",)):
-        """Build the shop screen and the stubs the gate reads through.
+    def builder(self, credit, slots=None, listed=("Crimson Sword",)):
+        """Build a task and a gated list builder that offers `listed` for every equipment key.
 
         Args:
-            credit: What the run is holding.
+            credit: What the run is holding. `self.credit` can be changed between calls to spend it.
             slots: What was last seen of each combatant's slots, or None for a screen never seen.
-            listed: What the priority list offers for every slot.
+            listed: What the ungated builder generates.
 
         Returns:
-            A `(task, utils, offered, handler)` quadruple, where `offered` collects what upstream was given.
+            A `(task, offered)` pair, where `offered(slot)` is what the gated builder hands back for that slot.
         """
         task = FakeTask([])
+        task.start_time, task.node_status = 1.0, {"pass_final_boss_count": 0, "node_count": 4}
         if slots is not None:
             setattr(task, SLOTS, slots)
-        offered = {}
-        utils = types.SimpleNamespace(
-            _equipment_priority=lambda task_, slot: list(listed),
-            _get_current_credit=lambda task_: credit,
-        )
+        self.credit = credit
+        utils = types.SimpleNamespace(_get_current_credit=lambda task_: self.credit)
+        generated = buying_on_spree(lambda task_, key, farmed="": list(listed), lambda: utils)
+        keys = {slot: key for key, slot in EQUIPMENT_KEYS.items()}
+        return task, lambda slot: generated(task, keys[slot])
 
-        def handle(task_):
-            offered.update({slot: utils._equipment_priority(task_, slot) for slot in range(3)})
-            return True
+    def test_a_rich_run_fills_a_bare_slot_and_leaves_filled_ones(self):
+        task, offered = self.builder(SPREE_START, slots=[["", "传说", "传说"]])
+        self.assertEqual([["Crimson Sword"], [], []], [offered(slot) for slot in range(3)])
 
-        handle.__name__ = "handle_shop"
-        return task, utils, offered, refusing_equipment(handle, utils)
+    def test_a_spree_holds_below_the_start_and_ends_at_the_end(self):
+        task, offered = self.builder(SPREE_START)
+        for credit, expected in ((SPREE_START - 1, []), (SPREE_START, ["Crimson Sword"]),
+                                 (SPREE_END + 1, ["Crimson Sword"]), (SPREE_END, []), (SPREE_END + 1, [])):
+            with self.subTest(credit=credit):
+                self.credit = credit
+                self.assertEqual(expected, offered(0))
 
-    def test_a_rich_run_fills_a_bare_slot(self):
-        task, _, offered, handler = self.shop(EQUIPMENT_FLOOR, slots=[["", "传说", "传说"]])
-        handler(task)
-        self.assertEqual(["Crimson Sword"], offered[0])
+    def test_a_spree_ends_with_the_shop_visit(self):
+        task, offered = self.builder(SPREE_START)
+        offered(0)
+        task.node_status["node_count"] += 1
+        self.credit = SPREE_START - 1
+        self.assertEqual([], offered(0))
 
-    def test_a_slot_somebody_has_filled_is_not_upgraded(self):
-        task, _, offered, handler = self.shop(EQUIPMENT_FLOOR, slots=[["", "传说", "传说"]])
-        handler(task)
-        self.assertEqual([], offered[1])
-        self.assertEqual([], offered[2])
-
-    def test_a_poor_run_buys_no_equipment_at_all(self):
-        task, _, offered, handler = self.shop(EQUIPMENT_FLOOR - 1)
-        handler(task)
-        self.assertEqual([[], [], []], [offered[slot] for slot in range(3)])
-
-    def test_the_floor_is_inclusive(self):
-        task, _, offered, handler = self.shop(EQUIPMENT_FLOOR)
-        handler(task)
-        self.assertEqual(["Crimson Sword"], offered[0])
-
-    def test_a_run_that_has_seen_no_equipment_screen_may_still_buy(self):
-        task, _, offered, handler = self.shop(EQUIPMENT_FLOOR + 100)
-        handler(task)
-        self.assertEqual(["Crimson Sword"], offered[0])
-
-    def test_an_empty_list_is_left_empty(self):
-        task, _, offered, handler = self.shop(EQUIPMENT_FLOOR + 100, listed=())
-        handler(task)
-        self.assertEqual([], offered[0])
-
+    def test_other_lists_and_empty_lists_pass_through(self):
+        task, _ = self.builder(0)
+        generated = buying_on_spree(lambda task_, key, farmed="": ["Shock"], lambda: None)
+        self.assertEqual(["Shock"], generated(task, "卡牌奖励优先级"))
+        task, offered = self.builder(0, listed=())
+        self.assertEqual([], offered(0))
