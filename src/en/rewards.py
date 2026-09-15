@@ -46,10 +46,11 @@ def remember_team(task, utils):
         box = utils.find_box_at_point(task, x, y)
         if box and box.name.strip():
             names.append(box.name.strip())
+    if names:
+        task.info_set(COMBATANTS, ", ".join(names))
     classes = quality.team_classes(names)
     if classes:
         setattr(task, TEAM, classes)
-        task.info_set(COMBATANTS, ", ".join(names))
         logger.info(f"team is {names}, covering {quality.named(classes)}")
     else:
         logger.info(f"team {names} matched no known combatant, so cards will not be class filtered")
