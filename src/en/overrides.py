@@ -46,12 +46,12 @@ GAME_LANGUAGES = ["English", "简体中文", "繁体中文"]
 # to choose its own cards, and so the only one this belongs on.
 SMART_CARD_PLAY = "Smart Card Play"
 PLAYS_ITS_OWN_CARDS = "出牌优先级"
-# Season 4's Desire faction, added the same way and for the same reason: it postdates the settings upstream
-# ships. Anchored on the card-reward list, which both modes carry and which the Desire screens sit alongside.
-DESIRE_FACTION = "Desire Faction"
-RANKS_CARD_REWARDS = "卡牌奖励优先级"
-# The combatant whose save data the run farms. `src/en/navigation.py` reads it to recognise the tab.
+# The combatant whose save data the run farms. `src/en/navigation.py` reads it to recognise the tab. Only Chaos
+# declares it, which makes it the marker for Chaos-only settings.
 FARMED_COMBATANT = "刷存档主战员"
+# Season 4's Desire faction, added the same way and for the same reason: it postdates the settings upstream
+# ships. Desire cards only exist in Chaos, so it is anchored on `FARMED_COMBATANT` rather than a list Sortie shares.
+DESIRE_FACTION = "Desire Faction"
 # List settings the user picks from, keyed by config name -> the roster it draws on.
 LIST_OPTIONS = {
     "移除卡牌列表": CARDS,
@@ -171,7 +171,7 @@ def reshape(task):
     if PLAYS_ITS_OWN_CARDS in task.default_config:
         task.default_config[SMART_CARD_PLAY] = True
 
-    if RANKS_CARD_REWARDS in task.default_config:
+    if FARMED_COMBATANT in task.default_config:
         task.default_config[DESIRE_FACTION] = DEFAULT_FACTION
         task.config_type[DESIRE_FACTION] = {"type": "drop_down", "options": list(FACTIONS)}
 

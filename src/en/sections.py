@@ -25,7 +25,7 @@ from src.en.overrides import DESIRE_FACTION
 logger = Logger.get_logger(__name__)
 
 # Header title -> the settings folded under it, in the order they are shown. A section whose keys a card does not
-# carry is simply not drawn, so Sortie only gets Season 4.
+# carry is simply not drawn, so Sortie gets neither.
 SECTIONS = [
     ("Season 3 - Persona", ["指定面具卡牌", "面具卡牌刻印"]),
     ("Season 4 - Desire", [DESIRE_FACTION]),
