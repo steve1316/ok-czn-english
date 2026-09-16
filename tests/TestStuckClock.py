@@ -22,6 +22,7 @@ sys.path.insert(0, str(REPO_ROOT / "ok_tasks"))
 import utils  # noqa: E402
 
 from src.en import notify, rest, stuck  # noqa: E402
+from tests.fakes import FakeBox  # noqa: E402
 
 # Small enough to keep the detector's resize and diff cheap, large enough to survive dividing by four.
 SHAPE = (60, 80, 3)
@@ -206,6 +207,83 @@ class TestRestFlag(unittest.TestCase):
                 task = SimpleNamespace(node_status={rest.FLAG: False}, config={}, default_config={})
                 reset(task)
                 self.assertIs(True, task.node_status[rest.FLAG])
+
+
+class TestOfferedInteraction(unittest.TestCase):
+    """The safe zone the run walked past because only the route screen re-arms upstream's flag.
+
+    Upstream spends `flash_or_rest` on the first rest area and re-arms it on the route selection screen. A
+    stretch of a run that never shows that screen leaves it off, so every later safe zone is skipped - measured
+    at three in a row, each reading the rest feature at over 96%, while the game still offered an interaction.
+    The game prints the count on screen, so that is what decides now.
+    """
+
+    # The line OCR returned on the capture, at 0.981 confidence, and the rest of that screen with it - a
+    # regex loose enough to answer off one of the others would skip the area just as quietly.
+    OFFERED = "Available Safe Zone Interactions: 1"
+    SPENT = "Available Safe Zone Interactions: 0"
+    OTHER_TEXT = ("Rest", "Free", "Dellang Shop", "Meditation", "80",
+                  "The number of uses will not be deducted when Using shops.", "Skip")
+
+    def task_seeing(self, caption, flag=False):
+        """Build a task on a safe zone screen.
+
+        Args:
+            caption: The counter line as OCR read it, or None for a screen where it was not found.
+            flag: What upstream's flag is set to before the handler runs.
+
+        Returns:
+            A task carrying that screen's boxes and flag.
+        """
+        texts = [FakeBox(name, 0.5, 0.5) for name in self.OTHER_TEXT]
+        if caption is not None:
+            texts.append(FakeBox(caption, 0.842, 0.771))
+        return SimpleNamespace(node_status={rest.FLAG: flag}, all_texts=texts)
+
+    def watching(self):
+        """Build a handler that records the flag it was given.
+
+        Returns:
+            A `(handler, seen)` pair, where `seen` collects one entry per call.
+        """
+        seen = []
+        return (lambda task: seen.append(task.node_status[rest.FLAG])), seen
+
+    def test_the_count_is_read_off_the_screen(self):
+        for caption, expected in ((self.OFFERED, 1), (self.SPENT, 0), (None, None)):
+            with self.subTest(caption=caption):
+                self.assertEqual(expected, rest.interactions_left(self.task_seeing(caption)))
+
+    def test_an_offered_interaction_lets_the_handler_rest(self):
+        handler, seen = self.watching()
+        rest.taking_the_offered_interaction(handler)(self.task_seeing(self.OFFERED))
+        self.assertEqual([True], seen, "the handler still saw the stale flag, so it skips the safe zone")
+
+    def test_upstreams_own_answer_stands_everywhere_else(self):
+        # Nothing to override: the area is spent, the screen is not a safe zone, or the flag is already on.
+        for caption, flag in ((self.SPENT, False), (None, False), (self.OFFERED, True)):
+            with self.subTest(caption=caption, flag=flag):
+                handler, seen = self.watching()
+                rest.taking_the_offered_interaction(handler)(self.task_seeing(caption, flag=flag))
+                self.assertEqual([flag], seen)
+
+    def test_the_override_never_outlasts_the_call(self):
+        """However the handler ends, the run's own flag is what the next frame reads."""
+        def rests(task):
+            task.node_status[rest.FLAG] = False
+            return True
+
+        def explodes(task):
+            raise RuntimeError("boom")
+
+        for why, handler in (("rested", rests), ("declined", lambda task: False), ("raised", explodes)):
+            with self.subTest(why):
+                task = self.task_seeing(self.OFFERED)
+                try:
+                    rest.taking_the_offered_interaction(handler)(task)
+                except RuntimeError:
+                    pass
+                self.assertIs(False, task.node_status[rest.FLAG])
 
 
 if __name__ == "__main__":

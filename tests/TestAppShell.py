@@ -1,10 +1,12 @@
-"""Check that the game modes run from a Start button and that the scaffold tabs are gone."""
+"""Check that the game modes run from a Start button, that the scaffold tabs are gone, and that the list draws."""
 
+import os
 import sys
 import types
 import unittest
 from functools import partial
 from pathlib import Path
+from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
@@ -12,7 +14,8 @@ sys.path.insert(0, str(REPO_ROOT))
 from ok.task.exceptions import TaskDisabledException  # noqa: E402
 
 from src.config import config  # noqa: E402
-from src.en import dashboard, shell  # noqa: E402
+from src.en import dashboard, layout, shell  # noqa: E402
+from src.en.framework import import_ui  # noqa: E402
 
 # How many passes the fake executor allows before it stops the loop, standing in for a press of Stop.
 PASSES = 3
@@ -270,7 +273,9 @@ class TestIdleDashboard(unittest.TestCase):
         # Each step is a regression on its own: hidden at launch, the X ignored, or idle rows over a real run.
         tab = self.Tab([types.SimpleNamespace(config={"游戏语言": "English"})])
         tab.update_info_table()
-        self.assertEqual({"Game Language": "English", "Version": "dev"}, tab.drawn)
+        # As a list, because the team belongs above the two rows that never change rather than under them.
+        self.assertEqual([(dashboard.COMBATANTS, dashboard.UNREAD), ("Game Language", "English"),
+                          ("Version", "dev")], list(tab.drawn.items()))
         self.assertEqual(dashboard.IDLE, tab.title.text)
 
         tab.drawn = None
@@ -282,6 +287,59 @@ class TestIdleDashboard(unittest.TestCase):
         tab.close_task_info()
         tab.update_info_table()
         self.assertIsNone(tab.drawn)
+
+
+class TestRebuiltCardList(unittest.TestCase):
+    """The card list the task tabs throw away and rebuild whenever the task list changes.
+
+    Neither `ExpandLayout` nor ok-script's `ExpandCardLayout` shows the child it is handed, so a tab the user
+    is looking at rebuilds into a blank page. `handle_chaos_reward_claim` asks for a rebuild the moment the
+    loot cards run out, so this is a mid-run failure rather than a hypothetical one.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        # Offscreen has to be chosen before `QApplication` exists.
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PySide6.QtWidgets import QApplication
+
+        cls.qt_app = QApplication.instance() or QApplication([])
+        cls.expand_card_layout = import_ui("widget.ExpandCardLayout", "ExpandCardLayout")
+        assert cls.expand_card_layout is not None, "ok-script no longer provides ExpandCardLayout"
+        # Applied with the escape hatch set, which also pins that the hatch cannot switch this patch off.
+        with mock.patch.dict(os.environ, {layout.DISABLE_ENV: "1"}):
+            layout.apply()
+
+    def listed(self):
+        """Build an empty card list.
+
+        Returns:
+            The `(view, layout)` pair, neither of them shown yet.
+        """
+        from PySide6.QtWidgets import QWidget
+
+        view = QWidget()
+        return view, self.expand_card_layout(view)
+
+    def test_a_card_added_to_a_list_on_screen_is_drawn(self):
+        from PySide6.QtWidgets import QWidget
+
+        view, card_layout = self.listed()
+        view.show()
+        card = QWidget()
+        card_layout.addWidget(card)
+        self.assertTrue(card.isVisible(), "the rebuilt card is hidden, so the tab draws nothing")
+
+    def test_a_card_added_before_the_list_is_up_still_waits_for_it(self):
+        """Startup adds its cards to a hidden tab, and Qt's own show cascade is what draws those."""
+        from PySide6.QtWidgets import QWidget
+
+        view, card_layout = self.listed()
+        card = QWidget()
+        card_layout.addWidget(card)
+        self.assertFalse(card.isVisible())
+        view.show()
+        self.assertTrue(card.isVisible())
 
 
 if __name__ == "__main__":

@@ -183,6 +183,12 @@ msgstr "下一步"
 msgid "Settlement"
 msgstr "结算"
 
+# From handle_go_to_chaos_core: _clean_match(box.name, "前往卡厄思核心") on the box at (0.945, 0.918).
+# The Settlement screen offers this instead of Continue on the floor before the final one. Unmapped, no
+# handler claims the frame at all, and the run sits on that screen clicking nothing until it is stopped.
+msgid "To the Core of Discord"
+msgstr "前往卡厄思核心"
+
 # From handle_escape: _get_game_text(task, "逃脱") in box.name
 msgid "Retreat"
 msgstr "逃脱"

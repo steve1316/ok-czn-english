@@ -1,13 +1,17 @@
 """Fill an empty shop or reward priority list with what is worth taking from the screen.
 
 A list you configured is used unchanged.
+
+This also owns the run-time half of the dashboard's Combatants row, because reading the team off the screen
+is what fills it. `src/en/dashboard.py` owns the row itself - its name, its place in the table and what it
+says before it has been read.
 """
 
 from ok import Logger
 
 from src.en import quality
-from src.en.dashboard import COMBATANTS
-from src.en.handlers import loaded, register, replace
+from src.en.dashboard import COMBATANTS, UNREAD
+from src.en.handlers import insert_before, loaded, register, replace
 from src.en.overrides import FARMED_COMBATANT
 from src.en.screen import COMBATANT_NAME_POINTS
 
@@ -26,6 +30,10 @@ EQUIPMENT_KEYS = {"装备1号位优先级": 0, "装备2号位优先级": 1, "装
 FILLED_IN = ("handle_shop", "handle_card_reward", "handle_card_assign")
 
 TEAM = "_en_team"
+
+# The handler that reads the team. It is the scope as well as the anchor: exactly the modes that read a team
+# register it, so anchoring on it keeps the placeholder row off Story, which never reads one.
+ARCHIVE_ANCHOR = "handle_archive_target_member"
 
 _patched = False
 
@@ -54,6 +62,23 @@ def remember_team(task, utils):
         logger.info(f"team is {names}, covering {quality.named(classes)}")
     else:
         logger.info(f"team {names} matched no known combatant, so cards will not be class filtered")
+
+
+def hold_the_combatants_row(task):
+    """Keep the team's row in the table from the first frame of a run, before the screen has been read.
+
+    Upstream empties the table on Start, so the row would otherwise be missing until `remember_team` fills it
+    - which after the idle table has drawn it reads as the row vanishing and coming back minutes later.
+
+    Args:
+        task: The running task.
+
+    Returns:
+        False always. This claims no frame, it only seeds a row that has nothing to show yet.
+    """
+    if COMBATANTS not in task.info:
+        task.info_set(COMBATANTS, UNREAD)
+    return False
 
 
 def team_of(task):
@@ -173,6 +198,10 @@ def apply():
         utils_sortie = loaded("utils_sortie")
         if utils is None:
             return
+
+        # Before the replace at the foot of this function, which stands the anchor down under a new name.
+        # A later load finds the row handler already registered and leaves the list alone.
+        insert_before(ARCHIVE_ANCHOR, hold_the_combatants_row)
 
         for name in FILLED_IN:
             handler = getattr(utils, name, None)

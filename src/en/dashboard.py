@@ -25,6 +25,9 @@ logger = Logger.get_logger(__name__)
 
 # The row this fork adds. It is English already, so it needs no catalog entry.
 COMBATANTS = "Combatants"
+# What the team's row holds until a run reaches the Combatants screen and reads it. The row is drawn either
+# way, because a row that appears partway through a run reads as the table rearranging itself.
+UNREAD = "-"
 # The framework's own row for the last logged line.
 LOG = "Log"
 # What every meditation row's key starts with once translated. One row per card, so they rank as a group.
@@ -73,6 +76,18 @@ def rank(key):
     return RANKS[MEDITATING] if key.startswith(MEDITATING) else RANKS.get(key, len(ORDER))
 
 
+def in_order(rows):
+    """Sort info rows into reading order.
+
+    Args:
+        rows: The rows to draw, keyed the way `task.info` keys them.
+
+    Returns:
+        A new dict in `ORDER`, which both the live table and the idle one are built through.
+    """
+    return dict(sorted(rows.items(), key=lambda row: rank(row[0])))
+
+
 def ordering(original):
     """Wrap `info_set` so a new row is drawn in its place in `ORDER` rather than at the bottom.
 
@@ -86,7 +101,7 @@ def ordering(original):
         new = key not in self.info
         result = original(self, key, value)
         if new:
-            self.info = dict(sorted(self.info.items(), key=lambda item: rank(item[0])))
+            self.info = in_order(self.info)
         return result
 
     return info_set_in_order
@@ -103,13 +118,13 @@ def idle_rows(tasks):
     """
     from src.config import version
 
-    rows = {MESSAGES[GAME_LANGUAGE]: None, MESSAGES["版本号"]: str(version).strip() or "dev"}
+    rows = {COMBATANTS: UNREAD, MESSAGES["版本号"]: str(version).strip() or "dev"}
     for task in tasks:
         language = (getattr(task, "config", None) or {}).get(GAME_LANGUAGE)
         if language:
             rows[MESSAGES[GAME_LANGUAGE]] = language
             break
-    return {key: value for key, value in rows.items() if value is not None}
+    return in_order(rows)
 
 
 def showing_while_idle(original):
