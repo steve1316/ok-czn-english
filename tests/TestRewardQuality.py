@@ -8,7 +8,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.en import rewards  # noqa: E402
+from src.en import dashboard, rewards  # noqa: E402
+from src.en.dashboard import COMBATANTS as COMBATANTS_ROW  # noqa: E402
 from src.en.game_data import COMBATANTS  # noqa: E402
 from src.en.overrides import FARMED_COMBATANT  # noqa: E402
 from src.en.game_quality import (  # noqa: E402
@@ -58,12 +59,16 @@ class FakeBox:
 
 
 class FakeTask:
-    """A task holding one OCR pass and, once the run has started, the team."""
+    """A task holding one OCR pass, the info table, and once the run has started the team."""
 
-    def __init__(self, texts, team=None):
+    def __init__(self, texts=(), team=None, info=None):
         self.all_texts = [FakeBox(text) for text in texts]
+        self.info = dict(info or {})
         if team is not None:
             setattr(self, rewards.TEAM, team)
+
+    def info_set(self, key, value):
+        self.info[key] = value
 
 
 class TestRewardQuality(unittest.TestCase):
@@ -500,3 +505,30 @@ class TestOneEditApart(unittest.TestCase):
         for why, first, second, expected in self.CASES:
             with self.subTest(why):
                 self.assertEqual(expected, one_edit_apart(first, second))
+
+
+class TestCombatantsRowHoldsItsPlace(unittest.TestCase):
+    """The team row, which upstream's info table has nothing to draw until the Combatants screen is read.
+
+    `info_clear` empties the table at the start of every run, so a row that only appears once the team is
+    scanned is missing for the first stretch of the run - and after the idle table drew it, that reads as the
+    row vanishing on Start and coming back minutes later.
+    """
+
+    SCANNED = ", ".join(TEAM)
+
+    def test_the_row_is_seeded_before_the_team_has_been_read(self):
+        task = FakeTask()
+        self.assertIs(False, rewards.hold_the_combatants_row(task), "it must not claim the frame")
+        self.assertEqual({COMBATANTS_ROW: dashboard.UNREAD}, task.info)
+
+    def test_a_scanned_team_is_never_overwritten_by_the_placeholder(self):
+        task = FakeTask(info={COMBATANTS_ROW: self.SCANNED})
+        rewards.hold_the_combatants_row(task)
+        self.assertEqual({COMBATANTS_ROW: self.SCANNED}, task.info)
+
+    def test_a_new_run_seeds_it_again(self):
+        task = FakeTask(info={COMBATANTS_ROW: self.SCANNED})
+        task.info.clear()  # What upstream's info_clear does at the start of every run.
+        rewards.hold_the_combatants_row(task)
+        self.assertEqual({COMBATANTS_ROW: dashboard.UNREAD}, task.info)

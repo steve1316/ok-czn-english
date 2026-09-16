@@ -273,7 +273,9 @@ class TestIdleDashboard(unittest.TestCase):
         # Each step is a regression on its own: hidden at launch, the X ignored, or idle rows over a real run.
         tab = self.Tab([types.SimpleNamespace(config={"游戏语言": "English"})])
         tab.update_info_table()
-        self.assertEqual({"Game Language": "English", "Version": "dev"}, tab.drawn)
+        # As a list, because the team belongs above the two rows that never change rather than under them.
+        self.assertEqual([(dashboard.COMBATANTS, dashboard.UNREAD), ("Game Language", "English"),
+                          ("Version", "dev")], list(tab.drawn.items()))
         self.assertEqual(dashboard.IDLE, tab.title.text)
 
         tab.drawn = None
