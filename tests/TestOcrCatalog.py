@@ -17,6 +17,17 @@ I18N_ROOT = REPO_ROOT / "i18n"
 LOCALES = ("en_US", "zh_CN")
 CJK = re.compile(r"[\u4e00-\u9fff]")
 
+# Captions a handler compares whole, as `(English, the literal it must become, what an unmapped one costs)`.
+# A substring match would not do here, so these are the entries where a near-miss reads as a clean miss.
+EXACT_MATCHES = (
+    ("Recommended", "\u63a8\u8350",
+     "src/en/equipment.py pairs this banner with a combatant row, which is never preferred without it"),
+    ("Refresh", "\u5237\u65b0",
+     "handle_card_assign rerolls a card reward with this, and unmapped it has never once fired"),
+    ("To the Core of Discord", "\u524d\u5f80\u5361\u5384\u601d\u6838\u5fc3",
+     "the Settlement screen offers this instead of Continue, and unmapped no handler claims the frame at all"),
+)
+
 
 def ocr_po(locale):
     """Build the path to one locale's reverse OCR catalog source.
@@ -120,15 +131,12 @@ class TestOcrCatalog(unittest.TestCase):
         translation = gettext.translation("ocr", str(I18N_ROOT), languages=["en_US"])
         self.assertIn("购买卡牌", translation.gettext("Purchase Card"))
 
-    def test_the_recommended_banner_is_mapped(self):
-        """src/en/equipment.py pairs this banner with a combatant row; unmapped, the row is never preferred."""
+    def test_the_buttons_matched_by_equality_are_mapped(self):
+        """Each of these is compared with `==` or `_clean_match`, so containing the literal is not enough."""
         translation = gettext.translation("ocr", str(I18N_ROOT), languages=["en_US"])
-        self.assertEqual("推荐", translation.gettext("Recommended"))
-
-    def test_the_refresh_button_is_mapped(self):
-        """handle_card_assign looks for this to reroll a card reward; unmapped, it has never once fired."""
-        translation = gettext.translation("ocr", str(I18N_ROOT), languages=["en_US"])
-        self.assertEqual("刷新", translation.gettext("Refresh"))
+        for english, chinese, cost in EXACT_MATCHES:
+            with self.subTest(english=english):
+                self.assertEqual(chinese, translation.gettext(english), cost)
 
     def test_compiled_catalog_is_current(self):
         """Read the catalog the way the framework does, since the app only ever loads the compiled .mo.
