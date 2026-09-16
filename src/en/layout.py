@@ -1,12 +1,20 @@
-"""Give the settings rows enough width to read in English.
+"""Patch ok-script's Qt card and settings layouts, which do not size or draw themselves correctly.
 
 ok-script lays each settings row out as `[text column][stretch spacer][control]` but gives the text column no
 stretch, so the spacer absorbs every spare pixel. Descriptions then wrap at their 220px minimum while most of
 the row sits empty. That is tolerable in Chinese, which is dense enough to hide it, and unreadable in English.
 
+The card list is worse. `qfluentwidgets.ExpandLayout.addWidget` never calls `QLayout.addChildWidget`, the
+function that both reparents a new child and shows it, and ok-script's `ExpandCardLayout` adds the reparent
+back without the show. Measured on one add to a visible parent: `QVBoxLayout` draws the card, those two leave
+it hidden. So a tab rebuilt while it is on screen draws nothing, and `handle_chaos_reward_claim` asks for a
+rebuild the moment the loot cards run out. Startup escapes it only because the tab is hidden then, and Qt's
+own show cascade reaches the cards when it opens.
+
 Every patch here reaches into framework internals, so each one is written to fail quietly: if a future
-ok-script release fixes the layout itself, the import or the lookup simply misses and nothing happens. Set
-`OK_CZN_NO_LAYOUT_PATCH` to skip them all.
+ok-script release fixes the layout itself, the import or the lookup simply misses and nothing happens.
+`OK_CZN_NO_LAYOUT_PATCH` skips the presentation patches, and deliberately not the missing show - that one is a
+correctness fix, and turning it off leaves the Tasks tab blank.
 """
 
 import os
@@ -28,13 +36,13 @@ _patched = False
 
 
 def _disabled():
-    """Report whether the user has opted out of every layout patch.
+    """Report whether the user has opted out of the presentation patches.
 
     Returns:
         True when the escape-hatch environment variable is set.
     """
     if os.environ.get(DISABLE_ENV):
-        logger.info(f"{DISABLE_ENV} set, leaving the stock layout alone")
+        logger.info(f"{DISABLE_ENV} set, leaving the stock presentation alone")
         return True
     return False
 
@@ -148,6 +156,32 @@ def size_cards_by_height_for_width():
     logger.info("expandable cards sized by height-for-width")
 
 
+def show_cards_added_to_a_visible_list():
+    """Show a card added to a list the user is already looking at.
+
+    Both task tabs rebuild their list through `TaskTab.add_task_card`, so the layout under it is the one seam
+    that covers them both.
+    """
+    expand_card_layout = import_ui("widget.ExpandCardLayout", "ExpandCardLayout")
+    if expand_card_layout is None:
+        return
+    original_add_widget = expand_card_layout.addWidget
+
+    def patched_add_widget(self, widget, *args, **kwargs):
+        original_add_widget(self, widget, *args, **kwargs)
+        try:
+            view = self.parentWidget()
+            # Only once the view is up. While it is hidden Qt's own show cascade reaches the card, and an
+            # explicit show here would override a caller that added it hidden on purpose.
+            if view is not None and view.isVisible():
+                widget.show()
+        except Exception as error:
+            logger.warning(f"could not show a card added to the list: {error}")
+
+    expand_card_layout.addWidget = patched_add_widget
+    logger.info("cards added to a list already on screen are shown")
+
+
 def align_card_action_buttons():
     """Keep a card's action buttons in one column down the list.
 
@@ -177,15 +211,20 @@ def align_card_action_buttons():
 
 
 def apply():
-    """Apply every layout patch, unless the escape hatch is set.
+    """Apply every layout patch, with the escape hatch covering the presentation ones only.
 
     Note that ok-script-kes already carries its own collapsed-card height fix (`_sync_collapsed_height`), so
     the snap patch that ok-gf2-english needed is deliberately not ported here.
     """
     global _patched
-    if _patched or _disabled():
+    if _patched:
         return
     _patched = True
+    # Ahead of the hatch on purpose. The other three are look and feel, and this one decides whether the
+    # Tasks tab has anything on it at all, so switching it off to rule out the cosmetics would hide a run.
+    show_cards_added_to_a_visible_list()
+    if _disabled():
+        return
     widen_settings_text_column()
     size_cards_by_height_for_width()
     align_card_action_buttons()
