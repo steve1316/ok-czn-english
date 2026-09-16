@@ -23,7 +23,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from src.en.events import (  # noqa: E402
     ATTACK, ATTACK_RANK, DESIRE_RANK, DIALOGUE, DIALOGUE_RANK, MIN_LATIN_MARKER_LENGTH, MIN_MARKER_LENGTH,
-    QUIT, QUIT_RANK, REWARD_RANK, RankingChoice, SPARK, SPARK_RANK,
+    OFF_FACTION_RANK, QUIT, QUIT_RANK, REWARD_RANK, RankingChoice, SPARK, SPARK_RANK,
     drop_unwanted, find_chests, fold, open_a_chest, order, rank,
 )
 from tests.fakes import HEIGHT, WIDTH, FakeBox  # noqa: E402
@@ -219,9 +219,13 @@ class TestDesireOptions(unittest.TestCase):
         # An Epiphany permanently upgrades a card, which is worth more than one point of one faction.
         self.assertLess(SPARK_RANK, DESIRE_RANK)
 
-    def test_another_faction_is_only_an_ordinary_reward(self):
-        # Points spread across factions do not reach a breakpoint, so this is worth no more than credits.
-        self.assertEqual(REWARD_RANK, rank(self.TARGETED, "Claim"))
+    def test_another_faction_gives_way_to_a_random_one(self):
+        # The assign screen skips an off-faction card, so taking one is worth nothing, while the random option
+        # can still land on the faction being chased. Captured wording from a run chasing Claim.
+        offered = [option("Embrace the DesireObtain 1 random Desire:Inquiry card"), option(self.RANDOM), option(self.ENDS)]
+        self.assertEqual([self.RANDOM], [o["description"] for o in drop_unwanted(offered, "Claim")])
+        self.assertEqual(OFF_FACTION_RANK, rank(self.TARGETED, "Claim"))
+        self.assertLess(ATTACK_RANK, OFF_FACTION_RANK)
 
     def test_an_unnamed_faction_is_only_an_ordinary_reward(self):
         self.assertEqual(REWARD_RANK, rank(self.RANDOM, "Control"))

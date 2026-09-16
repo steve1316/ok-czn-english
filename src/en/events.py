@@ -51,10 +51,13 @@ SPARK_RANK = 0
 DESIRE_RANK = 1
 REWARD_RANK = 2
 ATTACK_RANK = 3
-QUIT_RANK = 4
+# A Desire card of some other faction. The assign screen skips it, so it is worth nothing, and withholding it leaves
+# the random-faction option, which can still land on the faction being chased.
+OFF_FACTION_RANK = 4
+QUIT_RANK = 5
 # Worse than quitting. Ending the event at least moves the run on, while reading lore puts the same screen
 # straight back up.
-DIALOGUE_RANK = 5
+DIALOGUE_RANK = 6
 
 # `_get_region_text` glues the OCR boxes together with no separator and in an unstable order, and the reader
 # loses or invents spaces at line breaks - the same option was captured as "Spark an Epiphany for a" and
@@ -128,7 +131,7 @@ def rank(description, target=None):
         target: The Desire faction the run is chasing, or None when it is not being tracked.
 
     Returns:
-        `SPARK_RANK`, `DESIRE_RANK`, `REWARD_RANK`, `ATTACK_RANK`, `QUIT_RANK` or `DIALOGUE_RANK`.
+        `SPARK_RANK`, `DESIRE_RANK`, `REWARD_RANK`, `ATTACK_RANK`, `OFF_FACTION_RANK`, `QUIT_RANK` or `DIALOGUE_RANK`.
     """
     text = fold(description)
     if contains(text, SPARK):
@@ -137,8 +140,11 @@ def rank(description, target=None):
         return DIALOGUE_RANK
     if contains(text, QUIT):
         return QUIT_RANK
-    if target and contains(text, DESIRE) and contains(text, (target,)):
-        return DESIRE_RANK
+    if target and contains(text, DESIRE):
+        if contains(text, (target,)):
+            return DESIRE_RANK
+        if contains(text, desire.FACTIONS):
+            return OFF_FACTION_RANK
     if contains(text, ATTACK):
         return ATTACK_RANK
     # Anything unrecognised counts as a reward. Most options naming no known marker still hand something over,
