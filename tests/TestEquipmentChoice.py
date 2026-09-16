@@ -6,6 +6,7 @@ every Sortie run. Positions are measured off the captured Equipment screen: thre
 each row's level tag 116px below the banner that would mark it.
 """
 
+import random
 import sys
 import types
 import unittest
@@ -124,13 +125,14 @@ class TestPreferringRecommended(unittest.TestCase):
 
     @staticmethod
     def utils_stub():
-        """Build a stand-in for the `utils` module carrying only the seam this patch moves.
+        """Build a stand-in for the `utils` module carrying only the seams this patch moves.
 
         Returns:
-            A namespace with `_find_member_level_tags`.
+            A namespace with `_find_member_level_tags` and `random`.
         """
         return types.SimpleNamespace(
             _find_member_level_tags=lambda task_, *args, **kwargs: level_tags(),
+            random=random,
         )
 
     def order_seen(self, task):
@@ -163,6 +165,25 @@ class TestPreferringRecommended(unittest.TestCase):
 
     def test_leaves_the_order_alone_without_a_banner(self):
         self.assertEqual([list(TAG_Y)], self.order_seen(equipment_screen()))
+
+    def test_gear_the_target_passes_on_goes_to_the_recommended_row(self):
+        # Chaos binds to the save-data combatant by avatar, not by position, and hands what it turns down to a
+        # `random.choice` of the others. A run saw the banner on row 3 and still left the pick to chance.
+        target = TAG_Y[1]
+        for recommended, expected in ((0, {TAG_Y[0]}), (2, {TAG_Y[2]}), (1, {TAG_Y[0], TAG_Y[2]}), (None, {TAG_Y[0], TAG_Y[2]})):
+            with self.subTest(recommended=recommended):
+                utils = self.utils_stub()
+                picked = []
+
+                def handler(task_):
+                    others = [box for box in utils._find_member_level_tags(task_) if box.y + box.height / 2 != target]
+                    picked.append(round(utils.random.choice(others).y + 15))
+                    return False
+
+                for _ in range(10):
+                    preferring_recommended(handler, utils)(equipment_screen(recommended=recommended))
+                self.assertLessEqual(set(picked), expected)
+                self.assertIs(random, utils.random)
 
 class TestMythicOffer(unittest.TestCase):
     """Spotting a Mythic piece."""
