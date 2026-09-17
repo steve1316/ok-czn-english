@@ -35,7 +35,7 @@ UPSTREAM_NAMES = {
         "_member_equipment_qualities", "_move_and_click", "_should_install_equipment", "find_box_at_point",
         "handle_card_assign", "handle_card_reward", "handle_confirm", "handle_equipment", "handle_event_task",
         "handle_expedition_result", "handle_negotiation", "handle_shop", "handle_stuck_log",
-        "handle_view_original", "is_button_active", "is_frame_stuck", "is_subsequence", "log_node_status",
+        "handle_view_original", "is_button_active", "is_frame_stuck", "is_subsequence", "log_node_status", "random",
         "recognize_cards", "recognize_cards_in_deck", "recognize_event_options", "select_card",
     ),
     "utils_chaos": (

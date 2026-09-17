@@ -5,7 +5,7 @@ blacklist and the user's priority lists, then the combat option, then a random p
 what that means - the upper-half shortcut fired 38 times and chose "End the event" five times, the random pick
 fired 40 times, and the user's own priority list never ran once.
 
-So options that give nothing are withheld while anything else is on offer, and what is left is ranked spark,
+So options that give nothing, or cut max Health, are withheld while anything else is on offer, and what is left is ranked spark,
 then rewards, then combat. "Nothing" covers ending the event, and reading lore, which is worse: the screen
 comes back unchanged afterwards, so the shortcut takes the same option again on the next frame. A logged run
 clicked "Examine the mushroom" three times in four seconds, left the event, came back and did it again.
@@ -44,6 +44,9 @@ DIALOGUE = ("check information on",)
 # An event handing out a Desire card says so. The faction is named separately, and both have to be present:
 # "Claim" and "Control" are ordinary English words that turn up in options having nothing to do with Desire.
 DESIRE = ("desire",)
+# An option that permanently cuts max Health, whatever else it hands over. Wording taken from the captured
+# "Increase max Health by 15%", since no run has logged the cut yet.
+HEALTH_COST = ("decrease max health",)
 
 SPARK_RANK = 0
 # A Desire card of the faction the run is chasing. Below a spark, which permanently upgrades a card, and
@@ -51,10 +54,15 @@ SPARK_RANK = 0
 DESIRE_RANK = 1
 REWARD_RANK = 2
 ATTACK_RANK = 3
-QUIT_RANK = 4
+# A Desire card of some other faction. The assign screen skips it, so it is worth nothing, and withholding it leaves
+# the random-faction option, which can still land on the faction being chased.
+OFF_FACTION_RANK = 4
+QUIT_RANK = 5
+# Worse than quitting, because the cut lasts the rest of the run. Still ahead of lore, which never moves the run on.
+HEALTH_COST_RANK = 6
 # Worse than quitting. Ending the event at least moves the run on, while reading lore puts the same screen
 # straight back up.
-DIALOGUE_RANK = 5
+DIALOGUE_RANK = 7
 
 # `_get_region_text` glues the OCR boxes together with no separator and in an unstable order, and the reader
 # loses or invents spaces at line breaks - the same option was captured as "Spark an Epiphany for a" and
@@ -128,17 +136,24 @@ def rank(description, target=None):
         target: The Desire faction the run is chasing, or None when it is not being tracked.
 
     Returns:
-        `SPARK_RANK`, `DESIRE_RANK`, `REWARD_RANK`, `ATTACK_RANK`, `QUIT_RANK` or `DIALOGUE_RANK`.
+        `SPARK_RANK`, `DESIRE_RANK`, `REWARD_RANK`, `ATTACK_RANK`, `OFF_FACTION_RANK`, `QUIT_RANK`, `HEALTH_COST_RANK` or
+        `DIALOGUE_RANK`.
     """
     text = fold(description)
+    # Ahead of every other marker, so a spark or reward on the same option does not hide the cut.
+    if contains(text, HEALTH_COST):
+        return HEALTH_COST_RANK
     if contains(text, SPARK):
         return SPARK_RANK
     if contains(text, DIALOGUE):
         return DIALOGUE_RANK
     if contains(text, QUIT):
         return QUIT_RANK
-    if target and contains(text, DESIRE) and contains(text, (target,)):
-        return DESIRE_RANK
+    if target and contains(text, DESIRE):
+        if contains(text, (target,)):
+            return DESIRE_RANK
+        if contains(text, desire.FACTIONS):
+            return OFF_FACTION_RANK
     if contains(text, ATTACK):
         return ATTACK_RANK
     # Anything unrecognised counts as a reward. Most options naming no known marker still hand something over,
@@ -147,7 +162,7 @@ def rank(description, target=None):
 
 
 def drop_unwanted(options, target=None):
-    """Withhold the options that give nothing, unless they are all that is on offer.
+    """Withhold the options that give nothing or cost max Health, unless they are all that is on offer.
 
     This is what makes "never end or stall the event while something else is available" a guarantee rather than
     a preference. Upstream's upper-half shortcut runs before any ranking and cannot be reasoned with, so those
@@ -171,7 +186,7 @@ def drop_unwanted(options, target=None):
     # yet, and this line is what makes it obvious from a run's log rather than needing a repro.
     withheld = [f"rank {tier}: {option.get('description', '')}" for tier, option in ranked if tier > cutoff]
     if withheld:
-        logger.info(f"withholding {len(withheld)} option(s) that give nothing - {' | '.join(withheld)}")
+        logger.info(f"withholding {len(withheld)} option(s) that give nothing or cost max Health - {' | '.join(withheld)}")
     return kept
 
 

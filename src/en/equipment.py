@@ -4,7 +4,8 @@ Four narrow changes inside `handle_equipment` and the shop. None copies a handle
 
 The Equipment screen marks the row with a free slot of the right kind "Recommended". Upstream never reads it,
 picking by the save-scum target instead, or by whoever is listed first on every Sortie run since only Chaos
-carries that setting. The banner is paired to a row by taking the nearest level tag *below* it, which leaves
+carries that setting. What the target turns down goes to a random other combatant, so that pick takes the
+banner's row too whenever it is one of them. The banner is paired to a row by taking the nearest level tag *below* it, which leaves
 most of a row's height of slack either way. Only the preference moves, so upstream's own quality comparison
 still decides install-versus-give-away. A log trap follows from it: upstream numbers combatants by that list,
 so `第N号主战员` counts from the recommended row rather than the top of the screen.
@@ -24,7 +25,7 @@ A run that has not reached it counts every slot bare, which is the truth - a run
 from ok import Logger
 
 from src.en import rewards
-from src.en.handlers import loaded, register, standing_in, wrap
+from src.en.handlers import StandIn, loaded, register, standing_in, wrap
 from src.en.rewards import EQUIPMENT_KEYS
 from src.en.screen import text_in_region
 from src.en.state import GEAR, say_once
@@ -121,6 +122,33 @@ def mythic_offer(task):
     return text_in_region(task, MYTHIC, MYTHIC_REGION) is not None
 
 
+class RecommendedChoice(StandIn):
+    """Stands in for `random` while the equipment handler runs, so a random pick of combatants takes the recommended one.
+
+    Upstream hands whatever the save-data combatant turns down to `random.choice` of the other rows. Anything
+    that is not a list holding the recommended row falls through to the real module.
+    """
+
+    # The recommended row's level tag, once the handler has read the rows. A class attribute, so the lookup never
+    # reaches `StandIn.__getattr__`.
+    row = None
+
+    def choice(self, sequence):
+        """Take the recommended row when it is on offer, otherwise defer to the real module.
+
+        Args:
+            sequence: Whatever upstream is choosing between.
+
+        Returns:
+            One item from the sequence.
+        """
+        # By identity: the rows upstream chooses from are the same tag boxes the row reader handed it.
+        if self.row is not None and any(item is self.row for item in sequence):
+            logger.info("giving it to the recommended combatant rather than a random one")
+            return self.row
+        return self.original.choice(sequence)
+
+
 def insisting_on_mythic(handler, utils):
     """Wrap `handle_equipment` so a Mythic piece is never passed over for a configured one.
 
@@ -159,13 +187,14 @@ def preferring_recommended(handler, utils):
 
     Args:
         handler: The handler to wrap, upstream's or another patch's.
-        utils: The module holding `_find_member_level_tags`, the seam the order is changed through.
+        utils: The module holding `_find_member_level_tags` and `random`, the seams the choice is changed through.
 
     Returns:
         The wrapped handler.
     """
     def wrapped(task):
         original = utils._find_member_level_tags
+        chooser = RecommendedChoice(utils.random)
 
         def preferred(task_, *args, **kwargs):
             tags = original(task_, *args, **kwargs)
@@ -174,13 +203,15 @@ def preferring_recommended(handler, utils):
             # task from the call rather than closing over the outer one also keeps a 6MB frame from being
             # captured by anything that outlives this call.
             row = recommended_row(task_, recommended_banner(task_), tags)
+            if row is not None:
+                chooser.row = tags[row]
             if not row:
                 # Row 0 too: it is already where upstream falls back to, so there is nothing to move.
                 return tags
             logger.info(f"the client recommends combatant {row + 1} of {len(tags)}, so it is preferred")
             return [tags[row], *tags[:row], *tags[row + 1:]]
 
-        with standing_in(utils, _find_member_level_tags=preferred):
+        with standing_in(utils, _find_member_level_tags=preferred, random=chooser):
             return handler(task)
 
     return wrapped

@@ -22,8 +22,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from src.en.events import (  # noqa: E402
-    ATTACK, ATTACK_RANK, DESIRE_RANK, DIALOGUE, DIALOGUE_RANK, MIN_LATIN_MARKER_LENGTH, MIN_MARKER_LENGTH,
-    QUIT, QUIT_RANK, REWARD_RANK, RankingChoice, SPARK, SPARK_RANK,
+    ATTACK, ATTACK_RANK, DESIRE_RANK, DIALOGUE, DIALOGUE_RANK, HEALTH_COST, HEALTH_COST_RANK, MIN_LATIN_MARKER_LENGTH, MIN_MARKER_LENGTH,
+    OFF_FACTION_RANK, QUIT, QUIT_RANK, REWARD_RANK, RankingChoice, SPARK, SPARK_RANK,
     drop_unwanted, find_chests, fold, open_a_chest, order, rank,
 )
 from tests.fakes import HEIGHT, WIDTH, FakeBox  # noqa: E402
@@ -117,13 +117,13 @@ class TestEventRanking(unittest.TestCase):
 
     def test_every_marker_survives_folding(self):
         """A marker that folded away to nothing would be `in` every description and match everything."""
-        for marker in SPARK + QUIT + ATTACK + DIALOGUE:
+        for marker in SPARK + QUIT + ATTACK + DIALOGUE + HEALTH_COST:
             with self.subTest(marker=marker):
                 self.assertGreaterEqual(len(fold(marker)), MIN_MARKER_LENGTH)
 
     def test_latin_markers_are_whole_phrases(self):
         """Two Chinese characters are a specific word; two Latin letters would match half the screen."""
-        for marker in SPARK + QUIT + ATTACK + DIALOGUE:
+        for marker in SPARK + QUIT + ATTACK + DIALOGUE + HEALTH_COST:
             if marker.isascii():
                 with self.subTest(marker=marker):
                     self.assertGreaterEqual(len(fold(marker)), MIN_LATIN_MARKER_LENGTH)
@@ -163,6 +163,16 @@ class TestEventRanking(unittest.TestCase):
         """Ending the event moves the run on. Reading lore puts the same screen back up."""
         kept = drop_unwanted([option(MUSHROOM_LORE), option("离开End the event")])
         self.assertEqual(["离开End the event"], [o["description"] for o in kept])
+
+    def test_a_max_health_cut_gives_way_to_everything_but_lore(self):
+        """Not yet captured from a run - the wording mirrors the captured "Increase max Health by 15%"."""
+        cut = "Drink the tonicSpark an Epiphany for arandom Combatant 1 time(s), Decrease maxHealth by 10%"
+        self.assertEqual(HEALTH_COST_RANK, rank(cut))
+        self.assertLess(QUIT_RANK, HEALTH_COST_RANK)
+        kept = drop_unwanted([option(cut), option("离开End the event")])
+        self.assertEqual(["离开End the event"], [o["description"] for o in kept])
+        kept = drop_unwanted([option(cut), option(MUSHROOM_LORE)])
+        self.assertEqual([cut], [o["description"] for o in kept])
 
     def test_ordering_puts_the_best_option_first(self):
         """Upstream's upper-half shortcut takes the first option it can, so first must mean best."""
@@ -219,9 +229,13 @@ class TestDesireOptions(unittest.TestCase):
         # An Epiphany permanently upgrades a card, which is worth more than one point of one faction.
         self.assertLess(SPARK_RANK, DESIRE_RANK)
 
-    def test_another_faction_is_only_an_ordinary_reward(self):
-        # Points spread across factions do not reach a breakpoint, so this is worth no more than credits.
-        self.assertEqual(REWARD_RANK, rank(self.TARGETED, "Claim"))
+    def test_another_faction_gives_way_to_a_random_one(self):
+        # The assign screen skips an off-faction card, so taking one is worth nothing, while the random option
+        # can still land on the faction being chased. Captured wording from a run chasing Claim.
+        offered = [option("Embrace the DesireObtain 1 random Desire:Inquiry card"), option(self.RANDOM), option(self.ENDS)]
+        self.assertEqual([self.RANDOM], [o["description"] for o in drop_unwanted(offered, "Claim")])
+        self.assertEqual(OFF_FACTION_RANK, rank(self.TARGETED, "Claim"))
+        self.assertLess(ATTACK_RANK, OFF_FACTION_RANK)
 
     def test_an_unnamed_faction_is_only_an_ordinary_reward(self):
         self.assertEqual(REWARD_RANK, rank(self.RANDOM, "Control"))
