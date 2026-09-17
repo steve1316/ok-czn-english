@@ -428,11 +428,12 @@ class TestKeepingDesireCards(unittest.TestCase):
         handler(task)
         self.assertEqual([NAME, "Sever Ties"], seen["offered"])
 
-    def test_a_card_of_another_faction_is_left_to_be_skipped(self):
-        # A level spent on a faction the run is not collecting cannot be spent on the one it is.
-        task, _, seen, handler = assign_screen("Inquiry]")
+    def test_a_card_of_another_faction_is_kept_too(self):
+        # Every combatant is meant to reach three points. A real run chasing Claim skipped a Control card with no
+        # refreshes left and nothing else on offer.
+        task, _, seen, handler = assign_screen("Control]")
         handler(task)
-        self.assertEqual([], seen["offered"])
+        self.assertEqual([NAME], seen["offered"])
 
     def test_a_levelled_tag_still_counts(self):
         task, _, seen, handler = assign_screen("[ Claim 2 ]")
@@ -494,7 +495,7 @@ class TestKeepingDesireCards(unittest.TestCase):
         self.assertEqual([NAME], seen["offered"])
 
     def test_a_pick_for_some_other_card_does_not_carry_over(self):
-        task, _, seen, handler = assign_screen("Inquiry]", taken="Some Older Card")
+        task, _, seen, handler = assign_screen(None, taken="Some Older Card")
         handler(task)
         self.assertEqual([], seen["offered"])
 

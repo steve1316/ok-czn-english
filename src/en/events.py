@@ -53,10 +53,10 @@ SPARK_RANK = 0
 # above an ordinary reward, because points in one faction compound towards a team-wide bonus at 3, 5 and 7.
 DESIRE_RANK = 1
 REWARD_RANK = 2
-ATTACK_RANK = 3
-# A Desire card of some other faction. The assign screen skips it, so it is worth nothing, and withholding it leaves
-# the random-faction option, which can still land on the faction being chased.
-OFF_FACTION_RANK = 4
+# A Desire card of some other faction. Every combatant is meant to reach three points, so it is still worth more than
+# a battle, but the random-faction option ranks as a reward ahead of it because it can land on the faction being chased.
+OFF_FACTION_RANK = 3
+ATTACK_RANK = 4
 QUIT_RANK = 5
 # Worse than quitting, because the cut lasts the rest of the run. Still ahead of lore, which never moves the run on.
 HEALTH_COST_RANK = 6

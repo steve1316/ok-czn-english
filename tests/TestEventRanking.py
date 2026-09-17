@@ -229,13 +229,15 @@ class TestDesireOptions(unittest.TestCase):
         # An Epiphany permanently upgrades a card, which is worth more than one point of one faction.
         self.assertLess(SPARK_RANK, DESIRE_RANK)
 
-    def test_another_faction_gives_way_to_a_random_one(self):
-        # The assign screen skips an off-faction card, so taking one is worth nothing, while the random option
-        # can still land on the faction being chased. Captured wording from a run chasing Claim.
-        offered = [option("Embrace the DesireObtain 1 random Desire:Inquiry card"), option(self.RANDOM), option(self.ENDS)]
-        self.assertEqual([self.RANDOM], [o["description"] for o in drop_unwanted(offered, "Claim")])
+    def test_another_faction_gives_way_to_a_random_one_but_beats_a_battle(self):
+        # Every combatant is meant to reach three points, so an off-faction card is kept. The random option can still
+        # land on the faction being chased, so it goes first. Captured wording from a run chasing Claim.
+        off = "Embrace the DesireObtain 1 random Desire:Inquiry card"
+        offered = [option(off), option(self.RANDOM), option(self.ENDS)]
+        self.assertEqual([self.RANDOM, off], [o["description"] for o in order(drop_unwanted(offered, "Claim"), [], is_subsequence, "Claim")])
         self.assertEqual(OFF_FACTION_RANK, rank(self.TARGETED, "Claim"))
-        self.assertLess(ATTACK_RANK, OFF_FACTION_RANK)
+        self.assertLess(REWARD_RANK, OFF_FACTION_RANK)
+        self.assertLess(OFF_FACTION_RANK, ATTACK_RANK)
 
     def test_an_unnamed_faction_is_only_an_ordinary_reward(self):
         self.assertEqual(REWARD_RANK, rank(self.RANDOM, "Control"))

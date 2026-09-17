@@ -399,9 +399,9 @@ def keeping_desire_cards(handler, utils):
     list had asked for it. Everything after that is upstream's, including its preference for handing the card
     to the save-data combatant.
 
-    Only the faction being chased earns this. Handed to a combatant carrying nothing yet, an off-faction
-    card takes one of the team's three Desire slots outright, costing up to three points against a bonus
-    that wants seven of nine. Levels run out well before the cards do.
+    Every faction earns this, not only the one being chased. The aim is all three combatants at three points, and a
+    real run chasing Claim skipped a Control card with nothing else on offer. The chased faction is favoured where
+    there is a choice to make - the event options and the Desire screens - not here, where the only other answer is Skip.
 
     The exception is a card a Desire screen already chose, which is kept whatever it carries. That screen has
     no Skip, so something had to be taken; re-judging the faction here only throws the choice away and leaves
@@ -439,11 +439,8 @@ def keeping_desire_cards(handler, utils):
             tags = tag_of(task_, card["description_region"])
             if not (chosen or tags):
                 return cards
-            target = target_faction(task_, utils)
-            because = "was chosen on the Desire screen" if chosen else f"carries {target}"
-            if not (chosen or tags.get(target)):
-                logger.info(f"「{card['name']}」carries {tags} rather than {target}, so it is left to be skipped")
-            elif purchasing(task_):
+            because = "was chosen on the Desire screen" if chosen else f"carries {tags}"
+            if purchasing(task_):
                 logger.info(f"「{card['name']}」{because}, but it is for sale, so it is left alone")
             else:
                 wanted = card["name"]
