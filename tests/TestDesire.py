@@ -165,7 +165,7 @@ def inherit_screen(tags, title=INHERIT_TITLE, confirm_active=False, priority=())
     return chosen(INHERIT_X, INHERIT_Y, tags, title, confirm_active, priority, inherit_handler)
 
 
-def assign_screen(tag, target="Claim", configured=(), purchase=False, page=ASSIGN_PAGE, second=None, taken=None, rows=None, refreshes=3):
+def assign_screen(tag, target="Claim", configured=(), purchase=False, page=ASSIGN_PAGE, second=None, taken=None, rows=None, refreshes=3, saver=None):
     """Build the card assign screen and the stubs the wrapper reads through.
 
     Args:
@@ -179,6 +179,7 @@ def assign_screen(tag, target="Claim", configured=(), purchase=False, page=ASSIG
         rows: One `(held, obtainable)` pair per combatant row, where `held` is the level of the Desire card it
             holds, 0 for none. None for a handler that never reads the rows.
         refreshes: The refreshes left on the Refresh button.
+        saver: The row index upstream matches the save-data combatant's avatar to, or None when it finds none.
 
     Returns:
         A `(task, utils, seen, handler)` quadruple, where `seen` collects what the handler was offered and, under
@@ -225,7 +226,8 @@ def assign_screen(tag, target="Claim", configured=(), purchase=False, page=ASSIG
     utils = types.SimpleNamespace(recognize_cards=recognize_cards, _get_config_value=get_config_value,
                                   _get_card_list=get_card_list, find_box_at_point=find_box_at_point,
                                   _find_member_level_tags=lambda task_, region, page=None: tags[:len(rows or [])],
-                                  _get_game_text=lambda task_, text: text)
+                                  _get_game_text=lambda task_, text: text,
+                                  _find_target_member_index=lambda task_, rows_, region, **kwargs: saver)
 
     def handler(task_):
         # Upstream's own order: it reads the card first, then the list it judges the card against. Cleared
@@ -519,6 +521,28 @@ class TestKeepingDesireCards(unittest.TestCase):
                 handler(task)
                 self.assertEqual(expected, seen["rows"])
                 self.assertIsNone(task.clicked)
+
+    def test_the_save_data_combatant_keeps_its_slots_for_the_chased_faction(self):
+        # Its save data is what the run keeps, so the chased faction's points belong on it. An off-faction card goes
+        # elsewhere, and only lands on it when that still leaves two slots for the chased faction.
+        cases = (
+            ("off-faction goes past it", "Control]", [(0, True), (0, True), (1, True)], 0, [1, 2]),
+            ("off-faction takes its first slot when nobody else can", "Control]", [(0, True), (3, True), (0, False)], 0, [0]),
+            ("the chased faction still goes to it", "Claim]", [(2, True), (0, True), (0, True)], 0, [0, 1, 2]),
+            ("no save-data combatant found", "Control]", [(1, True), (0, True), (0, True)], None, [0, 1, 2]),
+        )
+        for label, tag, rows, saver, expected in cases:
+            with self.subTest(label):
+                task, _, seen, handler = assign_screen(tag, rows=rows, saver=saver)
+                handler(task)
+                self.assertEqual(expected, seen["rows"])
+                self.assertIsNone(task.clicked)
+
+    def test_an_off_faction_card_that_would_crowd_the_save_data_combatant_is_rerolled(self):
+        task, _, seen, handler = assign_screen("Control]", rows=[(1, True), (3, True), (0, False)], saver=0)
+        self.assertTrue(handler(task))
+        self.assertEqual([], seen["rows"])
+        self.assertEqual(REFRESH, task.clicked)
 
     def test_every_combatant_able_to_take_it_being_full_rerolls_then_skips(self):
         rows = [(3, True), (3, True), (0, False)]

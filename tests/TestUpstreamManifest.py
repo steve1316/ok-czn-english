@@ -30,7 +30,7 @@ import utils_story  # noqa: E402
 # it swaps with `standing_in`, and the few it calls outright.
 UPSTREAM_NAMES = {
     "utils": (
-        "_current_equipment_for_slot", "_equipment_priority", "_equipment_state", "_find_member_level_tags",
+        "_current_equipment_for_slot", "_equipment_priority", "_equipment_state", "_find_member_level_tags", "_find_target_member_index",
         "_get_card_list", "_get_config_value", "_get_current_credit", "_get_game_text", "_member_deck_state",
         "_member_equipment_qualities", "_move_and_click", "_should_install_equipment", "find_box_at_point",
         "handle_card_assign", "handle_card_reward", "handle_confirm", "handle_equipment", "handle_event_task",
