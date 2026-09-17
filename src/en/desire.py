@@ -28,10 +28,13 @@ skipped it four seconds later. So a Desire screen leaves the name of what it too
 screen honours it. The purchase guard still outranks that - nothing here ever spends credits.
 
 A combatant already holding three points gains nothing from another card, but upstream hands it to the save-data
-combatant or the first row regardless. Each row prints its badge counts, so a full row is made to read as
-"Unobtainable" to upstream, which keeps the rows where they are - upstream binds the save-data combatant by row
-position. With nobody left the screen is rerolled, then skipped. A badge the reader misses counts as room, which
-is upstream's old behaviour.
+combatant or the first row regardless. A full row is made to read as "Unobtainable" to upstream, which keeps the
+rows where they are - upstream binds the save-data combatant by row position. With nobody left the screen is
+rerolled, then skipped.
+
+The points are read off the "Lv. N" printed on the Desire card a combatant holds, not the faction badges. On two
+captures OCR read none of three badge "1"s but read that digit at 1.00, and the badges also preview the card on
+the selected row. A missed digit counts as room, which is upstream's old behaviour.
 """
 
 import re
@@ -80,12 +83,12 @@ TAKEN = "_en_desire_taken"
 # Names this change in the shared record of what a function already carries.
 ASSIGN_TAG = "desire cards worth keeping"
 
-# Where an assign screen row draws its Desire badge counts, as (x1, y1, x2, y2) offsets from the row's level tag
-# centre. Measured off a captured screen: the tag at (863, 823) and a badge's "1" at (1666, 758). Stretched left
-# for a second badge and stopped short of the level digits beside the tag and the deck count below the badge.
-BADGE_OFFSETS = (0.250, -0.100, 0.470, -0.020)
-# One badge count. A count past `MAX_LEVEL` is not a badge.
-BADGE_COUNT = re.compile(r"[1-3]")
+# Where an assign screen row prints the level of the Desire card its combatant holds, as (x1, y1, x2, y2) offsets
+# from the row's level tag centre. Measured off two captures: the tag at (863, 823), and OCR reading "Ly." or "LV."
+# at (1228, 870) and the "2" beside it at (1254, 872). Stopped short of the deck count at (1356, 851).
+LEVEL_OFFSETS = (0.170, 0.025, 0.235, 0.070)
+# The level's digit, which OCR reads as a box of its own. A card stops at `MAX_LEVEL`.
+LEVEL_DIGIT = re.compile(r"[1-3]")
 # Upstream's probe for a row's "Unobtainable" caption, as an offset from the level tag centre, and the word it wants.
 UNOBTAINABLE_OFFSET = (0.0615, -0.0795)
 UNOBTAINABLE = "无法获得"
@@ -301,20 +304,20 @@ def inherit_handler(utils):
 
 
 def points_held(task, row):
-    """Total the Desire badge counts an assign screen row shows.
+    """Read the level of the Desire card an assign screen row's combatant already holds.
 
     Args:
         task: The running task, whose `all_texts` holds the current OCR pass.
         row: The row's level tag, as `_find_member_level_tags` found it.
 
     Returns:
-        The points the combatant already holds, zero when no badge was read.
+        The points the combatant already holds, zero when it holds no Desire card or the digit was not read.
     """
     x, y = centre_of(row, task.width, task.height)
-    left, top, right, bottom = BADGE_OFFSETS
+    left, top, right, bottom = LEVEL_OFFSETS
     region = (x + left, y + top, x + right, y + bottom)
-    return sum(int(count.group()) for box in task.all_texts
-               if (count := BADGE_COUNT.fullmatch(box.name.strip())) and in_region(box, region, task.width, task.height))
+    return next((int(box.name.strip()) for box in task.all_texts
+                 if LEVEL_DIGIT.fullmatch(box.name.strip()) and in_region(box, region, task.width, task.height)), 0)
 
 
 def caption_point(task, row):

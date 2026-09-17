@@ -50,12 +50,12 @@ PURCHASE_POINT = (0.5, 0.13)
 ASSIGN_PAGE = "卡牌分配页面"
 # The card a real run was handed, and skipped, twice in four minutes.
 NAME = "It's All Mine"
-# The assign screen's combatant rows, measured off a captured screen: each row's level tag, and the Desire badge
-# count drawn at the top right of the row. A second badge beside it is assumed, not captured.
+# The assign screen's combatant rows, placed where the real OCR read two captures of the screen: each row's level
+# tag, and the "Lv. 2" of the Desire card a combatant holds, which OCR splits into a mangled "LV." and a clean digit.
 LEVEL_X, LEVEL_Y = 0.4495, (0.3176, 0.5398, 0.7620)
-BADGE_X, BADGE_DY = (0.8677, 0.8260), -0.0600
-# Digits on the same row that are not Desire points: the level, and the deck count under the badge.
-LEVEL_DIGITS_DY, DECK_X, DECK_DY = 0.0500, 0.7063, 0.0260
+LV_LABEL, LV_LABEL_X, LV_DIGIT_X, LV_DY = "Ly.", 0.6391, 0.6531, 0.0454
+# Digits on the same row that are not Desire points: the level, the deck count, and a badge count OCR sometimes reads.
+LEVEL_DIGITS_DY, DECK_X, DECK_DY, BADGE_X, BADGE_DY = 0.0500, 0.7063, 0.0259, 0.7771, -0.0600
 # The Refresh counter and Skip button along the bottom.
 BUTTON_Y = 0.9306
 
@@ -176,8 +176,8 @@ def assign_screen(tag, target="Claim", configured=(), purchase=False, page=ASSIG
         page: The page label the handler gives its card read, which nothing is allowed to depend on.
         second: A tag for a further card the handler reads after the granted one, or None for no second read.
         taken: The card a Desire screen already chose, or None when the run reached this screen without one.
-        rows: One `(badges, obtainable)` pair per combatant row, where `badges` lists the Desire badge counts it
-            shows. None for a handler that never reads the rows.
+        rows: One `(held, obtainable)` pair per combatant row, where `held` is the level of the Desire card it
+            holds, 0 for none. None for a handler that never reads the rows.
         refreshes: The refreshes left on the Refresh button.
 
     Returns:
@@ -191,9 +191,11 @@ def assign_screen(tag, target="Claim", configured=(), purchase=False, page=ASSIG
     if purchase:
         boxes.append(FakeBox(PURCHASE_TITLE, *PURCHASE_POINT))
     tags = [Box("LEVEL", LEVEL_X, y) for y in LEVEL_Y]
-    for (badges, obtainable), y in zip(rows or [], LEVEL_Y):
-        boxes += [FakeBox("55", LEVEL_X, y + LEVEL_DIGITS_DY), FakeBox("6", DECK_X, y + DECK_DY, width=30)]
-        boxes += [FakeBox(str(count), x, y + BADGE_DY, width=30) for count, x in zip(badges, BADGE_X)]
+    for (held, obtainable), y in zip(rows or [], LEVEL_Y):
+        boxes += [FakeBox("55", LEVEL_X, y + LEVEL_DIGITS_DY), FakeBox("8", DECK_X, y + DECK_DY, width=20),
+                  FakeBox("1", BADGE_X, y + BADGE_DY, width=20)]
+        if held:
+            boxes += [FakeBox(LV_LABEL, LV_LABEL_X, y + LV_DY, width=32), FakeBox(str(held), LV_DIGIT_X, y + LV_DY, width=20)]
         if not obtainable:
             boxes.append(FakeBox(f"Striker {UNOBTAINABLE}", LEVEL_X + UNOBTAINABLE_OFFSET[0], y + UNOBTAINABLE_OFFSET[1], width=300))
     boxes += [FakeBox(REFRESH, 0.52, BUTTON_Y), FakeBox(f"{refreshes}/3", 0.58, BUTTON_Y, width=60), FakeBox(SKIP, 0.75, BUTTON_Y)]
@@ -504,11 +506,11 @@ class TestKeepingDesireCards(unittest.TestCase):
     def test_a_combatant_holding_three_points_is_passed_over(self):
         # A card handed to a combatant already at three points adds nothing, so it goes to one with room.
         cases = (
-            ("three of one faction", [([3], True), ([], True), ([1], True)], "Claim]", [1, 2]),
-            ("two and one of two factions", [([2, 1], True), ([2], True), ([], False)], "Claim]", [1]),
-            ("room everywhere", [([2], True), ([], True), ([1], True)], "Claim]", [0, 1, 2]),
-            ("an ordinary card", [([3], True), ([], True), ([1], True)], None, [0, 1, 2]),
-            ("nobody can take it", [([3], False), ([], False), ([1], False)], "Claim]", []),
+            ("one full", [(3, True), (0, True), (1, True)], "Claim]", [1, 2]),
+            ("one full and one unobtainable", [(3, True), (2, True), (0, False)], "Claim]", [1]),
+            ("room everywhere, as captured", [(0, True), (0, True), (2, True)], "Claim]", [0, 1, 2]),
+            ("an ordinary card", [(3, True), (0, True), (1, True)], None, [0, 1, 2]),
+            ("nobody can take it", [(3, False), (0, False), (1, False)], "Claim]", []),
         )
         for label, rows, tag, expected in cases:
             with self.subTest(label):
@@ -518,7 +520,7 @@ class TestKeepingDesireCards(unittest.TestCase):
                 self.assertIsNone(task.clicked)
 
     def test_every_combatant_able_to_take_it_being_full_rerolls_then_skips(self):
-        rows = [([3], True), ([1, 2], True), ([], False)]
+        rows = [(3, True), (3, True), (0, False)]
         for refreshes, expected in ((3, REFRESH), (0, SKIP)):
             with self.subTest(refreshes=refreshes):
                 task, _, seen, handler = assign_screen("Claim]", rows=rows, refreshes=refreshes)
