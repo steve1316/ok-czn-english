@@ -26,14 +26,21 @@ onto the second to hand it over, and judging the faction again there threw away 
 chosen: a real run picked `Knowledge Addiction` off three cards, none of the faction being chased, then
 skipped it four seconds later. So a Desire screen leaves the name of what it took on the task and the assign
 screen honours it. The purchase guard still outranks that - nothing here ever spends credits.
+
+A combatant already holding three points gains nothing from another card, but upstream hands it to the save-data
+combatant or the first row regardless. Each row prints its badge counts, so a full row is made to read as
+"Unobtainable" to upstream, which keeps the rows where they are - upstream binds the save-data combatant by row
+position. With nobody left the screen is rerolled, then skipped. A badge the reader misses counts as room, which
+is upstream's old behaviour.
 """
 
 import re
+from types import SimpleNamespace
 
 from ok import Logger
 
 from src.en.handlers import insert_before, loaded, register, standing_in, wrap
-from src.en.screen import in_region, text_in_region
+from src.en.screen import centre_of, in_region, text_in_region
 
 logger = Logger.get_logger(__name__)
 
@@ -72,6 +79,24 @@ PURCHASE_TITLE = "购买卡牌"
 TAKEN = "_en_desire_taken"
 # Names this change in the shared record of what a function already carries.
 ASSIGN_TAG = "desire cards worth keeping"
+
+# Where an assign screen row draws its Desire badge counts, as (x1, y1, x2, y2) offsets from the row's level tag
+# centre. Measured off a captured screen: the tag at (863, 823) and a badge's "1" at (1666, 758). Stretched left
+# for a second badge and stopped short of the level digits beside the tag and the deck count below the badge.
+BADGE_OFFSETS = (0.250, -0.100, 0.470, -0.020)
+# One badge count. A count past `MAX_LEVEL` is not a badge.
+BADGE_COUNT = re.compile(r"[1-3]")
+# Upstream's probe for a row's "Unobtainable" caption, as an offset from the level tag centre, and the word it wants.
+UNOBTAINABLE_OFFSET = (0.0615, -0.0795)
+UNOBTAINABLE = "无法获得"
+# How close a probed point has to be to a full row's caption point to be that probe. Upstream does the same sums.
+SAME_POINT = 1e-6
+# The bottom band upstream reads its Refresh and Skip buttons from, as (x1, y1, x2, y2), and what they say.
+BUTTON_REGION = (0.290, 0.878, 0.998, 0.997)
+REFRESH = "刷新"
+SKIP = "跳过"
+# The refreshes left, printed as "3/3".
+REFRESHES_LEFT = re.compile(r"(\d+)/\d+")
 
 _patched = False
 
@@ -275,6 +300,73 @@ def inherit_handler(utils):
     )
 
 
+def points_held(task, row):
+    """Total the Desire badge counts an assign screen row shows.
+
+    Args:
+        task: The running task, whose `all_texts` holds the current OCR pass.
+        row: The row's level tag, as `_find_member_level_tags` found it.
+
+    Returns:
+        The points the combatant already holds, zero when no badge was read.
+    """
+    x, y = centre_of(row, task.width, task.height)
+    left, top, right, bottom = BADGE_OFFSETS
+    region = (x + left, y + top, x + right, y + bottom)
+    return sum(int(count.group()) for box in task.all_texts
+               if (count := BADGE_COUNT.fullmatch(box.name.strip())) and in_region(box, region, task.width, task.height))
+
+
+def caption_point(task, row):
+    """Give the point upstream probes for a row's "Unobtainable" caption.
+
+    Args:
+        task: The running task, for the screen's size.
+        row: The row's level tag, as `_find_member_level_tags` found it.
+
+    Returns:
+        An `(x, y)` pair in screen fractions.
+    """
+    x, y = centre_of(row, task.width, task.height)
+    return x + UNOBTAINABLE_OFFSET[0], y + UNOBTAINABLE_OFFSET[1]
+
+
+def obtainable(task, find_box_at_point, row):
+    """Report whether a row's combatant can take the card, the way upstream decides it.
+
+    Args:
+        task: The running task.
+        find_box_at_point: Upstream's point reader.
+        row: The row's level tag.
+
+    Returns:
+        False when the row carries the "Unobtainable" caption.
+    """
+    caption = find_box_at_point(task, *caption_point(task, row))
+    return not (caption and UNOBTAINABLE in caption.name)
+
+
+def reroll_or_skip(task, utils):
+    """Press Refresh while any are left, and Skip once they run out.
+
+    Args:
+        task: The running task, whose `all_texts` holds the current OCR pass.
+        utils: The loaded `utils` module, for the client's own wording of Refresh.
+
+    Returns:
+        True when a button was pressed.
+    """
+    buttons = [box for box in task.all_texts if in_region(box, BUTTON_REGION, task.width, task.height)]
+    left = next((int(found.group(1)) for box in buttons if (found := REFRESHES_LEFT.search(box.name))), 0)
+    button = text_in_region(task, utils._get_game_text(task, REFRESH) if left else SKIP, BUTTON_REGION)
+    if button is None:
+        return False
+    action = "rerolling" if left else "skipping"
+    logger.info(f"every combatant able to take the card already holds {MAX_LEVEL} Desire points, so {action} with {left} refresh(es) left")
+    task.click_box(button)
+    return True
+
+
 def purchasing(task):
     """Report whether the screen showing is the one that spends credits.
 
@@ -312,16 +404,19 @@ def keeping_desire_cards(handler, utils):
     no Skip, so something had to be taken; re-judging the faction here only throws the choice away and leaves
     the run with nothing.
 
+    A kept card is never handed to a combatant already holding `MAX_LEVEL` points.
+
     Args:
         handler: The handler to wrap, upstream's or another patch's.
-        utils: The module whose `recognize_cards` and card list reader the handler resolves through.
+        utils: The module whose card, list, row and point readers the handler resolves through.
 
     Returns:
         The wrapped handler.
     """
     def wrapped(task):
         recognize_cards, read_list = utils.recognize_cards, utils._get_card_list
-        read, wanted = False, None
+        find_rows, find_box_at_point = utils._find_member_level_tags, utils.find_box_at_point
+        read, wanted, stalled, full = False, None, False, []
 
         def recognised(task_, *args, **kwargs):
             # The first read is the granted card. The handler has to read a card before it can judge one, and
@@ -358,8 +453,31 @@ def keeping_desire_cards(handler, utils):
             listed = read_list(task_, key)
             return [wanted, *listed] if key == CARD_PRIORITY and wanted else listed
 
-        with standing_in(utils, recognize_cards=recognised, _get_card_list=reading):
-            return handler(task)
+        def rows_with_room(task_, *args, **kwargs):
+            nonlocal stalled
+            rows = find_rows(task_, *args, **kwargs)
+            if not wanted:
+                return rows
+            able = [row for row in rows if obtainable(task_, find_box_at_point, row)]
+            full.extend(caption_point(task_, row) for row in able if points_held(task_, row) >= MAX_LEVEL)
+            if full and len(full) == len(able):
+                # Upstream would skip with refreshes still left. Handed no rows, it answers False and presses nothing.
+                stalled = True
+                return []
+            if full:
+                logger.info(f"「{wanted}」goes to a combatant with room, not one already holding {MAX_LEVEL} Desire points")
+            return rows
+
+        def probed(task_, x, y):
+            # A full row's caption probe reads "Unobtainable", so upstream's own exclusion passes the row over.
+            if any(abs(x - fx) < SAME_POINT and abs(y - fy) < SAME_POINT for fx, fy in full):
+                return SimpleNamespace(name=UNOBTAINABLE)
+            return find_box_at_point(task_, x, y)
+
+        with standing_in(utils, recognize_cards=recognised, _get_card_list=reading,
+                         _find_member_level_tags=rows_with_room, find_box_at_point=probed):
+            handled = handler(task)
+        return reroll_or_skip(task, utils) if stalled else handled
 
     return wrapped
 

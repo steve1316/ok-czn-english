@@ -27,8 +27,8 @@ sys.path.insert(0, str(REPO_ROOT))
 from tests.fakes import FakeBox as Box  # noqa: E402
 
 from src.en.desire import (  # noqa: E402
-    CARD_PRIORITY, INHERIT_TITLE, PURCHASE_TITLE, REWARD_TITLE, TAKEN, best, inherit_handler,
-    keeper, keeping_desire_cards, reward_handler,
+    CARD_PRIORITY, INHERIT_TITLE, PURCHASE_TITLE, REFRESH, REWARD_TITLE, SKIP, TAKEN, UNOBTAINABLE, UNOBTAINABLE_OFFSET,
+    best, inherit_handler, keeper, keeping_desire_cards, reward_handler,
 )
 
 WIDTH, HEIGHT = 1920, 1080
@@ -50,6 +50,14 @@ PURCHASE_POINT = (0.5, 0.13)
 ASSIGN_PAGE = "卡牌分配页面"
 # The card a real run was handed, and skipped, twice in four minutes.
 NAME = "It's All Mine"
+# The assign screen's combatant rows, measured off a captured screen: each row's level tag, and the Desire badge
+# count drawn at the top right of the row. A second badge beside it is assumed, not captured.
+LEVEL_X, LEVEL_Y = 0.4495, (0.3176, 0.5398, 0.7620)
+BADGE_X, BADGE_DY = (0.8677, 0.8260), -0.0600
+# Digits on the same row that are not Desire points: the level, and the deck count under the badge.
+LEVEL_DIGITS_DY, DECK_X, DECK_DY = 0.0500, 0.7063, 0.0260
+# The Refresh counter and Skip button along the bottom.
+BUTTON_Y = 0.9306
 
 
 # The Desire screens place their boxes by share of the screen.
@@ -65,6 +73,9 @@ class FakeTask:
         self.all_texts = boxes
         self.clicked = None
         self.slept = 0
+
+    def click_box(self, box):
+        self.clicked = box.name
 
     def sleep(self, seconds):
         self.slept += seconds
@@ -154,7 +165,7 @@ def inherit_screen(tags, title=INHERIT_TITLE, confirm_active=False, priority=())
     return chosen(INHERIT_X, INHERIT_Y, tags, title, confirm_active, priority, inherit_handler)
 
 
-def assign_screen(tag, target="Claim", configured=(), purchase=False, page=ASSIGN_PAGE, second=None, taken=None):
+def assign_screen(tag, target="Claim", configured=(), purchase=False, page=ASSIGN_PAGE, second=None, taken=None, rows=None, refreshes=3):
     """Build the card assign screen and the stubs the wrapper reads through.
 
     Args:
@@ -165,9 +176,13 @@ def assign_screen(tag, target="Claim", configured=(), purchase=False, page=ASSIG
         page: The page label the handler gives its card read, which nothing is allowed to depend on.
         second: A tag for a further card the handler reads after the granted one, or None for no second read.
         taken: The card a Desire screen already chose, or None when the run reached this screen without one.
+        rows: One `(badges, obtainable)` pair per combatant row, where `badges` lists the Desire badge counts it
+            shows. None for a handler that never reads the rows.
+        refreshes: The refreshes left on the Refresh button.
 
     Returns:
-        A `(task, utils, seen, handler)` quadruple, where `seen` collects what the handler was offered.
+        A `(task, utils, seen, handler)` quadruple, where `seen` collects what the handler was offered and, under
+        "rows", the position of each row upstream would still hand the card to.
     """
     boxes = [FakeBox(NAME, ASSIGN_X, ASSIGN_Y)]
     if tag is not None:
@@ -175,6 +190,13 @@ def assign_screen(tag, target="Claim", configured=(), purchase=False, page=ASSIG
                              (DESCRIPTION_REGION[1] + DESCRIPTION_REGION[3]) / 2))
     if purchase:
         boxes.append(FakeBox(PURCHASE_TITLE, *PURCHASE_POINT))
+    tags = [Box("LEVEL", LEVEL_X, y) for y in LEVEL_Y]
+    for (badges, obtainable), y in zip(rows or [], LEVEL_Y):
+        boxes += [FakeBox("55", LEVEL_X, y + LEVEL_DIGITS_DY), FakeBox("6", DECK_X, y + DECK_DY, width=30)]
+        boxes += [FakeBox(str(count), x, y + BADGE_DY, width=30) for count, x in zip(badges, BADGE_X)]
+        if not obtainable:
+            boxes.append(FakeBox(f"Striker {UNOBTAINABLE}", LEVEL_X + UNOBTAINABLE_OFFSET[0], y + UNOBTAINABLE_OFFSET[1], width=300))
+    boxes += [FakeBox(REFRESH, 0.52, BUTTON_Y), FakeBox(f"{refreshes}/3", 0.58, BUTTON_Y, width=60), FakeBox(SKIP, 0.75, BUTTON_Y)]
     task = FakeTask(boxes)
     setattr(task, TAKEN, taken)
     card = {"name": NAME, "x": ASSIGN_X, "y": ASSIGN_Y, "description_region": DESCRIPTION_REGION}
@@ -194,8 +216,14 @@ def assign_screen(tag, target="Claim", configured=(), purchase=False, page=ASSIG
     def get_card_list(task_, key):
         return list(configured) if key == CARD_PRIORITY else []
 
+    def find_box_at_point(task_, x_, y_):
+        return next((box for box in task_.all_texts if box.x <= x_ * WIDTH <= box.x + box.width
+                     and box.y <= y_ * HEIGHT <= box.y + box.height), None)
+
     utils = types.SimpleNamespace(recognize_cards=recognize_cards, _get_config_value=get_config_value,
-                                  _get_card_list=get_card_list)
+                                  _get_card_list=get_card_list, find_box_at_point=find_box_at_point,
+                                  _find_member_level_tags=lambda task_, region, page=None: tags[:len(rows or [])],
+                                  _get_game_text=lambda task_, text: text)
 
     def handler(task_):
         # Upstream's own order: it reads the card first, then the list it judges the card against. Cleared
@@ -206,7 +234,16 @@ def assign_screen(tag, target="Claim", configured=(), purchase=False, page=ASSIG
             boxes.append(FakeBox(second, ASSIGN_X, ASSIGN_Y - 0.1))
             utils.recognize_cards(task_, region=(0.5, 0.2, 0.7, 0.4), page=page)
         seen["offered"] = utils._get_card_list(task_, CARD_PRIORITY)
-        return True
+        if rows is None:
+            return True
+        # Upstream reads the rows next, drops each one whose caption probe reads Unobtainable, and answers False
+        # once it has no rows. A row's position in what it was handed is who that combatant is.
+        handed = utils._find_member_level_tags(task_, (0.426, 0.292, 0.473, 0.783), page=page)
+        probes = [(row.x + row.width / 2) / WIDTH + UNOBTAINABLE_OFFSET[0] for row in handed]
+        seen["rows"] = [index for index, (row, x_) in enumerate(zip(handed, probes))
+                        if not (caption := utils.find_box_at_point(task_, x_, (row.y + row.height / 2) / HEIGHT + UNOBTAINABLE_OFFSET[1]))
+                        or UNOBTAINABLE not in caption.name]
+        return bool(handed)
 
     handler.__name__ = "handle_card_assign"
     return task, utils, seen, keeping_desire_cards(handler, utils)
@@ -463,6 +500,31 @@ class TestKeepingDesireCards(unittest.TestCase):
         task, _, _, handler = assign_screen("Inquiry]", taken="Some Older Card")
         handler(task)
         self.assertIsNone(getattr(task, TAKEN))
+
+    def test_a_combatant_holding_three_points_is_passed_over(self):
+        # A card handed to a combatant already at three points adds nothing, so it goes to one with room.
+        cases = (
+            ("three of one faction", [([3], True), ([], True), ([1], True)], "Claim]", [1, 2]),
+            ("two and one of two factions", [([2, 1], True), ([2], True), ([], False)], "Claim]", [1]),
+            ("room everywhere", [([2], True), ([], True), ([1], True)], "Claim]", [0, 1, 2]),
+            ("an ordinary card", [([3], True), ([], True), ([1], True)], None, [0, 1, 2]),
+            ("nobody can take it", [([3], False), ([], False), ([1], False)], "Claim]", []),
+        )
+        for label, rows, tag, expected in cases:
+            with self.subTest(label):
+                task, _, seen, handler = assign_screen(tag, rows=rows)
+                handler(task)
+                self.assertEqual(expected, seen["rows"])
+                self.assertIsNone(task.clicked)
+
+    def test_every_combatant_able_to_take_it_being_full_rerolls_then_skips(self):
+        rows = [([3], True), ([1, 2], True), ([], False)]
+        for refreshes, expected in ((3, REFRESH), (0, SKIP)):
+            with self.subTest(refreshes=refreshes):
+                task, _, seen, handler = assign_screen("Claim]", rows=rows, refreshes=refreshes)
+                self.assertTrue(handler(task))
+                self.assertEqual([], seen["rows"])
+                self.assertEqual(expected, task.clicked)
 
     def test_a_chosen_card_is_still_not_bought(self):
         task, _, seen, handler = assign_screen("Claim]", purchase=True, taken=NAME)

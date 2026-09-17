@@ -25,6 +25,20 @@ import numpy as np
 COMBATANT_NAME_POINTS = ((0.159, 0.368), (0.432, 0.368), (0.705, 0.369))
 
 
+def centre_of(box, width, height):
+    """Give a box's centre as fractions of the screen.
+
+    Args:
+        box: The OCR box.
+        width: Screen width in pixels.
+        height: Screen height in pixels.
+
+    Returns:
+        An `(x, y)` pair.
+    """
+    return (box.x + box.width / 2) / width, (box.y + box.height / 2) / height
+
+
 def in_region(box, region, width, height):
     """Report whether a box's centre sits inside a relative region.
 
@@ -41,8 +55,7 @@ def in_region(box, region, width, height):
         True when the box centre is inside the region.
     """
     left, top, right, bottom = region
-    center_x = (box.x + box.width / 2) / width
-    center_y = (box.y + box.height / 2) / height
+    center_x, center_y = centre_of(box, width, height)
     return left <= center_x <= right and top <= center_y <= bottom
 
 
