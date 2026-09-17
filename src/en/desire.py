@@ -26,14 +26,24 @@ onto the second to hand it over, and judging the faction again there threw away 
 chosen: a real run picked `Knowledge Addiction` off three cards, none of the faction being chased, then
 skipped it four seconds later. So a Desire screen leaves the name of what it took on the task and the assign
 screen honours it. The purchase guard still outranks that - nothing here ever spends credits.
+
+A combatant already holding three points gains nothing from another card, but upstream hands it to the save-data
+combatant or the first row regardless. A full row is made to read as "Unobtainable" to upstream, which keeps the
+rows where they are - upstream binds the save-data combatant by row position. With nobody left the screen is
+rerolled, then skipped.
+
+The points are read off the "Lv. N" printed on the Desire card a combatant holds, not the faction badges. On two
+captures OCR read none of three badge "1"s but read that digit at 1.00, and the badges also preview the card on
+the selected row. A missed digit counts as room, which is upstream's old behaviour.
 """
 
 import re
+from types import SimpleNamespace
 
 from ok import Logger
 
 from src.en.handlers import insert_before, loaded, register, standing_in, wrap
-from src.en.screen import in_region, text_in_region
+from src.en.screen import centre_of, in_region, text_in_region
 
 logger = Logger.get_logger(__name__)
 
@@ -72,6 +82,29 @@ PURCHASE_TITLE = "购买卡牌"
 TAKEN = "_en_desire_taken"
 # Names this change in the shared record of what a function already carries.
 ASSIGN_TAG = "desire cards worth keeping"
+
+# Where an assign screen row prints the level of the Desire card its combatant holds, as (x1, y1, x2, y2) offsets
+# from the row's level tag centre. Measured off two captures: the tag at (863, 823), and OCR reading "Ly." or "LV."
+# at (1228, 870) and the "2" beside it at (1254, 872). Stopped short of the deck count at (1356, 851).
+LEVEL_OFFSETS = (0.170, 0.025, 0.235, 0.070)
+# The level's digit, which OCR reads as a box of its own. A card stops at `MAX_LEVEL`.
+LEVEL_DIGIT = re.compile(r"[1-3]")
+# Upstream's probe for a row's "Unobtainable" caption, as an offset from the level tag centre, and the word it wants.
+UNOBTAINABLE_OFFSET = (0.0615, -0.0795)
+UNOBTAINABLE = "无法获得"
+# Where upstream looks for the save-data combatant's avatar on the assign screen, as (x1, y1, x2, y2).
+SAVE_DATA_REGION = (0.484, 0.169, 0.652, 0.858)
+# The most off-faction points the save-data combatant may hold. Its save data is what the run keeps, so it is saved
+# for the chased faction: one off-faction point still leaves room for the two that make a majority.
+SAVE_DATA_OFF_FACTION = 1
+# How close a probed point has to be to a full row's caption point to be that probe. Upstream does the same sums.
+SAME_POINT = 1e-6
+# The bottom band upstream reads its Refresh and Skip buttons from, as (x1, y1, x2, y2), and what they say.
+BUTTON_REGION = (0.290, 0.878, 0.998, 0.997)
+REFRESH = "刷新"
+SKIP = "跳过"
+# The refreshes left, printed as "3/3".
+REFRESHES_LEFT = re.compile(r"(\d+)/\d+")
 
 _patched = False
 
@@ -275,6 +308,73 @@ def inherit_handler(utils):
     )
 
 
+def points_held(task, row):
+    """Read the level of the Desire card an assign screen row's combatant already holds.
+
+    Args:
+        task: The running task, whose `all_texts` holds the current OCR pass.
+        row: The row's level tag, as `_find_member_level_tags` found it.
+
+    Returns:
+        The points the combatant already holds, zero when it holds no Desire card or the digit was not read.
+    """
+    x, y = centre_of(row, task.width, task.height)
+    left, top, right, bottom = LEVEL_OFFSETS
+    region = (x + left, y + top, x + right, y + bottom)
+    return next((int(box.name.strip()) for box in task.all_texts
+                 if LEVEL_DIGIT.fullmatch(box.name.strip()) and in_region(box, region, task.width, task.height)), 0)
+
+
+def caption_point(task, row):
+    """Give the point upstream probes for a row's "Unobtainable" caption.
+
+    Args:
+        task: The running task, for the screen's size.
+        row: The row's level tag, as `_find_member_level_tags` found it.
+
+    Returns:
+        An `(x, y)` pair in screen fractions.
+    """
+    x, y = centre_of(row, task.width, task.height)
+    return x + UNOBTAINABLE_OFFSET[0], y + UNOBTAINABLE_OFFSET[1]
+
+
+def obtainable(task, find_box_at_point, row):
+    """Report whether a row's combatant can take the card, the way upstream decides it.
+
+    Args:
+        task: The running task.
+        find_box_at_point: Upstream's point reader.
+        row: The row's level tag.
+
+    Returns:
+        False when the row carries the "Unobtainable" caption.
+    """
+    caption = find_box_at_point(task, *caption_point(task, row))
+    return not (caption and UNOBTAINABLE in caption.name)
+
+
+def reroll_or_skip(task, utils):
+    """Press Refresh while any are left, and Skip once they run out.
+
+    Args:
+        task: The running task, whose `all_texts` holds the current OCR pass.
+        utils: The loaded `utils` module, for the client's own wording of Refresh.
+
+    Returns:
+        True when a button was pressed.
+    """
+    buttons = [box for box in task.all_texts if in_region(box, BUTTON_REGION, task.width, task.height)]
+    left = next((int(found.group(1)) for box in buttons if (found := REFRESHES_LEFT.search(box.name))), 0)
+    button = text_in_region(task, utils._get_game_text(task, REFRESH) if left else SKIP, BUTTON_REGION)
+    if button is None:
+        return False
+    action = "rerolling" if left else "skipping"
+    logger.info(f"every combatant able to take the card already holds {MAX_LEVEL} Desire points, so {action} with {left} refresh(es) left")
+    task.click_box(button)
+    return True
+
+
 def purchasing(task):
     """Report whether the screen showing is the one that spends credits.
 
@@ -304,30 +404,34 @@ def keeping_desire_cards(handler, utils):
     list had asked for it. Everything after that is upstream's, including its preference for handing the card
     to the save-data combatant.
 
-    Only the faction being chased earns this. Handed to a combatant carrying nothing yet, an off-faction
-    card takes one of the team's three Desire slots outright, costing up to three points against a bonus
-    that wants seven of nine. Levels run out well before the cards do.
+    Every faction earns this, not only the one being chased. The aim is all three combatants at three points, and a
+    real run chasing Claim skipped a Control card with nothing else on offer. The chased faction is favoured where
+    there is a choice to make - the event options and the Desire screens - not here, where the only other answer is Skip.
+    The one exception is the save-data combatant, whose slots are kept for the chased faction.
 
     The exception is a card a Desire screen already chose, which is kept whatever it carries. That screen has
     no Skip, so something had to be taken; re-judging the faction here only throws the choice away and leaves
     the run with nothing.
 
+    A kept card is never handed to a combatant already holding `MAX_LEVEL` points.
+
     Args:
         handler: The handler to wrap, upstream's or another patch's.
-        utils: The module whose `recognize_cards` and card list reader the handler resolves through.
+        utils: The module whose card, list, row and point readers the handler resolves through.
 
     Returns:
         The wrapped handler.
     """
     def wrapped(task):
         recognize_cards, read_list = utils.recognize_cards, utils._get_card_list
-        read, wanted = False, None
+        find_rows, find_box_at_point = utils._find_member_level_tags, utils.find_box_at_point
+        read, wanted, off_faction, card_points, stalled, passed_over = False, None, False, 0, False, []
 
         def recognised(task_, *args, **kwargs):
             # The first read is the granted card. The handler has to read a card before it can judge one, and
             # it reads no other, so taking the first is steadier than matching the page label it passes -
             # that label only reaches a log, and a rebase renaming it would quietly bring the bug back.
-            nonlocal read, wanted
+            nonlocal read, wanted, off_faction, card_points
             cards = recognize_cards(task_, *args, **kwargs)
             if read or not cards:
                 return cards
@@ -341,14 +445,13 @@ def keeping_desire_cards(handler, utils):
             tags = tag_of(task_, card["description_region"])
             if not (chosen or tags):
                 return cards
-            target = target_faction(task_, utils)
-            because = "was chosen on the Desire screen" if chosen else f"carries {target}"
-            if not (chosen or tags.get(target)):
-                logger.info(f"「{card['name']}」carries {tags} rather than {target}, so it is left to be skipped")
-            elif purchasing(task_):
+            because = "was chosen on the Desire screen" if chosen else f"carries {tags}"
+            if purchasing(task_):
                 logger.info(f"「{card['name']}」{because}, but it is for sale, so it is left alone")
             else:
-                wanted = card["name"]
+                wanted, card_points = card["name"], points_of(tags)
+                # A chosen card with no readable tag is not called off-faction, since nothing says it is.
+                off_faction = bool(tags) and not tags.get(target_faction(task_, utils))
                 logger.info(f"「{card['name']}」{because}, so it is kept rather than skipped")
             return cards
 
@@ -358,8 +461,39 @@ def keeping_desire_cards(handler, utils):
             listed = read_list(task_, key)
             return [wanted, *listed] if key == CARD_PRIORITY and wanted else listed
 
-        with standing_in(utils, recognize_cards=recognised, _get_card_list=reading):
-            return handler(task)
+        def rows_with_room(task_, *args, **kwargs):
+            nonlocal stalled
+            rows = find_rows(task_, *args, **kwargs)
+            if not wanted:
+                return rows
+            held = {id(row): points_held(task_, row) for row in rows if obtainable(task_, find_box_at_point, row)}
+            able = [row for row in rows if id(row) in held]
+            blocked = [row for row in able if held[id(row)] >= MAX_LEVEL]
+            if blocked:
+                logger.info(f"「{wanted}」 is not handed to a combatant already holding {MAX_LEVEL} Desire points")
+            saver = utils._find_target_member_index(task_, rows, SAVE_DATA_REGION) if off_faction else None
+            if saver is not None and rows[saver] in able and rows[saver] not in blocked:
+                others = [row for row in able if row is not rows[saver] and row not in blocked]
+                if others or held[id(rows[saver])] + card_points > SAVE_DATA_OFF_FACTION:
+                    logger.info(f"「{wanted}」 is off the chased faction, so it is kept off the save-data combatant")
+                    blocked.append(rows[saver])
+            passed_over.extend(caption_point(task_, row) for row in blocked)
+            if blocked and len(blocked) == len(able):
+                # Upstream would skip with refreshes still left. Handed no rows, it answers False and presses nothing.
+                stalled = True
+                return []
+            return rows
+
+        def probed(task_, x, y):
+            # A passed-over row's caption probe reads "Unobtainable", so upstream's own exclusion skips the row.
+            if any(abs(x - fx) < SAME_POINT and abs(y - fy) < SAME_POINT for fx, fy in passed_over):
+                return SimpleNamespace(name=UNOBTAINABLE)
+            return find_box_at_point(task_, x, y)
+
+        with standing_in(utils, recognize_cards=recognised, _get_card_list=reading,
+                         _find_member_level_tags=rows_with_room, find_box_at_point=probed):
+            handled = handler(task)
+        return reroll_or_skip(task, utils) if stalled else handled
 
     return wrapped
 
