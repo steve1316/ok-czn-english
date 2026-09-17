@@ -219,6 +219,19 @@ class TestReadingOrder(unittest.TestCase):
         self.assertEqual(expected, list(task.info))
 
 
+class TestWinRate(unittest.TestCase):
+    """The win rate row before and after the first run has finished."""
+
+    def test_a_win_rate_with_no_finished_runs_reads_zero_percent(self):
+        # Upstream divides by zero rounds and writes NaN. A run that has finished keeps upstream's figure.
+        task = TestReporting.Task()
+        info_set = dashboard.zeroing_win_rate(TestReporting.Task.info_set)
+        for rounds, shown in (("0/0 NaN", "0/0 (0%)"), ("3/4 (75%)", "3/4 (75%)")):
+            with self.subTest(rounds):
+                info_set(task, MESSAGES["当前胜率"], rounds)
+                self.assertEqual(shown, task.info[MESSAGES["当前胜率"]])
+
+
 class TestUpstreamStillWritesWhatWeTranslate(unittest.TestCase):
     """The rebase alarms. Upstream rewording a line leaves it Chinese, with nothing else to say so."""
 
@@ -236,6 +249,8 @@ class TestUpstreamStillWritesWhatWeTranslate(unittest.TestCase):
                 key = node.args[0]
                 if isinstance(key, ast.Constant) and isinstance(key.value, str):
                     written.add(key.value)
+        # The zero-round win rate is matched on upstream's suffix, so a reworded one would show NaN again.
+        self.assertIn(f"}}{dashboard.UNDIVIDED}\")", source)
         for key in DASHBOARD_KEYS:
             with self.subTest(key):
                 self.assertIn(key, written)

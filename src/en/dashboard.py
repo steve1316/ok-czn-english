@@ -9,6 +9,7 @@ Rows are re-sorted in `info_set` whenever a new one appears, since a row keeps t
 they are written by several handlers. It wraps the raw method, under `log_text`'s translation, so keys arrive in
 English. The sort is stable, so meditation rows keep their own order and an unranked row falls to the bottom
 instead of vanishing. A fresh dict is assigned rather than the old one re-filled, so the GUI never sees it half empty.
+Before any run has finished, upstream's win rate divides by zero and reads `0/0 NaN`, so that row is shown as 0%.
 
 ok-script hides the table until a task first runs. Before then it shows the rows a run would not change, under an
 "Idle" title, drawn by the framework's own `update_task_info` from a stand-in task. Its X still hides it.
@@ -30,6 +31,10 @@ COMBATANTS = "Combatants"
 UNREAD = "-"
 # The framework's own row for the last logged line.
 LOG = "Log"
+# The win rate row, and the tail upstream gives it when no run has finished. `NO_RUNS` is what it reads as instead.
+WIN_RATE = MESSAGES["当前胜率"]
+UNDIVIDED = " NaN"
+NO_RUNS = " (0%)"
 # What every meditation row's key starts with once translated. One row per card, so they rank as a group.
 MEDITATING = TEMPLATES["冥想：{}"].split("{0}")[0]
 # Top to bottom: what moves during a run, then the one-way flags, then what never changes. Keys are the translated
@@ -107,6 +112,23 @@ def ordering(original):
     return info_set_in_order
 
 
+def zeroing_win_rate(original):
+    """Wrap `info_set` so a win rate with no finished runs reads 0% rather than upstream's NaN.
+
+    Args:
+        original: The unbound `info_set` being replaced.
+
+    Returns:
+        The replacement.
+    """
+    def info_set_zeroed(self, key, value):
+        if key == WIN_RATE and value.endswith(UNDIVIDED):
+            value = value.removesuffix(UNDIVIDED) + NO_RUNS
+        return original(self, key, value)
+
+    return info_set_zeroed
+
+
 def idle_rows(tasks):
     """Build the rows that are known before any run, in reading order.
 
@@ -177,7 +199,7 @@ def apply():
     except ImportError:
         logger.warning("could not import BaseTask, the Info rows will stay in upstream's order")
     else:
-        BaseTask.info_set = ordering(BaseTask.info_set)
+        BaseTask.info_set = ordering(zeroing_win_rate(BaseTask.info_set))
 
     task_tab = import_ui("tasks.TaskTab", "TaskTab")
     if task_tab is not None:
