@@ -10,6 +10,13 @@ then rewards, then combat. "Nothing" covers ending the event, and reading lore, 
 comes back unchanged afterwards, so the shortcut takes the same option again on the next frame. A logged run
 clicked "Examine the mushroom" three times in four seconds, left the event, came back and did it again.
 
+Credits rank below every other gain. They only matter once spent, and a shop has to turn up before they can be,
+so a run that ends holding them gained nothing - while a card removed or a relic taken changes how the rest of
+the run plays. A logged event tied "Increase Credits by 200" with "Select and Remove 2 Cards" and took the
+credits. An option handing over something as well as credits is still worth what that thing is worth, so the
+check stands down when the description names one. Both wordings come from the 221 options logged off this
+client: "Increase Credits by N", and "Add N Credits" with the count inside the phrase.
+
 Both changes wrap `handle_event_task` and adjust what it sees rather than copying its two hundred lines.
 Unopened Treasure Trove chests are clicked before upstream runs, since its chest template misses two of the
 three and its shortcut ends the event first. Everything else still runs untouched - the taskreward feature, the
@@ -47,6 +54,13 @@ DESIRE = ("desire",)
 # An option that permanently cuts max Health, whatever else it hands over. Wording taken from the captured
 # "Increase max Health by 15%", since no run has logged the cut yet.
 HEALTH_COST = ("decrease max health",)
+# An option whose reward is credits. A pattern rather than the plain containment the other markers use,
+# because the count sits inside the second wording and so leaves no fixed substring to look for.
+CREDIT = re.compile(r"increasecredits|add\d+credits")
+# What makes an option worth more than the credits riding along with it. The client does pair them - "Ask
+# about the corpse: Obtain Equipment [Psionic Combat Suit], Increase Credits" - and that option is worth the
+# equipment. Ranked before this, a spark or a Desire card already stands the credit check down on its own.
+BESIDES_CREDITS = ("obtain", "remove", "recover")
 
 SPARK_RANK = 0
 # A Desire card of the faction the run is chasing. Below a spark, which permanently upgrades a card, and
@@ -56,13 +70,16 @@ REWARD_RANK = 2
 # A Desire card of some other faction. Every combatant is meant to reach three points, so it is still worth more than
 # a battle, but the random-faction option ranks as a reward ahead of it because it can land on the faction being chased.
 OFF_FACTION_RANK = 3
-ATTACK_RANK = 4
-QUIT_RANK = 5
+# Credits and nothing else. Below every reward that changes how the run plays, and above a battle, which
+# costs health and time for a reward that is not guaranteed to be better.
+CREDIT_RANK = 4
+ATTACK_RANK = 5
+QUIT_RANK = 6
 # Worse than quitting, because the cut lasts the rest of the run. Still ahead of lore, which never moves the run on.
-HEALTH_COST_RANK = 6
+HEALTH_COST_RANK = 7
 # Worse than quitting. Ending the event at least moves the run on, while reading lore puts the same screen
 # straight back up.
-DIALOGUE_RANK = 7
+DIALOGUE_RANK = 8
 
 # `_get_region_text` glues the OCR boxes together with no separator and in an unstable order, and the reader
 # loses or invents spaces at line breaks - the same option was captured as "Spark an Epiphany for a" and
@@ -136,8 +153,8 @@ def rank(description, target=None):
         target: The Desire faction the run is chasing, or None when it is not being tracked.
 
     Returns:
-        `SPARK_RANK`, `DESIRE_RANK`, `REWARD_RANK`, `ATTACK_RANK`, `OFF_FACTION_RANK`, `QUIT_RANK`, `HEALTH_COST_RANK` or
-        `DIALOGUE_RANK`.
+        `SPARK_RANK`, `DESIRE_RANK`, `REWARD_RANK`, `OFF_FACTION_RANK`, `CREDIT_RANK`, `ATTACK_RANK`,
+        `QUIT_RANK`, `HEALTH_COST_RANK` or `DIALOGUE_RANK`.
     """
     text = fold(description)
     # Ahead of every other marker, so a spark or reward on the same option does not hide the cut.
@@ -156,6 +173,9 @@ def rank(description, target=None):
             return OFF_FACTION_RANK
     if contains(text, ATTACK):
         return ATTACK_RANK
+    # After every marker that names a gain, so credits only decide the rank when they are the whole of it.
+    if CREDIT.search(text) and not contains(text, BESIDES_CREDITS):
+        return CREDIT_RANK
     # Anything unrecognised counts as a reward. Most options naming no known marker still hand something over,
     # and ranking them below a battle would trade a real gain for a fight.
     return REWARD_RANK
