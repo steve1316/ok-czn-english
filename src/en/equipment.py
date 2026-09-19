@@ -95,15 +95,6 @@ SLOT_TAG = "every combatant's slots"
 PLACEMENT_TAG = "mythic placement"
 TEAM_GEAR_TAG = "team equipment"
 
-# What each of upstream's own quality buckets is called on this client, where every one of its names is a tier
-# out. The top bucket is missing on purpose: upstream puts every colour it cannot place there, so it is the one
-# answer that has to be checked rather than translated.
-BUCKET_TIERS = {"": "empty", "普通": "Rare", "史诗": "Legend"}
-# What the top bucket is called once a colour has confirmed it, and what an unconfirmed one is called instead.
-# Upstream has no second answer - folding the unplaceable into its top bucket is how a toast-dimmed slot came
-# to read as the rarest thing in the game.
-MYTHIC_TIER = "Mythic"
-UNKNOWN_TIER = "?"
 
 # Where the run keeps what it last saw of every combatant's three equipment slots, as a list per combatant.
 # Upstream keeps the same thing for the save-data combatant alone, and only ever for the slot it is filling.
@@ -118,6 +109,18 @@ SPREE = "_en_spree"
 # What the colour read hands back for a slot with nothing in it. `None` means it could not see, which is a
 # different thing and must not be read as room to spare.
 EMPTY_SLOT = ""
+# What a slot with nothing in it is called in the Tasks tab's row. A dash rather than a word, because most of
+# the nine slots read this way early in a run and the row scans better when only what is worn carries a name.
+EMPTY_TIER = "-"
+# What the top bucket is called once a colour has confirmed it, and what an unconfirmed one is called instead.
+# Upstream has no second answer - folding the unplaceable into its top bucket is how a toast-dimmed slot came
+# to read as the rarest thing in the game.
+MYTHIC_TIER = "Mythic"
+UNKNOWN_TIER = "?"
+# What each of upstream's own quality buckets is called on this client, where every one of its names is a tier
+# out. The top bucket is missing on purpose: upstream puts every colour it cannot place there, so it is the one
+# answer that has to be checked rather than translated.
+BUCKET_TIERS = {EMPTY_SLOT: EMPTY_TIER, "普通": "Rare", "史诗": "Legend"}
 # Upstream's top quality bucket. Nothing in `ok_tasks/` knows the word Mythic, but the colour it reads off a
 # Mythic piece - a violet no other tier uses - is the one that falls through to this, so the two coincide.
 TOP_QUALITY = "传说"

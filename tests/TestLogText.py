@@ -310,7 +310,7 @@ class TestEquipmentRow(unittest.TestCase):
         return task, task.info[dashboard.GEAR]
 
     def test_the_reading_replaces_the_ledger(self):
-        worn = "Rare/Legend/Mythic, empty/Mythic/empty, empty/empty/Mythic"
+        worn = "Rare/Legend/Mythic, -/Mythic/-, -/-/Mythic"
         self.assertEqual(worn, self.row(reading=worn)[1])
 
     def test_the_row_says_unread_until_the_screen_has_been_read(self):
@@ -321,7 +321,7 @@ class TestEquipmentRow(unittest.TestCase):
     def test_the_row_settles_so_an_unchanged_one_stops_being_logged(self):
         # The point of writing at the row rather than after it. `reporting` only suppresses a row whose value
         # equals the last, so a value that alternates every tick is a row that never stops reporting.
-        worn = "Rare/Legend/Mythic, empty/Mythic/empty, empty/empty/Mythic"
+        worn = "Rare/Legend/Mythic, -/Mythic/-, -/-/Mythic"
         task, first = self.row(reading=worn)
         info_set = dashboard.showing_what_is_worn(TestReporting.Task.info_set)
         info_set(task, dashboard.GEAR, "slot 1 empty, slot 2 empty, slot 3 empty")
@@ -329,7 +329,7 @@ class TestEquipmentRow(unittest.TestCase):
 
     def test_every_other_row_is_left_alone(self):
         task = TestReporting.Task()
-        setattr(task, dashboard.TEAM_GEAR, "Rare/Legend/Mythic, empty/Mythic/empty, empty/empty/Mythic")
+        setattr(task, dashboard.TEAM_GEAR, "Rare/Legend/Mythic, -/Mythic/-, -/-/Mythic")
         info_set = dashboard.showing_what_is_worn(TestReporting.Task.info_set)
         info_set(task, dashboard.COMBATANTS, "Arabella, Adelheid, Narja")
         self.assertEqual("Arabella, Adelheid, Narja", task.info[dashboard.COMBATANTS])

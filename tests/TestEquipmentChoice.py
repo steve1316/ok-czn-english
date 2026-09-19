@@ -762,7 +762,7 @@ class TestSlotTier(unittest.TestCase):
         return slot_tier(FakeTask([]), team_utils(colours=colours), combatant_slot_points(0)[0])
 
     def test_each_measured_colour_names_its_tier(self):
-        for rgb, expected in (((15, 15, 15), "empty"), ((60, 75, 135), "Rare"),
+        for rgb, expected in (((15, 15, 15), "-"), ((60, 75, 135), "Rare"),
                               ((160, 88, 69), "Legend"), ((136, 82, 164), MYTHIC_TIER)):
             with self.subTest(rgb=rgb):
                 self.assertEqual(expected, self.tier(rgb))
@@ -780,14 +780,14 @@ class TestTeamEquipment(unittest.TestCase):
     """Reading all nine slots off the Combatants screen."""
 
     def test_the_screen_the_row_got_wrong_now_reads_true(self):
-        self.assertEqual(["Rare/Legend/Mythic", "empty/Mythic/empty", "empty/empty/Mythic"],
+        self.assertEqual(["Rare/Legend/Mythic", "-/Mythic/-", "-/-/Mythic"],
                          team_equipment(FakeTask([]), team_utils()))
 
     def test_a_column_that_could_not_be_read_keeps_its_place(self):
         # The row carries no names, so which combatant a line belongs to is which place it is in. A column
         # dropped for being unreadable would hand the next one's gear to the combatant before it.
         colours = (TEAM_COLOURS[0], (None, None, None), TEAM_COLOURS[2])
-        self.assertEqual(["Rare/Legend/Mythic", "?/?/?", "empty/empty/Mythic"],
+        self.assertEqual(["Rare/Legend/Mythic", "?/?/?", "-/-/Mythic"],
                          team_equipment(FakeTask([]), team_utils(colours=colours)))
 
     def test_a_frame_that_gave_nothing_reports_nothing(self):
@@ -800,7 +800,7 @@ class TestReadingTheTeamGear(unittest.TestCase):
 
     Upstream's capture taps the page closed and sleeps a second before it returns. `all_texts` survives that
     and `frame` does not, so a read afterwards got the names off the held OCR pass and the pixels off whatever
-    the client had drawn since - a run reported "Arabella empty/empty/empty, Narja ?/?/?" for a team plainly
+    the client had drawn since - a run reported "Arabella -/-/-, Narja ?/?/?" for a team plainly
     wearing gear. The read rides the capture's own taps so it lands while the page is still up.
     """
 
@@ -839,13 +839,13 @@ class TestReadingTheTeamGear(unittest.TestCase):
         return getattr(task, TEAM_GEAR, None)
 
     def test_the_gear_is_read_while_the_page_is_still_open(self):
-        self.assertEqual("Rare/Legend/Mythic, empty/Mythic/empty, empty/empty/Mythic", self.read(team_utils()))
+        self.assertEqual("Rare/Legend/Mythic, -/Mythic/-, -/-/Mythic", self.read(team_utils()))
 
     def test_reading_after_the_page_shuts_is_what_this_prevents(self):
         # The same stand-in read with the page already shut, which is the row the run actually reported.
         utils = team_utils()
         utils.open = False
-        self.assertEqual(["empty/empty/empty"] * 3, team_equipment(FakeTask([]), utils))
+        self.assertEqual(["-/-/-"] * 3, team_equipment(FakeTask([]), utils))
 
     def test_the_tab_tap_is_too_early_to_read_on(self):
         # It happens before the capture's own OCR, so the names are not all up yet and the read waits.
@@ -856,11 +856,11 @@ class TestReadingTheTeamGear(unittest.TestCase):
         utils = team_utils()
         task = FakeTask([])
         reading_the_team_gear(self.capture(utils, taps=(CLOSE_TAP, CLOSE_TAP)), utils, utils)(task)
-        self.assertEqual("Rare/Legend/Mythic, empty/Mythic/empty, empty/empty/Mythic", getattr(task, TEAM_GEAR))
+        self.assertEqual("Rare/Legend/Mythic, -/Mythic/-, -/-/Mythic", getattr(task, TEAM_GEAR))
 
     def test_a_capture_that_never_shows_its_names_leaves_what_was_known(self):
         utils = team_utils(names=("", "", ""))
         task = FakeTask([])
-        setattr(task, TEAM_GEAR, "Rare/Legend/Mythic, empty/Mythic/empty, empty/empty/Mythic")
+        setattr(task, TEAM_GEAR, "Rare/Legend/Mythic, -/Mythic/-, -/-/Mythic")
         reading_the_team_gear(self.capture(utils), utils, utils)(task)
-        self.assertEqual("Rare/Legend/Mythic, empty/Mythic/empty, empty/empty/Mythic", getattr(task, TEAM_GEAR))
+        self.assertEqual("Rare/Legend/Mythic, -/Mythic/-, -/-/Mythic", getattr(task, TEAM_GEAR))
