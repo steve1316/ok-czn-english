@@ -1,27 +1,11 @@
 """Make the option picker open instantly on the Global client's long rosters.
 
 ok-script builds the "Available Options" pane of `ModifyListDialog` as one real `PushButton` per option in a
-`FlowLayout`, with no virtualization. Upstream's Chinese rosters are short enough for that to pass unnoticed;
-the Global client's are not. Cards to Remove offers 1,472 options, costing about 2.6 seconds to open the dialog
-and another 2.9 on the first search keystroke, because filtering calls `setVisible` on all 1,472 widgets. A
-`ListWidget` only builds delegates for rows actually on screen, so the same roster is ready in about 2 ms and
-filters in about 3 ms, and every row spans the pane's full width, which a grid of fixed-width buttons never did.
-
-Building the rows here is what makes a useful tooltip possible, so each carries the card's or equipment's own
-effect text from `game_text.py` on both sides of the dialog, shown without the wait Qt normally puts in front of
-one. The setting's help text is repeated at the top, since the dialog covers the row that would explain it.
-
-Only the methods touching the option pane are replaced, and the grid is swapped only when the roster is long -
-Route Priority's four node types fall through to upstream's buttons, so nothing changes where nothing was slow.
-
-The virtualization half is not really about the English client. It works around a framework performance bug
-that only happens to bite at Global-client roster sizes, so it belongs in ok-script's own `ModifyListDialog`
-and should go once a release carries the fix. The tooltips are fork-local and stay either way.
-
-One thing is knowingly given up: upstream wires touch drag-scrolling to the `QScrollArea` the list now sits in,
-and that outer area no longer scrolls. The framework's helper cannot be pointed at the list instead, because it
-calls `.widget()`, which a `QListWidget` does not have. The wheel and the scrollbar both work, and the Selected
-Options list beside it has never had touch scrolling either.
+`FlowLayout`, with no virtualization. Upstream's Chinese rosters are short enough for that to pass unnoticed,
+the Global client's are not. One thing is knowingly given up: upstream wires touch drag-scrolling to the
+`QScrollArea` the list now sits in, and that outer area no longer scrolls - the framework's helper cannot be
+pointed at the list instead, because it calls `.widget()`, which a `QListWidget` does not have. The wheel and
+the scrollbar both work, and the Selected Options list beside it has never had touch scrolling either.
 """
 
 from html import escape
@@ -60,7 +44,8 @@ def wants_option_list(options, threshold):
     """Decide whether a roster is long enough to be worth virtualizing.
 
     Reuses the framework's own search-box threshold: a list long enough to need searching is long enough to need
-    virtualizing, and that keeps the rule to one number rather than two that can drift apart.
+    virtualizing, and that keeps the rule to one number rather than two that can drift apart. Route Priority's
+    four node types fall through to upstream's buttons, so nothing changes where nothing was slow.
 
     Args:
         options: The roster offered by the setting, or None for a free-text list.
@@ -125,10 +110,9 @@ class InstantTooltipStyle(QProxyStyle):
 def balance_dialog_columns(dialog):
     """Give Available Options and Selected Options an equal share of the dialog width.
 
-    Upstream splits that row two to one, which suits its short Chinese option names but leaves English card names
-    holding a list plus its buttons in a third of the dialog. The split is set inside `__init__`, so it is
-    corrected afterwards. The row is found by shape rather than position - it is the only child of the view layout
-    whose own two children are both layouts, where the selected list's row holds a widget and a layout.
+    Upstream splits that row two to one, which suits its short Chinese option names but leaves English card
+    names holding a list plus its buttons in a third of the dialog. The row is found by shape rather than
+    position - it is the only child of the view layout whose own two children are both layouts.
 
     Args:
         dialog: The `ModifyListDialog` being set up.
@@ -157,9 +141,8 @@ def label_selected_rows(dialog):
     """Give the Selected Options rows the same tooltips as the options they were picked from.
 
     Upstream fills that list inside `__init__`, which this module deliberately leaves alone, so the rows are
-    labelled from `update_option_buttons` instead. That runs once the list is populated and again after every
-    add and remove, which is exactly when a row could be missing its tooltip. Reordering moves the item itself,
-    so those rows keep theirs.
+    labelled from `update_option_buttons` instead - which runs once the list is populated and again after every
+    add and remove, exactly when a row could be missing its tooltip.
 
     Args:
         dialog: The `ModifyListDialog` being updated.
@@ -175,11 +158,9 @@ def label_selected_rows(dialog):
 def show_setting_help(dialog):
     """Put the setting's own description at the top of its Modify dialog.
 
-    The row already explains the setting, but that text is off screen once the dialog covers it - which is
-    exactly when the user is deciding what to put in the list. `viewLayout` is the one place both dialog
-    shapes share: a setting with a roster has two columns inside it, and a free-text setting like Unidentified
-    Area Option Priority has a single list, so anything anchored to the Available column would miss half of
-    them.
+    The row already explains the setting, but that text is off screen once the dialog covers it. `viewLayout`
+    is the one place both dialog shapes share - a setting with a roster has two columns inside it and a
+    free-text setting has a single list, so anything anchored to the Available column would miss half of them.
 
     Args:
         dialog: The `ModifyListDialog` being set up.
@@ -193,6 +174,10 @@ def show_setting_help(dialog):
 
 def build_option_list(dialog):
     """Build the virtualized replacement for one dialog's option grid.
+
+    Upstream's grid costs about 2.6 seconds to open Cards to Remove and another 2.9 on the first search
+    keystroke, because filtering calls `setVisible` on all 1,472 widgets. A `ListWidget` builds delegates only
+    for rows on screen, so the same roster is ready in about 2 ms, filters in about 3 ms, and spans the pane.
 
     Args:
         dialog: The `ModifyListDialog` being set up.

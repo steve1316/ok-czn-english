@@ -4,17 +4,6 @@ A card's type icon shares its OCR box with the label, so the reader hands back "
 "@skill" where the catalog only knows "Upgrade" and "Skill". The framework looks the text up whole-string with
 one space-stripped retry, so each of those misses and the English label survives into the handler, which then
 fails the four-character length test in `_card_has_type_below` and never sees the card at all.
-
-Adding an entry per misreading does not converge - the icon is read differently almost every frame. This
-retries the lookup instead, ignoring letter case and a short run of leading junk, so one rule covers the
-variants that have not happened yet.
-
-Two kinds of retry, and the difference is what the length guard is for. Ignoring case, spacing and a trailing
-full stop only ever pairs a caption with the msgid it already spells, so it is safe however long the caption
-is - and that matters, because the catalog carries several captions past the guard and the reader drops their
-full stop about half the time, which left every one of them unmatchable. Trimming a leading or trailing glyph
-does lose characters, and on a long enough string it could trim a sentence into an accidental match, so that
-half stays behind the guard.
 """
 
 import re

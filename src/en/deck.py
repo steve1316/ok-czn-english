@@ -1,25 +1,8 @@
 """Act on the kept combatant's row first when removing cards or sparking an Epiphany.
 
 A Chaos run keeps one combatant - the save-scum target - and throws the other two away at the end, so anything
-spent on the discarded pair is spent on nothing. Upstream can already find that row: `handle_archive_target_
-member` crops the target's portrait into a runtime template, and `select_card` matches it down the left of the
-deck grid and prefers cards at the same height. Two conditions keep that from firing - it is gated on the
-`刷空档` strategy being on, and on the operation being a removal. Both are widened for one `select_card` call.
-
-Removing: the strategy flag is answered True, which is all that stands between the row rule and every removal,
-and upstream's own code then does the work, tolerance and all. That flag is read in three other places, none of
-them reachable from `select_card`, so answering it here reaches nothing else.
-
-Sparking an Epiphany: upstream has no row rule for this operation, and its fallbacks re-sort the grid by height
-whatever they are handed, so the only order that survives is the one its priority-list pass walks. The grid is
-therefore reordered rather than filtered - where several cards match the user's Epiphany list, the kept
-combatant's are reached first. Where none match, upstream's bottom-up fallback still decides, and nothing is
-filtered away, so a row holding no eligible card can never strand the run.
-
-Nothing changes at all unless the portrait is on screen, which keeps a Sortie run - where no target is ever
-captured - and a Chaos run that has not reached the information screen behaving exactly as before. Finding it
-costs a template match over the portrait column, and answering the flag makes upstream repeat that same match
-up to twice more in the same call, so the result is handed back to it rather than matched again.
+spent on the discarded pair is spent on nothing. Upstream can already find that row, but gates the rule on the
+`刷空档` strategy being on and on the operation being a removal, so it almost never fires on this client.
 """
 
 from ok import Logger

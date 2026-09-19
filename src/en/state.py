@@ -1,18 +1,8 @@
 """Say what the run decided, once, instead of once a frame.
 
 The handlers that judge a screen run on every tick that screen is up, so a decision they take is a decision
-they take three or four times a second. Upstream's answer to that was mostly to say nothing at all, which is
-why a log could run to 33 MB a day and still not tell you why a piece of equipment was passed over.
-
-`say_once` is the other answer: log the decision the first time it is reached and stay quiet while it holds.
-A tag groups the lines a category writes so one of them can be pulled out of a day's file with `grep -F`,
-which is the workflow the tags exist for.
-
-What is remembered lives on the task, alongside `_en_turn` and the rest of the fork's per-run state, and it is
-dropped when `task.info` is empty. That is the framework's own start-of-run signal - `_mark_task_enabled`
-calls `info_clear()` - so a second run says everything afresh rather than inheriting the first run's idea of
-what has already been mentioned. `src/en/stuck.py` exists because a cached value outlived its run once
-already.
+they take three or four times a second. Upstream's answer was mostly to say nothing at all, which is why a log
+could run to 33 MB a day and still not tell you why a piece of equipment was passed over.
 """
 
 from ok import Logger
@@ -32,6 +22,10 @@ GEAR = "gear"
 
 def say_once(task, tag, message):
     """Log a decision unless this task's last line under the same tag said exactly it.
+
+    A tag groups the lines a category writes so one of them can be pulled out of a day's file with `grep -F`.
+    What is remembered lives on the task and is dropped when `task.info` is empty - the framework's own
+    start-of-run signal, `_mark_task_enabled` calling `info_clear()` - so a second run says everything afresh.
 
     Args:
         task: The running task, which is where the memo lives.

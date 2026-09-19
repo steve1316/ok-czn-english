@@ -1,10 +1,8 @@
 """Fill an empty shop or reward priority list with what is worth taking from the screen.
 
-A list you configured is used unchanged.
-
-This also owns the run-time half of the dashboard's Combatants row, because reading the team off the screen
-is what fills it. `src/en/dashboard.py` owns the row itself - its name, its place in the table and what it
-says before it has been read.
+A list you configured is used unchanged. This also owns the run-time half of the dashboard's Combatants row,
+because reading the team off the screen is what fills it - `src/en/dashboard.py` owns the row itself, its name,
+its place in the table and what it says before it has been read.
 """
 
 from ok import Logger

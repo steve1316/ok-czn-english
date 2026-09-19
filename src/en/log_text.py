@@ -1,20 +1,9 @@
 """Say upstream's log lines in English, without editing `ok_tasks/`.
 
-Every Chinese line the app writes comes from `ok_tasks/` - 472 call sites across seven files. The installed
-framework has one, a MuMu warning, and `src/en/` already logs in English. So this is the whole of it, and
-since `ok_tasks/` is vendored the rewrite has to happen on the way out.
-
-`BaseTask.log_info` fans out to three places - `self.logger.info`, the Tasks tab's `Log` row via `info_set`,
-and the Windows toast when `notify=True` - so translating at the top of it covers all three. A filter on the
-logging module would have covered only the first.
-
-Nothing reads log text, so this is safe: `handle_stuck_log` sounds like an exception but decides by pixel diff
-in `is_frame_stuck`. The Chinese that *is* load-bearing - OCR comparison literals, `feature_types` labels,
-config keys, the handler names `src/en/` targets - is never a log-message argument, so patching at the
-argument position cannot reach it.
-
-The pair to this is `src/en/ocr_text.py`, which runs the other way: that one rewrites English read off the
-screen back into the Chinese the handlers compare against.
+Every Chinese line the app writes comes from `ok_tasks/` - 472 call sites across seven files - and since that
+directory is vendored the rewrite has to happen on the way out. The pair to this is `src/en/ocr_text.py`,
+which runs the other way: that one rewrites English read off the screen back into the Chinese the handlers
+compare against.
 """
 
 import re
@@ -46,9 +35,8 @@ _patched = False
 def compile_template(shape):
     """Turn a written shape into a pattern that matches the line it renders as.
 
-    The literal runs are escaped and the interpolations become `(.*?)`. Non-greedy is safe because no site in
-    `ok_tasks/` writes two interpolations with nothing between them, so every group has a literal on both
-    sides to stop at, and the whole pattern is anchored. Empty is allowed because an interpolation really can
+    Non-greedy is safe because no site in `ok_tasks/` writes two interpolations with nothing between them, so
+    every group has a literal on both sides to stop at. Empty is allowed because an interpolation really can
     render as nothing: `node_type` starts as `""`, so the run's first status row reads `第1层，第0节点，`.
 
     Args:
@@ -120,17 +108,9 @@ def translating(original):
 def reporting(original):
     """Wrap `info_set` so the Tasks tab draws its Info rows in English, and stops shouting them at the log.
 
-    A row's key and value both reach `og.app.tr` in `TaskTab.update_task_info`, so most of these could have
-    been catalog entries instead. Three could not: the floor and node row, the equipment row and the
-    meditation key are composed at runtime, and `tr` is a whole-string lookup. Doing all of them here keeps
-    one mechanism rather than two, and an English string that is not a msgid comes back from `tr` unchanged.
-
-    The echo is the other half. `log_node_status` reports about thirteen rows every tick whether or not any of
-    them moved, and the framework logs each at INFO - 80,035 lines of a 243,857-line day, nearly all of them
-    the same row saying the same thing. The row itself is always written, so the tab is unchanged; only the
-    echo waits for the value to actually differ. `self.info` is the record of what it last was, and the
-    framework clears it in `_mark_task_enabled` when a run starts, so a new run reports everything afresh
-    rather than inheriting the last one's idea of what has already been said.
+    Three rows could never have been catalog entries - the floor and node row, the equipment row and the
+    meditation key are composed at runtime, and `tr` is a whole-string lookup. The row itself is always
+    written, so the tab is unchanged. Only the echo waits for the value to actually differ.
 
     Args:
         original: The unbound `info_set` being replaced.
@@ -140,6 +120,9 @@ def reporting(original):
     """
     def info_set_in_english(self, key, value):
         key, value = translate(key), translate(value)
+        # `log_node_status` reports about thirteen rows every tick whether or not any moved, and the framework
+        # logs each at INFO - 80,035 lines of a 243,857-line day. `self.info` is the record of what a row last
+        # was, and the framework clears it in `_mark_task_enabled` when a run starts.
         reported = getattr(self, "info", None)
         if reported is None or reported.get(key, UNREPORTED) != value:
             return original(self, key, value)
@@ -149,7 +132,15 @@ def reporting(original):
 
 
 def apply():
-    """Route every message `ok_tasks/` logs, and every row it reports, through the translation table."""
+    """Route every message `ok_tasks/` logs, and every row it reports, through the translation table.
+
+    `BaseTask.log_info` fans out to three places - `self.logger.info`, the Tasks tab's `Log` row via `info_set`,
+    and the Windows toast when `notify=True` - so translating at the top of it covers all three, where a filter on
+    the logging module would have covered only the first. Nothing reads log text, so this is safe: `handle_stuck_log`
+    sounds like an exception but decides by pixel diff in `is_frame_stuck`. The Chinese that *is* load-bearing - OCR
+    comparison literals, `feature_types` labels, config keys, the handler names `src/en/` targets - is never a
+    log-message argument, so patching at the argument position cannot reach it.
+    """
     global _patched
     if _patched:
         return

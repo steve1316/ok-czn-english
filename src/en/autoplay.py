@@ -3,16 +3,6 @@
 `src/en/observe.py` writes down one frame at a time while Chaos runs with Auto switched on. It records what
 the screen showed and nothing else, so every inference about what Auto actually did lives here and can be
 rewritten and re-run against the same recording rather than costing another capture session.
-
-Two views come out of the same frames, because the picker has two jobs to supervise. A decision is one card
-Auto chose from one hand, which is what `battle.choose` produces. A turn is the whole set it spent a turn on,
-which is what `cards.plan` produces. The turn view is the weaker signal but it survives Auto playing faster
-than the bot samples, so it uses frames the decision view has to throw away.
-
-Nothing here treats a hand as a set. Several copies of a card in one hand is ordinary, so a name still being
-present says nothing about whether a copy of it was played - only the count does. Names are folded through
-`cards.canonical` first, because the reader returns the same card as `NA:Attack Response` one frame and
-`NA: Attack Response` the next, and an unfolded diff would read that as one card leaving and another arriving.
 """
 
 from collections import Counter, namedtuple
@@ -28,6 +18,10 @@ Decision = namedtuple("Decision", ["hand", "played", "points", "weakness"])
 Turn = namedtuple("Turn", ["opening", "played", "ambiguous"])
 
 
+# Nothing here treats a hand as a set. Several copies of a card in one hand is ordinary, so a name still being
+# present says nothing about whether a copy was played - only the count does. Names are folded through
+# `cards.canonical` first, because the reader returns the same card as `NA:Attack Response` one frame and
+# `NA: Attack Response` the next, and an unfolded diff would read that as one card leaving and another arriving.
 def names_of(frame):
     """List the hand's card names as the data spells them.
 
@@ -56,13 +50,9 @@ def departures(before, after):
 def dealt_again(before, after):
     """Say whether the hand was dealt again between two frames.
 
-    A growing hand is not enough, because a card that draws grows it too. What separates them is what happened to
-    the cards already held: a fresh deal discards the lot first, a draw leaves them where they were. So the hand
-    has to grow and everything in it has to have gone. A deal that redraws a name the old hand held would still
-    look like a draw on that test, and with several copies of a card in a deck that is not rare, so the Action
-    Point readout is asked as well - points refresh when a turn starts. What stays unresolvable is a turn ended
-    early, with points still lit, into a deal that redrew a name: both signals miss it, and the cost is a turn
-    boundary read as a draw.
+    A growing hand is not enough, because a card that draws grows it too - what separates them is that a fresh
+    deal discards the lot first. A deal redrawing a name the old hand held would still look like a draw, so the
+    Action Point readout is asked as well. A turn ended early into such a deal misses both signals.
 
     Args:
         before: The earlier frame.

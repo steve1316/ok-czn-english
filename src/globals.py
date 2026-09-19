@@ -1,3 +1,9 @@
+"""Apply every `src/en/` patch, in an order that matters.
+
+This is the only place the fork's modules are wired in. Each `apply()` below is commented where its position
+in the sequence is load-bearing, and the rest may be reordered freely.
+"""
+
 from PySide6.QtCore import QObject
 
 from ok import Logger

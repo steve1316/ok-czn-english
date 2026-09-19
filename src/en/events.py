@@ -1,28 +1,8 @@
 """Take the most valuable option an Unidentified Area offers, instead of ending the event.
 
-Upstream chooses in this order: an option in the upper half of the option band is clicked outright, then the
-blacklist and the user's priority lists, then the combat option, then a random pick. A logged Chaos run shows
-what that means - the upper-half shortcut fired 38 times and chose "End the event" five times, the random pick
-fired 40 times, and the user's own priority list never ran once.
-
-So options that give nothing, or cut max Health, are withheld while anything else is on offer, and what is left is ranked spark,
-then rewards, then combat. "Nothing" covers ending the event, and reading lore, which is worse: the screen
-comes back unchanged afterwards, so the shortcut takes the same option again on the next frame. A logged run
-clicked "Examine the mushroom" three times in four seconds, left the event, came back and did it again.
-
-Credits rank below every other gain. They only matter once spent, and a shop has to turn up before they can be,
-so a run that ends holding them gained nothing - while a card removed or a relic taken changes how the rest of
-the run plays. A logged event tied "Increase Credits by 200" with "Select and Remove 2 Cards" and took the
-credits. An option handing over something as well as credits is still worth what that thing is worth, so the
-check stands down when the description names one. Both wordings come from the 221 options logged off this
-client: "Increase Credits by N", and "Add N Credits" with the count inside the phrase.
-
-Both changes wrap `handle_event_task` and adjust what it sees rather than copying its two hundred lines.
-Unopened Treasure Trove chests are clicked before upstream runs, since its chest template misses two of the
-three and its shortcut ends the event first. Everything else still runs untouched - the taskreward feature, the
-forbidden-event filter, the blacklist, and the user's priority lists, which are honoured ahead of the ranking. The keyword lists come
-from the client's own data (`encounter_option_eff@eff_description@*`), where "End the event" and "Initiate
-Battle" are fixed literals shared by 134 and 174 options.
+Upstream clicks any option in the upper half of the option band outright, before the blacklist, the user's
+priority lists, the combat option and its random pick ever run - so on this client the shortcut and the random
+pick decide almost every event between them, and the user's own priority list rarely runs at all.
 """
 
 import re
@@ -42,6 +22,8 @@ logger = Logger.get_logger(__name__)
 TAG = "ranked events"
 
 # Ranks, best first. Descriptions are folded to lower case before matching, so these are lower case too.
+# "End the event" and "Initiate Battle" are fixed literals in the client's own data
+# (`encounter_option_eff@eff_description@*`), shared by 134 and 174 options.
 SPARK = ("epiphany", "闪光")
 QUIT = ("end the event",)
 ATTACK = ("initiate battle", "event encounter")
@@ -55,7 +37,8 @@ DESIRE = ("desire",)
 # "Increase max Health by 15%", since no run has logged the cut yet.
 HEALTH_COST = ("decrease max health",)
 # An option whose reward is credits. A pattern rather than the plain containment the other markers use,
-# because the count sits inside the second wording and so leaves no fixed substring to look for.
+# because the count sits inside the second wording and so leaves no fixed substring to look for. Both wordings
+# come from the 221 options logged off this client: "Increase Credits by N", and "Add N Credits".
 CREDIT = re.compile(r"increasecredits|add\d+credits")
 # What makes an option worth more than the credits riding along with it. The client does pair them - "Ask
 # about the corpse: Obtain Equipment [Psionic Combat Suit], Increase Credits" - and that option is worth the
@@ -375,6 +358,11 @@ class RankingChoice(StandIn):
 
 def ranking(utils):
     """Build the fork-local change to wrap `handle_event_task` in.
+
+    Over one logged Chaos run the upper-half shortcut fired 38 times and chose "End the event" five times, the
+    random pick fired 40 times, and the user's own priority list never ran once. What upstream sees is adjusted
+    rather than its two hundred lines copied, so the taskreward feature, the forbidden-event filter, the
+    blacklist and the priority lists all still run untouched.
 
     Args:
         utils: Upstream's `utils` module, which the wrapper stands in on for the length of each call.

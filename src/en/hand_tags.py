@@ -3,26 +3,19 @@
 The game labels equipment with the kind of deck it serves and scores each combatant against those kinds, but
 only fills that in for Sortie. `game_quality.py` carries the labels across to the Chaos copies of the same
 relics, reaching 141 of the 239 pieces a Chaos run can meet. The rest have no Sortie counterpart at all, so no
-rule can reach them. This table is those gaps, read off each piece's own effect text against the worked
-examples in the generated table - a judgement, not the developers' answer, so the generated table wins wherever
-both have an entry and this file is consulted only for a name the generator left out.
-
-A piece is left out when its effect does not clearly serve a kind some combatant actually wants. Roughly half
-are: flat stat lines, Stress, Credits, Damage Reduction and Epiphany triggers serve no listed kind, and
-inventing one would steer a purchase on a guess. A missing entry reads as "no opinion" and leaves the run where
-it already was, so silence is the cheaper mistake.
-
-Two were read off the wrong text at first, and the trap is worth knowing: `Flashbang` and `Nature's Gift` name
-a card as well as a relic, and `game_text.py` keeps the card's description for a shared name. The relic's own
-wording is on its Sortie tier, under `Mutation:` or `Harmonization:`.
-
-Hand-maintained - unlike its neighbours this one is not regenerated. After a game patch, re-run
-`scripts/build_game_data.py` first, then check whether anything here has since been labelled properly, in
-which case the entry can go.
+rule can reach them, and this table is those gaps.
 """
 
 # Keyed by the client's own spelling, and valued with the game's own vocabulary of kinds. `TestHandTags`
 # pins both: a name that is not real equipment, or a kind no combatant weighs, fails the suite.
+# Read off each piece's own effect text against the worked examples in the generated table, so the generated
+# table wins wherever both have an entry. A piece is left out when its effect does not clearly serve a kind
+# some combatant wants - a missing entry reads as "no opinion" and leaves the run where it already was.
+# Two were read off the wrong text at first: `Flashbang` and `Nature's Gift` name a card as well as a relic,
+# and `game_text.py` keeps the card's description for a shared name. The relic's own wording is on its Sortie
+# tier, under `Mutation:` or `Harmonization:`.
+# Hand-maintained. After a game patch, re-run `scripts/build_game_data.py` first, then check whether anything
+# here has since been labelled properly, in which case the entry can go.
 HAND_TAGS = {
     'A Lonesome Wedding Ring': ('discard',),
     'Bloodstone of the Void': ('heal',),

@@ -1,14 +1,10 @@
 """Reroll a failed dice roll instead of walking away from it.
 
-Some event options are gated on a roll - "[Dexterous] Help with the work, Dice Roll 14, Upon success Spark a
-Divine Epiphany" - and the game sells rerolls. Upstream has no notion of them: `handle_negotiation` sees the
-failure screen and clicks Next. So this is a new handler rather than a change to an existing one, registered
-immediately ahead of `handle_negotiation` so that declining a reroll falls through to upstream's Next click
-with nothing else to arrange.
-
-The reroll price is not on screen. OCR of that screen reads only the currency, the stat, the target number,
-"Failure", "Reroll" and "Next" - the small cost badge beside the button never comes back as its own box - so
-`REROLL_COST` is a constant here and the currency is read to make sure it can be paid.
+Some event options are gated on a roll - "[Dexterous] Help with the work, Dice Roll 14, Upon success
+Spark a Divine Epiphany" - and the game sells rerolls. Upstream has no notion of them:
+`handle_negotiation` sees the failure screen and clicks Next. So this is a new handler rather than a change to
+an existing one, registered immediately ahead of `handle_negotiation` so that declining a reroll falls through
+to upstream's Next click with nothing else to arrange.
 """
 
 import re
@@ -24,6 +20,9 @@ logger = Logger.get_logger(__name__)
 # How many rerolls one roll is worth before taking the loss.
 REROLL_CAP = 5
 # What a reroll costs. Not readable from the screen, so it is stated here rather than guessed each frame.
+# The price is not on screen: OCR of that screen reads only the currency, the stat, the target number,
+# "Failure", "Reroll" and "Next" - the small cost badge beside the button never comes back as its own box.
+# So this is a constant, and the currency is read to make sure it can be paid.
 REROLL_COST = 2
 
 # Upstream reads the result caption at this point, and matches it against 失败.

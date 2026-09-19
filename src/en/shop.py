@@ -1,21 +1,8 @@
 """Stop the Dellang shop spending refreshes on a shelf the run cannot afford.
 
 The shop's refresh is free, so `handle_shop` takes it whenever nothing on the shelf matches the user's
-priority lists. That is right with money in hand and wrong without: a captured run sat in front of a
-96 / 96 / 200 shelf holding almost nothing, refreshed until the counter ran out, and left with nothing anyway.
-No reroll can produce something the run can pay for, so every refresh in that state is dead time.
-
-Below the floor the free-refresh button is withheld for one `handle_shop` call, which is not the same as
-skipping the click afterwards - by the time upstream has clicked, the frame is spent. With the button hidden
-the handler runs out of options and returns False, and `handle_leave`, already the next entry in
-`PAGE_HANDLERS`, walks the run out on the same frame. The floor is a constant rather than a setting, set where
-the run has been asked to give up rather than where a purchase becomes possible, since rerolling costs nothing
-but time.
-
-`handlers.wrap` puts the wrapper both on the module and in the handler lists, which is what lets it compose
-with `src/en/rewards.py`: that module rebuilds this handler's list entry by reading it back off the module, so
-a wrapper living only in the list would be quietly dropped. Rewards renames what it builds, so it has to run
-after this one - that ordering is why `src/globals.py` applies them in the order it does.
+priority lists. That is right with money in hand and wrong without: no reroll can produce something the run
+can pay for, so every refresh in that state is dead time.
 """
 
 from ok import Logger
@@ -28,6 +15,9 @@ logger = Logger.get_logger(__name__)
 
 # The fewest credits still worth rerolling the shelf for. Inclusive: holding exactly this much, the run
 # rerolls. Below it every refresh is dead time, because nothing a reroll produces can be paid for.
+# Where the run is asked to give up, rather than where a purchase becomes possible, since rerolling costs
+# nothing but time. A captured run sat in front of a 96 / 96 / 200 shelf holding almost nothing and refreshed
+# until the counter ran out.
 SHOP_FLOOR = 29
 # The bottom-left band `handle_shop` scans for its refresh button, as (x1, y1, x2, y2).
 REFRESH_REGION = (0.012, 0.892, 0.258, 0.979)
@@ -53,6 +43,10 @@ def free_refresh_box(task):
 
 def refusing_free_refresh(handler, credit_of):
     """Wrap `handle_shop` so it cannot spend a refresh the credits can never use.
+
+    The button is withheld for one `handle_shop` call, which is not the same as skipping the click afterwards - by
+    the time upstream has clicked, the frame is spent. With it hidden the handler runs out of options and returns
+    False, and `handle_leave`, already the next entry in `PAGE_HANDLERS`, walks the run out on the same frame.
 
     Args:
         handler: The handler to wrap, upstream's or another patch's.
@@ -82,6 +76,10 @@ def refusing_free_refresh(handler, credit_of):
 def install(utils):
     """Wrap the shop handler wherever the run reaches it.
 
+    `handlers.wrap` puts the wrapper both on the module and in the handler lists, which is what lets it compose
+    with `src/en/rewards.py`: that module rebuilds this handler's list entry by reading it back off the module,
+    so a wrapper living only in the list would be quietly dropped.
+
     Args:
         utils: The loaded `utils` module, or None when it is not importable yet.
     """
@@ -92,7 +90,11 @@ def install(utils):
 
 
 def apply():
-    """Withhold the shop's free refresh when the credits cannot use it."""
+    """Withhold the shop's free refresh when the credits cannot use it.
+
+    Runs before `src/en/rewards.py`, which renames the list entry it builds - that ordering is why
+    `src/globals.py` applies the two in the order it does.
+    """
     global _patched
     if _patched:
         return

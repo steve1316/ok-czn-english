@@ -2,17 +2,7 @@
 
 Upstream rests, meditates or buys a Sortie Epiphany only while `node_status["flash_or_rest"]` is set. It sets
 the flag on the route selection screen and clears it once one of those is taken, so each rest area is used
-once. But every fresh status starts with the flag off, so a run started on anything other than the route
-screen walks past its first rest area - a Chaos run started inside the Treasure Trove skipped the rest right after it.
-
-Starting the flag on is safe because resting, meditating and buying an Epiphany each still clear it, so one rest
-area is still used at most once. The route screen sets it again before the next one either way.
-
-The route screen is also the only thing that re-arms it, which is the second half of this module. A run that
-does not pass through that screen spends the flag on its first rest area and never gets it back: one measured
-run went 6.5 minutes and zero route screens, rested once, then skipped three safe zones in a row, each reading
-the rest feature at over 96% while the game still offered an interaction. The game prints the count on screen,
-so where it says one is going spare, upstream's answer is overridden for the length of that one call.
+once - but every fresh status starts with the flag off, so a run started anywhere else walks past its first.
 """
 
 import re
@@ -78,6 +68,12 @@ def interactions_left(task):
 
 def taking_the_offered_interaction(original):
     """Wrap a safe zone handler so an interaction the game is offering is one upstream will spend.
+
+    The route screen is the only thing that re-arms the flag, so a run that does not pass through it spends the
+    flag on its first rest area and never gets it back: one measured run went 6.5 minutes and zero route screens,
+    rested once, then skipped three safe zones in a row, each reading the rest feature at over 96% while the game
+    still offered an interaction. The game prints the count on screen, so where it says one is going spare
+    upstream's answer is overridden for the length of that one call.
 
     Args:
         original: The upstream handler, which reads `FLAG` to decide whether the area is still unused.

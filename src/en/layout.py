@@ -3,18 +3,6 @@
 ok-script lays each settings row out as `[text column][stretch spacer][control]` but gives the text column no
 stretch, so the spacer absorbs every spare pixel. Descriptions then wrap at their 220px minimum while most of
 the row sits empty. That is tolerable in Chinese, which is dense enough to hide it, and unreadable in English.
-
-The card list is worse. `qfluentwidgets.ExpandLayout.addWidget` never calls `QLayout.addChildWidget`, the
-function that both reparents a new child and shows it, and ok-script's `ExpandCardLayout` adds the reparent
-back without the show. Measured on one add to a visible parent: `QVBoxLayout` draws the card, those two leave
-it hidden. So a tab rebuilt while it is on screen draws nothing, and `handle_chaos_reward_claim` asks for a
-rebuild the moment the loot cards run out. Startup escapes it only because the tab is hidden then, and Qt's
-own show cascade reaches the cards when it opens.
-
-Every patch here reaches into framework internals, so each one is written to fail quietly: if a future
-ok-script release fixes the layout itself, the import or the lookup simply misses and nothing happens.
-`OK_CZN_NO_LAYOUT_PATCH` skips the presentation patches, and deliberately not the missing show - that one is a
-correctness fix, and turning it off leaves the Tasks tab blank.
 """
 
 import os
@@ -25,6 +13,9 @@ from src.en.framework import import_ui
 
 logger = Logger.get_logger(__name__)
 
+# Skips the presentation patches, and deliberately not the missing show - that one is a correctness fix, and
+# turning it off leaves the Tasks tab blank. Every patch here reaches into framework internals, so each is
+# written to fail quietly: if a future ok-script release fixes the layout itself, the lookup simply misses.
 DISABLE_ENV = "OK_CZN_NO_LAYOUT_PATCH"
 # Below this the view has not been laid out yet and `heightForWidth` returns a wildly inflated answer.
 MIN_MEANINGFUL_WIDTH = 200
@@ -158,6 +149,12 @@ def size_cards_by_height_for_width():
 
 def show_cards_added_to_a_visible_list():
     """Show a card added to a list the user is already looking at.
+
+    `qfluentwidgets.ExpandLayout.addWidget` never calls `QLayout.addChildWidget`, the function that both reparents
+    a new child and shows it, and ok-script's `ExpandCardLayout` adds the reparent back without the show. Measured
+    on one add to a visible parent: `QVBoxLayout` draws the card, those two leave it hidden. So a tab rebuilt while
+    it is on screen draws nothing, and `handle_chaos_reward_claim` asks for a rebuild the moment the loot cards run
+    out. Startup escapes it only because the tab is hidden then, and Qt's own show cascade reaches the cards.
 
     Both task tabs rebuild their list through `TaskTab.add_task_card`, so the layout under it is the one seam
     that covers them both.

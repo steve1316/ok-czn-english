@@ -1,61 +1,9 @@
 """Decide who gets a piece of equipment, what is worth buying, and refuse to pass over a Mythic one.
 
-Six narrow changes inside `handle_equipment`, the shop and the Tasks tab. None copies a handler.
-
-The Equipment screen marks the row with a free slot of the right kind "Recommended". Upstream never reads it,
-picking by the save-scum target instead, or by whoever is listed first on every Sortie run since only Chaos
-carries that setting. What the target turns down goes to a random other combatant, so that pick takes the
-banner's row too whenever it is one of them. The banner is paired to a row by taking the nearest level tag *below* it, which leaves
-most of a row's height of slack either way. A log trap follows from it: upstream numbers combatants by that
-list, so `第N号主战员` counts from the recommended row rather than the top of the screen.
-
-That fallback only decided the pieces the save-data combatant turned down, so anything it could use went to it
-and the banner was never read - a run gave it a ring the client was recommending elsewhere. A piece the user's
-priority list does not name has no reason to go there, so the save-data combatant stands down for one and the
-fallback hands it to the banner's row. A named piece still goes where upstream's own comparison sends it, and
-so does a Mythic: `offering_mythic_where_it_fits` may have dropped the banner's row for having no room, and
-standing down then would extract a piece somebody could have worn. Sortie is left alone, since it has no
-save-data combatant and already falls to the banner.
-
-A Mythic is always worth taking, but upstream weighs the per-slot priority list ahead of quality, so a
-configured piece already in the slot turns one away. Only that comparison is overridden. Not visible from
-`ok_tasks/`: its top bucket already *is* Mythic here, because quality is read from one pixel of the item frame
-and a Mythic's violet matches none of its constants and falls through to `传说`.
-
-The client allows one Mythic per combatant. Upstream checks that for the combatant it is about to equip and
-then hands what that one turns down to another without checking it, so the piece can be offered to somebody
-who cannot take it - and then offered again every second after that, because the client refuses the click and
-leaves the screen exactly as it was. Combatants with no room are kept out of the rows upstream is shown.
-Should that leave none, upstream's own no-combatant path extracts the piece, which is the right answer anyway.
-Room is decided by matching `MYTHIC_RGB` outright rather than by that top bucket, which is only reliable in
-one direction: every Mythic lands in it, but so does any slot too dim to match a constant - a run logged an
-empty slot at `RGB=(24, 37, 46)` as one, and the toast the client draws over a refused click dims a whole row
-into it. `insisting_on_mythic` asks the question the other way round and can keep using the bucket.
-
-The Tasks tab's Equipment row reported a ledger of what the run installed rather than anything on screen, so a
-team wearing gear read as three empty slots. The reading that replaces it is taken off the Combatants screen,
-where all three combatants and all nine slots are drawn together and the run already stops once to photograph
-the save target. `dashboard.showing_what_is_worn` puts it in the row, left to right in the order the team's
-own row above it names them, so a column holds its place even when nothing in it could be read. It is that
-moment's snapshot and does not follow an install made later in the run.
-
-When it is read matters more than it looks. The capture closes the page and sleeps a second before it returns,
-and `all_texts` survives that while `frame` does not - a read afterwards gets the names off the held OCR pass
-and the pixels off whatever the client has drawn since, which reported nine slots as empty and unknown. So the
-read rides the capture's own tap instead: the first tap made while all three names are on screen is the last
-moment the page is still open.
-
-A slot's tier comes from its frame colour, and the names upstream gives those colours are each one tier out on
-this client. Thirteen pieces the logs name, checked against the client's own rarity table: `普通` is RARE,
-`史诗` is LEGEND, and `传说` is UNIQUE - which the client itself calls Mythic in the only line where it names
-a tier, so that is the word the row uses. A colour matching none of them reads as unknown rather than being
-folded into the top tier the way upstream folds it.
-
-Generated equipment lists are bought from only on a spree, and only for a slot standing empty on somebody. A spree
-opens when a shop visit sees `SPREE_START` credits, and holds for that visit until credits fall to `SPREE_END`. Upstream refreshes whenever nothing matches, so a bare slot with nothing on the shelf rerolls for more.
-A list the user configured is bought from as upstream always did. The shop shows no combatants, and upstream keeps
-only the save-data combatant's slots, so all three rows are read off the install screen where they appear together.
-A run that has not reached it counts every slot bare, which is the truth - a run opens with all three stripped.
+Six narrow changes inside `handle_equipment`, the shop and the Tasks tab. None copies a handler. The Equipment
+screen marks the row with a free slot of the right kind "Recommended", and upstream never reads it - it picks
+by the save-scum target instead, or by whoever is listed first on every Sortie run, since only Chaos carries
+that setting.
 """
 
 from ok import Logger
@@ -118,8 +66,10 @@ EMPTY_TIER = "-"
 MYTHIC_TIER = "Mythic"
 UNKNOWN_TIER = "?"
 # What each of upstream's own quality buckets is called on this client, where every one of its names is a tier
-# out. The top bucket is missing on purpose: upstream puts every colour it cannot place there, so it is the one
-# answer that has to be checked rather than translated.
+# out. Thirteen pieces the logs name, checked against the client's own rarity table: `普通` is RARE, `史诗` is
+# LEGEND, and `传说` is UNIQUE - which the client itself calls Mythic in the only line where it names a tier,
+# so that is the word the row uses. The top bucket is missing on purpose: upstream puts every colour it cannot
+# place there, so it is the one answer that has to be checked rather than translated.
 BUCKET_TIERS = {EMPTY_SLOT: EMPTY_TIER, "普通": "Rare", "史诗": "Legend"}
 # Upstream's top quality bucket. Nothing in `ok_tasks/` knows the word Mythic, but the colour it reads off a
 # Mythic piece - a violet no other tier uses - is the one that falls through to this, so the two coincide.
@@ -142,6 +92,10 @@ def recommended_banner(task):
 
 def recommended_row(task, banner, level_tags):
     """Say which combatant row the banner belongs to.
+
+    Paired by taking the nearest level tag below the banner, which leaves most of a row's height of slack
+    either way. A log trap follows: upstream numbers combatants by that same list, so `第N号主战员` counts
+    from the recommended row rather than from the top of the screen.
 
     Args:
         task: The running task, for the screen's size.
@@ -193,6 +147,10 @@ def is_mythic_colour(utils, rgb):
 
 def has_room_for_mythic(utils, colours, slot):
     """Say whether a combatant could legally take the Mythic on offer.
+
+    Decided by matching `MYTHIC_RGB` outright rather than by upstream's top bucket, which is only reliable in
+    one direction: every Mythic lands in it, but so does any slot too dim to match a constant - an empty slot
+    at `RGB=(24, 37, 46)` read as one, and the toast drawn over a refused click dims a whole row into it.
 
     Args:
         utils: The module carrying the colour compare.
@@ -275,10 +233,11 @@ def team_equipment(task, utils):
 def reading_the_team_gear(handler, utils, utils_chaos):
     """Wrap `handle_archive_target_member` so the team's gear is read while its page is still open.
 
-    The capture's last act is to tap the page closed and sleep, so anything read after it returns is read off
-    a screen that has moved on. Riding its taps puts the read back on the frame it was looking at. The first
-    tap made while all three names are on screen is the one: the tap before it selects the tab and happens
-    ahead of the capture's own OCR, so the names are not all there yet.
+    The capture's last act is to tap the page closed and sleep a second, and `all_texts` survives that while
+    `frame` does not - a read afterwards gets the names off the held OCR pass and the pixels off whatever the
+    client has drawn since, which reported nine slots as empty and unknown. Riding its taps puts the read back
+    on the frame it was looking at. The first tap made while all three names are on screen is the one: the tap
+    before it selects the tab and happens ahead of the capture's own OCR, so the names are not all there yet.
 
     Args:
         handler: The handler to wrap, upstream's or another patch's.
@@ -419,7 +378,8 @@ def preferring_recommended(handler, utils):
     """Wrap `handle_equipment` so the recommended combatant is the one it gives to.
 
     It becomes the row upstream falls back to, and for a piece the user's priority list does not name, the row
-    the save-data combatant stands down in favour of.
+    the save-data combatant stands down in favour of. A named piece, and a Mythic, still go where upstream's
+    own comparison sends them. Sortie is left alone, having no save-data combatant to stand down.
 
     Args:
         handler: The handler to wrap, upstream's or another patch's.

@@ -1,20 +1,9 @@
 """Check which screens the bot taps to advance, and which it leaves alone.
 
-A narration screen hands the reader almost nothing - the 2026-09-07 run's stalled frame carried the health
-bar, the credit count and one line of prose - so the line's shape on screen is the whole signal. That makes
-the two failure modes worth pinning: missing a narration screen leaves the run stalled until someone stops
-it, and matching something else means a stray click on a screen the bot has not learned yet.
-
-The event option screen is the one that must never match. Its option text sits in the same band as narration
-and is centred in the same place; only its width tells the two apart.
-
-The auto-advance button in the top right corner is measured here too. Twenty frames of the Global client
-were sampled over its patch: every frame showing it running came back 10.5% to 15.0% amber and every frame
-showing it off came back 0.0%, with the two colours below standing for what those frames actually hold.
-
-The positions come from two places: the screens the 2026-09-07 Chaos run stalled on, and the captures in
-`captures/` that a first, looser version of this rule wrongly matched. The tip banner, the card tooltip and
-the trauma centre's prose are all real frames the corpus turned up.
+Two failure modes are worth pinning: missing a narration screen leaves the run stalled until someone stops it,
+and matching something else means a stray click on a screen the bot has not learned yet. The event option
+screen is the one that must never match - its text sits in the same band, centred the same, and only its width
+tells the two apart.
 """
 
 import sys
@@ -36,8 +25,9 @@ WIDTH, HEIGHT = 1920, 1080
 # neutral white of the padlock it shows while it is off.
 GLOW = (77, 111, 156)
 UNLIT = (168, 168, 168)
-# The share of the patch the ring covers when it is lit. The measured frames ran 0.105 to 0.150, so the
-# thinnest of them is what the threshold has to sit under.
+# The share of the patch the ring covers when it is lit. Twenty frames of the Global client were sampled over
+# its patch: every frame showing it running ran 0.105 to 0.150 and every frame showing it off came back 0.000,
+# so the thinnest of the lit ones is what the threshold has to sit under.
 MEASURED_GLOW = 0.105
 
 # The line the run stalled on, and the two-line screen the mushroom event showed.

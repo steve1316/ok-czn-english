@@ -4,18 +4,6 @@ Sortie has no Auto button, so the bot picks every card itself. Upstream looks ea
 names the user typed and plays the first match, but that list starts empty on the Global client - its default
 is Chinese card names English OCR can never match - so every turn falls through to pressing each hotkey and
 hoping. This module replaces the hoping.
-
-A turn is decided in two steps, because "which cards can I afford" and "what order do they go in" are different
-questions and answering them together gets both wrong. Action Points are spent first on value per point, so
-220% damage for two points is bought ahead of 100% for one and a cheap card that does little cannot crowd out a
-dear one that wins the fight. What was bought is then ordered by phase: a card lit up for an Epiphany first,
-then anything free, then setup that makes the rest of the turn better, then damage, and last a card with no
-fixed price, since it takes whatever is left.
-
-Nothing here touches the framework. It takes a hand as `_hand_cards` already reads one, plus what is known
-about the moment it is played in, and returns the cards to play - which keeps the judgement testable without a
-game running. Every fact it reasons from is the client's own, out of `game_battle.py` and `game_text.py`. What
-the reader hands over is not the client's spelling, so every name is folded through `quality` first.
 """
 
 import re
@@ -330,12 +318,10 @@ def buying_order(name, board):
 def plan(hand, board):
     """Choose the cards to play this turn, in the order to play them.
 
-    Two separate questions, answered in order. Which cards the budget buys is settled on value per Action
-    Point, so a cheap card that does little cannot crowd out a dear one that wins the fight. Only then are
-    the survivors put into the order they are played in, which is what the phases are for.
-
-    Cards that tie keep the order the hand had, so a turn the picker has no opinion about still plays left to
-    right rather than differently on every frame.
+    Two questions, answered in order, because answering them together gets both wrong. What the budget buys is
+    settled on value per Action Point, so 220% damage for two points is bought ahead of 100% for one and a cheap
+    card cannot crowd out a dear one that wins the fight. Only then are the survivors put into phase order, and
+    cards that tie keep the order the hand had.
 
     Args:
         hand: Hand cards as `_hand_cards` reads them, each a dict with at least a `name`.

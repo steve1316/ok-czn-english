@@ -3,19 +3,6 @@
 Upstream ships one Chinese player's build as defaults and asks the user to type entity names by hand. Those
 Chinese names can never match what English OCR reads, so they are replaced with English defaults and, wherever
 the value set is knowable, with pick-from-a-list widgets built from the game's own localization table.
-
-This hooks `BaseTask.load_config` and runs *before* it - the seam upstream itself uses, since `ChaosMode`
-overrides `load_config` to run its migrations and then calls `super()`. It is the one call that happens exactly
-once per task, and it happens before `Config` is built, so a fresh install is seeded with English defaults
-rather than written in Chinese and corrected afterwards. `ChaosMode.py` and `SortieMode.py` stay byte-identical
-to upstream, so a merge never conflicts in them.
-
-Two rules decide whether a setting can become a pick-list. The value must be compared against OCR text - card,
-equipment and combatant names are, so those become lists of English names, while Route Priority's values are
-internal labels produced from template feature names (`enemy_in_map` -> `小怪`) and are only translated for
-display. And the match must be on a whole name: Epiphany Priority, the Persona settings and Farm Starting Card
-are matched as subsequences of `name + description`, which is how a user targets an effect rather than a card,
-so they stay free text.
 """
 
 from ok import Logger
@@ -53,6 +40,11 @@ FARMED_COMBATANT = "刷存档主战员"
 # ships. Desire cards only exist in Chaos, so it is anchored on `FARMED_COMBATANT` rather than a list Sortie shares.
 DESIRE_FACTION = "Desire Faction"
 # List settings the user picks from, keyed by config name -> the roster it draws on.
+# Two rules decide whether a setting can become a pick-list. The value must be compared against OCR text - card,
+# equipment and combatant names are, while Route Priority's values are internal labels produced from template
+# feature names (`enemy_in_map` -> `小怪`) and are only translated for display. And the match must be on a whole
+# name: Epiphany Priority, the Persona settings and Farm Starting Card are matched as subsequences of
+# `name + description`, which is how a user targets an effect rather than a card, so they stay free text.
 LIST_OPTIONS = {
     "移除卡牌列表": CARDS,
     "复制卡牌列表": CARDS,
@@ -244,7 +236,13 @@ def translate_notifications():
     logger.info("notifications routed through the translation catalog")
 
 def apply():
-    """Wrap `BaseTask.load_config` so every task is re-shaped before its config is built."""
+    """Wrap `BaseTask.load_config` so every task is re-shaped before its config is built.
+
+    That is the seam upstream itself uses, since `ChaosMode` overrides `load_config` to run its migrations and
+    then calls `super()`. It is the one call that happens exactly once per task, and it happens before `Config`
+    is built, so a fresh install is seeded with English defaults rather than written in Chinese and corrected
+    afterwards. `ChaosMode.py` and `SortieMode.py` stay byte-identical to upstream, so a merge never conflicts.
+    """
     global _applied
     if _applied:
         return

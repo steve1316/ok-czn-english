@@ -1,16 +1,6 @@
 """Grade cards, equipment and combatants from the client's own data.
 
 Names are folded before matching, because neither the reader nor the client spells them predictably.
-
-`suits` is the one judgement about a pairing rather than a thing. The game keeps an opinion on which equipment
-suits which combatant - it labels equipment with the kind of deck it serves and gives each combatant a weight
-per kind - but only fills it in for Sortie, so `game_quality.py` carries it across to the Chaos copies of the
-same relics and `hand_tags.py` fills the gaps by reading effect text.
-
-It only ever orders pieces rarity has already ranked equal, and never promotes one above a better piece. That
-is not caution about coverage: upstream treats the priority list as an override rather than a tiebreak, so a
-well-suited Legend ranked above an ill-suited Unique would have the run strip the Unique it is wearing to
-install the Legend.
 """
 
 import re
@@ -78,9 +68,8 @@ class Lookup(NamedTuple):
         """Find the client's own spelling of a name the reader produced.
 
         The spellings are tried cheapest first: three dictionary lookups, each keeping every letter of the
-        reading, and only then a walk of the whole roster. That order is about cost alone. Which tier answers
-        cannot change the answer, because `index` gives a name a fallback spelling only where it is the sole
-        owner of it, so a later tier can never name something the reading's own spelling would not.
+        reading, and only then a walk of the whole roster. Which tier answers cannot change the answer, since
+        `index` gives a name a fallback spelling only where it is the sole owner of it.
 
         Args:
             name: The name as read off the screen.
@@ -99,11 +88,8 @@ class Lookup(NamedTuple):
         """Find the one real name a reading is a single edit from.
 
         The pass of last resort, for readings that lost a character rather than merely rearranging them. It
-        answers only when a single name is that close: two candidates means the reading cannot say which, and
-        guessing there would put a wrong name into a shopping list.
-
-        The floor is on the reading's own length, not the candidate's, and that asymmetry is what keeps the
-        short names safe - a reading long enough to be guessed at is never one edit from a three-letter one.
+        answers only when a single name is that close: two candidates means the reading cannot say which. The
+        floor is on the reading's own length, not the candidate's, which is what keeps short names safe.
 
         Args:
             folded: The reading, already folded.
@@ -189,9 +175,7 @@ def index(names):
 
     The reader mangles a name in two ways that keep all its letters - it swaps lookalike characters and it hands
     the words back out of order - so `Magic-Infused Sapphire` arrives as `Magic-lnfusedSapphire` and
-    `Assault Gauntlets` as `GauntletsAssault`, and both were simply lost before. So there are several keys per
-    name: the folded name first, then one per fallback spelling. A fallback key is added only where exactly one
-    name owns it and nothing nearer has claimed it, so names that would collide keep their exact spellings.
+    `Assault Gauntlets` as `GauntletsAssault`. Hence several keys per name, the folded name first.
 
     Args:
         names: An iterable of canonical names.

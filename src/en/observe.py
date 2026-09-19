@@ -1,17 +1,8 @@
 """Write down what the game's own Auto AI does, so the fork's picker can be measured against it.
 
-Sortie has no Auto button, which is why the fork picks cards itself. Chaos has one, and upstream already
-switches it on - `handle_battle_auto_check` looks for the button and clicks it when it is off. So Chaos is
-the same game, the same cards and the same combatants, played by a reference implementation, on a screen the
-bot already reads once a second. Watching it costs one more read of what is already on screen.
-
-What gets written down is only what the screen showed. Which card Auto played, where a turn began, whether a
-card was played or discarded - all of that is inference, and it lives in `src/en/autoplay.py` where it can be
-rewritten and re-run against the same file. A wrong guess here would cost another capture session.
-
-This changes no behaviour. Upstream's handler runs first and its answer is returned untouched, so Chaos plays
-exactly as it did whether the recorder works, fails, or is deleted. A failure inside it is logged once and
-swallowed for the same reason: losing data is cheap and losing a run is not.
+Sortie has no Auto button, which is why the fork picks cards itself. Chaos has one and upstream already
+switches it on, so Chaos is the same game played by a reference implementation, on a screen the bot already
+reads once a second. Watching it costs one more read of what is already there.
 """
 
 import json
@@ -78,6 +69,10 @@ def write(task):
 
 def install():
     """Watch Chaos battles without changing what they do.
+
+    This changes no behaviour: upstream's handler runs first and its answer is returned untouched, so Chaos plays
+    exactly as it did whether the recorder works, fails, or is deleted. A failure inside it is logged once and
+    swallowed for the same reason - losing data is cheap and losing a run is not.
 
     Runs once per task load, so it has to be safe to call again: a wrapper already in place is left alone
     rather than wrapped in a second one.

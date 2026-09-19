@@ -1,40 +1,9 @@
 """Read and steer Season 4's Desire cards.
 
-Reaching three, five or seven points in one faction unlocks a team-wide bonus, so concentrating beats
-spreading across four. That is what the target-faction setting is for.
-
-The tag is the whole state. The client prints it on the card - `[ Inquiry ]`, `[ Inquiry 2 ]`, or
-`[ Control / Inquiry 2 ]` once two factions have merged - so faction and points are both on screen and the
-points total is the card's level. Nothing has to be remembered between frames, which matters because a run can
-be resumed, or the bot restarted, part way through a node.
-
-Reading it is the hard part. The tag shares a region with the effect text below it, and the reader loses
-brackets, drops spaces, and sometimes glues the tag onto the sentence under it - one captured frame produced
-`Control200% Damage to all...`. So the shape is tested rather than searched: a reading counts as a tag only
-when everything in it is a faction name, a number, or bracket-and-slash punctuation, and its points add up to
-a level a card can reach. That turns away a mangled tag and a sentence that merely contains the word Control.
-The asymmetry is the point - turning away a real tag costs one frame of a screen re-read every second, while
-acting on a misread one steers every card pick for the rest of the run.
-
 Most Desire cards arrive on a screen that is not a Desire screen. An event granting one drops the run onto the
 ordinary card assign screen, which decides on the reward priority list alone, and a Desire card is named for
-its effect so the list never names it - a real run pressed Skip on two in four minutes. That screen is claimed
-here too, but only far enough to tell upstream the card is worth keeping.
-
-The Desire screen and the assign screen are one decision, not two. Taking a card on the first drops the run
-onto the second to hand it over, and judging the faction again there threw away what the first had just
-chosen: a real run picked `Knowledge Addiction` off three cards, none of the faction being chased, then
-skipped it four seconds later. So a Desire screen leaves the name of what it took on the task and the assign
-screen honours it. The purchase guard still outranks that - nothing here ever spends credits.
-
-A combatant already holding three points gains nothing from another card, but upstream hands it to the save-data
-combatant or the first row regardless. A full row is made to read as "Unobtainable" to upstream, which keeps the
-rows where they are - upstream binds the save-data combatant by row position. With nobody left the screen is
-rerolled, then skipped.
-
-The points are read off the "Lv. N" printed on the Desire card a combatant holds, not the faction badges. On two
-captures OCR read none of three badge "1"s but read that digit at 1.00, and the badges also preview the card on
-the selected row. A missed digit counts as room, which is upstream's old behaviour.
+its effect so that list never names it - upstream reaches the screen, misses, and presses Skip, throwing away
+points an event had already paid for.
 """
 
 import re
@@ -58,7 +27,8 @@ TAGGED = re.compile(rf"({'|'.join(FACTIONS)})\s*(\d*)", re.I)
 # Anything else means the reading has run into the effect text and cannot be trusted.
 DECORATION = re.compile(r"[\s\[\]()/|,.:0-9]*")
 
-# The setting naming the faction to chase. Added fork-side, so it needs no upstream change and no migration.
+# The setting naming the faction to chase. Concentrating points in one faction unlocks a team-wide bonus,
+# so it beats spreading across all four. Added fork-side, so it needs no upstream change and no migration.
 FACTION_KEY = "Desire Faction"
 DEFAULT_FACTION = "Claim"
 # The card list already used to rank a card reward, which ranks these too once the faction is settled.
@@ -112,6 +82,12 @@ _patched = False
 def tags_of(text):
     """Read the factions and points out of a card's Desire tag.
 
+    The tag shares a region with the effect text below it, and the reader loses brackets, drops spaces, and
+    sometimes glues the tag onto the sentence under it - one captured frame produced `Control200% Damage to
+    all...`. So the shape is tested rather than searched, which turns away a mangled tag and a sentence that
+    merely contains the word Control. Turning away a real tag costs one frame, acting on a misread one steers
+    every card pick for the rest of the run.
+
     Args:
         text: One OCR box's text, which may or may not be a tag.
 
@@ -148,6 +124,10 @@ def points_of(tags):
 
 def tag_of(task, region):
     """Find a card's Desire tag among the readings inside its description.
+
+    The client prints the tag on the card - `[ Inquiry ]`, `[ Inquiry 2 ]`, or `[ Control / Inquiry 2 ]` once
+    two factions have merged - so faction and points are both on screen and nothing has to be remembered
+    between frames, which matters because a run can be resumed, or the bot restarted, part way through a node.
 
     Args:
         task: The running task, whose `all_texts` holds the current OCR pass.
@@ -311,6 +291,10 @@ def inherit_handler(utils):
 def points_held(task, row):
     """Read the level of the Desire card an assign screen row's combatant already holds.
 
+    Read off the printed "Lv. N" rather than the faction badges: on two captures OCR read none of three badge
+    "1"s but read that digit at 1.00, and the badges also preview the card on the selected row. A missed digit
+    counts as room, which is upstream's old behaviour.
+
     Args:
         task: The running task, whose `all_texts` holds the current OCR pass.
         row: The row's level tag, as `_find_member_level_tags` found it.
@@ -341,6 +325,9 @@ def caption_point(task, row):
 
 def obtainable(task, find_box_at_point, row):
     """Report whether a row's combatant can take the card, the way upstream decides it.
+
+    A full row is made to read as "Unobtainable" rather than being removed, which keeps the rows where they
+    are - upstream binds the save-data combatant by row position.
 
     Args:
         task: The running task.
@@ -379,9 +366,7 @@ def purchasing(task):
     """Report whether the screen showing is the one that spends credits.
 
     The Purchase Card screen runs through the same handler as the card assign screen, so a card kept there
-    would be bought rather than granted. Matched anywhere on screen rather than in upstream's own title band,
-    because a band copied out of vendored code drifts silently and this is the check standing between the
-    run and its credits.
+    would be bought rather than granted. This guard outranks everything else here - nothing ever spends credits.
 
     Args:
         task: The running task, whose `all_texts` holds the current OCR pass.
@@ -404,16 +389,11 @@ def keeping_desire_cards(handler, utils):
     list had asked for it. Everything after that is upstream's, including its preference for handing the card
     to the save-data combatant.
 
-    Every faction earns this, not only the one being chased. The aim is all three combatants at three points, and a
-    real run chasing Claim skipped a Control card with nothing else on offer. The chased faction is favoured where
-    there is a choice to make - the event options and the Desire screens - not here, where the only other answer is Skip.
-    The one exception is the save-data combatant, whose slots are kept for the chased faction.
-
-    The exception is a card a Desire screen already chose, which is kept whatever it carries. That screen has
-    no Skip, so something had to be taken; re-judging the faction here only throws the choice away and leaves
-    the run with nothing.
-
-    A kept card is never handed to a combatant already holding `MAX_LEVEL` points.
+    Every faction earns this, not only the one being chased, since the only other answer here is Skip. The
+    chased faction is favoured where there is a real choice - the event options and the Desire screens - and on
+    the save-data combatant, whose slots are kept for it. A card a Desire screen already chose is kept whatever
+    it carries: that screen has no Skip, so re-judging the faction here would throw the choice away. A kept
+    card is never handed to a combatant already holding `MAX_LEVEL` points.
 
     Args:
         handler: The handler to wrap, upstream's or another patch's.

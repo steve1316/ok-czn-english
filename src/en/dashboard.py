@@ -4,22 +4,6 @@ ok-script draws one row per `task.info` entry in insertion order, so upstream's 
 `log_credit` and `log_node_status` happen to write in: the version and game language near the top, the win rate
 at the very bottom, and the run's position buried under five yes/no flags. The team's names are read once per
 run and never shown at all.
-
-Rows are re-sorted in `info_set` whenever a new one appears, since a row keeps the slot of its first write and
-they are written by several handlers. It wraps the raw method, under `log_text`'s translation, so keys arrive in
-English. The sort is stable, so meditation rows keep their own order and an unranked row falls to the bottom
-instead of vanishing. A fresh dict is assigned rather than the old one re-filled, so the GUI never sees it half empty.
-Before any run has finished, upstream's win rate divides by zero and reads `0/0 NaN`, so that row is shown as 0%.
-
-ok-script hides the table until a task first runs. Before then it shows the rows a run would not change, under an
-"Idle" title, drawn by the framework's own `update_task_info` from a stand-in task. Its X still hides it.
-
-Starting a task clears that table, and a row only exists once something writes it, so the table fell to the one
-row the first log line makes and then grew back over the next few seconds as the status handlers reached their
-first frame - the whole panel rearranging itself under the reader. The rows a run will fill are seeded blank at
-the clear instead, so the table opens at its full height and only the values arrive late. Only for a mode that
-has a `node_status`, which is the pair that runs the status handlers: Story writes none of these rows, and
-seeding them there would be rows that stay blank for the length of the run.
 """
 
 import types
@@ -43,7 +27,8 @@ LOG = "Log"
 # screen and leaves the line here. Absent until it has, which is what `UNREAD` says.
 GEAR = MESSAGES["装备信息"]
 TEAM_GEAR = "_en_team_gear"
-# The win rate row, and the tail upstream gives it when no run has finished. `NO_RUNS` is what it reads as instead.
+# The win rate row, and the tail upstream gives it when no run has finished: before any run finishes upstream
+# divides by zero and the row reads `0/0 NaN`. `NO_RUNS` is what it reads as instead.
 WIN_RATE = MESSAGES["当前胜率"]
 UNDIVIDED = " NaN"
 NO_RUNS = " (0%)"
@@ -149,8 +134,7 @@ def showing_what_is_worn(original):
 
     Upstream's own value is a ledger: blank at the start of every run, written only by an install, and kept
     for the save-data combatant alone, so a team wearing gear read as three empty slots. Substituting as the
-    row is written, rather than restating it afterwards, keeps one write per tick and so keeps `log_text`'s
-    suppression of unchanged rows working.
+    row is written keeps one write per tick, and so keeps `log_text`'s suppression of unchanged rows working.
 
     Args:
         original: The unbound `info_set` being replaced.

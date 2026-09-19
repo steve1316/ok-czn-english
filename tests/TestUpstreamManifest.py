@@ -1,16 +1,8 @@
 """Check that upstream still has every name the fork patches.
 
-A rename in `ok_tasks/` does not fail loudly. `handlers.wrap` returns at `if current is None`, `replace`
-changes nothing and logs nothing above INFO, and the patch simply stops existing. The run then behaves like
-stock upstream, which on the Global client means the fork's whole reason for existing is gone.
-
-Nothing else in the suite would notice. Every other test builds a `types.SimpleNamespace` stand-in for the
-task modules, and a stand-in is built carrying whatever name the fork asked for, so it can never catch a
-rename. These run against the real modules instead.
-
-This is its own file rather than part of `TestPatchComposition` because `handlers.each_list` finds handler
-lists by scanning `sys.modules`. Importing the real modes here would put them in front of that file's seam
-tests, which count the lists they change.
+A rename in `ok_tasks/` does not fail loudly. `handlers.wrap` returns at `if current is None`, `replace` changes
+nothing and logs nothing above INFO, and the patch simply stops existing. The run then behaves like stock
+upstream, which on the Global client means the fork's whole reason for existing is gone.
 """
 
 import sys
@@ -77,6 +69,14 @@ MODULES = {"utils": utils, "utils_chaos": utils_chaos, "utils_sortie": utils_sor
 
 
 class TestUpstreamManifest(unittest.TestCase):
+    """Check the fork's anchors against the real `ok_tasks/` modules rather than a stand-in.
+
+    Its own file rather than part of `TestPatchComposition` because `handlers.each_list` finds handler lists by
+    scanning `sys.modules`. Importing the real modes here would put them in front of that file's seam tests,
+    which count the lists they change. Every other test builds a `types.SimpleNamespace` stand-in carrying
+    whatever name the fork asked for, so it can never catch a rename.
+    """
+
 
     def test_every_patched_name_is_still_there(self):
         for module_name, names in UPSTREAM_NAMES.items():

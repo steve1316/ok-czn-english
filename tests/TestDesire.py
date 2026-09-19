@@ -2,17 +2,8 @@
 
 Two of them stalled or threw away a run. `Select a Desire Card reward.` offers three cards and has no Skip, and
 no handler claimed it, so the run sat on a greyed-out Confirm until the stuck-screen fallback clicked one at
-random - close to the worst outcome the mechanic allows, since the faction picked here is what the rest of the
-run compounds on. The merge screen's title is `Card Reward`, so the ordinary reward handler claimed it, found
-no priority match and pressed Skip, throwing the merge away.
-
-The third is subtler. An event that grants a Desire card opens the ordinary assign screen, and upstream judges
-that screen purely on whether the card's name is on the reward priority list. A Desire card's name never is:
-
-    卡牌「It's All Mine」未命中奖励优先级
-    无可用刷新或刷新次数，点击跳过非优先级卡牌
-
-All positions here are measured off the runs that hit each screen.
+random. The merge screen's title is `Card Reward`, so the ordinary reward handler claimed it, found no priority
+match and pressed Skip, throwing the merge away.
 """
 
 import sys

@@ -5,29 +5,6 @@ starts empty on the Global client, so every turn falls through to `_try_all_card
 hotkey from the hand size down at about a second and a half a press - thirteen seconds of blind input at nine
 cards, playing whatever sat under the last key that worked. That fallback is the only thing replaced. Upstream
 keeps the frame around it, and a card the Play Priority list names is still played by upstream unchanged.
-
-The Ego skill is picked here too. Upstream fires one of `F1`, `F2`, `F3` at random once the EP bar reads full,
-without checking the bar covers the one it picked - and in a real frame with the bar full, one of the three
-routinely costs more than it holds. `board.py` can see which are affordable, so the shortlist shrinks to those
-and the pick stays random, because picking one it cannot pay for is the defect and picking at random is not.
-The mechanism is upstream's own `random` swapped out for one frame, the same thing `src/en/events.py` does.
-
-Enemy weakness comes from `board.py` and goes to the planner rather than being acted on here, raising what a
-matching card is worth so an attack of that attribute goes first when two are otherwise equal. Only about a
-third of cards have an attribute at all - it needs the data to know who owns the card - so this reorders some
-turns and leaves the rest alone. It is read once a turn, since it describes the fight rather than the frame.
-
-`_try_all_card_keys` has two callers, and rebinding it takes over both. The other is the escape hatch upstream
-reaches for after a card the list *did* name has failed to play three times running. Taking that one over is
-wanted rather than tolerated: a card that will not play three times is usually one there are no Action Points
-for, and choosing a different card beats flailing at every key.
-
-The budget comes from `board.py`, which can tell a spent turn from one with points left but not how many. So a
-turn with points is planned against the full three, which may be more than it has. That is safe rather than
-sloppy - the game refuses a card there is no room for, and a card still in hand after being tried is recorded
-as refused and passed over for the rest of the turn, so the turn corrects itself against the game rather than
-against a number this module believes in. What the readout adds is the other end: once it goes dark the turn
-ends at once, instead of after every card has been refused.
 """
 
 from ok import Logger
@@ -103,6 +80,10 @@ class EgoChoice(StandIn):
 def choose(hand, board, refused):
     """Pick the card to play next, or nothing when the turn is done.
 
+    A turn with points left is planned against the full three, since `board.py` can tell a spent turn from one
+    with points but not how many. The game refuses a card there is no room for, so the turn corrects itself
+    against the game rather than against a number this module believes in.
+
     Args:
         hand: Hand cards as `_hand_cards` reads them.
         board: The `cards.Board` to decide against.
@@ -119,10 +100,9 @@ def choose(hand, board, refused):
 def was_refused(attempted, copies, hand_names):
     """Say whether the card tried last frame is still sitting in hand.
 
-    Neither the size of the hand nor the presence of the card answers this on its own. A card that draws
-    replaces itself, so the hand can be the same size after one played perfectly well. And a deck holds
-    several copies of a card, so the name can still be there because another copy is. How many copies are
-    left is what actually settles it: one fewer than there were means the game took it.
+    How many copies are left is what settles it: one fewer than there were means the game took it. Neither the
+    size of the hand nor the presence of the card answers it, since a card that draws replaces itself and a
+    deck holds several copies of one name.
 
     Args:
         attempted: The card name tried last frame, or None when nothing was.
@@ -192,7 +172,9 @@ def install():
 
     `handle_battle_page` reaches `_try_all_card_keys` as a module global, which Python resolves when the call
     is made, so rebinding it on the module is enough. That leaves every other line of upstream's battle frame
-    running exactly as it did.
+    running exactly as it did. It has two callers, and rebinding takes over both - the other is the escape
+    hatch upstream reaches for after a card the list *did* name has failed to play three times running, which
+    is usually one there are no Action Points for, so choosing a different card beats flailing at every key.
 
     Runs once per task load, so it has to be safe to call again: a replacement already in place is left alone
     rather than wrapped in a second one.

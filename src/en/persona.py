@@ -3,17 +3,7 @@
 `handle_mask_card` offers three Persona cards and picks one. It finds them by testing each recognised card's
 name for the Chinese literal 人格面具, and on this client the reader returns English names, so that list comes
 back empty every time. The handler reads an empty list as "a Persona has already been chosen", presses Skip,
-and returns True - which means the screen has never once been played on the Global client, quietly, since the
-season shipped. Nothing in a log says so; the run simply moves on.
-
-The reverse OCR catalog cannot fix this one. Every other Chinese literal it rewrites is a caption - a title, a
-button, a prompt - but this is tested against a card *name*, and names are what the user's own priority lists
-are matched against. Rewriting them would fix the filter and break every list at the same time.
-
-So the marker is added rather than substituted, and only for the length of one call: a Persona's name is
-handed to upstream as `人格面具Persona of Loss`, which satisfies the filter while leaving the English name
-inside it for the priority match that follows. Ordinary cards are untouched, and so is a Chinese client, where
-the literal is already there.
+and returns True - so the screen has never once been played on the Global client since the season shipped.
 """
 
 from ok import Logger

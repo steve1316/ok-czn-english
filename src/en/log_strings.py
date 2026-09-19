@@ -1,27 +1,21 @@
 """The English that upstream's Chinese log lines and dashboard rows come out as.
 
 Data only - the matching lives in `src/en/log_text.py`. Split from it so a translation commit reads as a diff
-of string pairs rather than of logic.
-
-Both tables are keyed on the string as it was *written* in `ok_tasks/`, which is what
-`scripts/scan_log_strings.py` prints. `MESSAGES` holds the lines with nothing interpolated. `TEMPLATES` holds
-the rest, with each interpolation written `{}` on the left and `{0}`, `{1}` on the right, so the English can
-put them in its own order. Storing shapes rather than regexes keeps the keys diffable against the extractor by
-plain equality, and keeps anyone from having to hand-escape the parens sitting in a line like
-`点击目标坐标=({}, {})`.
-
-A shape with no entry is left in Chinese. That is the intended failure: `scan_log_strings.py --missing` names
-it and `tests/TestLogText.py` fails on the coverage floor, where a half-translated line would just read as a
-bug in the tool.
-
-The Tasks tab's Info rows come through the same tables, because `info_set` is patched alongside the logging
-methods. Three of those rows are composed at runtime, so no catalog entry could ever have reached them - which
-is why they are here rather than in `ok.po`.
+of string pairs rather than of logic. A shape with no entry is left in Chinese, which is the intended failure:
+`scan_log_strings.py --missing` names it and `tests/TestLogText.py` fails on the coverage floor.
 """
 
 # Lines written with nothing interpolated, keyed on the exact string. The run-status rows come first: those
 # are `info_set` keys from `log_node_status` and `log_credit` rather than log lines, and they are what the
 # Tasks tab draws down its Info column.
+# Both tables are keyed on the string as it was *written* in `ok_tasks/`, which is what
+# `scripts/scan_log_strings.py` prints. `MESSAGES` holds the lines with nothing interpolated, `TEMPLATES` the
+# rest, with each interpolation written `{}` on the left and `{0}`, `{1}` on the right so the English can put
+# them in its own order. Storing shapes rather than regexes keeps the keys diffable by plain equality, and
+# keeps anyone from hand-escaping the parens in a line like `点击目标坐标=({}, {})`.
+# The Tasks tab's Info rows come through the same tables, because `info_set` is patched alongside the logging
+# methods. Three of those rows are composed at runtime, so no catalog entry could ever have reached them -
+# which is why they are here rather than in `ok.po`.
 MESSAGES = {
     "当前信用点": "Credits",
     "版本号": "Version",

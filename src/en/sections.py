@@ -1,13 +1,8 @@
 """Fold each season's settings behind a collapsible header on the mode settings cards.
 
-ok-script lays a card's settings out as one flat list, so the Persona settings from Season 3 and the Desire setting
-from Season 4 sit among the everyday ones. Its own `sub_configs` can hide rows, but only behind a saved switch that
-reads as turning the feature off, which it does not. These headers are display only and nothing is saved.
-
-The trap is `__apply_sub_config_visibility`. Reset Config, a config-code import and any sub-config switch run it, and
-it pulls every row out of the layout, puts them back from the top in `config_keys` order and shows them all. So the
-section rows are moved to the end of `config_keys`, and the sections are re-placed and re-hidden every time it runs.
-Open state is not remembered, so every card starts with its sections collapsed.
+ok-script lays a card's settings out as one flat list, so the Persona settings from Season 3 and the Desire
+setting from Season 4 sit among the everyday ones. Its own `sub_configs` can hide rows, but only behind a saved
+switch that reads as turning the feature off, which it does not. These headers are display only.
 """
 
 from dataclasses import dataclass, field
@@ -85,6 +80,11 @@ def _show_state(section):
 
 def place_sections(card):
     """Put each section's header and rows below the card's other settings and apply its open state.
+
+    The trap is `__apply_sub_config_visibility`. Reset Config, a config-code import and any sub-config switch all
+    run it, and it pulls every row out of the layout, puts them back from the top in `config_keys` order and shows
+    them all. So the section rows are moved to the end of `config_keys`, and the sections are re-placed and
+    re-hidden every time it runs. Open state is not remembered, so every card starts with its sections collapsed.
 
     The caller re-measures the card afterwards, since both callers already do.
 

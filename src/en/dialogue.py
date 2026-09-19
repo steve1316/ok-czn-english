@@ -4,37 +4,7 @@ Upstream's only tap-the-screen handler, `handle_close_page`, keys off the litera
 prints no such prompt - a narration screen there is a line of prose over a darkened frame with a small caret in
 the corner - so nothing in Chaos or Sortie ever advances one, and a run that reaches one sits there until it is
 stopped by hand. Upstream's stuck detector works through its fallbacks and misses every time, because its
-general random-click fallback is commented out. `ChaosMode.description` asks the user to turn the game's own
-auto-story on, which covers it when the setting is found and does nothing when it is not.
-
-The reader gets almost nothing on that screen - the whole OCR pass is the health bar, the credit count and the
-prose - so the line's shape is the only signal: wide, horizontally centred and low. Width is what separates it
-from an event option, which sits in the same band, centred the same, but a third as wide.
-
-Shape alone was not enough. Over the 702 captures in `captures/` it turned up 18 matches, 15 of them tooltips,
-tip banners and selection prompts rather than prose, so two measured things joined the rule. Narration sits at
-0.834 to 0.880 where those rows sit at 0.908 and below, which is what `NARRATION_REGION` draws the line on, and
-a narration screen darkens the frame and takes the HUD with it, carrying three to six readable boxes where a
-tip banner's screen carries seventeen to fifty-six, which is `MAX_TEXT_BOXES`. With both, the corpus yields
-three matches and all three are prose. Every threshold's measurement is in `tests/TestDialogue.py`.
-
-Tapping every line is not the cheapest way through. The game advances narration itself when its auto-advance
-setting is on, and that button sits in the same screen's top right corner - a ring drawn white with a padlock
-while off, amber once running. One tap plays the rest of the cutscene out without the bot in the loop, so
-`handle_dialogue` reaches for it first and taps prose when auto-advance is already going. Some screens draw
-the button but never let it turn on, so a tap that does not take is not repeated for `TOGGLE_RETRY` seconds.
-Across twenty captured frames its patch is 10.5% to 15.0% amber every time it is running and 0.0% every time it is off.
-
-A screen that draws no button reads the same as one drawn off, and the tap that follows lands on empty space in
-the top corner - which on a narration screen advances the line anyway. That ambiguity is why the button is only
-read once `narration_line` has recognised the screen, and it caps what the button can do: a narration screen
-the shape rule misses gets no tap and no toggle, so this makes a recognised cutscene cheaper rather than
-widening what is recognised. The handler runs last, after everything that recognises a screen by name, which is
-what keeps an immediate tap safe.
-
-Chaos and Sortie get it and Story does not: Story has its own skip and auto-dialogue handlers, and none of the
-screens measured here came from it. `handle_event_task` is what picks the two out - both carry it, Story does
-not.
+general random-click fallback is commented out.
 """
 
 import time
@@ -48,6 +18,9 @@ from src.en.screen import colour_share, frame_of, in_region, patch_of
 
 logger = Logger.get_logger(__name__)
 
+# Shape alone was not enough: over the 702 captures in `captures/` it turned up 18 matches, 15 of them
+# tooltips, tip banners and selection prompts, so the band and the box count below joined the rule, and the
+# corpus then yields three matches, all prose. Every threshold's measurement is in `tests/TestDialogue.py`.
 # Where narration sits, as `(left, top, right, bottom)` screen fractions. Measured prose runs 0.834 to 0.880
 # top to bottom, and the button and tooltip rows that share the lower screen start at 0.908, so the band
 # closes above one and below the other. The line also has to be near the middle to count.
@@ -69,8 +42,9 @@ TOGGLE_POINT = ((TOGGLE_REGION[0] + TOGGLE_REGION[2]) / 2, (TOGGLE_REGION[1] + T
 # wide because the ring fades from gold at its brightest to a deep orange at its ends.
 GLOW_LOW = np.array((10, 90, 120), dtype=np.uint8)
 GLOW_HIGH = np.array((35, 255, 255), dtype=np.uint8)
-# How much of the button's patch has to be amber to call auto-advance running. It measured 0.105 to 0.150
-# on every frame showing it on and 0.000 on every frame showing it off, so this sits clear of both.
+# How much of the button's patch has to be amber to call auto-advance running. Across twenty captured frames
+# it measured 0.105 to 0.150 on every frame showing it on and 0.000 on every frame showing it off, so this
+# sits clear of both.
 MIN_GLOW = 0.05
 # How long the button gets to notice the pointer, and then to redraw before the corner is read again. The
 # hover matters: upstream taps every button this way and the client can drop a click that arrives without one.
@@ -142,6 +116,10 @@ def turn_auto_advance_on(task):
 def handle_dialogue(task):
     """Advance a narration screen, by the game's own auto-advance where that can be reached and a tap where it cannot.
 
+    A screen that draws no button reads the same as one drawn off, and the tap that follows lands on empty
+    space in the top corner - which on a narration screen advances the line anyway. That ambiguity is why the
+    button is only read once `narration_line` has recognised the screen.
+
     Args:
         task: The running task.
 
@@ -161,7 +139,10 @@ def handle_dialogue(task):
 
 
 def apply():
-    """Give Chaos and Sortie a way past the narration screens nothing else advances."""
+    """Give Chaos and Sortie a way past the narration screens nothing else advances.
+
+    Appended last, after everything that recognises a screen by name, which is what keeps an immediate tap safe.
+    """
     global _patched
     if _patched:
         return

@@ -1,23 +1,9 @@
 """Change which page handlers a mode runs, without touching `ok_tasks/`.
 
-Each mode keeps an ordered `PAGE_HANDLERS` list and its run loop takes the first handler returning True. Two
-things make editing those lists fiddlier than it looks. They hold function objects, so rebinding a name on the
-module changes nothing and the list itself has to be edited. And they do not exist yet when `Globals` is built:
-ok-script constructs `my_app` before `TaskManager` puts `ok_tasks/` on `sys.path` and imports the modes - four
-milliseconds apart in a real launch, but an ordering all the same - so an edit made from `apply()` would
-silently find nothing. Registering it here defers it to `BaseTask.after_init`, which runs once per task after
-that module has been imported.
-
-The modes are found by shape rather than by name. They are imported flat (`utils_chaos`, not
-`ok_tasks.utils_chaos`), a future mode would be missed by a hardcoded list, and `utils_story` has a
-`PAGE_HANDLERS` of its own containing neither handler we touch. All three fall out of looking for the attribute.
-
-`StandIn` covers a second shape. Upstream reaches for `random.choice` in several places in one module and a
-fork change usually wants exactly one of them, so both `src/en/events.py` and `src/en/battle.py` stand in for
-the whole module for the length of one call. `standing_in` is the third and most common: rather than
-reimplement a two-hundred-line handler, run it exactly as it is over a different answer to one question. Its
-save-set-restore has to be exception-safe every time, because a handler that throws while a module attribute is
-swapped would leave upstream permanently rewired.
+Each mode keeps an ordered `PAGE_HANDLERS` list and its run loop takes the first handler returning True. They
+hold function objects, so rebinding a name on the module changes nothing and the list itself has to be edited,
+and they do not exist yet when `Globals` is built - ok-script constructs `my_app` before `TaskManager` puts
+`ok_tasks/` on `sys.path` and imports the modes.
 """
 
 import contextlib
@@ -38,6 +24,8 @@ _pending = []
 _hooked = False
 
 
+# Upstream reaches for `random.choice` in several places in one module and a fork change usually wants exactly
+# one of them, so `src/en/events.py` and `src/en/battle.py` stand in for the whole module for one call.
 class StandIn:
     """Stands in for a module upstream calls, answering one question and passing the rest along.
 
@@ -69,11 +57,10 @@ class StandIn:
 def standing_in(target, **replacements):
     """Swap attributes on a module or object for the length of a block.
 
-    What is put back depends on where the name came from, which is why the original is read out of the
-    target's own `__dict__` rather than with `getattr`. A module attribute, or an instance attribute like
-    `all_texts`, is the target's own and is simply restored. A method is not: it lives on the class, and
-    setting it back by name would leave a bound copy on the instance shadowing the class for the rest of the
-    app's life, holding a reference cycle with the task. Removing what was set puts that lookup back.
+    The most common seam here: rather than reimplement a two-hundred-line handler, run it exactly as it is over
+    a different answer to one question. The original is read out of the target's own `__dict__` rather than
+    with `getattr`, since a method lives on the class and setting it back by name would leave a bound copy
+    shadowing it, holding a reference cycle with the task.
 
     Args:
         target: The module or object whose attributes are being stood in for.
@@ -98,6 +85,10 @@ def standing_in(target, **replacements):
 
 def each_list():
     """Yield every handler list the task modules have loaded.
+
+    Found by shape rather than by name: the modes are imported flat (`utils_chaos`, not `ok_tasks.utils_chaos`), a
+    future mode would be missed by a hardcoded list, and `utils_story` has a `PAGE_HANDLERS` of its own containing
+    neither handler this fork touches. All three fall out of looking for the attribute.
 
     Returns:
         A generator of `(module_name, list)` pairs.
@@ -128,12 +119,9 @@ def wrap(module, name, factory, tag):
     """Compose a fork-local change over an upstream function, everywhere the run reaches it.
 
     Two modules wrapping the same function is normal here, and so is the install running once per task load, so
-    one shared record of what a function already carries is what keeps the stack from growing per module per load.
-
-    The wrapper goes in two places because the two are reached differently. A page handler is only ever called
-    through a mode's list, which holds function objects, so the list entry has to be replaced. A helper like
-    `select_card` is called as a module global and is in no list. Doing both covers either kind, and covers a
-    handler that other patches rebuild by reading the module attribute back.
+    one shared record of what a function already carries keeps the stack from growing per module per load. The
+    wrapper goes both in the mode's list, which holds function objects, and on the module, where a helper like
+    `select_card` is reached - which also covers a handler other patches rebuild from the module attribute.
 
     Args:
         module: The module holding the function, normally `utils`.
@@ -215,11 +203,8 @@ def append(handler, anchor_name):
     """Register a handler to run after every existing one, in the modes carrying a given handler.
 
     Last is its own kind of precedence: a handler here only sees a frame every handler recognising a screen by
-    name has already declined, which is what makes acting on shape alone safe.
-
-    The anchor is what keeps that from spreading. `replace` and `insert_before` scope themselves to lists holding
-    the handler they name, and appending has no such brake, so it would reach every mode loaded now and every mode
-    added later. The anchor only decides *which* lists change, never where in them the handler lands.
+    name has already declined, which is what makes acting on shape alone safe. The anchor keeps that from
+    spreading - appending has no brake of its own, so it would otherwise reach every mode loaded now and later.
 
     Args:
         handler: The function to append.
@@ -242,6 +227,10 @@ def append(handler, anchor_name):
 
 def register(install):
     """Arrange for a handler-list edit to run once the modes have been imported.
+
+    Defers the edit to `BaseTask.after_init`, which runs once per task after the mode modules have been imported.
+    An edit made straight from `apply()` would silently find nothing - the two happen four milliseconds apart in a
+    real launch, but it is an ordering all the same.
 
     Args:
         install: A callable taking no arguments that performs the edit. It is run on every task load, so it
