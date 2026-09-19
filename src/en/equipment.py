@@ -1,6 +1,6 @@
 """Decide who gets a piece of equipment, what is worth buying, and refuse to pass over a Mythic one.
 
-Four narrow changes inside `handle_equipment` and the shop. None copies a handler.
+Five narrow changes inside `handle_equipment` and the shop. None copies a handler.
 
 The Equipment screen marks the row with a free slot of the right kind "Recommended". Upstream never reads it,
 picking by the save-scum target instead, or by whoever is listed first on every Sortie run since only Chaos
@@ -14,6 +14,16 @@ A Mythic is always worth taking, but upstream weighs the per-slot priority list 
 configured piece already in the slot turns one away. Only that comparison is overridden. Not visible from
 `ok_tasks/`: its top bucket already *is* Mythic here, because quality is read from one pixel of the item frame
 and a Mythic's violet matches none of its constants and falls through to `传说`.
+
+The client allows one Mythic per combatant. Upstream checks that for the combatant it is about to equip and
+then hands what that one turns down to another without checking it, so the piece can be offered to somebody
+who cannot take it - and then offered again every second after that, because the client refuses the click and
+leaves the screen exactly as it was. Combatants with no room are kept out of the rows upstream is shown.
+Should that leave none, upstream's own no-combatant path extracts the piece, which is the right answer anyway.
+Room is decided by matching `MYTHIC_RGB` outright rather than by that top bucket, which is only reliable in
+one direction: every Mythic lands in it, but so does any slot too dim to match a constant - a run logged an
+empty slot at `RGB=(24, 37, 46)` as one, and the toast the client draws over a refused click dims a whole row
+into it. `insisting_on_mythic` asks the question the other way round and can keep using the bucket.
 
 Generated equipment lists are bought from only on a spree, and only for a slot standing empty on somebody. A spree
 opens when a shop visit sees `SPREE_START` credits, and holds for that visit until credits fall to `SPREE_END`. Upstream refreshes whenever nothing matches, so a bare slot with nothing on the shelf rerolls for more.
@@ -47,10 +57,15 @@ MYTHIC = "mythic"
 # Where that caption sits, as (x1, y1, x2, y2). Under the offered piece on the left, well clear of the
 # combatant column, where item names would otherwise supply the same word.
 MYTHIC_REGION = (0.050, 0.660, 0.600, 0.800)
+# The violet the client frames a Mythic slot in, as (red, green, blue). Measured off the Equipment screen,
+# where all six Mythic slots two captures showed sat within three of it, and no other slot within ninety.
+# Nothing in `ok_tasks/` has a constant for it - upstream names Normal and Epic and calls the rest Mythic.
+MYTHIC_RGB = (137, 82, 164)
 # Names each change in the shared record of what a function already carries.
 RECOMMENDED_TAG = "recommended combatant"
 MYTHIC_TAG = "mythic equipment"
 SLOT_TAG = "every combatant's slots"
+PLACEMENT_TAG = "mythic placement"
 
 # Where the run keeps what it last saw of every combatant's three equipment slots, as a list per combatant.
 # Upstream keeps the same thing for the save-data combatant alone, and only ever for the slot it is filling.
@@ -120,6 +135,106 @@ def mythic_offer(task):
         True when the client's one-per-combatant caption is under the offered piece.
     """
     return text_in_region(task, MYTHIC, MYTHIC_REGION) is not None
+
+
+def is_mythic_colour(utils, rgb):
+    """Say whether an equipment slot's frame colour is the violet the client draws around a Mythic piece.
+
+    Args:
+        utils: The module carrying the colour compare, so the tolerance stays upstream's one.
+        rgb: The colour read off the slot, or None when it could not be read.
+
+    Returns:
+        True only on a positive match, so an unreadable slot is never one.
+    """
+    return utils._rgb_is_close(rgb, MYTHIC_RGB)
+
+
+def has_room_for_mythic(utils, colours, slot):
+    """Say whether a combatant could legally take the Mythic on offer.
+
+    Args:
+        utils: The module carrying the colour compare.
+        colours: That combatant's three slot frame colours, in slot order.
+        slot: The slot the piece on offer belongs in.
+
+    Returns:
+        True unless a Mythic already sits in one of the other two slots. One in the slot being filled is only a
+        swap, which leaves the combatant wearing the single Mythic the client allows.
+    """
+    return not any(index != slot and is_mythic_colour(utils, rgb) for index, rgb in enumerate(colours))
+
+
+def slot_colours(task, utils, rows):
+    """Read the frame colour of every combatant's three equipment slots.
+
+    Upstream's row reader already probes those points and throws the colours away behind a quality bucket.
+    Borrowing it, rather than measuring the offsets again here, keeps the positions upstream's own.
+
+    Args:
+        task: The running task, holding the frame to read.
+        utils: The module carrying the row reader and the colour probe.
+        rows: The combatants' level tags, which the offsets are measured from.
+
+    Returns:
+        One list of three colours per row, in slot order. An entry is None where the slot could not be read.
+    """
+    original = utils._equipment_quality_at
+    row_colours = []
+
+    def probed(task_, point, allow_empty=False):
+        quality, rgb = original(task_, point, allow_empty)
+        row_colours[-1].append(rgb)
+        return quality, rgb
+
+    with standing_in(utils, _equipment_quality_at=probed):
+        for row in rows:
+            row_colours.append([])
+            utils._member_equipment_qualities(task, row)
+    return row_colours
+
+
+def offering_mythic_where_it_fits(handler, utils):
+    """Wrap `handle_equipment` so a Mythic is only ever offered to a combatant that can wear it.
+
+    Rows are withheld rather than the click intercepted, because upstream already knows what to do with each
+    case. Fewer rows and it picks among the ones left. None at all and it extracts the piece, or cancels when a
+    shop is the one offering it. All three are the right answer, and none needs a handler of its own.
+
+    Args:
+        handler: The handler to wrap, upstream's or another patch's.
+        utils: The module holding `_equipment_info` and `_find_member_level_tags`, the seams this reads through.
+
+    Returns:
+        The wrapped handler.
+    """
+    def wrapped(task):
+        read_info, find_rows = utils._equipment_info, utils._find_member_level_tags
+        slot = None
+
+        def noted(task_, *args, **kwargs):
+            nonlocal slot
+            info = read_info(task_, *args, **kwargs)
+            if info:
+                slot = info["slot"]
+            return info
+
+        def fitting(task_, *args, **kwargs):
+            rows = find_rows(task_, *args, **kwargs)
+            # Read here rather than up front: this is only reached on a confirmed install-equipment page, and
+            # the rows are only worth probing for a piece the one-per-combatant rule applies to at all.
+            if not rows or slot is None or not mythic_offer(task_):
+                return rows
+            fits = [row for row, colours in zip(rows, slot_colours(task_, utils, rows))
+                    if has_room_for_mythic(utils, colours, slot)]
+            if len(fits) < len(rows):
+                logger.info(f"{len(rows) - len(fits)} of {len(rows)} combatants already wear a Mythic outside slot {slot + 1}, so this one is not offered to them")
+            return fits
+
+        with standing_in(utils, _equipment_info=noted, _find_member_level_tags=fitting):
+            return handler(task)
+
+    return wrapped
 
 
 class RecommendedChoice(StandIn):
@@ -336,13 +451,16 @@ def install(utils):
     """
     if utils is None:
         return
+    # First, which puts its row reader innermost of the three that stand in for one, so the rows it drops are
+    # dropped last - after `remembering_slots` has recorded every combatant the screen actually shows.
+    wrap(utils, "handle_equipment", lambda handler: offering_mythic_where_it_fits(handler, utils), PLACEMENT_TAG)
     wrap(utils, "handle_equipment", lambda handler: preferring_recommended(handler, utils), RECOMMENDED_TAG)
     wrap(utils, "handle_equipment", lambda handler: insisting_on_mythic(handler, utils), MYTHIC_TAG)
     wrap(utils, "handle_equipment", lambda handler: remembering_slots(handler, utils), SLOT_TAG)
 
 
 def apply():
-    """Prefer the recommended combatant, never pass over a Mythic piece, and buy generated equipment on a spree."""
+    """Prefer the recommended combatant, place or extract a Mythic, and buy generated equipment on a spree."""
     global _patched
     if _patched:
         return

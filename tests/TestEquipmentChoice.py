@@ -20,8 +20,9 @@ from tests.fakes import FakeBox as Box  # noqa: E402
 
 from src.en.rewards import EQUIPMENT_KEYS  # noqa: E402
 from src.en.equipment import (  # noqa: E402
-    ROW_PITCH, SLOTS, SPREE_END, SPREE_START, bare_slots, buying_on_spree, insisting_on_mythic, mythic_offer,
-    preferring_recommended, recommended_banner, recommended_row, remembering_slots,
+    ROW_PITCH, SLOTS, SPREE_END, SPREE_START, bare_slots, buying_on_spree, has_room_for_mythic, insisting_on_mythic,
+    install, is_mythic_colour, mythic_offer, offering_mythic_where_it_fits, preferring_recommended,
+    recommended_banner, recommended_row, remembering_slots,
 )
 
 WIDTH, HEIGHT = 1920, 1080
@@ -39,7 +40,16 @@ TOP_QUALITY = "传说"
 # The equipment code reads pixel positions, not fractions.
 FakeBox = partial(Box, width=100, height=30, units="pixels")
 
-
+# Slot frame colours measured off the stuck Equipment screen, as (red, green, blue), left to right per
+# combatant. Each row holds exactly one Mythic, which is why the client refused every click of that run.
+MEASURED_ROWS = (((60, 75, 135), (159, 87, 69), (137, 82, 164)),
+                 ((22, 17, 24), (139, 83, 163), (25, 20, 26)),
+                 ((13, 15, 16), (12, 14, 15), (138, 83, 164)))
+# The same screen with the client's refusal toast drawn over the top row, which dims its slots.
+DIMMED_ROW = ((22, 24, 30), (52, 45, 43), (137, 82, 164))
+# The colour compare the helpers reach for. Upstream's own, so its tolerance is the one being tested.
+RGB = types.SimpleNamespace(_rgb_is_close=lambda rgb, target, tolerance=30:
+                            rgb is not None and all(abs(a - b) <= tolerance for a, b in zip(rgb, target)))
 class FakeTask:
     """A task holding one OCR pass of the Equipment screen."""
 
@@ -75,6 +85,15 @@ def equipment_screen(recommended=None):
     if recommended is not None:
         boxes.append(FakeBox("推荐", BANNER_X, BANNER_Y[recommended]))
     return FakeTask(boxes)
+
+
+def mythic_screen():
+    """Build the Equipment screen with a Mythic piece on offer.
+
+    Returns:
+        A `FakeTask`.
+    """
+    return FakeTask(level_tags() + [FakeBox(MYTHIC_CAPTION, CAPTION_X, CAPTION_Y)])
 
 
 class TestRecommendedBanner(unittest.TestCase):
@@ -238,27 +257,19 @@ class TestInsistingOnMythic(unittest.TestCase):
         insisting_on_mythic(handler, utils)(task)
         return reached[0]
 
-    def screen(self):
-        """Build an Equipment screen offering a Mythic piece.
-
-        Returns:
-            A `FakeTask`.
-        """
-        return FakeTask(level_tags() + [FakeBox(MYTHIC_CAPTION, CAPTION_X, CAPTION_Y)])
-
     def test_overrides_a_refusal_from_the_priority_list(self):
-        install, reason = self.decide(self.screen(), (False, "当前装备配置优先级更高"), "史诗")
-        self.assertTrue(install)
+        installed, reason = self.decide(mythic_screen(), (False, "当前装备配置优先级更高"), "史诗")
+        self.assertTrue(installed)
         self.assertIn("Mythic", reason)
 
     def test_leaves_an_acceptance_alone(self):
         self.assertEqual((True, "配置优先级更高"),
-                         self.decide(self.screen(), (True, "配置优先级更高"), "史诗"))
+                         self.decide(mythic_screen(), (True, "配置优先级更高"), "史诗"))
 
     def test_does_not_swap_one_mythic_for_another(self):
         # The slot already holds the best thing there is, so replacing it gains nothing.
         self.assertEqual((False, "品质传说不高于传说"),
-                         self.decide(self.screen(), (False, "品质传说不高于传说"), TOP_QUALITY))
+                         self.decide(mythic_screen(), (False, "品质传说不高于传说"), TOP_QUALITY))
 
     def test_leaves_a_plain_piece_alone(self):
         self.assertEqual((False, "当前装备配置优先级更高"),
@@ -410,3 +421,171 @@ class TestBuyingOnSpree(unittest.TestCase):
         self.assertEqual(["Shock"], generated(task, "卡牌奖励优先级"))
         task, offered = self.builder(0, listed=())
         self.assertEqual([], offered(0))
+
+
+class TestMythicColour(unittest.TestCase):
+    """Telling a Mythic slot from every other slot by its frame colour."""
+
+    def test_every_measured_mythic_reads_as_one(self):
+        for rgb in ((137, 82, 164), (139, 83, 163), (138, 83, 164), (136, 96, 184)):
+            with self.subTest(rgb=rgb):
+                self.assertTrue(is_mythic_colour(RGB, rgb))
+
+    def test_nothing_else_on_the_screen_does(self):
+        # Normal, Epic, empty, and the dimmed pair a toast leaves behind. Upstream reads the last three as
+        # Mythic, because its colour read names Normal and Epic and hands everything else to the top bucket.
+        for rgb in ((60, 75, 135), (159, 87, 69), (13, 15, 16), (22, 24, 30), (52, 45, 43)):
+            with self.subTest(rgb=rgb):
+                self.assertFalse(is_mythic_colour(RGB, rgb))
+
+    def test_a_slot_that_could_not_be_read_is_not_one(self):
+        self.assertFalse(is_mythic_colour(RGB, None))
+
+
+class TestRoomForMythic(unittest.TestCase):
+    """Whether a combatant could legally take the Mythic on offer."""
+
+    def test_a_mythic_in_another_slot_leaves_no_room(self):
+        self.assertFalse(has_room_for_mythic(RGB, MEASURED_ROWS[0], 0))
+
+    def test_a_mythic_in_the_same_slot_is_only_a_swap(self):
+        self.assertTrue(has_room_for_mythic(RGB, MEASURED_ROWS[0], 2))
+
+    def test_a_combatant_wearing_none_has_room(self):
+        self.assertTrue(has_room_for_mythic(RGB, ((60, 75, 135), (159, 87, 69), (13, 15, 16)), 0))
+
+    def test_a_dimmed_row_is_blocked_only_by_its_real_mythic(self):
+        # Its other two slots hold a toast-dimmed Epic and a toast-dimmed empty, which upstream's bucket calls
+        # Mythic. Reading them as such would extract a piece this combatant could simply have swapped.
+        self.assertTrue(has_room_for_mythic(RGB, DIMMED_ROW, 2))
+        self.assertFalse(has_room_for_mythic(RGB, DIMMED_ROW, 0))
+
+    def test_a_slot_that_could_not_be_read_does_not_block(self):
+        self.assertTrue(has_room_for_mythic(RGB, (None, None, None), 0))
+
+
+class TestOfferingMythicWhereItFits(unittest.TestCase):
+    """Which combatants a Mythic piece is offered to.
+
+    The client allows one Mythic per combatant. Upstream checks that for the combatant it is about to equip and
+    then hands what that one turns down to another without checking it, so a run offered a Mythic to combatants
+    already wearing one and clicked each in turn for as long as it was on screen, refused every time.
+    """
+
+    def utils_stub(self, rows=MEASURED_ROWS, slot=0):
+        """Build a `utils` stand-in for the install screen, reading colours the way upstream does.
+
+        Args:
+            rows: The frame colour of each combatant's three slots.
+            slot: The slot the piece on offer belongs in, or None for a piece that could not be read.
+
+        Returns:
+            The stand-in namespace.
+        """
+        colours = {f"row{index}": row for index, row in enumerate(rows)}
+
+        def quality_at(task_, point, allow_empty=False):
+            return "", colours[point[0]][point[1]]
+
+        def qualities(task_, row):
+            return [utils._equipment_quality_at(task_, (row, index), allow_empty=True)[0] for index in range(3)]
+
+        utils = types.SimpleNamespace(
+            _equipment_info=lambda task_, *regions: {"slot": slot} if slot is not None else None,
+            _find_member_level_tags=lambda task_, *args, **kwargs: list(colours),
+            _member_equipment_qualities=qualities,
+            _equipment_quality_at=quality_at,
+            _rgb_is_close=RGB._rgb_is_close,
+        )
+        return utils
+
+    def rows_seen(self, task, **stub):
+        """Run the wrapped handler and report the combatant rows it was handed.
+
+        Args:
+            task: The Equipment screen to run against.
+            **stub: Passed to `utils_stub`.
+
+        Returns:
+            The rows upstream saw.
+        """
+        utils = self.utils_stub(**stub)
+        seen = []
+
+        def handler(task_):
+            utils._equipment_info(task_, (0.2, 0.3, 0.4, 0.5))
+            seen.append(utils._find_member_level_tags(task_, (0.6, 0.3, 0.7, 0.8), page="安装装备页面"))
+            return False
+
+        offering_mythic_where_it_fits(handler, utils)(task)
+        return seen[0]
+
+    def test_a_team_all_wearing_one_is_offered_nobody(self):
+        # Which is the hang: every click refused, the screen unchanged, the handler run again a second later.
+        self.assertEqual([], self.rows_seen(mythic_screen()))
+
+    def test_only_the_combatants_with_room_are_offered_it(self):
+        # The banner picks one row for upstream, so leaving a blocked row in is enough to hang on its own.
+        rows = (MEASURED_ROWS[0], ((13, 15, 16),) * 3, MEASURED_ROWS[2])
+        self.assertEqual(["row1"], self.rows_seen(mythic_screen(), rows=rows))
+
+    def test_a_combatant_wearing_one_in_that_very_slot_keeps_its_place(self):
+        # Rows 1 and 3 wear their Mythic in slot 3, so taking this one is a swap and leaves them wearing one.
+        # Row 2 wears its own in slot 2, which the piece would not replace, so it drops out.
+        self.assertEqual(["row0", "row2"], self.rows_seen(mythic_screen(), slot=2))
+
+    def test_an_ordinary_piece_is_left_alone(self):
+        self.assertEqual(["row0", "row1", "row2"], self.rows_seen(equipment_screen()))
+
+    def test_a_piece_whose_slot_could_not_be_read_is_left_alone(self):
+        self.assertEqual(["row0", "row1", "row2"], self.rows_seen(mythic_screen(), slot=None))
+
+
+class TestPlacementReadsTheWholeScreen(unittest.TestCase):
+    """The order the two row readers are installed in, which nothing else would notice breaking.
+
+    `offering_mythic_where_it_fits` and `remembering_slots` both stand in for `_find_member_level_tags`. The
+    rows the first drops must still reach the second, or the slot record `bare_slots` and the shop spree read
+    goes stale exactly while a Mythic is on screen. `install` is what orders them, so it is what is run here.
+    """
+
+    def utils_stub(self):
+        """Build a `utils` stand-in whose combatants all already wear a Mythic.
+
+        Returns:
+            A `(utils, seen)` pair, where `seen` holds the rows upstream was shown.
+        """
+        seen = []
+        colours = dict(zip(("row0", "row1", "row2"), MEASURED_ROWS))
+
+        def upstream(task_):
+            utils._equipment_info(task_, (0.2, 0.3, 0.4, 0.5))
+            seen.append(utils._find_member_level_tags(task_, (0.6, 0.3, 0.7, 0.8), page="安装装备页面"))
+            return True
+
+        upstream.__name__ = "handle_equipment"
+
+        def quality_at(task_, point, allow_empty=False):
+            rgb = colours[point[0]][point[1]]
+            return ("传说" if RGB._rgb_is_close(rgb, (137, 82, 164)) else ""), rgb
+
+        utils = types.SimpleNamespace(
+            handle_equipment=upstream,
+            _equipment_info=lambda task_, *regions: {"slot": 0},
+            _find_member_level_tags=lambda task_, *args, **kwargs: list(colours),
+            _member_equipment_qualities=lambda task_, row: [
+                utils._equipment_quality_at(task_, (row, index), allow_empty=True)[0] for index in range(3)],
+            _equipment_quality_at=quality_at,
+            _rgb_is_close=RGB._rgb_is_close,
+            _should_install_equipment=lambda *args: (False, ""),
+            random=random,
+        )
+        return utils, seen
+
+    def test_upstream_is_shown_nobody_while_every_row_is_still_recorded(self):
+        utils, seen = self.utils_stub()
+        install(utils)
+        task = FakeTask([FakeBox(MYTHIC_CAPTION, CAPTION_X, CAPTION_Y)] + level_tags())
+        utils.handle_equipment(task)
+        self.assertEqual([[]], seen)
+        self.assertEqual(3, len(getattr(task, SLOTS)))
