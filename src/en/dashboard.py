@@ -13,6 +13,13 @@ Before any run has finished, upstream's win rate divides by zero and reads `0/0 
 
 ok-script hides the table until a task first runs. Before then it shows the rows a run would not change, under an
 "Idle" title, drawn by the framework's own `update_task_info` from a stand-in task. Its X still hides it.
+
+Starting a task clears that table, and a row only exists once something writes it, so the table fell to the one
+row the first log line makes and then grew back over the next few seconds as the status handlers reached their
+first frame - the whole panel rearranging itself under the reader. The rows a run will fill are seeded blank at
+the clear instead, so the table opens at its full height and only the values arrive late. Only for a mode that
+has a `node_status`, which is the pair that runs the status handlers: Story writes none of these rows, and
+seeding them there would be rows that stay blank for the length of the run.
 """
 
 import types
@@ -31,6 +38,11 @@ COMBATANTS = "Combatants"
 UNREAD = "-"
 # The framework's own row for the last logged line.
 LOG = "Log"
+# The equipment row, and where the run keeps the reading that fills it. Upstream fills that row from a ledger
+# of what the run installed rather than from anything on screen, so `src/en/equipment.py` reads the Combatants
+# screen and leaves the line here. Absent until it has, which is what `UNREAD` says.
+GEAR = MESSAGES["装备信息"]
+TEAM_GEAR = "_en_team_gear"
 # The win rate row, and the tail upstream gives it when no run has finished. `NO_RUNS` is what it reads as instead.
 WIN_RATE = MESSAGES["当前胜率"]
 UNDIVIDED = " NaN"
@@ -57,6 +69,9 @@ ORDER = (
     MESSAGES["游戏语言"],
     MESSAGES["版本号"],
 )
+# The rows a run fills in once it is under way. Every key `ORDER` ranks except the meditation group, which is
+# one row per configured card rather than a key, and is left to arrive with the first status report.
+STARTED = tuple(key for key in ORDER if key != MEDITATING)
 # The mode setting the Game Language row reads, the same one `log_node_status` reports.
 GAME_LANGUAGE = "游戏语言"
 # The table's title before any task has run.
@@ -129,6 +144,52 @@ def zeroing_win_rate(original):
     return info_set_zeroed
 
 
+def showing_what_is_worn(original):
+    """Wrap `info_set` so the Equipment row reports what was read off the screen, not what the run installed.
+
+    Upstream's own value is a ledger: blank at the start of every run, written only by an install, and kept
+    for the save-data combatant alone, so a team wearing gear read as three empty slots. Substituting as the
+    row is written, rather than restating it afterwards, keeps one write per tick and so keeps `log_text`'s
+    suppression of unchanged rows working.
+
+    Args:
+        original: The unbound `info_set` being replaced.
+
+    Returns:
+        The replacement.
+    """
+    def info_set_as_worn(self, key, value):
+        if key == GEAR:
+            value = getattr(self, TEAM_GEAR, None) or UNREAD
+        return original(self, key, value)
+
+    return info_set_as_worn
+
+
+def seeding_the_table(original):
+    """Wrap `info_clear` so a starting run's table is its full height from the first frame.
+
+    Written straight into the dict rather than through `info_set`, which would log fifteen rows at INFO on
+    every Start and re-sort the table once per row for an order `STARTED` is already in.
+
+    Args:
+        original: The unbound `info_clear` being replaced.
+
+    Returns:
+        The replacement.
+    """
+    def info_clear_seeded(self):
+        original(self)
+        # `node_status` is built in a mode's `__init__`, so it is there to be asked long before a Start. Story
+        # has none, and runs none of the handlers that would fill these rows.
+        if getattr(self, "node_status", None) is None:
+            return
+        for key in STARTED:
+            self.info[key] = UNREAD
+
+    return info_clear_seeded
+
+
 def idle_rows(tasks):
     """Build the rows that are known before any run, in reading order.
 
@@ -199,7 +260,8 @@ def apply():
     except ImportError:
         logger.warning("could not import BaseTask, the Info rows will stay in upstream's order")
     else:
-        BaseTask.info_set = ordering(zeroing_win_rate(BaseTask.info_set))
+        BaseTask.info_set = ordering(zeroing_win_rate(showing_what_is_worn(BaseTask.info_set)))
+        BaseTask.info_clear = seeding_the_table(BaseTask.info_clear)
 
     task_tab = import_ui("tasks.TaskTab", "TaskTab")
     if task_tab is not None:

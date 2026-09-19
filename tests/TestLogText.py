@@ -232,6 +232,109 @@ class TestWinRate(unittest.TestCase):
                 self.assertEqual(shown, task.info[MESSAGES["当前胜率"]])
 
 
+class TestSeededTable(unittest.TestCase):
+    """The Info table over the first seconds of a run.
+
+    Starting a task clears it, and a row is only created by its first write, so it fell to the single row the
+    first log line makes and grew back over the next few seconds as the status handlers reached a frame. Every
+    row a run will fill is seeded blank at the clear instead, so only the values arrive late.
+    """
+
+    class Task(TestReporting.Task):
+        """A task the framework can clear, carrying the `node_status` a Chaos or Sortie mode builds."""
+
+        node_status = {"node_count": 0}
+
+        def info_clear(self):
+            self.info.clear()
+
+    def cleared(self, task=None):
+        """Start a run on a task holding a finished one's rows, and report what the table holds after.
+
+        Args:
+            task: The task to start, or None for one that runs the status handlers.
+
+        Returns:
+            The task's rows.
+        """
+        task = task if task is not None else self.Task()
+        task.info.update({dashboard.LOG: "done", dashboard.COMBATANTS: "Arabella, Adelheid, Narja"})
+        dashboard.seeding_the_table(type(task).info_clear)(task)
+        return task.info
+
+    def test_every_row_a_run_fills_is_there_from_the_start(self):
+        self.assertEqual(list(dashboard.STARTED), list(self.cleared()))
+
+    def test_the_rows_are_seeded_in_reading_order(self):
+        # Seeded straight into the dict, so they are drawn in the order they go in rather than re-sorted.
+        rows = list(self.cleared())
+        self.assertEqual(rows, [key for key in dashboard.ORDER if key in rows])
+
+    def test_nothing_of_the_last_run_survives_the_clear(self):
+        self.assertEqual({dashboard.UNREAD}, set(self.cleared().values()))
+
+    def test_the_meditation_rows_are_left_to_arrive(self):
+        # One row per configured card rather than a key, so there is nothing to seed under that rank.
+        self.assertNotIn(dashboard.MEDITATING, self.cleared())
+
+    def test_a_mode_that_fills_none_of_them_is_left_empty(self):
+        # Story runs neither status handler, so seeded rows there would stay blank for the whole run.
+        story = self.Task()
+        story.node_status = None
+        self.assertEqual({}, self.cleared(story))
+
+
+class TestEquipmentRow(unittest.TestCase):
+    """The Equipment row, which upstream fills from a ledger rather than from the screen.
+
+    That ledger is blank at the start of every run, written only by an install, and kept for the save-data
+    combatant alone, so a team visibly wearing gear reported three empty slots. Substituting as the row is
+    written, rather than restating it after, is what keeps `reporting`'s suppression of unchanged rows working
+    - two writes per tick with different values would both get through, and both are logged at INFO.
+    """
+
+    def row(self, reading=None):
+        """Write upstream's ledger value to the row and report what lands there.
+
+        Args:
+            reading: What the Combatants screen was read as, or None for a run that has not reached it.
+
+        Returns:
+            The `(task, value)` pair, so a caller can write again.
+        """
+        task = TestReporting.Task()
+        if reading is not None:
+            setattr(task, dashboard.TEAM_GEAR, reading)
+        info_set = dashboard.showing_what_is_worn(TestReporting.Task.info_set)
+        info_set(task, dashboard.GEAR, "slot 1 empty, slot 2 empty, slot 3 empty")
+        return task, task.info[dashboard.GEAR]
+
+    def test_the_reading_replaces_the_ledger(self):
+        worn = "Rare/Legend/Mythic, -/Mythic/-, -/-/Mythic"
+        self.assertEqual(worn, self.row(reading=worn)[1])
+
+    def test_the_row_says_unread_until_the_screen_has_been_read(self):
+        # Not the ledger: it reads as three empty slots, and a team carries its gear into a run, so leaving
+        # it there would repeat the very claim this replaces.
+        self.assertEqual(dashboard.UNREAD, self.row()[1])
+
+    def test_the_row_settles_so_an_unchanged_one_stops_being_logged(self):
+        # The point of writing at the row rather than after it. `reporting` only suppresses a row whose value
+        # equals the last, so a value that alternates every tick is a row that never stops reporting.
+        worn = "Rare/Legend/Mythic, -/Mythic/-, -/-/Mythic"
+        task, first = self.row(reading=worn)
+        info_set = dashboard.showing_what_is_worn(TestReporting.Task.info_set)
+        info_set(task, dashboard.GEAR, "slot 1 empty, slot 2 empty, slot 3 empty")
+        self.assertEqual(first, task.info[dashboard.GEAR])
+
+    def test_every_other_row_is_left_alone(self):
+        task = TestReporting.Task()
+        setattr(task, dashboard.TEAM_GEAR, "Rare/Legend/Mythic, -/Mythic/-, -/-/Mythic")
+        info_set = dashboard.showing_what_is_worn(TestReporting.Task.info_set)
+        info_set(task, dashboard.COMBATANTS, "Arabella, Adelheid, Narja")
+        self.assertEqual("Arabella, Adelheid, Narja", task.info[dashboard.COMBATANTS])
+
+
 class TestUpstreamStillWritesWhatWeTranslate(unittest.TestCase):
     """The rebase alarms. Upstream rewording a line leaves it Chinese, with nothing else to say so."""
 

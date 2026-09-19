@@ -13,7 +13,7 @@ from src.en import quality
 from src.en.dashboard import COMBATANTS, UNREAD
 from src.en.handlers import insert_before, loaded, register, replace
 from src.en.overrides import FARMED_COMBATANT
-from src.en.screen import COMBATANT_NAME_POINTS
+from src.en.screen import combatant_names
 
 logger = Logger.get_logger(__name__)
 
@@ -49,11 +49,7 @@ def remember_team(task, utils):
         task: The running task.
         utils: The loaded `utils` module.
     """
-    names = []
-    for x, y in COMBATANT_NAME_POINTS:
-        box = utils.find_box_at_point(task, x, y)
-        if box and box.name.strip():
-            names.append(box.name.strip())
+    names = [name for name in combatant_names(task, utils) if name]
     if names:
         task.info_set(COMBATANTS, ", ".join(names))
     classes = quality.team_classes(names)

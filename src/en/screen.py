@@ -21,8 +21,44 @@ import cv2
 import numpy as np
 
 # Where the Combatants tab writes each team member's name. Upstream's own numbers, from the read inside
-# `handle_archive_target_member`. Both `src/en/navigation.py` and `src/en/rewards.py` work from them.
+# `handle_archive_target_member`. `combatant_names` is the read every caller wanted, so they share it.
 COMBATANT_NAME_POINTS = ((0.159, 0.368), (0.432, 0.368), (0.705, 0.369))
+# Where that same screen frames each of a combatant's three equipment slots, as an offset from their name's x
+# and an absolute y. Measured off the captured screen: the tiles are 92px wide, pitched 156px, and the band
+# sampled is the 20px of plain frame colour above the item art, between the tile's top edge and the icon.
+COMBATANT_SLOT_OFFSETS = (0.0316, 0.1129, 0.1941)
+COMBATANT_SLOT_Y = 0.856
+
+
+def combatant_names(task, utils):
+    """Read the team's three names off the Combatants screen.
+
+    Args:
+        task: The running task, whose current OCR pass the names are taken from.
+        utils: The loaded `utils` module, for its point reader.
+
+    Returns:
+        One name per column, left to right, blank where the column could not be read. Positional rather than
+        packed, because the equipment slots below a column are matched to it by position.
+    """
+    names = []
+    for x, y in COMBATANT_NAME_POINTS:
+        box = utils.find_box_at_point(task, x, y)
+        names.append(box.name.strip() if box else "")
+    return names
+
+
+def combatant_slot_points(column):
+    """Give the three points to sample one combatant's equipment slots at.
+
+    Args:
+        column: Which combatant, 0 to 2, counted left to right.
+
+    Returns:
+        Three `(x, y)` points in screen fractions, in slot order.
+    """
+    name_x = COMBATANT_NAME_POINTS[column][0]
+    return tuple((name_x + offset, COMBATANT_SLOT_Y) for offset in COMBATANT_SLOT_OFFSETS)
 
 
 def centre_of(box, width, height):

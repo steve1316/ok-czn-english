@@ -30,7 +30,7 @@ from ok import Logger
 
 from src.en.handlers import loaded, register, replace, standing_in, wrap
 from src.en.overrides import FARMED_COMBATANT
-from src.en.screen import COMBATANT_NAME_POINTS
+from src.en.screen import combatant_names
 
 logger = Logger.get_logger(__name__)
 
@@ -95,13 +95,8 @@ def on_combatants_tab(task):
         # Nothing to recognise the tab by, so nothing to be confident about. Upstream handles the unset case
         # by closing the page again, and it is welcome to do that the slow way.
         return False
-    for x, y in COMBATANT_NAME_POINTS:
-        box = utils.find_box_at_point(task, x, y)
-        name = box.name.strip() if box else ""
-        # Upstream's own matching rule, so a name accepted here is one its read would accept too.
-        if name and (target in name or name in target):
-            return True
-    return False
+    # Upstream's own matching rule, so a name accepted here is one its read would accept too.
+    return any(name and (target in name or name in target) for name in combatant_names(task, utils))
 
 
 def without_the_tab_tap(original, dropped):

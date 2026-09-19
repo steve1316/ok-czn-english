@@ -11,6 +11,7 @@ about the wrong pixels.
 """
 
 import sys
+import types
 import unittest
 from functools import partial
 from pathlib import Path
@@ -22,7 +23,9 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from tests.fakes import FakeBox as Box  # noqa: E402
 
-from src.en.screen import colour_share, frame_of, in_region, patch_of, text_in_region  # noqa: E402
+from src.en.screen import (  # noqa: E402
+    colour_share, combatant_names, combatant_slot_points, frame_of, in_region, patch_of, text_in_region,
+)
 
 WIDTH, HEIGHT = 1920, 1080
 BAND = (0.400, 0.400, 0.600, 0.600)
@@ -133,6 +136,61 @@ class TestColourShare(unittest.TestCase):
     def test_nothing_to_read_is_none_of_it_rather_than_a_crash(self):
         self.assertEqual(0.0, colour_share(None, AMBER_LOW, AMBER_HIGH))
         self.assertEqual(0.0, colour_share(np.zeros((0, 0, 3), dtype=np.uint8), AMBER_LOW, AMBER_HIGH))
+
+
+class TestCombatantSlotPoints(unittest.TestCase):
+    """Where the Combatants screen frames each combatant's three equipment slots.
+
+    `find_box_at_point` has no tolerance and neither does a pixel probe, so a point that drifts reads the
+    panel behind the tile and reports every slot empty without failing. The pixel centres below were measured
+    off the captured screen - tiles 92px wide, pitched 156px, the left column's first at x=366 - so a change
+    to the offsets that moves a probe off its tile fails here rather than in a run.
+    """
+
+    def test_every_point_lands_on_its_own_tile(self):
+        measured = ((366, 522, 678), (890, 1046, 1202), (1414, 1570, 1726))
+        for column, expected in enumerate(measured):
+            with self.subTest(combatant=column + 1):
+                got = tuple(round(x * WIDTH) for x, _ in combatant_slot_points(column))
+                self.assertEqual(expected, got)
+
+    def test_every_point_sits_in_the_band_above_the_item_art(self):
+        # The tile's top edge is at y=912 and the art starts around y=938, so the frame colour is only plain
+        # in between. Sampling outside that band reads the icon instead of the tier.
+        for column in range(3):
+            for _, y in combatant_slot_points(column):
+                self.assertTrue(914 <= round(y * HEIGHT) <= 934, y)
+
+
+class TestCombatantNames(unittest.TestCase):
+    """Reading the three names, positionally, so the slots below a column belong to a combatant."""
+
+    @staticmethod
+    def utils_stub(found):
+        """Build a `utils` stand-in whose point reader answers from a table.
+
+        Args:
+            found: What `find_box_at_point` returns per x, keyed by the rounded fraction.
+
+        Returns:
+            The stand-in namespace.
+        """
+        return types.SimpleNamespace(
+            find_box_at_point=lambda task_, x, y: found.get(round(x, 3)))
+
+    def test_reads_one_name_per_column(self):
+        found = {0.159: Box("Arabella", 0, 0), 0.432: Box("Adelheid", 0, 0), 0.705: Box("Narja", 0, 0)}
+        self.assertEqual(["Arabella", "Adelheid", "Narja"],
+                         combatant_names(FakeTask([]), self.utils_stub(found)))
+
+    def test_a_column_that_could_not_be_read_keeps_its_place(self):
+        # Packing the blank out would slide every slot reading one combatant to the left.
+        found = {0.159: Box("Arabella", 0, 0), 0.705: Box("Narja", 0, 0)}
+        self.assertEqual(["Arabella", "", "Narja"],
+                         combatant_names(FakeTask([]), self.utils_stub(found)))
+
+    def test_a_blank_box_reads_as_unread(self):
+        self.assertEqual(["", "", ""], combatant_names(FakeTask([]), self.utils_stub({0.159: Box("  ", 0, 0)})))
 
 
 if __name__ == "__main__":

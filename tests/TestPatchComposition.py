@@ -98,8 +98,8 @@ class TestPatchComposition(unittest.TestCase):
     def test_equipment_carries_every_change_once(self):
         for _ in range(MODES):
             self.install_all()
-        self.assertEqual([equipment.RECOMMENDED_TAG, equipment.MYTHIC_TAG, equipment.SLOT_TAG],
-                         list(getattr(self.utils.handle_equipment, WRAPS)))
+        self.assertEqual([equipment.PLACEMENT_TAG, equipment.RECOMMENDED_TAG, equipment.MYTHIC_TAG,
+                          equipment.SLOT_TAG], list(getattr(self.utils.handle_equipment, WRAPS)))
 
     def test_the_card_reward_screen_carries_the_pin_filter_once(self):
         for _ in range(MODES):

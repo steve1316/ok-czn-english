@@ -22,9 +22,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from src.en.events import (  # noqa: E402
-    ATTACK, ATTACK_RANK, DESIRE_RANK, DIALOGUE, DIALOGUE_RANK, HEALTH_COST, HEALTH_COST_RANK, MIN_LATIN_MARKER_LENGTH, MIN_MARKER_LENGTH,
-    OFF_FACTION_RANK, QUIT, QUIT_RANK, REWARD_RANK, RankingChoice, SPARK, SPARK_RANK,
-    drop_unwanted, find_chests, fold, open_a_chest, order, rank,
+    ATTACK, ATTACK_RANK, BESIDES_CREDITS, CREDIT_RANK, DESIRE_RANK, DIALOGUE, DIALOGUE_RANK, HEALTH_COST,
+    HEALTH_COST_RANK, MIN_LATIN_MARKER_LENGTH, MIN_MARKER_LENGTH, OFF_FACTION_RANK, QUIT, QUIT_RANK,
+    REWARD_RANK, RankingChoice, SPARK, SPARK_RANK, drop_unwanted, find_chests, fold, open_a_chest, order, rank,
 )
 from tests.fakes import HEIGHT, WIDTH, FakeBox  # noqa: E402
 
@@ -40,11 +40,17 @@ REAL_OPTIONS = {
     "[Dexterous] Help with the workDice Roll 14Upon success Spark a DivineEpiphany to 1 random card(s)": SPARK_RANK,
     "Extract the essenceA selected combatant gainsEpiphany 1 time, Forcefullyobtain Curse Card(s) [Paras": SPARK_RANK,
     # Rewards.
-    "Gather salvageIncrease Credits by 140": REWARD_RANK,
     "Activate WaypointObtain Equipment [AssaultGauntlets]": REWARD_RANK,
     "Examine the rootRecover Health by 40%,Decrease all Combatants'Stress by 6": REWARD_RANK,
     "Carve the wordsSelect and obtain 1 among 3random Neutral Rare Card.": REWARD_RANK,
     "Taste the mushroomIncrease max Health by 10%": REWARD_RANK,
+    # Credits and nothing else, in both the wordings the client uses.
+    "Gather salvageIncrease Credits by 140": CREDIT_RANK,
+    "Listen to their voicesIncrease Credits by200": CREDIT_RANK,
+    "ThreatenDice Roll 14Upon success Add 80 CreditsReward": CREDIT_RANK,
+    "Give a false OrderIncrease all Combatants'Stress by 5, Increase Creditsby 40, Repeat event": CREDIT_RANK,
+    # Credits alongside something that is worth having, which is what the option is worth.
+    "Ask about the corpseObtain Equipment [Psionicby80Combat Suit], Increase Credits": REWARD_RANK,
     # Combat.
     "Enter InsideEvent Encounter: Inside theBrood Lord": ATTACK_RANK,
     "Enter through the gateEvent encounter: Inside theTreasure Trove": ATTACK_RANK,
@@ -117,13 +123,13 @@ class TestEventRanking(unittest.TestCase):
 
     def test_every_marker_survives_folding(self):
         """A marker that folded away to nothing would be `in` every description and match everything."""
-        for marker in SPARK + QUIT + ATTACK + DIALOGUE + HEALTH_COST:
+        for marker in SPARK + QUIT + ATTACK + DIALOGUE + HEALTH_COST + BESIDES_CREDITS:
             with self.subTest(marker=marker):
                 self.assertGreaterEqual(len(fold(marker)), MIN_MARKER_LENGTH)
 
     def test_latin_markers_are_whole_phrases(self):
         """Two Chinese characters are a specific word; two Latin letters would match half the screen."""
-        for marker in SPARK + QUIT + ATTACK + DIALOGUE + HEALTH_COST:
+        for marker in SPARK + QUIT + ATTACK + DIALOGUE + HEALTH_COST + BESIDES_CREDITS:
             if marker.isascii():
                 with self.subTest(marker=marker):
                     self.assertGreaterEqual(len(fold(marker)), MIN_LATIN_MARKER_LENGTH)
@@ -204,10 +210,57 @@ class TestEventRanking(unittest.TestCase):
 
     def test_equal_options_keep_their_original_order(self):
         """A stable sort keeps the ordering upstream gave us, which is left to right on screen."""
-        options = [option("Gather salvageIncrease Credits by 140"),
+        options = [option("Activate WaypointObtain Equipment [AssaultGauntlets]"),
                    option("Taste the mushroomIncrease max Health by 10%")]
         self.assertEqual([o["description"] for o in options],
                          [o["description"] for o in order(options, [], is_subsequence)])
+
+
+class TestCreditOptions(unittest.TestCase):
+    """Where credits sit against everything else an event offers.
+
+    A run tied "Increase Credits by 200" with "Select and Remove 2 Cards" and took the credits. Credits only
+    matter once a shop turns up to spend them at, while a card removed is worth the rest of the run.
+    """
+
+    # The three an event offered, and took the wrong one of.
+    CREDITS = "Listen to their voicesIncrease Credits by200"
+    REMOVE = "Destroy and silence themSelect and Remove2 Cards"
+    DESIRE = "Salvage what's usefulObtain 1 random Desire:Survival card"
+
+    def test_the_run_that_prompted_this_no_longer_takes_the_credits(self):
+        # The other two are both real gains and still tie, which is fine - either beats the money.
+        offered = (self.CREDITS, self.REMOVE, self.DESIRE)
+        best = min(rank(option) for option in offered)
+        self.assertEqual([self.REMOVE, self.DESIRE], [o for o in offered if rank(o) == best])
+
+    def test_credits_lose_to_every_kind_of_reward(self):
+        for better in (self.REMOVE, "Activate WaypointObtain Equipment [AssaultGauntlets]",
+                       "Examine the rootRecover Health by 40%"):
+            with self.subTest(better=better[:40]):
+                self.assertLess(rank(better), rank(self.CREDITS))
+
+    def test_credits_still_beat_a_battle_and_quitting(self):
+        # They are a gain with nothing owed for it, so they are only last among things worth taking.
+        for worse in ("Enter InsideEvent Encounter: Inside theBrood Lord", "离开End the event"):
+            with self.subTest(worse=worse[:40]):
+                self.assertLess(rank(self.CREDITS), rank(worse))
+
+    def test_a_credit_option_is_never_withheld(self):
+        kept = drop_unwanted([{"description": self.CREDITS}, {"description": "离开End the event"}])
+        self.assertEqual([{"description": self.CREDITS}], kept)
+
+    def test_a_screen_offering_only_credits_still_takes_them(self):
+        options = [{"description": self.CREDITS}]
+        self.assertEqual(options, drop_unwanted(options))
+
+    def test_the_random_stand_in_takes_the_removal_over_the_credits(self):
+        options = [{"description": self.CREDITS}, {"description": self.REMOVE}]
+        self.assertEqual(self.REMOVE, RankingChoice(random).choice(options)["description"])
+
+    def test_spending_is_not_gaining(self):
+        # Ranked before the credit check, so an option that pays credits for a spark is worth the spark.
+        self.assertEqual(SPARK_RANK, rank("HaggleSpend 100 CreditsSpark an Epiphany to 1 card"))
 
 
 class TestDesireOptions(unittest.TestCase):
@@ -247,7 +300,7 @@ class TestDesireOptions(unittest.TestCase):
 
     def test_the_faction_alone_is_not_enough(self):
         # "Claim" is an ordinary English word; without Desire beside it this is just a reward.
-        self.assertEqual(REWARD_RANK, rank("Claim the salvageIncrease Credits by 140", "Claim"))
+        self.assertEqual(REWARD_RANK, rank("Claim the salvageObtain Equipment [AssaultGauntlets]", "Claim"))
 
     def test_no_target_leaves_the_ranking_as_it_was(self):
         self.assertEqual(REWARD_RANK, rank(self.TARGETED))
