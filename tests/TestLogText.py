@@ -232,6 +232,58 @@ class TestWinRate(unittest.TestCase):
                 self.assertEqual(shown, task.info[MESSAGES["当前胜率"]])
 
 
+class TestSeededTable(unittest.TestCase):
+    """The Info table over the first seconds of a run.
+
+    Starting a task clears it, and a row is only created by its first write, so it fell to the single row the
+    first log line makes and grew back over the next few seconds as the status handlers reached a frame. Every
+    row a run will fill is seeded blank at the clear instead, so only the values arrive late.
+    """
+
+    class Task(TestReporting.Task):
+        """A task the framework can clear, carrying the `node_status` a Chaos or Sortie mode builds."""
+
+        node_status = {"node_count": 0}
+
+        def info_clear(self):
+            self.info.clear()
+
+    def cleared(self, task=None):
+        """Start a run on a task holding a finished one's rows, and report what the table holds after.
+
+        Args:
+            task: The task to start, or None for one that runs the status handlers.
+
+        Returns:
+            The task's rows.
+        """
+        task = task if task is not None else self.Task()
+        task.info.update({dashboard.LOG: "done", dashboard.COMBATANTS: "Arabella, Adelheid, Narja"})
+        dashboard.seeding_the_table(type(task).info_clear)(task)
+        return task.info
+
+    def test_every_row_a_run_fills_is_there_from_the_start(self):
+        self.assertEqual(list(dashboard.STARTED), list(self.cleared()))
+
+    def test_the_rows_are_seeded_in_reading_order(self):
+        # Seeded straight into the dict, so they are drawn in the order they go in rather than re-sorted.
+        rows = list(self.cleared())
+        self.assertEqual(rows, [key for key in dashboard.ORDER if key in rows])
+
+    def test_nothing_of_the_last_run_survives_the_clear(self):
+        self.assertEqual({dashboard.UNREAD}, set(self.cleared().values()))
+
+    def test_the_meditation_rows_are_left_to_arrive(self):
+        # One row per configured card rather than a key, so there is nothing to seed under that rank.
+        self.assertNotIn(dashboard.MEDITATING, self.cleared())
+
+    def test_a_mode_that_fills_none_of_them_is_left_empty(self):
+        # Story runs neither status handler, so seeded rows there would stay blank for the whole run.
+        story = self.Task()
+        story.node_status = None
+        self.assertEqual({}, self.cleared(story))
+
+
 class TestEquipmentRow(unittest.TestCase):
     """The Equipment row, which upstream fills from a ledger rather than from the screen.
 
