@@ -6,9 +6,16 @@ The Equipment screen marks the row with a free slot of the right kind "Recommend
 picking by the save-scum target instead, or by whoever is listed first on every Sortie run since only Chaos
 carries that setting. What the target turns down goes to a random other combatant, so that pick takes the
 banner's row too whenever it is one of them. The banner is paired to a row by taking the nearest level tag *below* it, which leaves
-most of a row's height of slack either way. Only the preference moves, so upstream's own quality comparison
-still decides install-versus-give-away. A log trap follows from it: upstream numbers combatants by that list,
-so `第N号主战员` counts from the recommended row rather than the top of the screen.
+most of a row's height of slack either way. A log trap follows from it: upstream numbers combatants by that
+list, so `第N号主战员` counts from the recommended row rather than the top of the screen.
+
+That fallback only decided the pieces the save-data combatant turned down, so anything it could use went to it
+and the banner was never read - a run gave it a ring the client was recommending elsewhere. A piece the user's
+priority list does not name has no reason to go there, so the save-data combatant stands down for one and the
+fallback hands it to the banner's row. A named piece still goes where upstream's own comparison sends it, and
+so does a Mythic: `offering_mythic_where_it_fits` may have dropped the banner's row for having no room, and
+standing down then would extract a piece somebody could have worn. Sortie is left alone, since it has no
+save-data combatant and already falls to the banner.
 
 A Mythic is always worth taking, but upstream weighs the per-slot priority list ahead of quality, so a
 configured piece already in the slot turns one away. Only that comparison is overridden. Not visible from
@@ -406,21 +413,26 @@ def insisting_on_mythic(handler, utils):
 
 
 def preferring_recommended(handler, utils):
-    """Wrap `handle_equipment` so the recommended combatant is the one it falls back to.
+    """Wrap `handle_equipment` so the recommended combatant is the one it gives to.
+
+    It becomes the row upstream falls back to, and for a piece the user's priority list does not name, the row
+    the save-data combatant stands down in favour of.
 
     Args:
         handler: The handler to wrap, upstream's or another patch's.
-        utils: The module holding `_find_member_level_tags` and `random`, the seams the choice is changed through.
+        utils: The module holding the row reader, the save-data binding, the install decision and `random`.
 
     Returns:
         The wrapped handler.
     """
     def wrapped(task):
-        original = utils._find_member_level_tags
+        read_rows, bind = utils._find_member_level_tags, utils._find_target_member_index
+        decide = utils._should_install_equipment
         chooser = RecommendedChoice(utils.random)
+        recommended, bound = [], []
 
         def preferred(task_, *args, **kwargs):
-            tags = original(task_, *args, **kwargs)
+            tags = read_rows(task_, *args, **kwargs)
             # Read here rather than up front: upstream calls this once, on a confirmed install-equipment page,
             # so the banner is looked for on those frames instead of on every frame of the run. Reading the
             # task from the call rather than closing over the outer one also keeps a 6MB frame from being
@@ -428,13 +440,36 @@ def preferring_recommended(handler, utils):
             row = recommended_row(task_, recommended_banner(task_), tags)
             if row is not None:
                 chooser.row = tags[row]
+                recommended.append(row)
             if not row:
                 # Row 0 too: it is already where upstream falls back to, so there is nothing to move.
                 return tags
             logger.info(f"the client recommends combatant {row + 1} of {len(tags)}, so it is preferred")
             return [tags[row], *tags[:row], *tags[row + 1:]]
 
-        with standing_in(utils, _find_member_level_tags=preferred, random=chooser):
+        def noted(task_, *args, **kwargs):
+            index = bind(task_, *args, **kwargs)
+            bound.append(index)
+            return index
+
+        def decided(task_, current_name, current_quality, new_equipment):
+            install, reason = decide(task_, current_name, current_quality, new_equipment)
+            if not install or new_equipment.get("rank") is not None or not recommended:
+                return install, reason
+            # Nothing to stand down for in a mode carrying no save-data combatant, which falls to the banner
+            # already, nor for a Mythic, whose banner row may have been dropped for having no room.
+            if "刷存档主战员" not in getattr(task_, "default_config", {}) or mythic_offer(task_):
+                return install, reason
+            # The reorder above leaves the banner's row first, so a save-data combatant bound anywhere else is
+            # one the banner is not on. Unbound, upstream gives the piece away without being asked to.
+            if not bound or bound[-1] in (None, 0):
+                return install, reason
+            logger.info(f"the client recommends another combatant and the priority list does not name this "
+                        f"piece, so the save-data combatant stands down: {reason}")
+            return False, "the client recommends another combatant"
+
+        with standing_in(utils, _find_member_level_tags=preferred, _find_target_member_index=noted,
+                         _should_install_equipment=decided, random=chooser):
             return handler(task)
 
     return wrapped

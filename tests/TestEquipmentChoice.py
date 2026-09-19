@@ -200,6 +200,8 @@ class TestPreferringRecommended(unittest.TestCase):
         """
         return types.SimpleNamespace(
             _find_member_level_tags=lambda task_, *args, **kwargs: level_tags(),
+            _find_target_member_index=lambda task_, *args, **kwargs: None,
+            _should_install_equipment=lambda task_, name, quality, new: (True, "品质普通高于未安装"),
             random=random,
         )
 
@@ -252,6 +254,103 @@ class TestPreferringRecommended(unittest.TestCase):
                     preferring_recommended(handler, utils)(equipment_screen(recommended=recommended))
                 self.assertLessEqual(set(picked), expected)
                 self.assertIs(random, utils.random)
+
+class TestStandingDownForTheRecommended(unittest.TestCase):
+    """Who an ordinary piece goes to when the client is recommending somebody.
+
+    Upstream asks the save-data combatant first and only offers the rest what it turns down, so a piece it
+    could use never reached the banner - a run installed a ring on it while the client recommended another
+    combatant. A piece the user's priority list does not name now goes to the banner's row instead.
+    """
+
+    def stub(self, bound=2, install=(True, "品质普通高于未安装")):
+        """Build a `utils` stand-in for the install screen.
+
+        Args:
+            bound: The row upstream binds the save-data combatant to, counted after the reorder, or None.
+            install: What upstream's own comparison decides.
+
+        Returns:
+            The stand-in namespace.
+        """
+        return types.SimpleNamespace(
+            _find_member_level_tags=lambda task_, *args, **kwargs: level_tags(),
+            _find_target_member_index=lambda task_, *args, **kwargs: bound,
+            _should_install_equipment=lambda task_, name, quality, new: install,
+            random=random,
+        )
+
+    def decide(self, task, rank=None, **stub):
+        """Run the wrapped handler and report the decision upstream was handed.
+
+        Args:
+            task: The Equipment screen to run against.
+            rank: The piece's place in the user's priority list, or None when it names no such piece.
+            **stub: Passed to `stub`.
+
+        Returns:
+            The `(install, reason)` pair.
+        """
+        utils = self.stub(**stub)
+        reached = []
+
+        def handler(task_):
+            utils._find_member_level_tags(task_, (0.6, 0.3, 0.7, 0.8), page="安装装备页面")
+            utils._find_target_member_index(task_, [], (0.6, 0.2, 0.7, 0.9))
+            reached.append(utils._should_install_equipment(task_, "", "", {"rank": rank, "quality": "普通"}))
+            return False
+
+        preferring_recommended(handler, utils)(task)
+        return reached[0]
+
+    def chaos(self, recommended=2):
+        """Build a Chaos install screen, which is the mode that binds a save-data combatant.
+
+        Args:
+            recommended: The row carrying the banner, or None for no banner.
+
+        Returns:
+            A `FakeTask`.
+        """
+        task = equipment_screen(recommended=recommended)
+        task.default_config = {"刷存档主战员": "Arabella"}
+        return task
+
+    def test_the_save_data_combatant_stands_down_for_an_unnamed_piece(self):
+        install, reason = self.decide(self.chaos())
+        self.assertFalse(install)
+        self.assertIn("recommends", reason)
+
+    def test_a_piece_the_priority_list_names_still_goes_to_it(self):
+        self.assertEqual((True, "品质普通高于未安装"), self.decide(self.chaos(), rank=0))
+
+    def test_nothing_changes_when_the_banner_is_on_the_save_data_combatant(self):
+        # The reorder puts the banner's row first, so a save-data combatant bound there is the banner's own.
+        self.assertEqual((True, "品质普通高于未安装"), self.decide(self.chaos(), bound=0))
+
+    def test_nothing_changes_without_a_banner(self):
+        self.assertEqual((True, "品质普通高于未安装"), self.decide(self.chaos(recommended=None)))
+
+    def test_nothing_changes_when_the_save_data_combatant_was_not_found(self):
+        # Upstream gives the piece away by itself then, and the fallback is already the banner's row.
+        self.assertEqual((True, "品质普通高于未安装"), self.decide(self.chaos(), bound=None))
+
+    def test_a_refusal_is_left_as_it_was(self):
+        self.assertEqual((False, "当前装备配置优先级更高"),
+                         self.decide(self.chaos(), install=(False, "当前装备配置优先级更高")))
+
+    def test_sortie_is_left_alone(self):
+        # It binds no save-data combatant, so the banner's row is already the one upstream prefers.
+        task = equipment_screen(recommended=2)
+        task.default_config = {}
+        self.assertEqual((True, "品质普通高于未安装"), self.decide(task))
+
+    def test_a_mythic_is_left_on_its_own_path(self):
+        # Its banner row may have been dropped for having no room, and standing down would then extract it.
+        task = self.chaos()
+        task.all_texts = task.all_texts + [FakeBox(MYTHIC_CAPTION, CAPTION_X, CAPTION_Y)]
+        self.assertEqual((True, "品质普通高于未安装"), self.decide(task))
+
 
 class TestMythicOffer(unittest.TestCase):
     """Spotting a Mythic piece."""
@@ -626,6 +725,7 @@ class TestPlacementReadsTheWholeScreen(unittest.TestCase):
                 utils._equipment_quality_at(task_, (row, index), allow_empty=True)[0] for index in range(3)],
             _equipment_quality_at=quality_at,
             _rgb_is_close=RGB._rgb_is_close,
+            _find_target_member_index=lambda task_, *args, **kwargs: None,
             _should_install_equipment=lambda *args: (False, ""),
             random=random,
         )
