@@ -232,6 +232,57 @@ class TestWinRate(unittest.TestCase):
                 self.assertEqual(shown, task.info[MESSAGES["当前胜率"]])
 
 
+class TestEquipmentRow(unittest.TestCase):
+    """The Equipment row, which upstream fills from a ledger rather than from the screen.
+
+    That ledger is blank at the start of every run, written only by an install, and kept for the save-data
+    combatant alone, so a team visibly wearing gear reported three empty slots. Substituting as the row is
+    written, rather than restating it after, is what keeps `reporting`'s suppression of unchanged rows working
+    - two writes per tick with different values would both get through, and both are logged at INFO.
+    """
+
+    def row(self, reading=None):
+        """Write upstream's ledger value to the row and report what lands there.
+
+        Args:
+            reading: What the Combatants screen was read as, or None for a run that has not reached it.
+
+        Returns:
+            The `(task, value)` pair, so a caller can write again.
+        """
+        task = TestReporting.Task()
+        if reading is not None:
+            setattr(task, dashboard.TEAM_GEAR, reading)
+        info_set = dashboard.showing_what_is_worn(TestReporting.Task.info_set)
+        info_set(task, dashboard.GEAR, "slot 1 empty, slot 2 empty, slot 3 empty")
+        return task, task.info[dashboard.GEAR]
+
+    def test_the_reading_replaces_the_ledger(self):
+        worn = "Rare/Legend/Mythic, empty/Mythic/empty, empty/empty/Mythic"
+        self.assertEqual(worn, self.row(reading=worn)[1])
+
+    def test_the_row_says_unread_until_the_screen_has_been_read(self):
+        # Not the ledger: it reads as three empty slots, and a team carries its gear into a run, so leaving
+        # it there would repeat the very claim this replaces.
+        self.assertEqual(dashboard.UNREAD, self.row()[1])
+
+    def test_the_row_settles_so_an_unchanged_one_stops_being_logged(self):
+        # The point of writing at the row rather than after it. `reporting` only suppresses a row whose value
+        # equals the last, so a value that alternates every tick is a row that never stops reporting.
+        worn = "Rare/Legend/Mythic, empty/Mythic/empty, empty/empty/Mythic"
+        task, first = self.row(reading=worn)
+        info_set = dashboard.showing_what_is_worn(TestReporting.Task.info_set)
+        info_set(task, dashboard.GEAR, "slot 1 empty, slot 2 empty, slot 3 empty")
+        self.assertEqual(first, task.info[dashboard.GEAR])
+
+    def test_every_other_row_is_left_alone(self):
+        task = TestReporting.Task()
+        setattr(task, dashboard.TEAM_GEAR, "Rare/Legend/Mythic, empty/Mythic/empty, empty/empty/Mythic")
+        info_set = dashboard.showing_what_is_worn(TestReporting.Task.info_set)
+        info_set(task, dashboard.COMBATANTS, "Arabella, Adelheid, Narja")
+        self.assertEqual("Arabella, Adelheid, Narja", task.info[dashboard.COMBATANTS])
+
+
 class TestUpstreamStillWritesWhatWeTranslate(unittest.TestCase):
     """The rebase alarms. Upstream rewording a line leaves it Chinese, with nothing else to say so."""
 

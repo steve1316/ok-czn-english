@@ -31,6 +31,11 @@ COMBATANTS = "Combatants"
 UNREAD = "-"
 # The framework's own row for the last logged line.
 LOG = "Log"
+# The equipment row, and where the run keeps the reading that fills it. Upstream fills that row from a ledger
+# of what the run installed rather than from anything on screen, so `src/en/equipment.py` reads the Combatants
+# screen and leaves the line here. Absent until it has, which is what `UNREAD` says.
+GEAR = MESSAGES["装备信息"]
+TEAM_GEAR = "_en_team_gear"
 # The win rate row, and the tail upstream gives it when no run has finished. `NO_RUNS` is what it reads as instead.
 WIN_RATE = MESSAGES["当前胜率"]
 UNDIVIDED = " NaN"
@@ -129,6 +134,28 @@ def zeroing_win_rate(original):
     return info_set_zeroed
 
 
+def showing_what_is_worn(original):
+    """Wrap `info_set` so the Equipment row reports what was read off the screen, not what the run installed.
+
+    Upstream's own value is a ledger: blank at the start of every run, written only by an install, and kept
+    for the save-data combatant alone, so a team wearing gear read as three empty slots. Substituting as the
+    row is written, rather than restating it afterwards, keeps one write per tick and so keeps `log_text`'s
+    suppression of unchanged rows working.
+
+    Args:
+        original: The unbound `info_set` being replaced.
+
+    Returns:
+        The replacement.
+    """
+    def info_set_as_worn(self, key, value):
+        if key == GEAR:
+            value = getattr(self, TEAM_GEAR, None) or UNREAD
+        return original(self, key, value)
+
+    return info_set_as_worn
+
+
 def idle_rows(tasks):
     """Build the rows that are known before any run, in reading order.
 
@@ -199,7 +226,7 @@ def apply():
     except ImportError:
         logger.warning("could not import BaseTask, the Info rows will stay in upstream's order")
     else:
-        BaseTask.info_set = ordering(zeroing_win_rate(BaseTask.info_set))
+        BaseTask.info_set = ordering(zeroing_win_rate(showing_what_is_worn(BaseTask.info_set)))
 
     task_tab = import_ui("tasks.TaskTab", "TaskTab")
     if task_tab is not None:

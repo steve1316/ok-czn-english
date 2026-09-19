@@ -1,6 +1,6 @@
 """Decide who gets a piece of equipment, what is worth buying, and refuse to pass over a Mythic one.
 
-Five narrow changes inside `handle_equipment` and the shop. None copies a handler.
+Six narrow changes inside `handle_equipment`, the shop and the Tasks tab. None copies a handler.
 
 The Equipment screen marks the row with a free slot of the right kind "Recommended". Upstream never reads it,
 picking by the save-scum target instead, or by whoever is listed first on every Sortie run since only Chaos
@@ -25,6 +25,25 @@ one direction: every Mythic lands in it, but so does any slot too dim to match a
 empty slot at `RGB=(24, 37, 46)` as one, and the toast the client draws over a refused click dims a whole row
 into it. `insisting_on_mythic` asks the question the other way round and can keep using the bucket.
 
+The Tasks tab's Equipment row reported a ledger of what the run installed rather than anything on screen, so a
+team wearing gear read as three empty slots. The reading that replaces it is taken off the Combatants screen,
+where all three combatants and all nine slots are drawn together and the run already stops once to photograph
+the save target. `dashboard.showing_what_is_worn` puts it in the row, left to right in the order the team's
+own row above it names them, so a column holds its place even when nothing in it could be read. It is that
+moment's snapshot and does not follow an install made later in the run.
+
+When it is read matters more than it looks. The capture closes the page and sleeps a second before it returns,
+and `all_texts` survives that while `frame` does not - a read afterwards gets the names off the held OCR pass
+and the pixels off whatever the client has drawn since, which reported nine slots as empty and unknown. So the
+read rides the capture's own tap instead: the first tap made while all three names are on screen is the last
+moment the page is still open.
+
+A slot's tier comes from its frame colour, and the names upstream gives those colours are each one tier out on
+this client. Thirteen pieces the logs name, checked against the client's own rarity table: `普通` is RARE,
+`史诗` is LEGEND, and `传说` is UNIQUE - which the client itself calls Mythic in the only line where it names
+a tier, so that is the word the row uses. A colour matching none of them reads as unknown rather than being
+folded into the top tier the way upstream folds it.
+
 Generated equipment lists are bought from only on a spree, and only for a slot standing empty on somebody. A spree
 opens when a shop visit sees `SPREE_START` credits, and holds for that visit until credits fall to `SPREE_END`. Upstream refreshes whenever nothing matches, so a bare slot with nothing on the shelf rerolls for more.
 A list the user configured is bought from as upstream always did. The shop shows no combatants, and upstream keeps
@@ -35,9 +54,10 @@ A run that has not reached it counts every slot bare, which is the truth - a run
 from ok import Logger
 
 from src.en import rewards
+from src.en.dashboard import TEAM_GEAR
 from src.en.handlers import StandIn, loaded, register, standing_in, wrap
 from src.en.rewards import EQUIPMENT_KEYS
-from src.en.screen import text_in_region
+from src.en.screen import COMBATANT_NAME_POINTS, combatant_names, combatant_slot_points, text_in_region
 from src.en.state import GEAR, say_once
 
 logger = Logger.get_logger(__name__)
@@ -66,6 +86,17 @@ RECOMMENDED_TAG = "recommended combatant"
 MYTHIC_TAG = "mythic equipment"
 SLOT_TAG = "every combatant's slots"
 PLACEMENT_TAG = "mythic placement"
+TEAM_GEAR_TAG = "team equipment"
+
+# What each of upstream's own quality buckets is called on this client, where every one of its names is a tier
+# out. The top bucket is missing on purpose: upstream puts every colour it cannot place there, so it is the one
+# answer that has to be checked rather than translated.
+BUCKET_TIERS = {"": "empty", "普通": "Rare", "史诗": "Legend"}
+# What the top bucket is called once a colour has confirmed it, and what an unconfirmed one is called instead.
+# Upstream has no second answer - folding the unplaceable into its top bucket is how a toast-dimmed slot came
+# to read as the rarest thing in the game.
+MYTHIC_TIER = "Mythic"
+UNKNOWN_TIER = "?"
 
 # Where the run keeps what it last saw of every combatant's three equipment slots, as a list per combatant.
 # Upstream keeps the same thing for the save-data combatant alone, and only ever for the slot it is filling.
@@ -192,6 +223,83 @@ def slot_colours(task, utils, rows):
             row_colours.append([])
             utils._member_equipment_qualities(task, row)
     return row_colours
+
+
+def slot_tier(task, utils, point):
+    """Name the tier held in the equipment slot framed at a point.
+
+    Args:
+        task: The running task, holding the frame to read.
+        utils: The module carrying the colour read, whose buckets and tolerances are upstream's own.
+        point: Where on the slot's frame to sample, as `(x, y)` in screen fractions.
+
+    Returns:
+        The client's name for that tier, or `UNKNOWN_TIER` for a colour upstream could not place and the
+        Mythic violet does not match either.
+    """
+    quality, rgb = utils._equipment_quality_at(task, point, allow_empty=True)
+    if quality in BUCKET_TIERS:
+        return BUCKET_TIERS[quality]
+    return MYTHIC_TIER if is_mythic_colour(utils, rgb) else UNKNOWN_TIER
+
+
+def team_equipment(task, utils):
+    """Read every combatant's three equipment slots off the Combatants screen.
+
+    Args:
+        task: The running task, holding the frame to read.
+        utils: The module carrying the colour read.
+
+    Returns:
+        One `"<tier>/<tier>/<tier>"` line per combatant, left to right, so a line's place in the list is which
+        combatant it belongs to. Empty when not one slot on the screen could be read, because a frame that
+        gave nothing must leave the row saying what it already said rather than overwrite it with unknowns.
+    """
+    columns = [[slot_tier(task, utils, point) for point in combatant_slot_points(column)]
+               for column in range(len(COMBATANT_NAME_POINTS))]
+    if all(tier == UNKNOWN_TIER for tiers in columns for tier in tiers):
+        return []
+    return ["/".join(tiers) for tiers in columns]
+
+
+def reading_the_team_gear(handler, utils, utils_chaos):
+    """Wrap `handle_archive_target_member` so the team's gear is read while its page is still open.
+
+    The capture's last act is to tap the page closed and sleep, so anything read after it returns is read off
+    a screen that has moved on. Riding its taps puts the read back on the frame it was looking at. The first
+    tap made while all three names are on screen is the one: the tap before it selects the tab and happens
+    ahead of the capture's own OCR, so the names are not all there yet.
+
+    Args:
+        handler: The handler to wrap, upstream's or another patch's.
+        utils: The module carrying the name and colour reads.
+        utils_chaos: The module the capture taps through, which is the seam the read rides.
+
+    Returns:
+        The wrapped handler.
+    """
+    def wrapped(task):
+        original = utils_chaos._move_and_click
+        worn = []
+
+        def tapped(task_, x, y):
+            names = [] if worn else combatant_names(task_, utils)
+            if names and all(names):
+                worn.append(", ".join(team_equipment(task_, utils)))
+                setattr(task_, TEAM_GEAR, worn[0])
+                logger.info(f"the team is wearing {worn[0]}")
+            return original(task_, x, y)
+
+        with standing_in(utils_chaos, _move_and_click=tapped):
+            handled = handler(task)
+        if handled and not worn:
+            # Loud on purpose. The read is placed by shape rather than by name, so a capture that stops
+            # tapping while its names are up would leave the row quietly saying what it said before.
+            logger.warning("the Combatants page was captured without its equipment being read, so the "
+                           "Equipment row keeps what it had")
+        return handled
+
+    return wrapped
 
 
 def offering_mythic_where_it_fits(handler, utils):
@@ -443,12 +551,17 @@ def buying_on_spree(generate, utils_of):
     return generated
 
 
-def install(utils):
-    """Wrap the equipment handler wherever the run reaches it.
+def install(utils, utils_chaos=None):
+    """Wrap the equipment handler wherever the run reaches it, and the capture the team is read from.
 
     Args:
         utils: The loaded `utils` module, or None when it is not importable yet.
+        utils_chaos: The loaded `utils_chaos` module, which carries the capture the team is read off. Left
+            out or None until it is imported, and on a load that never imports it there is no capture to ride.
     """
+    if utils_chaos is not None and utils is not None:
+        wrap(utils_chaos, "handle_archive_target_member",
+             lambda handler: reading_the_team_gear(handler, utils, utils_chaos), TEAM_GEAR_TAG)
     if utils is None:
         return
     # First, which puts its row reader innermost of the three that stand in for one, so the rows it drops are
@@ -460,10 +573,10 @@ def install(utils):
 
 
 def apply():
-    """Prefer the recommended combatant, place or extract a Mythic, and buy generated equipment on a spree."""
+    """Prefer the recommended combatant, place or extract a Mythic, buy on a spree, and report what is worn."""
     global _patched
     if _patched:
         return
-    register(lambda: install(loaded("utils")))
+    register(lambda: install(loaded("utils"), loaded("utils_chaos")))
     rewards.generated_list = buying_on_spree(rewards.generated_list, lambda: loaded("utils"))
     _patched = True

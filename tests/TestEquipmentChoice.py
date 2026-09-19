@@ -19,11 +19,14 @@ sys.path.insert(0, str(REPO_ROOT))
 from tests.fakes import FakeBox as Box  # noqa: E402
 
 from src.en.rewards import EQUIPMENT_KEYS  # noqa: E402
+from src.en.screen import combatant_slot_points  # noqa: E402
 from src.en.equipment import (  # noqa: E402
     ROW_PITCH, SLOTS, SPREE_END, SPREE_START, bare_slots, buying_on_spree, has_room_for_mythic, insisting_on_mythic,
-    install, is_mythic_colour, mythic_offer, offering_mythic_where_it_fits, preferring_recommended,
-    recommended_banner, recommended_row, remembering_slots,
+    MYTHIC_TIER, UNKNOWN_TIER, install, is_mythic_colour, mythic_offer, offering_mythic_where_it_fits,
+    preferring_recommended, reading_the_team_gear, recommended_banner, recommended_row, remembering_slots,
+    slot_tier, team_equipment,
 )
+from src.en.dashboard import TEAM_GEAR  # noqa: E402
 
 WIDTH, HEIGHT = 1920, 1080
 # Where each row's level tag sits, and where the banner sits when that row is the recommended one.
@@ -50,6 +53,21 @@ DIMMED_ROW = ((22, 24, 30), (52, 45, 43), (137, 82, 164))
 # The colour compare the helpers reach for. Upstream's own, so its tolerance is the one being tested.
 RGB = types.SimpleNamespace(_rgb_is_close=lambda rgb, target, tolerance=30:
                             rgb is not None and all(abs(a - b) <= tolerance for a, b in zip(rgb, target)))
+# The Combatants screen behind the user's report, read left to right: Arabella wears one of each, and the two
+# beside her wear a Mythic and nothing else. The Equipment row called all nine of these slots empty.
+TEAM_COLOURS = (((60, 75, 135), (160, 88, 69), (136, 82, 164)),
+                ((15, 15, 15), (136, 82, 164), (20, 18, 18)),
+                ((20, 18, 19), (19, 18, 17), (136, 82, 164)))
+TEAM_NAMES = ("Arabella", "Adelheid", "Narja")
+# The two taps upstream's capture makes: the tab it reads, then the corner that shuts the page. Upstream's own
+# numbers, from `handle_archive_target_member`.
+COMBATANTS_TAB = (0.201, 0.056)
+CLOSE_TAP = (0.960, 0.054)
+# Upstream's own quality buckets, keyed by the colour it reads them off. Its top bucket takes everything it
+# cannot place, which is the behaviour the tier naming has to see to be tested at all.
+BUCKETS = {(15, 15, 15): "", (61, 76, 138): "普通", (160, 88, 69): "史诗"}
+
+
 class FakeTask:
     """A task holding one OCR pass of the Equipment screen."""
 
@@ -85,6 +103,37 @@ def equipment_screen(recommended=None):
     if recommended is not None:
         boxes.append(FakeBox("推荐", BANNER_X, BANNER_Y[recommended]))
     return FakeTask(boxes)
+
+
+def team_utils(colours=TEAM_COLOURS, names=TEAM_NAMES):
+    """Build a `utils` stand-in for the Combatants screen, reading colours the way upstream does.
+
+    Args:
+        colours: The frame colour of each combatant's three slots, or None for a frame that gave nothing.
+        names: The name read above each column, blank where it could not be read.
+
+    Returns:
+        The stand-in namespace. Setting `open` to False on it is the page being tapped closed: the names stay
+        readable, because the capture holds its OCR pass, and the pixels stop, because the frame does not.
+    """
+    by_name_x = dict(zip((0.159, 0.432, 0.705), names))
+    points = {point: colours[column][slot]
+              for column in range(3) if colours
+              for slot, point in enumerate(combatant_slot_points(column))}
+
+    def quality_at(task_, point, allow_empty=False):
+        rgb = points.get(point)
+        bucket = next((name for target, name in BUCKETS.items() if RGB._rgb_is_close(rgb, target)), None)
+        return (bucket if bucket is not None else "传说"), rgb
+
+    utils = types.SimpleNamespace(
+        find_box_at_point=lambda task_, x, y: FakeBox(by_name_x.get(round(x, 3), "") if utils.open else "", 0, 0),
+        _equipment_quality_at=lambda task_, point, allow_empty=False: quality_at(task_, point, allow_empty)
+        if utils.open else ("", None),
+        _rgb_is_close=RGB._rgb_is_close,
+        _move_and_click=lambda task_, x, y: None,
+        open=True)
+    return utils
 
 
 def mythic_screen():
@@ -589,3 +638,129 @@ class TestPlacementReadsTheWholeScreen(unittest.TestCase):
         utils.handle_equipment(task)
         self.assertEqual([[]], seen)
         self.assertEqual(3, len(getattr(task, SLOTS)))
+
+
+
+class TestSlotTier(unittest.TestCase):
+    """Naming the tier a slot holds.
+
+    Upstream's own names are a tier out on this client. Thirteen pieces the logs name, checked against the
+    client's rarity table, put RARE behind the bucket it calls Normal, LEGEND behind Epic, and UNIQUE - the
+    Mythic the client allows one of - behind Legend.
+    """
+
+    def tier(self, rgb):
+        """Name the tier a slot drawn in one colour holds.
+
+        Args:
+            rgb: The colour the slot's frame is drawn in, or None for a slot that could not be read.
+
+        Returns:
+            The tier's name.
+        """
+        colours = ((rgb, rgb, rgb),) * 3
+        return slot_tier(FakeTask([]), team_utils(colours=colours), combatant_slot_points(0)[0])
+
+    def test_each_measured_colour_names_its_tier(self):
+        for rgb, expected in (((15, 15, 15), "empty"), ((60, 75, 135), "Rare"),
+                              ((160, 88, 69), "Legend"), ((136, 82, 164), MYTHIC_TIER)):
+            with self.subTest(rgb=rgb):
+                self.assertEqual(expected, self.tier(rgb))
+
+    def test_a_colour_upstream_cannot_place_is_not_quietly_called_mythic(self):
+        # Upstream hands every such colour to its top bucket, which is why a toast-dimmed slot read as the
+        # rarest thing in the game. Only the violet itself earns that name here.
+        self.assertEqual(UNKNOWN_TIER, self.tier((120, 200, 40)))
+
+    def test_a_slot_that_could_not_be_read_is_unknown(self):
+        self.assertEqual(UNKNOWN_TIER, self.tier(None))
+
+
+class TestTeamEquipment(unittest.TestCase):
+    """Reading all nine slots off the Combatants screen."""
+
+    def test_the_screen_the_row_got_wrong_now_reads_true(self):
+        self.assertEqual(["Rare/Legend/Mythic", "empty/Mythic/empty", "empty/empty/Mythic"],
+                         team_equipment(FakeTask([]), team_utils()))
+
+    def test_a_column_that_could_not_be_read_keeps_its_place(self):
+        # The row carries no names, so which combatant a line belongs to is which place it is in. A column
+        # dropped for being unreadable would hand the next one's gear to the combatant before it.
+        colours = (TEAM_COLOURS[0], (None, None, None), TEAM_COLOURS[2])
+        self.assertEqual(["Rare/Legend/Mythic", "?/?/?", "empty/empty/Mythic"],
+                         team_equipment(FakeTask([]), team_utils(colours=colours)))
+
+    def test_a_frame_that_gave_nothing_reports_nothing(self):
+        # An unreadable frame must leave the row saying what it said, not overwrite it with nine unknowns.
+        self.assertEqual([], team_equipment(FakeTask([]), team_utils(colours=None, names=("", "", ""))))
+
+
+class TestReadingTheTeamGear(unittest.TestCase):
+    """When the team's gear is read, which is the whole of whether it reads anything.
+
+    Upstream's capture taps the page closed and sleeps a second before it returns. `all_texts` survives that
+    and `frame` does not, so a read afterwards got the names off the held OCR pass and the pixels off whatever
+    the client had drawn since - a run reported "Arabella empty/empty/empty, Narja ?/?/?" for a team plainly
+    wearing gear. The read rides the capture's own taps so it lands while the page is still up.
+    """
+
+    def capture(self, utils, taps=(COMBATANTS_TAB, CLOSE_TAP)):
+        """Stand in for upstream's capture: it taps the tab, reads its names, then taps the page shut.
+
+        Args:
+            utils: The stand-in the capture taps and reads through.
+            taps: The taps it makes, in order.
+
+        Returns:
+            The handler.
+        """
+        def handle_archive_target_member(task):
+            for x, y in taps:
+                utils._move_and_click(task, x, y)
+                if (x, y) == CLOSE_TAP:
+                    # What closing costs: the frame moves on, the held OCR pass does not.
+                    utils.open = False
+            return True
+
+        return handle_archive_target_member
+
+    def read(self, utils, **capture):
+        """Run the wrapped capture and report what the row was left holding.
+
+        Args:
+            utils: The stand-in to run against.
+            **capture: Passed to `capture`.
+
+        Returns:
+            The row's text, or None when nothing was read.
+        """
+        task = FakeTask([])
+        reading_the_team_gear(self.capture(utils, **capture), utils, utils)(task)
+        return getattr(task, TEAM_GEAR, None)
+
+    def test_the_gear_is_read_while_the_page_is_still_open(self):
+        self.assertEqual("Rare/Legend/Mythic, empty/Mythic/empty, empty/empty/Mythic", self.read(team_utils()))
+
+    def test_reading_after_the_page_shuts_is_what_this_prevents(self):
+        # The same stand-in read with the page already shut, which is the row the run actually reported.
+        utils = team_utils()
+        utils.open = False
+        self.assertEqual(["empty/empty/empty"] * 3, team_equipment(FakeTask([]), utils))
+
+    def test_the_tab_tap_is_too_early_to_read_on(self):
+        # It happens before the capture's own OCR, so the names are not all up yet and the read waits.
+        utils = team_utils(names=("", "", ""))
+        self.assertIsNone(self.read(utils, taps=(COMBATANTS_TAB,)))
+
+    def test_the_read_happens_once_however_many_taps_follow(self):
+        utils = team_utils()
+        task = FakeTask([])
+        reading_the_team_gear(self.capture(utils, taps=(CLOSE_TAP, CLOSE_TAP)), utils, utils)(task)
+        self.assertEqual("Rare/Legend/Mythic, empty/Mythic/empty, empty/empty/Mythic", getattr(task, TEAM_GEAR))
+
+    def test_a_capture_that_never_shows_its_names_leaves_what_was_known(self):
+        utils = team_utils(names=("", "", ""))
+        task = FakeTask([])
+        setattr(task, TEAM_GEAR, "Rare/Legend/Mythic, empty/Mythic/empty, empty/empty/Mythic")
+        reading_the_team_gear(self.capture(utils), utils, utils)(task)
+        self.assertEqual("Rare/Legend/Mythic, empty/Mythic/empty, empty/empty/Mythic", getattr(task, TEAM_GEAR))
