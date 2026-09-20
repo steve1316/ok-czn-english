@@ -91,11 +91,7 @@ jobs:
         timeout-minutes: 10
         shell: pwsh
         run: |
-          Get-ChildItem -LiteralPath tests -Filter "Test*.py" | Sort-Object Name | ForEach-Object {
-            $module = "tests.$([System.IO.Path]::GetFileNameWithoutExtension($_.Name))"
-            python -u -m unittest $module -v
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
+          .\run_tests.ps1
 
       # pyappify re-reads pyappify.yml from the checked-out tree on every launch and replaces the
       # installed profile list with it, so a merge that brings back upstream's china / global profiles
