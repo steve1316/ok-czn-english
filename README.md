@@ -62,6 +62,10 @@ This software is open-source and free, intended for personal learning purposes o
 
 ### Sortie Mode (Auto Battle)
 - **Auto Battle**: card play driven by key recognition, with customizable play priority
+- **Smart Card Play**: decides the cards your priority list does not name on what they actually do - what they
+  cost, what kind they are and what their effect text says - instead of pressing every hotkey in turn and
+  taking whatever plays. On by default. Your Play Priority list still comes first, and turning this off goes
+  back to upstream's behaviour
 - **Auto Card Management**: obtain, remove, copy and flash cards
 - **Member Selection**: picks battle members by your priority configuration, and drafts by role when you have not set one
 - **Route Selection**: recognises node types and advances by priority
@@ -71,7 +75,11 @@ This software is open-source and free, intended for personal learning purposes o
 ### Chaos Mode
 - **Auto Card Management**: remove, copy, flash, grant flash and convert cards
 - **Route Selection**: identifies rest, event, elite and normal enemy nodes
-- **Event Choices**: prefers an Epiphany, then rewards, then a fight, and only ends an event when nothing else is offered
+- **Event Choices**: prefers an Epiphany, then a Desire card of the faction you are building, then other
+  rewards, then credits, then a fight, and only ends an event when nothing else is offered
+- **Desire Cards (Season 4)**: reads the faction tag printed on each card and takes the one that builds your
+  chosen faction, on the Desire screen, the merge screen, and the ordinary card screen an event hands one over
+  on. Set the faction under **Desire Faction**
 - **Dice Rolls**: rerolls a failed roll while it can afford to
 - **Mental Breakdown Treatment**: visits the trauma center automatically
 - **Save Data Handling**: deletes save data, with a configurable retention count
@@ -84,6 +92,14 @@ This software is open-source and free, intended for personal learning purposes o
 ### Buying and Keeping
 - **Leave a priority list empty and the bot fills it in** from what is on screen, taking only Unique and Legend
   cards and equipment, and skipping a card no one on your team could hold. A list you configure always wins.
+- **Your build preset's pins are honoured.** Where a card screen offers something your preset marked, the pick
+  is made from the pinned cards alone. A screen with nothing pinned, or everything pinned, is left as it was.
+- **A Mythic piece is never passed over** for a configured one, and is only offered to a combatant with room
+  for it, since the client allows one Mythic each.
+- **A piece your priority list does not name goes to the combatant the client marks "Recommended"**, instead
+  of to whoever happens to be first.
+- **Generated equipment is only bought on a spree** - once a shop visit opens with enough credits in hand, and
+  only for a slot standing empty - so a run does not spend itself replacing gear it is already wearing.
 
 ### Notifications
 - **Windows notifications** when a run starts, when one finishes (with the floor reached and the running score),
@@ -110,10 +126,17 @@ Every setting is named and described in English, and each mode expands in place.
 - **Switching to this build re-seeds these settings once.** Upstream ships one Chinese player's build as the
   defaults, and those names can never match English OCR. Route Priority is the exception and keeps its original
   values, since those are internal labels rather than text read off the screen.
+- **Each season's settings fold away.** Season 3's Persona settings and Season 4's Desire setting sit behind
+  collapsible headers, so the settings you change every run are not buried among them.
 
 <img src="docs/images/option_picker.png" alt="The card picker, searching a list of options with one card's effect shown on hover" />
 
 ### General
+- **Narration Screens**: advances the Global client's cutscenes in Chaos and Sortie, by switching on the game's
+  own auto-advance where that button can be reached and tapping through where it cannot. Upstream has no
+  handler for these, so a run that reached one used to sit there until it was stopped by hand
+- **Tasks Tab**: the Info table is drawn in reading order, names your team above the equipment it is wearing,
+  and shows every row from the moment a run starts rather than filling in over the first few seconds
 - **Resolutions**: 1920x1080, 1600x900, 1280x720 and other 16:9 sizes
 - **Background Mode**: runs while the game window is minimized or obscured
 - **Clients**: Global (English) is this fork's focus. Simplified and Traditional Chinese still work, including
@@ -153,7 +176,7 @@ python main_debug.py    # debug mode, which adds the Debug and Run Code tabs
 ```
 
 ```powershell
-.\run_tests.ps1         # every tests\Test*.py, each in its own process
+.\run_tests.ps1         # every tests\Test*.py, sharing one process bar the manifest reader
 ```
 
 ### Translations
