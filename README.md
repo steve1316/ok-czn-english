@@ -22,52 +22,41 @@
 
 > [!NOTE]
 > A fork of [baoxin1100/ok-kes](https://github.com/baoxin1100/ok-kes) targeting the **Global (English)** client.
-> Upstream's Simplified and Traditional Chinese support still ships and keeps working. The original work is
-> baoxin1100's and ok-oldking's.
+> Simplified and Traditional Chinese still ship and keep working, Android emulators included. The original work
+> is baoxin1100's and ok-oldking's.
 
 > [!IMPORTANT]
-> **The Global client runs end to end.** Chaos and Sortie complete full runs in English. The game-text catalog
-> still grows as new screens turn up, so an unfamiliar screen can stall a run.
+> Chaos and Sortie complete full runs in English. The game-text catalog still grows as new screens turn up, so
+> an unfamiliar screen can stall a run.
+
+> [!CAUTION]
+> An external tool for personal learning, free and open source. It interacts with the game only by simulating
+> standard user interface actions, and never modifies game files or data. Any issues arising from its use are
+> not the responsibility of this project or its developers.
 
 ---
 
-## Disclaimer
-
-> [!CAUTION]
-> By using this software you acknowledge that you have read, understood and agreed to the statement below, and
-> that you voluntarily assume all potential risks.
-
-<details>
-<summary>Read the full disclaimer</summary>
-
-This software is an external auxiliary tool designed to automate parts of the gameplay for Chaos Zero Nightmare. It interacts with the game solely by simulating standard user interface actions. This project aims to simplify repetitive user tasks and does not disrupt game balance or provide an unfair advantage. It will never modify any game files or data.
-
-This software is open-source and free, intended for personal learning purposes only. Any issues arising from the use of this software are not the responsibility of this project or its developers.
-
-</details>
-
 ## Quick Start
 
-1. **Download the installer** from [Releases](https://github.com/steve1316/ok-czn-english/releases).
-2. **Install and run.** The program updates itself on launch.
-3. **Start the game**, connect its window, then press **Start** on the mode you want under **Tasks**.
+1. **Download the installer** from [Releases](https://github.com/steve1316/ok-czn-english/releases), install
+   and run. The program updates itself on launch.
+2. **Run as Administrator.** The game is elevated, so without this Windows blocks every simulated click and
+   the app reports no error.
+3. **In the game's own settings**, turn on shortcut key display, and turn on auto-battle and auto-story for
+   Chaos Manifestation.
+4. **Connect the game window**, then press **Start** on a mode under **Tasks**.
 
-> [!WARNING]
-> The game runs elevated, so run this as Administrator too. Without it Windows blocks every simulated click,
-> and the app reports no error.
+On a Chinese client, set **Game Language** in the mode you use. On Global there is nothing to set.
 
-## Main Features
+## What It Does
 
 <img src="docs/images/tasks.png" alt="The Tasks tab, with a Start button on each of the three modes" />
 
-### Sortie Mode (Auto Battle)
-- **Auto Battle**: card play driven by key recognition, with customizable play priority
-- **Smart Card Play**: decides the cards your priority list does not name on what they actually do - what they
-  cost, what kind they are and what their effect text says - instead of pressing every hotkey in turn and
-  taking whatever plays. On by default. Your Play Priority list still comes first, and turning this off goes
-  back to upstream's behaviour
+### Sortie Mode
+- **Auto Battle**: plays cards by key recognition, in your Play Priority order
+- **Smart Card Play**: picks the cards your list does not name on cost, kind and effect text
 - **Auto Card Management**: obtain, remove, copy and flash cards
-- **Member Selection**: picks battle members by your priority configuration, and drafts by role when you have not set one
+- **Member Selection**: picks by your priority list, and drafts by role when you have not set one
 - **Route Selection**: recognises node types and advances by priority
 - **Shop Handling**: enters the Dellang Shop to remove cards
 - **Ether Supply Detection**: detects low stamina and exits
@@ -75,11 +64,8 @@ This software is open-source and free, intended for personal learning purposes o
 ### Chaos Mode
 - **Auto Card Management**: remove, copy, flash, grant flash and convert cards
 - **Route Selection**: identifies rest, event, elite and normal enemy nodes
-- **Event Choices**: prefers an Epiphany, then a Desire card of the faction you are building, then other
-  rewards, then credits, then a fight, and only ends an event when nothing else is offered
-- **Desire Cards (Season 4)**: reads the faction tag printed on each card and takes the one that builds your
-  chosen faction, on the Desire screen, the merge screen, and the ordinary card screen an event hands one over
-  on. Set the faction under **Desire Faction**
+- **Event Choices**: ranks Epiphany, then Desire card, reward, credits, fight, then ending the event
+- **Desire Cards (Season 4)**: builds the faction you pick under **Desire Faction**
 - **Dice Rolls**: rerolls a failed roll while it can afford to
 - **Mental Breakdown Treatment**: visits the trauma center automatically
 - **Save Data Handling**: deletes save data, with a configurable retention count
@@ -87,79 +73,42 @@ This software is open-source and free, intended for personal learning purposes o
 
 ### Story Mode (Semi-Auto)
 - **Auto Dialogue**: skips story dialogue
-- **Manual Mode Switching**: hand back to Sortie or Chaos mode for battles and chaos stages
+- **Manual Mode Switching**: start Sortie by hand for battle stages, Chaos for chaos stages
+- **Battle teams**: configured by hand in this mode
 
-### Buying and Keeping
-- **Leave a priority list empty and the bot fills it in** from what is on screen, taking only Unique and Legend
-  cards and equipment, and skipping a card no one on your team could hold. A list you configure always wins.
-- **Your build preset's pins are honoured.** Where a card screen offers something your preset marked, the pick
-  is made from the pinned cards alone. A screen with nothing pinned, or everything pinned, is left as it was.
-- **A Mythic piece is never passed over** for a configured one, and is only offered to a combatant with room
-  for it, since the client allows one Mythic each.
-- **A piece your priority list does not name goes to the combatant the client marks "Recommended"**, instead
-  of to whoever happens to be first.
-- **Generated equipment is only bought on a spree** - once a shop visit opens with enough credits in hand, and
-  only for a slot standing empty - so a run does not spend itself replacing gear it is already wearing.
+### Cards and Equipment
+- **An empty priority list is filled in** from the screen, taking only Unique and Legend
+- **Build preset pins are honoured** wherever a card screen offers something your preset marked
+- **A Mythic piece is never passed over**, and only goes to a combatant with room for one
+- **An unlisted piece goes to the combatant the client marks "Recommended"**
+- **Generated equipment is bought only on a spree**, and only for a slot standing empty
 
-### Notifications
-- **Windows notifications** when a run starts, when one finishes (with the floor reached and the running score),
-  and when the bot has been stuck on one screen for a minute.
-
-### Config Export & Import
-- **Export**: encodes the current mode's configuration as a text code you can share
-- **Import**: applies a shared configuration code, across versions
-
-> [!NOTE]
-> Upstream's config upload and popular-config browser are **removed** in this fork. The pool is the upstream CN
-> community's, so a Global client's card and combatant names match nothing in it.
+### Everywhere
+- **Narration Screens**: advances the Global client's cutscenes in Chaos and Sortie
+- **Notifications**: a Windows toast when a run starts, finishes, or sticks on one screen for a minute
+- **Config Export & Import**: share a mode's settings as a text code (upstream's config upload is removed)
+- **Resolutions**: 1920x1080, 1600x900, 1280x720 and other 16:9 sizes
+- **Background Mode**: runs while the game window is minimized or obscured
 
 ### Settings
 
-Every setting is named and described in English, and each mode expands in place.
-
 <img src="docs/images/settings.png" alt="Chaos Mode expanded, showing its settings with English names and descriptions" />
 
-- **Names are picked from a list, not typed.** Cards, equipment and combatants come from the client's own
-  localization data, so a typo cannot silently stop a setting matching. Long lists gain a search box.
-- **Hover an option to see its in-game effect and base values.** Attack figures are the card's base coefficient,
-  not the damage a particular Combatant would deal. Search matches names only.
-- **Switching to this build re-seeds these settings once.** Upstream ships one Chinese player's build as the
-  defaults, and those names can never match English OCR. Route Priority is the exception and keeps its original
-  values, since those are internal labels rather than text read off the screen.
-- **Each season's settings fold away.** Season 3's Persona settings and Season 4's Desire setting sit behind
-  collapsible headers, so the settings you change every run are not buried among them.
+Every setting is named and described in English, and each season's settings fold behind their own header.
+
+- **Names are picked from a list, not typed**, so a typo cannot silently stop a setting matching
+- **Hover an option** for its in-game effect and base values
+- **Switching to this build re-seeds the defaults once**, since upstream's are Chinese names OCR cannot match
 
 <img src="docs/images/option_picker.png" alt="The card picker, searching a list of options with one card's effect shown on hover" />
 
-### General
-- **Narration Screens**: advances the Global client's cutscenes in Chaos and Sortie, by switching on the game's
-  own auto-advance where that button can be reached and tapping through where it cannot. Upstream has no
-  handler for these, so a run that reached one used to sit there until it was stopped by hand
-- **Tasks Tab**: the Info table is drawn in reading order, names your team above the equipment it is wearing,
-  and shows every row from the moment a run starts rather than filling in over the first few seconds
-- **Resolutions**: 1920x1080, 1600x900, 1280x720 and other 16:9 sizes
-- **Background Mode**: runs while the game window is minimized or obscured
-- **Clients**: Global (English) is this fork's focus. Simplified and Traditional Chinese still work, including
-  Android emulators, via each mode's Game Language setting
-
-## Usage Guide
-
-1. **Global client**: nothing to set. Game Language already defaults to English, and the game text itself is
-   handled by the reverse OCR catalog described below.
-2. **Chinese clients**: set Game Language to Simplified or Traditional Chinese in the mode you use.
-3. **Auto Battle**: card play reads the keybinds, so enable shortcut key display in the game's settings.
-4. **Chaos Manifestation**: turn on the game's own auto-battle and auto-story options.
-5. **Story Mode**: start Sortie Mode by hand for battle stages and Chaos Mode for chaos stages. Battle teams are
-   configured manually.
-
 ## Troubleshooting
 
-1. **Clicks do nothing**: run the app as Administrator. The game is elevated, and Windows blocks input sent to it
-   from a normal process.
-2. **Antivirus**: add the install directory to your antivirus exceptions, Windows Defender included.
-3. **Display settings**: turn off graphics card filters and sharpening, use the game's default brightness, and
-   disable overlays that draw on the game window.
-4. **Resolution**: make sure the game is running at a 16:9 aspect ratio.
+1. **Clicks do nothing**: run as Administrator.
+2. **Antivirus**: add the install directory to your exceptions, Windows Defender included.
+3. **Display**: turn off graphics card filters and sharpening, use the game's default brightness, and disable
+   overlays that draw on the game window.
+4. **Resolution**: run the game at a 16:9 aspect ratio.
 5. **Version**: check you are on the latest release.
 
 ---
@@ -188,27 +137,19 @@ Two catalogs live under `i18n/`, and they run in **opposite directions**:
 | `ok.po` | Chinese msgid to English msgstr | App UI labels, task names, setting descriptions |
 | `ocr.po` | English msgid to Chinese msgstr | Game text read off the screen |
 
-`ocr.po` is what makes the Chinese task code work against an English client. The framework applies it in
-`OCR.fix_texts()` before any handler sees a text box, rewriting English game text into the Chinese literal the
-handler compares against. That is why `ok_tasks/` needs no changes for the Global client.
+`ocr.po` is what makes the Chinese task code work against an English client: it rewrites English game text into
+the Chinese literal the handler compares against, before any handler sees the text box. That is why `ok_tasks/`
+needs no changes for the Global client.
 
 > [!CAUTION]
 > **Never put UI strings in `ocr.po`.** It rewrites game text, so a stray entry there corrupts recognition.
 
-Every `ocr.po` entry carries a `# From <handler>: <literal>` comment naming the call site it serves. A merge from
-upstream can then be diffed against those comments to find which new Chinese literals still need an English entry.
-
 The app only ever reads the compiled `.mo`, so recompile after editing a `.po`:
 
 ```bash
-python scripts/compile_i18n.py            # write the .mo files
-python scripts/compile_i18n.py --check    # verify only, as CI does
-```
-
-To find the English text for a new entry, dump a screenshot the way the app reads it:
-
-```bash
-python scripts/ocr_dump.py <image> --missing
+python scripts/compile_i18n.py                 # write the .mo files
+python scripts/compile_i18n.py --check         # verify only, as CI does
+python scripts/ocr_dump.py <image> --missing   # find the English text for a new entry
 ```
 
 ### Staying in sync with upstream
