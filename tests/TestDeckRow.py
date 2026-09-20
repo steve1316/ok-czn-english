@@ -156,17 +156,16 @@ class TestPreferringTargetRow(unittest.TestCase):
         preferring_target_row(select_card, utils)(task, [], count=1, action=action)
         return seen["gap"], seen["cards"]
 
-    def test_turns_on_the_row_rule_for_a_removal(self):
-        self.assertEqual((True, ["low", "top"]), self.run_action("移除"))
-
-    def test_orders_the_grid_for_an_epiphany(self):
-        self.assertEqual((True, ["low", "top"]), self.run_action("闪光"))
-
-    def test_covers_the_second_epiphany_wording(self):
-        self.assertEqual((True, ["low", "top"]), self.run_action("灵光"))
-
-    def test_leaves_other_operations_alone(self):
-        self.assertEqual((False, ["top", "low"]), self.run_action("复制"))
+    def test_only_the_operations_worth_steering_get_the_row_rule(self):
+        """The kept combatant's row goes first for a removal or an Epiphany, and nowhere else."""
+        for description, action, expected in (
+            ("a removal", "移除", (True, ["low", "top"])),
+            ("an epiphany", "闪光", (True, ["low", "top"])),
+            ("the second epiphany wording", "灵光", (True, ["low", "top"])),
+            ("any other operation", "复制", (False, ["top", "low"])),
+        ):
+            with self.subTest(description):
+                self.assertEqual(expected, self.run_action(action))
 
     def test_does_not_look_for_the_portrait_on_other_operations(self):
         task = FakeTask(portrait_y=0.8)

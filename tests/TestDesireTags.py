@@ -24,14 +24,19 @@ from src.en.desire import FACTIONS, MAX_LEVEL, points_of, tags_of  # noqa: E402
 class TestTagsOf(unittest.TestCase):
     """Reading faction and points out of a tag."""
 
-    def test_a_plain_tag_is_one_point(self):
-        self.assertEqual({"Inquiry": 1}, tags_of("[ Inquiry ]"))
-
-    def test_a_numbered_tag_carries_its_points(self):
-        self.assertEqual({"Inquiry": 2}, tags_of("[ Inquiry 2 ]"))
-
-    def test_a_merged_tag_carries_both(self):
-        self.assertEqual({"Control": 1, "Inquiry": 2}, tags_of("[ Control / Inquiry 2 ]"))
+    def test_a_tag_is_read_however_the_client_drew_it(self):
+        """Each reading is a shape the client or the reader actually produces."""
+        for description, text, expected in (
+            ("a plain tag is one point", "[ Inquiry ]", {"Inquiry": 1}),
+            ("a numbered tag carries its points", "[ Inquiry 2 ]", {"Inquiry": 2}),
+            ("a merged tag carries both", "[ Control / Inquiry 2 ]", {"Control": 1, "Inquiry": 2}),
+            # The reader drops one bracket often; the log has "Control]" on its own line.
+            ("a lost opening bracket still reads", "Control]", {"Control": 1}),
+            ("missing spaces still read", "[Claim 2 /Survival]", {"Claim": 2, "Survival": 1}),
+            ("letter case does not matter", "[survival]", {"Survival": 1}),
+        ):
+            with self.subTest(description):
+                self.assertEqual(expected, tags_of(text))
 
     def test_the_order_of_a_merged_tag_does_not_matter(self):
         self.assertEqual(tags_of("[ Control / Inquiry 2 ]"), tags_of("[ Inquiry 2 / Control ]"))
@@ -41,29 +46,23 @@ class TestTagsOf(unittest.TestCase):
             with self.subTest(faction=faction):
                 self.assertEqual({faction: 1}, tags_of(f"[ {faction} ]"))
 
-    def test_a_lost_opening_bracket_still_reads(self):
-        # The reader drops one bracket often; the log has "Control]" on its own line.
-        self.assertEqual({"Control": 1}, tags_of("Control]"))
-
-    def test_missing_spaces_still_read(self):
-        self.assertEqual({"Claim": 2, "Survival": 1}, tags_of("[Claim 2 /Survival]"))
-
-    def test_letter_case_does_not_matter(self):
-        self.assertEqual({"Survival": 1}, tags_of("[survival]"))
-
-    def test_effect_text_is_not_a_tag(self):
-        for text in ("Draw 1", "3 Vulnerable to targets that possess harmful effects",
-                     "1 Weaken and 3 Scorched to all enemies", "Skill", ""):
-            with self.subTest(text=text):
+    def test_what_is_not_a_tag_is_refused(self):
+        """A reading that is not a tag has to come back empty rather than half-read."""
+        for description, text in (
+            ("plain effect text", "Draw 1"),
+            ("effect text with numbers", "3 Vulnerable to targets that possess harmful effects"),
+            ("effect text naming two counts", "1 Weaken and 3 Scorched to all enemies"),
+            ("a type label", "Skill"),
+            ("nothing at all", ""),
+            # From a real run: the reader glued the tag to the sentence under it. Reading a faction out of
+            # this would be right, but reading its points would not, so the whole thing is turned away.
+            ("a tag run into the effect", "Control200% Damage to allDefeat: 4Scorched to aenemiesrandom enemy"),
+            ("a faction word in a sentence", "Gain Control of a random enemy for 1 turn"),
+            # "tContirol / survival" is what one frame actually produced.
+            ("a garbled faction word", "tContirol / survival"),
+        ):
+            with self.subTest(description):
                 self.assertEqual({}, tags_of(text))
-
-    def test_a_tag_run_into_the_effect_is_refused(self):
-        # From a real run: the reader glued the tag to the sentence under it. Reading a faction out of this
-        # would be right, but reading its points would not, so the whole thing is turned away.
-        self.assertEqual({}, tags_of("Control200% Damage to allDefeat: 4Scorched to aenemiesrandom enemy"))
-
-    def test_a_faction_word_in_a_sentence_is_refused(self):
-        self.assertEqual({}, tags_of("Gain Control of a random enemy for 1 turn"))
 
     def test_points_beyond_the_level_cap_are_refused(self):
         # A card stops at level three, so a bigger number came from the effect text running into the tag -
@@ -76,10 +75,6 @@ class TestTagsOf(unittest.TestCase):
 
     def test_a_tag_exactly_at_the_cap_is_kept(self):
         self.assertEqual({"Control": MAX_LEVEL}, tags_of(f"[ Control {MAX_LEVEL} ]"))
-
-    def test_a_garbled_faction_word_is_refused(self):
-        # "tContirol / survival" is what one frame actually produced.
-        self.assertEqual({}, tags_of("tContirol / survival"))
 
 
 class TestPointsOf(unittest.TestCase):

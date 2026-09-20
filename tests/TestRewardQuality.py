@@ -215,8 +215,15 @@ class TestSuits(unittest.TestCase):
         # Arabella wants all-attack equipment, and the game says how much.
         self.assertEqual(COMBATANT_TAG_WEIGHTS["Arabella"]["allatk"], suits("Nature's Hostility", "Arabella"))
 
-    def test_a_piece_she_does_not_want_scores_nothing(self):
-        self.assertEqual(0, suits("Assault Boots", "Arabella"))
+    def test_nothing_it_has_no_opinion_on_scores_anything(self):
+        """Silence and dislike both read as zero, which is what keeps an unlabelled piece from sinking."""
+        for description, piece, combatant in (
+            ("a piece she does not want", "Assault Boots", "Arabella"),
+            ("a combatant the data does not know", "Nature's Hostility", "Someone Unreleased"),
+            ("a reading that is not equipment", "Rewards cannot be obtained", "Arabella"),
+        ):
+            with self.subTest(description):
+                self.assertEqual(0, suits(piece, combatant))
 
     def test_two_wanted_kinds_on_one_piece_add_up(self):
         weights = COMBATANT_TAG_WEIGHTS["Nia"]
@@ -228,11 +235,6 @@ class TestSuits(unittest.TestCase):
         untagged = next(name for name in EQUIPMENT_RARITY if name not in EQUIPMENT_TAGS)
         self.assertEqual(0, suits(untagged, "Arabella"))
 
-    def test_a_combatant_the_data_does_not_know_has_no_opinion(self):
-        self.assertEqual(0, suits("Nature's Hostility", "Someone Unreleased"))
-
-    def test_a_reading_that_is_not_equipment_scores_nothing(self):
-        self.assertEqual(0, suits("Rewards cannot be obtained", "Arabella"))
 
     def test_a_concatenated_reading_still_matches(self):
         # The reader runs words together constantly - "Gauntlets ofProtection" is from a real run.

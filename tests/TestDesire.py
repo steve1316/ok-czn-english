@@ -411,32 +411,24 @@ class TestInheritHandler(unittest.TestCase):
 class TestKeepingDesireCards(unittest.TestCase):
     """Offering a granted Desire card to upstream's ladder."""
 
-    def test_a_card_of_the_chased_faction_is_offered(self):
-        task, _, seen, handler = assign_screen("Claim]")
-        handler(task)
-        self.assertEqual([NAME], seen["offered"])
+    def test_any_readable_tag_gets_the_card_offered(self):
+        """Every faction earns this, not only the one being chased - the only other answer here is Skip."""
+        for description, tag in (
+            ("the chased faction", "Claim]"),
+            # Every combatant is meant to reach three points, and the only other answer here is Skip.
+            ("another faction", "Control]"),
+            ("a levelled tag", "[ Claim 2 ]"),
+            ("a merged tag carrying the faction", "[ Control / Claim 2 ]"),
+        ):
+            with self.subTest(description):
+                task, _, seen, handler = assign_screen(tag)
+                handler(task)
+                self.assertEqual([NAME], seen["offered"])
 
     def test_the_users_own_list_still_ranks_above_nothing(self):
         task, _, seen, handler = assign_screen("Claim]", configured=["Sever Ties"])
         handler(task)
         self.assertEqual([NAME, "Sever Ties"], seen["offered"])
-
-    def test_a_card_of_another_faction_is_kept_too(self):
-        # Every combatant is meant to reach three points. A real run chasing Claim skipped a Control card with no
-        # refreshes left and nothing else on offer.
-        task, _, seen, handler = assign_screen("Control]")
-        handler(task)
-        self.assertEqual([NAME], seen["offered"])
-
-    def test_a_levelled_tag_still_counts(self):
-        task, _, seen, handler = assign_screen("[ Claim 2 ]")
-        handler(task)
-        self.assertEqual([NAME], seen["offered"])
-
-    def test_a_merged_tag_counts_when_it_carries_the_faction(self):
-        task, _, seen, handler = assign_screen("[ Control / Claim 2 ]")
-        handler(task)
-        self.assertEqual([NAME], seen["offered"])
 
     def test_an_ordinary_card_is_left_alone(self):
         task, _, seen, handler = assign_screen(None)

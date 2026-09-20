@@ -214,25 +214,22 @@ class TestReadingNames(unittest.TestCase):
         self.assertEqual(cards.cost("AnnihilationShot"), cards.cost(VOID_ATTACK))
         self.assertEqual(len(chosen), 1)
 
-    def test_case_and_spacing_do_not_matter(self):
-        self.assertEqual(cards.canonical("  anchor "), JUSTICE_ATTACK)
-
-    def test_a_hotkey_run_into_the_name_is_stripped(self):
-        # The hotkey is printed just above the card, close enough that the reader sometimes returns the two
-        # as one box. A real Sortie hand came back with "1=Soul Riff" beside four cleanly read names.
-        self.assertEqual(cards.canonical("1=Soul Riff"), "Soul Riff")
-
-    def test_a_name_cut_short_is_repaired(self):
-        # The reader truncates a name mid-word while the hand animates. "Knife Tos" was read 10 times in one
-        # Chaos recording, and it can only ever have been one card.
-        self.assertEqual(cards.canonical("Knife Tos"), "Knife Toss")
-
-    def test_an_ambiguous_stub_is_left_alone(self):
-        # Two cards start this way, so guessing between them would be worse than not knowing.
-        self.assertEqual(cards.canonical("Attac"), "Attac")
-
-    def test_a_stub_too_short_to_be_sure_is_left_alone(self):
-        self.assertEqual(cards.canonical("Bas"), "Bas")
+    def test_a_reading_resolves_to_the_card_it_can_only_be(self):
+        """Every reading here is one the OCR pass actually produced, repaired only where it is unambiguous."""
+        for description, reading, expected in (
+            ("case and spacing do not matter", "  anchor ", JUSTICE_ATTACK),
+            # The hotkey is printed just above the card, close enough that the reader sometimes returns the
+            # two as one box. A real Sortie hand came back with "1=Soul Riff" beside four cleanly read names.
+            ("a hotkey run into the name is stripped", "1=Soul Riff", "Soul Riff"),
+            # The reader truncates a name mid-word while the hand animates. "Knife Tos" was read 10 times in
+            # one Chaos recording, and it can only ever have been one card.
+            ("a name cut short is repaired", "Knife Tos", "Knife Toss"),
+            # Two cards start this way, so guessing between them would be worse than not knowing.
+            ("an ambiguous stub is left alone", "Attac", "Attac"),
+            ("a stub too short to be sure is left alone", "Bas", "Bas"),
+        ):
+            with self.subTest(description):
+                self.assertEqual(cards.canonical(reading), expected)
 
     def test_a_card_the_data_never_heard_of_is_still_played(self):
         chosen = cards.plan(hand("Some Card From A Later Patch"), cards.Board())

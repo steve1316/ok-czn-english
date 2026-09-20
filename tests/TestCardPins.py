@@ -163,14 +163,15 @@ class TestOnlyPinned(unittest.TestCase):
         marked(task, cards, DECK_OFFSET)
         return [c["name"] for c in only_pinned(cards)], [c["pinned"] for c in cards]
 
-    def test_keeps_only_the_pinned_cards(self):
-        self.assertEqual(["card1", "card2"], self.narrowed([False, True, True])[0])
-
-    def test_leaves_the_list_alone_when_nothing_is_pinned(self):
-        self.assertEqual(["card0", "card1"], self.narrowed([False, False])[0])
-
-    def test_leaves_the_list_alone_when_everything_is_pinned(self):
-        self.assertEqual(["card0", "card1"], self.narrowed([True, True])[0])
+    def test_narrowing_keeps_the_pinned_cards_or_the_whole_screen(self):
+        """A screen with nothing pinned, or everything pinned, has to be handed over untouched."""
+        for description, pinned, expected in (
+            ("keeps only the pinned cards", [False, True, True], ["card1", "card2"]),
+            ("nothing pinned leaves the list alone", [False, False], ["card0", "card1"]),
+            ("everything pinned leaves the list alone", [True, True], ["card0", "card1"]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(expected, self.narrowed(pinned)[0])
 
     def test_marks_each_card(self):
         self.assertEqual([False, True], self.narrowed([False, True])[1])

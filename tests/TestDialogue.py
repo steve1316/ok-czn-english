@@ -158,27 +158,23 @@ class TestDialogue(unittest.TestCase):
         """Tapping here would take the choice away from the ranking, which is the decision that matters."""
         self.assertIsNone(narration_line(option_screen()))
 
-    def test_a_narrow_line_is_not_narration(self):
-        """An option card's text is centred in the same band; only its width tells them apart."""
-        task = FakeTask([FakeBox("Collect a piece", 0.5, 0.84, 0.17)])
-        self.assertIsNone(narration_line(task))
-
-    def test_a_line_high_on_the_screen_is_not_narration(self):
-        """The event prompt is wide and centred too, but it sits at the top and is not a tap target."""
-        task = FakeTask([FakeBox("A single Invader mushroom has taken root here.", 0.5, 0.211, 0.5)])
-        self.assertIsNone(narration_line(task))
-
-    def test_an_off_centre_line_is_not_narration(self):
-        task = FakeTask([FakeBox("something wide but off to one side", 0.78, 0.84, 0.5)])
-        self.assertIsNone(narration_line(task))
+    def test_a_line_that_is_not_prose_is_never_tapped(self):
+        """Each row is a real screen out of the capture corpus that an earlier, looser rule wrongly matched."""
+        for description, text, centre_x, centre_y, width in (
+            # An option card's text is centred in the same band; only its width tells them apart.
+            ("a narrow line", "Collect a piece", 0.5, 0.84, 0.17),
+            # The event prompt is wide and centred too, but it sits at the top and is not a tap target.
+            ("a line high on the screen", "A single Invader mushroom has taken root here.", 0.5, 0.211, 0.5),
+            ("an off centre line", "something wide but off to one side", 0.78, 0.84, 0.5),
+            # OCR hands back empty boxes, and one wide enough would otherwise be tapped as prose.
+            ("a blank reading", "   ", 0.5, 0.84, 0.6),
+        ):
+            with self.subTest(description):
+                task = FakeTask([FakeBox(text, centre_x, centre_y, width)])
+                self.assertIsNone(narration_line(task))
 
     def test_an_empty_screen_is_not_narration(self):
         self.assertIsNone(narration_line(FakeTask([])))
-
-    def test_a_blank_reading_is_not_narration(self):
-        """OCR hands back empty boxes, and one wide enough would otherwise be tapped as prose."""
-        task = FakeTask([FakeBox("   ", 0.5, 0.84, 0.6)])
-        self.assertIsNone(narration_line(task))
 
     def test_a_busy_screen_is_not_narration(self):
         """A tip banner sits at narration height on a screen carrying dozens of readings. Narration dims the
