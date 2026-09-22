@@ -71,6 +71,8 @@ SINGLE_CHOICE = {
     "游戏语言": (GAME_LANGUAGES, "English"),
     FARMED_COMBATANT: ([NO_COMBATANT, *COMBATANTS], "Heidemarie"),
 }
+# Switches upstream ships off that the fork turns on. A saved config keeps whatever it already holds.
+SWITCHED_ON = ["进入商店"]
 # Free-text settings whose Chinese default cannot carry over. Cleared so the user fills them from what the
 # client actually shows, rather than inheriting a value that can never match.
 CLEARED_TEXT = ["指定面具卡牌", "面具卡牌刻印", "刷初始卡牌"]
@@ -161,6 +163,10 @@ def reshape(task):
     for key in CLEARED_LISTS:
         if key in task.default_config:
             task.default_config[key] = []
+
+    for key in SWITCHED_ON:
+        if key in task.default_config:
+            task.default_config[key] = True
 
     # Added rather than re-shaped, so it needs no migration: `Config` seeds a key it has never saved from
     # `default_config`, and an existing config simply gains it switched on.
