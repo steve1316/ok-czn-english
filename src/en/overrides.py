@@ -36,6 +36,10 @@ PLAYS_ITS_OWN_CARDS = "出牌优先级"
 # The combatant whose save data the run farms. `src/en/navigation.py` reads it to recognise the tab. Only Chaos
 # declares it, which makes it the marker for Chaos-only settings.
 FARMED_COMBATANT = "刷存档主战员"
+# The farmed combatant's opt-out. Stored as is rather than as an empty string, because upstream skips the Combatants
+# screen for an empty name, and that visit is where the team and its equipment are read. No combatant carries it,
+# so the visit binds nobody.
+NO_COMBATANT = "(none)"
 # Season 4's Desire faction, added the same way and for the same reason: it postdates the settings upstream
 # ships. Desire cards only exist in Chaos, so it is anchored on `FARMED_COMBATANT` rather than a list Sortie shares.
 DESIRE_FACTION = "Desire Faction"
@@ -65,8 +69,10 @@ LIST_OPTIONS = {
 # Single-choice settings, keyed by config name -> the roster and the default to pick from it.
 SINGLE_CHOICE = {
     "游戏语言": (GAME_LANGUAGES, "English"),
-    FARMED_COMBATANT: (COMBATANTS, "Heidemarie"),
+    FARMED_COMBATANT: ([NO_COMBATANT, *COMBATANTS], "Heidemarie"),
 }
+# Switches upstream ships off that the fork turns on. A saved config keeps whatever it already holds.
+SWITCHED_ON = ["进入商店"]
 # Free-text settings whose Chinese default cannot carry over. Cleared so the user fills them from what the
 # client actually shows, rather than inheriting a value that can never match.
 CLEARED_TEXT = ["指定面具卡牌", "面具卡牌刻印", "刷初始卡牌"]
@@ -102,7 +108,7 @@ DESCRIPTIONS = {
     "出战主战员优先级": "Combatants to deploy, in order of preference.",
     "主战员优先级": "Combatants to pick when the run offers a choice.",
     "拉黑主战员": "Combatants to never pick.",
-    FARMED_COMBATANT: "The combatant whose save data is farmed.",
+    FARMED_COMBATANT: f"The combatant whose save data is farmed. Pick {NO_COMBATANT} to favour no one.",
     "指定面具卡牌": "The Persona Card to hold out for, matched against its name and description.",
     "面具卡牌刻印": "The Engraving to hold out for on that Persona Card.",
     "刷初始卡牌": "Reroll the starting card until this one appears. Cannot be combined with Farm Gaps.",
@@ -157,6 +163,10 @@ def reshape(task):
     for key in CLEARED_LISTS:
         if key in task.default_config:
             task.default_config[key] = []
+
+    for key in SWITCHED_ON:
+        if key in task.default_config:
+            task.default_config[key] = True
 
     # Added rather than re-shaped, so it needs no migration: `Config` seeds a key it has never saved from
     # `default_config`, and an existing config simply gains it switched on.
