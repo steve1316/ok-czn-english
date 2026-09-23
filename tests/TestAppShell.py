@@ -14,7 +14,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from ok.task.exceptions import TaskDisabledException  # noqa: E402
 
 from src.config import config  # noqa: E402
-from src.en import dashboard, layout, shell  # noqa: E402
+from src.en import dashboard, layout, shell, shutdown  # noqa: E402
 from src.en.framework import import_ui  # noqa: E402
 
 # How many passes the fake executor allows before it stops the loop, standing in for a press of Stop.
@@ -340,6 +340,32 @@ class TestRebuiltCardList(unittest.TestCase):
         self.assertFalse(card.isVisible())
         view.show()
         self.assertTrue(card.isVisible())
+
+
+class TestExitStopsAdb(unittest.TestCase):
+    """The adb server upstream leaves running, which made the Launcher think the app never closed."""
+
+    class Proc:
+        """A running process reduced to what the exit hook reads and kills."""
+
+        def __init__(self, name, exe):
+            self.pid = id(self)
+            self.info = {"name": name, "exe": exe}
+            self.killed = False
+
+        def kill(self):
+            self.killed = True
+
+    def test_only_the_bundled_adb_is_stopped(self):
+        # Real adbutils, so a rename of the bundled binary's folder helper fails here rather than silently at exit.
+        from adbutils._utils import _get_bin_dir
+
+        ours = self.Proc("adb.exe", os.path.join(_get_bin_dir(), "adb.exe"))
+        theirs = self.Proc("adb.exe", r"C:\Android\platform-tools\adb.exe")
+        with mock.patch("psutil.process_iter", return_value=[ours, theirs]):
+            shutdown.stop_bundled_adb()
+        self.assertTrue(ours.killed)
+        self.assertFalse(theirs.killed)
 
 
 if __name__ == "__main__":
