@@ -19,7 +19,7 @@ class Globals(QObject):
         from src.en import (  # noqa: E501
             battle, dashboard, deck, desire, dialogue, dice, draft, equipment, events, layout, log_text,
             memory_limit, navigation, observe, ocr_text, overrides, persona, picker, pins, rest, rewards, sections, shell,
-            shop, templates, notify, stuck, upload,
+            shop, shutdown, templates, notify, stuck, upload,
         )
 
         layout.apply()
@@ -54,5 +54,6 @@ class Globals(QObject):
         stuck.apply()
         rest.apply()
         memory_limit.apply()
+        shutdown.apply()
         # Re-shapes the task lists, so it hooks the window rather than the tasks.
         shell.apply()
