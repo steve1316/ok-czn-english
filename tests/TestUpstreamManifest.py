@@ -50,6 +50,7 @@ ANCHORS_IN_LISTS = {
     "handle_battle_page": ("utils_sortie",),
     "handle_card_assign": ("utils_chaos", "utils_sortie"),
     "handle_card_reward": ("utils_chaos", "utils_sortie"),
+    "handle_center_confirm": ("utils_chaos", "utils_sortie"),
     "handle_confirm": ("utils_chaos", "utils_sortie", "utils_story"),
     "handle_equipment": ("utils_chaos", "utils_sortie"),
     "handle_event_task": ("utils_chaos", "utils_sortie"),
