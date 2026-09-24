@@ -23,8 +23,9 @@ UNREAD = "-"
 # The framework's own row for the last logged line.
 LOG = "Log"
 # The equipment row, and where the run keeps the reading that fills it. Upstream fills that row from a ledger
-# of what the run installed rather than from anything on screen, so `src/en/equipment.py` reads the Combatants
-# screen and leaves the line here. Absent until it has, which is what `UNREAD` says.
+# of what the run installed rather than from anything on screen, so `src/en/equipment.py` reads the screens
+# that show the whole team - the Combatants screen once a run, the install screen every time a piece is
+# offered - and leaves the line here. Absent until it has, which is what `UNREAD` says.
 GEAR = MESSAGES["装备信息"]
 TEAM_GEAR = "_en_team_gear"
 # The win rate row, and the tail upstream gives it when no run has finished: before any run finishes upstream

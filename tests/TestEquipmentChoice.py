@@ -21,10 +21,10 @@ from tests.fakes import FakeBox as Box  # noqa: E402
 from src.en.rewards import EQUIPMENT_KEYS  # noqa: E402
 from src.en.screen import combatant_slot_points  # noqa: E402
 from src.en.equipment import (  # noqa: E402
-    ROW_PITCH, SLOTS, SPREE_END, SPREE_START, bare_slots, buying_on_spree, has_room_for_mythic, insisting_on_mythic,
-    MYTHIC_TIER, UNKNOWN_TIER, install, is_mythic_colour, mythic_offer, offering_mythic_where_it_fits,
-    preferring_recommended, reading_the_team_gear, recommended_banner, recommended_row, remembering_slots,
-    slot_tier, team_equipment,
+    HANDOVER_X, ROW_PITCH, SLOTS, SPREE_END, SPREE_START, bare_slots, buying_on_spree, has_room_for_mythic,
+    insisting_on_mythic, MYTHIC_TIER, UNKNOWN_TIER, install, is_mythic_colour, mythic_offer,
+    offering_mythic_where_it_fits, preferring_recommended, reading_the_team_gear, recommended_banner,
+    recommended_row, remembering_slots, slot_tier, team_equipment, worn_line,
 )
 from src.en.dashboard import TEAM_GEAR  # noqa: E402
 
@@ -66,6 +66,12 @@ CLOSE_TAP = (0.960, 0.054)
 # Upstream's own quality buckets, keyed by the colour it reads them off. Its top bucket takes everything it
 # cannot place, which is the behaviour the tier naming has to see to be tested at all.
 BUCKETS = {(15, 15, 15): "", (61, 76, 138): "普通", (160, 88, 69): "史诗"}
+# The colour each bucket is read off, which is `BUCKETS` the other way round plus the violet upstream has no
+# name for and drops into its top bucket.
+BUCKET_COLOURS = {bucket: rgb for rgb, bucket in BUCKETS.items()} | {TOP_QUALITY: (136, 82, 164)}
+# A piece the install screen is offering, as `_equipment_info` reports it. Epic is upstream's bucket for what
+# this client calls Legend.
+OFFERED = {"name": "Corroded Gauntlets", "slot": 2, "quality": "史诗", "rank": None}
 
 
 class FakeTask:
@@ -460,13 +466,22 @@ class TestBareSlots(unittest.TestCase):
 
 
 class TestRememberingSlots(unittest.TestCase):
-    """Reading every combatant's slots off the screen that shows all three."""
+    """Reading every combatant's slots off the screen that shows all three, and saying what they wear.
 
-    def stubs(self, rows=3):
+    The Equipment row used to change only where a run read the Combatants screen, which is once a run. A log
+    of one run shows the cost: a piece handed to the third combatant at 23:00:37, and the row still reading
+    `Rare/Rare/Legend, Rare/-/-, Rare/-/-` on every frame after it.
+    """
+
+    def stubs(self, rows=3, worn=("", TOP_QUALITY, ""), colours=None, piece=None):
         """Build a `utils` stand-in for the install screen.
 
         Args:
             rows: How many combatant rows the screen shows.
+            worn: The bucket each of a row's three slots reads as, the same for every row.
+            colours: The colour each of those slots is framed in, or None to use the colour its bucket is
+                read off. Given to place a colour upstream drops into its top bucket without naming.
+            piece: The piece the screen is offering, or None when the handler reads none.
 
         Returns:
             A `(utils, seen)` pair, where `seen` records which rows were read for their slots.
@@ -474,29 +489,65 @@ class TestRememberingSlots(unittest.TestCase):
         seen = []
 
         def find_tags(task_, region, page=None):
-            return [f"row{index}" for index in range(rows)]
+            return level_tags()[:rows]
 
         def qualities(task_, row):
+            # Upstream probes each slot in turn, which is the read the colours are captured through.
             seen.append(row)
-            return ["", "传说", ""]
+            return [utils._equipment_quality_at(task_, (row, slot), allow_empty=True)[0] for slot in range(3)]
 
-        return types.SimpleNamespace(_find_member_level_tags=find_tags,
-                                     _member_equipment_qualities=qualities), seen
+        def quality_at(task_, point, allow_empty=False):
+            slot = point[1]
+            return worn[slot], colours[slot] if colours else BUCKET_COLOURS[worn[slot]]
 
-    def handler(self, utils):
-        """Build a stand-in for upstream, which reads the rows once and equips one of them."""
+        utils = types.SimpleNamespace(_find_member_level_tags=find_tags, _member_equipment_qualities=qualities,
+                                      _equipment_quality_at=quality_at, _rgb_is_close=RGB._rgb_is_close,
+                                      _equipment_info=lambda task_, *regions: piece,
+                                      _move_and_click=lambda task_, x, y: None)
+        return utils, seen
+
+    def handler(self, utils, handed_to=None):
+        """Build a stand-in for upstream, which reads the rows and may hand the piece to one of them.
+
+        Args:
+            utils: The stand-in the handler reads and taps through.
+            handed_to: The row the piece is handed to, or None for a handler that hands nothing over.
+
+        Returns:
+            The handler.
+        """
         def handle(task_):
-            utils._find_member_level_tags(task_, (0.6, 0.3, 0.7, 0.8), page="安装装备页面")
+            rows = utils._find_member_level_tags(task_, (0.6, 0.3, 0.7, 0.8), page="安装装备页面")
+            utils._equipment_info(task_, (0.1, 0.2, 0.3, 0.4), (0.1, 0.2, 0.3, 0.4), (0.1, 0.2, 0.3, 0.4))
+            if handed_to is not None:
+                chosen = rows[handed_to]
+                utils._move_and_click(task_, HANDOVER_X, (chosen.y + chosen.height / 2) / task_.height)
             return True
 
         handle.__name__ = "handle_equipment"
         return handle
 
+    def worn(self, task=None, handed_to=None, **stubs):
+        """Run the wrapped handler and report what the Equipment row was left holding.
+
+        Args:
+            task: The task to run against, or None for a screen carrying no caption.
+            handed_to: The row the piece is handed to, or None for a handler that hands nothing over.
+            **stubs: Passed to `stubs`.
+
+        Returns:
+            The row's text, or None when nothing was written.
+        """
+        utils, _ = self.stubs(**stubs)
+        task = FakeTask([]) if task is None else task
+        remembering_slots(self.handler(utils, handed_to=handed_to), utils)(task)
+        return getattr(task, TEAM_GEAR, None)
+
     def test_every_row_is_read(self):
         utils, seen = self.stubs()
         task = FakeTask([])
         remembering_slots(self.handler(utils), utils)(task)
-        self.assertEqual(["row0", "row1", "row2"], seen)
+        self.assertEqual(list(TAG_Y), [round(row.y + row.height / 2) for row in seen])
         self.assertEqual(3, len(getattr(task, SLOTS)))
 
     def test_the_slots_are_kept_on_the_task(self):
@@ -515,6 +566,24 @@ class TestRememberingSlots(unittest.TestCase):
     def test_the_handler_answer_is_passed_through(self):
         utils, _ = self.stubs()
         self.assertTrue(remembering_slots(self.handler(utils), utils)(FakeTask([])))
+
+    def test_the_row_says_what_the_screen_shows(self):
+        self.assertEqual("-/Mythic/-, -/Mythic/-, -/Mythic/-", self.worn())
+
+    def test_the_piece_handed_over_is_written_into_the_row_that_took_it(self):
+        # The slots are read before the client has drawn the new piece, so the screen alone reports the third
+        # combatant's slot as empty and the row sits a piece behind for the rest of the run.
+        self.assertEqual("-/Mythic/-, -/Mythic/-, -/Mythic/Legend", self.worn(piece=OFFERED, handed_to=2))
+
+    def test_a_mythic_handed_over_is_named_rather_than_left_unplaced(self):
+        # Upstream's top bucket holds every colour it could not place as well, so the caption decides.
+        self.assertEqual("-/Mythic/-, -/Mythic/Mythic, -/Mythic/-",
+                         self.worn(task=mythic_screen(), piece=dict(OFFERED, quality=TOP_QUALITY), handed_to=1))
+
+    def test_a_screen_that_gave_nothing_leaves_the_row_alone(self):
+        # Nine unknowns are worth less than the reading the row already had.
+        self.assertIsNone(self.worn(worn=(TOP_QUALITY,) * 3, colours=(DIMMED_ROW[0],) * 3))
+
 
 class TestBuyingOnSpree(unittest.TestCase):
     """What a generated equipment list may offer the shop.
@@ -727,6 +796,7 @@ class TestPlacementReadsTheWholeScreen(unittest.TestCase):
             _rgb_is_close=RGB._rgb_is_close,
             _find_target_member_index=lambda task_, *args, **kwargs: None,
             _should_install_equipment=lambda *args: (False, ""),
+            _move_and_click=lambda task_, x, y: None,
             random=random,
         )
         return utils, seen
@@ -780,19 +850,19 @@ class TestTeamEquipment(unittest.TestCase):
     """Reading all nine slots off the Combatants screen."""
 
     def test_the_screen_the_row_got_wrong_now_reads_true(self):
-        self.assertEqual(["Rare/Legend/Mythic", "-/Mythic/-", "-/-/Mythic"],
-                         team_equipment(FakeTask([]), team_utils()))
+        self.assertEqual("Rare/Legend/Mythic, -/Mythic/-, -/-/Mythic",
+                         worn_line(team_equipment(FakeTask([]), team_utils())))
 
     def test_a_column_that_could_not_be_read_keeps_its_place(self):
         # The row carries no names, so which combatant a line belongs to is which place it is in. A column
         # dropped for being unreadable would hand the next one's gear to the combatant before it.
         colours = (TEAM_COLOURS[0], (None, None, None), TEAM_COLOURS[2])
-        self.assertEqual(["Rare/Legend/Mythic", "?/?/?", "-/-/Mythic"],
-                         team_equipment(FakeTask([]), team_utils(colours=colours)))
+        self.assertEqual("Rare/Legend/Mythic, ?/?/?, -/-/Mythic",
+                         worn_line(team_equipment(FakeTask([]), team_utils(colours=colours))))
 
     def test_a_frame_that_gave_nothing_reports_nothing(self):
         # An unreadable frame must leave the row saying what it said, not overwrite it with nine unknowns.
-        self.assertEqual([], team_equipment(FakeTask([]), team_utils(colours=None, names=("", "", ""))))
+        self.assertEqual("", worn_line(team_equipment(FakeTask([]), team_utils(colours=None, names=("", "", "")))))
 
 
 class TestReadingTheTeamGear(unittest.TestCase):
@@ -845,7 +915,7 @@ class TestReadingTheTeamGear(unittest.TestCase):
         # The same stand-in read with the page already shut, which is the row the run actually reported.
         utils = team_utils()
         utils.open = False
-        self.assertEqual(["-/-/-"] * 3, team_equipment(FakeTask([]), utils))
+        self.assertEqual("-/-/-, -/-/-, -/-/-", worn_line(team_equipment(FakeTask([]), utils)))
 
     def test_the_tab_tap_is_too_early_to_read_on(self):
         # It happens before the capture's own OCR, so the names are not all up yet and the read waits.
