@@ -1,12 +1,12 @@
 """Get a narration screen moving, which the Global client needs and no mode does.
 
 Upstream's only tap-the-screen handler, `handle_close_page`, keys off the literal "点击屏幕". The Global client
-prints no such prompt - a narration screen there is a line of prose over a darkened frame with a small caret in
-the corner - so nothing in Chaos or Sortie ever advances one, and a run that reaches one sits there until it is
-stopped by hand. Upstream's stuck detector works through its fallbacks and misses every time, because its
-general random-click fallback is commented out.
+prints no such prompt - its narration is a line of prose over a darkened frame, and an NPC talks in a speech
+bubble over the scene - so nothing in Chaos or Sortie ever advances either, and upstream's stuck detector misses
+them because its general random-click fallback is commented out.
 """
 
+import re
 import time
 
 import numpy as np
@@ -15,6 +15,7 @@ from ok import Logger
 
 from src.en.handlers import append, register
 from src.en.screen import colour_share, frame_of, in_region, patch_of
+from src.en.stuck import frozen_for
 
 logger = Logger.get_logger(__name__)
 
@@ -31,6 +32,17 @@ MIN_WIDTH = 0.35
 # How much text a narration screen can carry. It dims the frame and hides the HUD, so the measured ones read
 # three to six boxes. A screen busy enough to hold ten is showing something else and is not ours to tap.
 MAX_TEXT_BOXES = 10
+# How long the frame has to sit unchanged before a speech bubble is looked for. A bubble can be drawn anywhere
+# over the scene, so its line has no band or width to be told apart by. The freeze is what says no other handler
+# wanted the frame.
+BUBBLE_AFTER_STUCK = 3
+# Where a speech bubble can sit, as `(left, top, right, bottom)` screen fractions: under the HUD and above the
+# party's feet. The stalled bubble's lines measured 0.356 and 0.394 down, and the button row starts at 0.908.
+SPEECH_REGION = (0.0, 0.12, 1.0, 0.65)
+# How many words a line needs to read as speech rather than a label. The stalled bubble's shorter line had five.
+MIN_SPEECH_WORDS = 3
+# A word, for counting them. Two letters or more, so a stray OCR fragment does not count as one.
+WORD = re.compile(r"[A-Za-z']{2,}")
 # Long enough for the next line to be drawn before the screen is read again.
 AFTER_TAP = 0.5
 # The patch of frame the auto-advance button is drawn in, as `(left, top, right, bottom)` screen fractions.
@@ -73,13 +85,28 @@ def narration_line(task):
     Returns:
         The narration box, or None when this screen is not one.
     """
-    boxes = task.all_texts or []
-    if len(boxes) > MAX_TEXT_BOXES:
-        return None
-    for box in boxes:
+    for box in task.all_texts:
         if not box.name.strip() or box.width / task.width < MIN_WIDTH:
             continue
         if in_region(box, NARRATION_REGION, task.width, task.height):
+            return box
+    return None
+
+
+def speech_line(task):
+    """Find a line of an NPC's speech bubble, on a frame nothing else has claimed for a while.
+
+    Args:
+        task: The running task, holding the current OCR pass and upstream's stuck clock.
+
+    Returns:
+        The first speech line, or None when the frame has not been frozen long enough or holds none.
+    """
+    frozen = frozen_for(task)
+    if frozen is None or frozen < BUBBLE_AFTER_STUCK:
+        return None
+    for box in task.all_texts:
+        if in_region(box, SPEECH_REGION, task.width, task.height) and len(WORD.findall(box.name)) >= MIN_SPEECH_WORDS:
             return box
     return None
 
@@ -106,7 +133,7 @@ def turn_auto_advance_on(task):
     Args:
         task: The running task.
     """
-    task.log_info("narration screen with auto-advance off, turning it on")
+    task.log_info("dialogue with auto-advance off, turning it on")
     setattr(task, TOGGLED_AT, time.monotonic())
     task.move_relative(*TOGGLE_POINT)
     task.sleep(AFTER_TOGGLE)
@@ -114,7 +141,7 @@ def turn_auto_advance_on(task):
 
 
 def handle_dialogue(task):
-    """Advance a narration screen, by the game's own auto-advance where that can be reached and a tap where it cannot.
+    """Advance narration or a speech bubble, by the game's own auto-advance where that can be reached and a tap where it cannot.
 
     A screen that draws no button reads the same as one drawn off, and the tap that follows lands on empty
     space in the top corner - which on a narration screen advances the line anyway. That ambiguity is why the
@@ -126,13 +153,16 @@ def handle_dialogue(task):
     Returns:
         True when the screen was acted on, which claims the frame.
     """
-    line = narration_line(task)
+    # A busy screen is checked once here, since it rules out both kinds of line.
+    if not task.all_texts or len(task.all_texts) > MAX_TEXT_BOXES:
+        return False
+    line = narration_line(task) or speech_line(task)
     if line is None:
         return False
     if auto_advance_off(task) and time.monotonic() - getattr(task, TOGGLED_AT, float("-inf")) >= TOGGLE_RETRY:
         turn_auto_advance_on(task)
         return True
-    task.log_info(f"narration screen, tapping to advance: {line.name}")
+    task.log_info(f"dialogue, tapping to advance: {line.name}")
     task.click_box(line)
     task.sleep(AFTER_TAP)
     return True

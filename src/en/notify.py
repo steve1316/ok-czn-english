@@ -8,7 +8,7 @@ import time
 from ok import Logger
 
 from src.en.handlers import loaded, register, replace
-from src.en.stuck import CLOCK
+from src.en.stuck import frozen_for
 
 logger = Logger.get_logger(__name__)
 
@@ -107,10 +107,9 @@ def stuck(original):
     """
     def handle_stuck_log_announcing(task):
         handled = original(task)
-        changed = getattr(task, CLOCK, None)
-        if changed is None:
+        seconds = frozen_for(task)
+        if seconds is None:
             return handled
-        seconds = time.time() - changed
         if seconds < STUCK_SECONDS:
             # The screen is moving again, so the next spell gets to report straight away.
             setattr(task, LAST_STUCK, 0)

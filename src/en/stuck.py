@@ -6,6 +6,8 @@ instance - so the clock keeps counting through however long the app sat stopped,
 next run reports the whole idle spell as frozen time.
 """
 
+import time
+
 from ok import Logger
 
 logger = Logger.get_logger(__name__)
@@ -31,6 +33,20 @@ def forget(task):
     for name in CACHE:
         # Removed rather than blanked, because absence is what upstream tests for when it decides to re-seed.
         task.__dict__.pop(name, None)
+
+
+def frozen_for(task):
+    """Report how long upstream's stuck detector has seen the same picture.
+
+    Args:
+        task: The running mode, carrying upstream's stuck clock once `is_frame_stuck` has seeded it.
+
+    Returns:
+        Seconds since the picture last changed, or None before the clock has been seeded.
+    """
+    changed = getattr(task, CLOCK, None)
+    # Wall time, because that is what upstream stamps the clock with.
+    return None if changed is None else time.time() - changed
 
 
 def restarting(original_enable, task):
