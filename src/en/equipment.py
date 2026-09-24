@@ -12,7 +12,8 @@ from src.en import rewards
 from src.en.dashboard import TEAM_GEAR
 from src.en.handlers import StandIn, loaded, register, standing_in, wrap
 from src.en.rewards import EQUIPMENT_KEYS
-from src.en.screen import COMBATANT_NAME_POINTS, combatant_names, combatant_slot_points, text_in_region
+from src.en.screen import (COMBATANT_NAME_POINTS, centre_of, combatant_names, combatant_slot_points,
+                           text_in_region)
 from src.en.state import GEAR, say_once
 
 logger = Logger.get_logger(__name__)
@@ -36,6 +37,10 @@ MYTHIC_REGION = (0.050, 0.660, 0.600, 0.800)
 # where all six Mythic slots two captures showed sat within three of it, and no other slot within ninety.
 # Nothing in `ok_tasks/` has a constant for it - upstream names Normal and Epic and calls the rest Mythic.
 MYTHIC_RGB = (137, 82, 164)
+# Where the equipment handler taps to hand a piece over. The x is upstream's own and the y picks the row, so a
+# tap here is the piece changing hands - the one thing the screen cannot be read for, because the client has
+# not drawn it yet when the slots are read.
+HANDOVER_X = 0.756
 # Names each change in the shared record of what a function already carries.
 RECOMMENDED_TAG = "recommended combatant"
 MYTHIC_TAG = "mythic equipment"
@@ -164,11 +169,12 @@ def has_room_for_mythic(utils, colours, slot):
     return not any(index != slot and is_mythic_colour(utils, rgb) for index, rgb in enumerate(colours))
 
 
-def slot_colours(task, utils, rows):
-    """Read the frame colour of every combatant's three equipment slots.
+def row_readings(task, utils, rows):
+    """Read every combatant's three equipment slots off the screen listing them.
 
     Upstream's row reader already probes those points and throws the colours away behind a quality bucket.
-    Borrowing it, rather than measuring the offsets again here, keeps the positions upstream's own.
+    Borrowing it, rather than measuring the offsets again here, keeps the positions upstream's own, and one
+    pass answers both questions - the bucket the shop compares against, and the colour a tier is named from.
 
     Args:
         task: The running task, holding the frame to read.
@@ -176,21 +182,40 @@ def slot_colours(task, utils, rows):
         rows: The combatants' level tags, which the offsets are measured from.
 
     Returns:
-        One list of three colours per row, in slot order. An entry is None where the slot could not be read.
+        A `(qualities, colours)` pair, each one list of three entries per row in slot order. A colour is None
+        where the slot could not be read.
     """
     original = utils._equipment_quality_at
-    row_colours = []
+    colours = []
 
     def probed(task_, point, allow_empty=False):
         quality, rgb = original(task_, point, allow_empty)
-        row_colours[-1].append(rgb)
+        colours[-1].append(rgb)
         return quality, rgb
 
+    qualities = []
     with standing_in(utils, _equipment_quality_at=probed):
         for row in rows:
-            row_colours.append([])
-            utils._member_equipment_qualities(task, row)
-    return row_colours
+            colours.append([])
+            qualities.append(utils._member_equipment_qualities(task, row))
+    return qualities, colours
+
+
+def tier_of(utils, quality, rgb):
+    """Name the tier behind one slot reading.
+
+    Args:
+        utils: The module carrying the colour compare, whose tolerance is upstream's own.
+        quality: The bucket upstream placed the slot in, which is `EMPTY_SLOT` for a slot holding nothing.
+        rgb: The colour the slot's frame was drawn in, or None where it could not be read.
+
+    Returns:
+        The client's name for that tier, or `UNKNOWN_TIER` for a colour upstream could not place and the
+        Mythic violet does not match either.
+    """
+    if quality in BUCKET_TIERS:
+        return BUCKET_TIERS[quality]
+    return MYTHIC_TIER if is_mythic_colour(utils, rgb) else UNKNOWN_TIER
 
 
 def slot_tier(task, utils, point):
@@ -202,13 +227,44 @@ def slot_tier(task, utils, point):
         point: Where on the slot's frame to sample, as `(x, y)` in screen fractions.
 
     Returns:
-        The client's name for that tier, or `UNKNOWN_TIER` for a colour upstream could not place and the
-        Mythic violet does not match either.
+        The client's name for that tier.
     """
-    quality, rgb = utils._equipment_quality_at(task, point, allow_empty=True)
-    if quality in BUCKET_TIERS:
-        return BUCKET_TIERS[quality]
-    return MYTHIC_TIER if is_mythic_colour(utils, rgb) else UNKNOWN_TIER
+    return tier_of(utils, *utils._equipment_quality_at(task, point, allow_empty=True))
+
+
+def worn_line(columns):
+    """Write out what a team is wearing as the one line the Equipment row holds.
+
+    Args:
+        columns: One list of three tier names per combatant, in the order the screen lists them.
+
+    Returns:
+        The line. Empty when not one slot could be read, because a frame that gave nothing must leave the row
+        saying what it already said rather than overwrite it with unknowns.
+    """
+    if all(tier == UNKNOWN_TIER for tiers in columns for tier in tiers):
+        return ""
+    return ", ".join("/".join(tiers) for tiers in columns)
+
+
+def report_worn(task, columns):
+    """Leave what the team is wearing where the Tasks tab's Equipment row reads it.
+
+    Both screens that show all three combatants report through here, so the row's wording and its
+    leave-it-alone rule are written once.
+
+    Args:
+        task: The running task, which is where the row is read back from.
+        columns: One list of three tier names per combatant.
+
+    Returns:
+        The line, empty when the reading gave nothing and the row was left as it was.
+    """
+    line = worn_line(columns)
+    if line and line != getattr(task, TEAM_GEAR, None):
+        setattr(task, TEAM_GEAR, line)
+        logger.info(f"the team is wearing {line}")
+    return line
 
 
 def team_equipment(task, utils):
@@ -219,15 +275,11 @@ def team_equipment(task, utils):
         utils: The module carrying the colour read.
 
     Returns:
-        One `"<tier>/<tier>/<tier>"` line per combatant, left to right, so a line's place in the list is which
-        combatant it belongs to. Empty when not one slot on the screen could be read, because a frame that
-        gave nothing must leave the row saying what it already said rather than overwrite it with unknowns.
+        One list of three tier names per combatant, left to right, so a list's place is which combatant it
+        belongs to.
     """
-    columns = [[slot_tier(task, utils, point) for point in combatant_slot_points(column)]
-               for column in range(len(COMBATANT_NAME_POINTS))]
-    if all(tier == UNKNOWN_TIER for tiers in columns for tier in tiers):
-        return []
-    return ["/".join(tiers) for tiers in columns]
+    return [[slot_tier(task, utils, point) for point in combatant_slot_points(column)]
+            for column in range(len(COMBATANT_NAME_POINTS))]
 
 
 def reading_the_team_gear(handler, utils, utils_chaos):
@@ -254,9 +306,7 @@ def reading_the_team_gear(handler, utils, utils_chaos):
         def tapped(task_, x, y):
             names = [] if worn else combatant_names(task_, utils)
             if names and all(names):
-                worn.append(", ".join(team_equipment(task_, utils)))
-                setattr(task_, TEAM_GEAR, worn[0])
-                logger.info(f"the team is wearing {worn[0]}")
+                worn.append(report_worn(task_, team_equipment(task_, utils)))
             return original(task_, x, y)
 
         with standing_in(utils_chaos, _move_and_click=tapped):
@@ -302,8 +352,8 @@ def offering_mythic_where_it_fits(handler, utils):
             # the rows are only worth probing for a piece the one-per-combatant rule applies to at all.
             if not rows or slot is None or not mythic_offer(task_):
                 return rows
-            fits = [row for row, colours in zip(rows, slot_colours(task_, utils, rows))
-                    if has_room_for_mythic(utils, colours, slot)]
+            _, colours = row_readings(task_, utils, rows)
+            fits = [row for row, rgbs in zip(rows, colours) if has_room_for_mythic(utils, rgbs, slot)]
             if len(fits) < len(rows):
                 logger.info(f"{len(rows) - len(fits)} of {len(rows)} combatants already wear a Mythic outside slot {slot + 1}, so this one is not offered to them")
             return fits
@@ -455,24 +505,62 @@ def bare_slots(task):
             for slot, quality in enumerate(member) if quality == EMPTY_SLOT}
 
 
+def receiving_row(task, rows, tapped_y):
+    """Say which combatant a handover tap was aimed at.
+
+    Args:
+        task: The running task, whose height the tap's fraction is measured against.
+        rows: The combatants' level tags, in the order the screen lists them.
+        tapped_y: Where the tap landed, as a fraction of screen height.
+
+    Returns:
+        That row's index. Nearest rather than exact, so a tap upstream rounds differently still lands.
+    """
+    def distance(index):
+        return abs(centre_of(rows[index], task.width, task.height)[1] - tapped_y)
+
+    return min(range(len(rows)), key=distance)
+
+
+def handed_tier(task, utils, piece):
+    """Name the tier of the piece being handed over.
+
+    Args:
+        task: The running task, whose OCR pass carries the Mythic caption.
+        utils: The module carrying the colour compare `tier_of` names a tier through.
+        piece: The offered piece as `_equipment_info` reports it.
+
+    Returns:
+        The client's name for its tier. The caption decides a Mythic, because upstream's top bucket also holds
+        every colour it could not place, and there is no colour to tell the two apart by here.
+    """
+    return MYTHIC_TIER if mythic_offer(task) else tier_of(utils, piece.get("quality"), None)
+
+
 def remembering_slots(handler, utils):
-    """Wrap `handle_equipment` so every combatant's slots are read, not only the one being equipped.
+    """Wrap `handle_equipment` so every combatant's slots are read and the Equipment row follows an install.
 
     The install screen is the one place all three are on screen at once, and upstream is already there with
     their rows in hand - it just reads the slots of whichever combatant it is about to equip and throws the
     other two rows away. Reading all three costs three pixel probes each and is the only way the shop, which
     shows no combatants at all, can know whether a piece would fill a gap or replace something.
 
+    The same reading is what the Equipment row needs. Without it the row only ever changed when a run reached
+    the Combatants screen, which is once a run, so every piece picked up afterwards left it saying what the
+    team wore before. The piece being handed over is written in on top, because the slots are read before the
+    client has drawn it.
+
     Args:
         handler: The handler to wrap, upstream's or another patch's.
-        utils: The module whose row reader and colour reader the handler resolves through.
+        utils: The module whose row reader, colour reader, offered-piece reader and tap the handler resolves
+            through.
 
     Returns:
         The wrapped handler.
     """
     def wrapped(task):
-        find_rows, read_slots = utils._find_member_level_tags, utils._member_equipment_qualities
-        rows = []
+        find_rows, read_info, tap = utils._find_member_level_tags, utils._equipment_info, utils._move_and_click
+        rows, offered, handed_y = [], None, None
 
         def recorded(task_, *args, **kwargs):
             # The first read is the combatant column. The handler makes no other, and taking the first is
@@ -482,10 +570,30 @@ def remembering_slots(handler, utils):
                 rows.extend(found)
             return found
 
-        with standing_in(utils, _find_member_level_tags=recorded):
+        def noted(task_, *args, **kwargs):
+            nonlocal offered
+            info = read_info(task_, *args, **kwargs)
+            if info:
+                offered = info
+            return info
+
+        def handed_over(task_, x, y):
+            nonlocal handed_y
+            if x == HANDOVER_X:
+                handed_y = y
+            return tap(task_, x, y)
+
+        with standing_in(utils, _find_member_level_tags=recorded, _equipment_info=noted,
+                         _move_and_click=handed_over):
             handled = handler(task)
         if rows:
-            setattr(task, SLOTS, [read_slots(task, row) for row in rows])
+            qualities, colours = row_readings(task, utils, rows)
+            setattr(task, SLOTS, qualities)
+            worn = [[tier_of(utils, quality, rgb) for quality, rgb in zip(*slots)]
+                    for slots in zip(qualities, colours)]
+            if handed_y is not None and offered:
+                worn[receiving_row(task, rows, handed_y)][offered["slot"]] = handed_tier(task, utils, offered)
+            report_worn(task, worn)
         return handled
 
     return wrapped
