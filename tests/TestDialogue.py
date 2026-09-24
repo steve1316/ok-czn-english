@@ -7,6 +7,7 @@ tells the two apart.
 """
 
 import sys
+import time
 import unittest
 from pathlib import Path
 
@@ -15,9 +16,10 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.en.dialogue import (AFTER_TAP, AFTER_TOGGLE, MAX_TEXT_BOXES, MIN_GLOW,  # noqa: E402
+from src.en.dialogue import (AFTER_TAP, AFTER_TOGGLE, BUBBLE_AFTER_STUCK, MAX_TEXT_BOXES, MIN_GLOW,  # noqa: E402
                             TOGGLE_POINT, TOGGLE_REGION, TOGGLE_RETRY, TOGGLED_AT, auto_advance_off, handle_dialogue,
-                            narration_line)
+                            narration_line, speech_line)
+from src.en.stuck import CLOCK  # noqa: E402
 
 WIDTH, HEIGHT = 1920, 1080
 
@@ -34,6 +36,9 @@ MEASURED_GLOW = 0.105
 SOLDIER = "The Soldier's eyes are fixed on the group. The Weapon in their hand is trembling."
 MUSHROOM_FIRST = "The group examines the surface of the mushroom."
 MUSHROOM_SECOND = "Blue, red, yellow, green. The spores come in a variety of colors."
+# The speech bubble a Chaos run sat on for 38 seconds, drawn over the scene to the right of the party.
+BUBBLE_FIRST = "The important thing is that just scraping this"
+BUBBLE_SECOND = "together will make us rich!"
 
 
 class FakeBox:
@@ -181,7 +186,10 @@ class TestDialogue(unittest.TestCase):
         frame and takes the HUD with it, so the box count is what tells those apart."""
         boxes = [FakeBox(f"reading {index}", 0.2, 0.3, 0.05) for index in range(MAX_TEXT_BOXES)]
         boxes.append(FakeBox("When a Claim Card is used, gain 1 Claim: Desire for each stack.", 0.49, 0.872, 0.586))
-        self.assertIsNone(narration_line(FakeTask(boxes)))
+        task = FakeTask(boxes)
+        # Frozen too, so a bubble line cannot slip past the count either.
+        setattr(task, CLOCK, time.time() - BUBBLE_AFTER_STUCK - 1)
+        self.assertFalse(handle_dialogue(task))
 
     def test_a_line_on_the_button_row_is_not_narration(self):
         """Most of what the capture corpus wrongly matched sat at 0.908 and below, under the prose band."""
@@ -214,6 +222,49 @@ class TestDialogue(unittest.TestCase):
         task = option_screen()
         self.assertFalse(handle_dialogue(task))
         self.assertIsNone(task.clicked)
+
+
+def bubble_screen(frozen_for):
+    """Build the speech bubble frame the run stalled on, with the HUD still drawn around it.
+
+    Args:
+        frozen_for: How many seconds ago upstream's stuck clock last saw the picture change.
+
+    Returns:
+        A `FakeTask` holding the frame's OCR pass.
+    """
+    task = FakeTask([
+        FakeBox("2229/2229", 0.21, 0.038, 0.10),
+        FakeBox("153", 0.65, 0.053, 0.02),
+        FakeBox(BUBBLE_FIRST, 0.688, 0.356, 0.308),
+        FakeBox(BUBBLE_SECOND, 0.625, 0.394, 0.184),
+    ])
+    setattr(task, CLOCK, time.time() - frozen_for)
+    return task
+
+
+class TestSpeechBubble(unittest.TestCase):
+    """An NPC's speech bubble, which sits over the scene rather than in the narration band."""
+
+    def test_the_stalled_bubble_is_tapped_once_the_frame_has_frozen(self):
+        task = bubble_screen(BUBBLE_AFTER_STUCK + 1)
+        self.assertTrue(handle_dialogue(task))
+        self.assertEqual(BUBBLE_FIRST, task.clicked.name)
+
+    def test_a_bubble_is_left_alone_while_the_frame_is_still_changing(self):
+        """The freeze is what says no other handler wants the frame, so a live frame is never read this loosely."""
+        self.assertIsNone(speech_line(bubble_screen(0)))
+        self.assertIsNone(speech_line(FakeTask(bubble_screen(0).all_texts)))
+
+    def test_a_frozen_line_that_is_not_speech_is_never_tapped(self):
+        for label, name, center_x, center_y, width in (
+            ("a short label", "Event Encounter", 0.5, 0.4, 0.12),
+            ("a line below the scene", "Select a card to remove", 0.5, 0.75, 0.2),
+        ):
+            with self.subTest(label):
+                task = FakeTask([FakeBox(name, center_x, center_y, width)])
+                setattr(task, CLOCK, time.time() - BUBBLE_AFTER_STUCK - 1)
+                self.assertIsNone(speech_line(task))
 
 
 class TestAutoAdvance(unittest.TestCase):
