@@ -1,8 +1,8 @@
-"""Let a run take the rest area it reaches, even when it was started partway through a floor.
+"""Let a run use the safe zone it reaches, even when it was started partway through a floor.
 
-Upstream rests, meditates or buys a Sortie Epiphany only while `node_status["flash_or_rest"]` is set. It sets
-the flag on the route selection screen and clears it once one of those is taken, so each rest area is used
-once - but every fresh status starts with the flag off, so a run started anywhere else walks past its first.
+Upstream rests, meditates or buys a Sortie Epiphany only while `node_status["flash_or_rest"]` is set, and enters
+the Dellang shop only while `node_status["shop"]` is. It sets both on the route selection screen and clears each
+once it is spent - but every fresh status starts with both off, so a run started anywhere else walks past them.
 """
 
 import re
@@ -15,9 +15,17 @@ logger = Logger.get_logger(__name__)
 
 # Names this change in the shared record of what a function already carries, so it is applied once.
 TAG = "rest from the start"
+SHOP_TAG = "shop from the start"
+SHOP_DECIDED_TAG = "shop decided on sight"
 OFFERED_TAG = "rest on an offered interaction"
 # Upstream's flag for "this rest area has not been used yet".
 FLAG = "flash_or_rest"
+# Upstream's flag for "enter the shop at this safe zone", and the setting the route screen copies into it.
+SHOP = "shop"
+SHOP_SETTING = "进入商店"
+# What a fresh status holds for `SHOP` until a handler that can read the setting fills it in. Falsy, so upstream
+# reading it before then still sees "do not enter".
+UNDECIDED = None
 # The count the safe zone prints along its bottom edge, as "Available Safe Zone Interactions: 1". Matched
 # loosely because only the number is load bearing, and read as text rather than at a point because the line
 # moves with its own length. Shops are exempt from the count, which is why only rest and meditate consult it.
@@ -25,6 +33,8 @@ INTERACTIONS = re.compile(r"safe\s*zone\s*interactions\D*(\d+)", re.I)
 # The handler each mode gates a safe zone on, by the module that defines it. Chaos rests through `utils`,
 # Sortie through its own copy, and Story has neither.
 GATED_ON_FLAG = {"utils": "handle_rest", "utils_sortie": "handle_rest_sortie"}
+# Every handler that reads `SHOP`: the two safe zone screens that offer the shop, and the shop itself.
+READS_SHOP = (*GATED_ON_FLAG.items(), ("utils", "handle_shop"))
 
 _patched = False
 
@@ -47,6 +57,45 @@ def ready_to_rest(original_initial_node_status):
         return status
 
     return initial_node_status
+
+
+def shop_undecided(original_initial_node_status):
+    """Wrap upstream's status builder so every fresh status leaves the shop to the user's setting.
+
+    The builder has no task to read the setting from, so it only marks the shop undecided.
+
+    Args:
+        original_initial_node_status: Upstream's `_initial_node_status`.
+
+    Returns:
+        The wrapped builder.
+    """
+    def initial_node_status():
+        status = original_initial_node_status()
+        status[SHOP] = UNDECIDED
+        return status
+
+    return initial_node_status
+
+
+def deciding_the_shop(original, utils):
+    """Wrap a handler that reads `SHOP` so an undecided shop is settled from the user's setting first.
+
+    Args:
+        original: The upstream handler.
+        utils: Upstream's `utils` module, for its `_get_config_value`.
+
+    Returns:
+        The wrapped handler.
+    """
+    def handler(task):
+        status = getattr(task, "node_status", None)
+        if status is not None and SHOP in status and status[SHOP] is UNDECIDED:
+            status[SHOP] = bool(utils._get_config_value(task, SHOP_SETTING, False))
+            logger.info(f"run started off the route screen, so node_status['shop']={status[SHOP]} from Enter Shop")
+        return original(task)
+
+    return handler
 
 
 def interactions_left(task):
@@ -100,7 +149,7 @@ def taking_the_offered_interaction(original):
 
 
 def install(utils):
-    """Start every fresh run status ready to rest, and take an interaction the game is still offering.
+    """Start every fresh run status ready to rest and shop, and take an interaction the game is still offering.
 
     Args:
         utils: Upstream's `utils` module, or None when it has not been imported yet.
@@ -108,10 +157,13 @@ def install(utils):
     if utils is None:
         return
     wrap(utils, "_initial_node_status", ready_to_rest, TAG)
+    wrap(utils, "_initial_node_status", shop_undecided, SHOP_TAG)
     # `wrap` reads the handler off the module, so a mode that has not been imported yet simply misses and is
     # picked up on the load that imports it.
     for module_name, handler_name in GATED_ON_FLAG.items():
         wrap(loaded(module_name), handler_name, taking_the_offered_interaction, OFFERED_TAG)
+    for module_name, handler_name in READS_SHOP:
+        wrap(loaded(module_name), handler_name, lambda handler: deciding_the_shop(handler, utils), SHOP_DECIDED_TAG)
 
 
 def apply():
