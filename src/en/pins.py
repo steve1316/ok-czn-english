@@ -43,6 +43,7 @@ CHOOSERS = {
 # Names each change in the shared record of what a function already carries.
 MARK_TAG = "pin marks"
 NARROW_TAG = "pinned only"
+EARLY_TAG = "pinned on sight"
 
 _patched = False
 
@@ -159,6 +160,36 @@ def narrowing(chooser, utils, recognizer):
     return wrapped
 
 
+def taking_on_sight(select_card, utils):
+    """Wrap `select_card` so a pinned card is taken on the page it first shows up on.
+
+    Upstream only clicks mid-scroll when a card matches the priority list, so a pinned card that matches nothing
+    waits until the scroll reaches the bottom of the deck. The pinned names on the current page are appended to
+    that list, after the user's own entries, and swapped out on every page.
+
+    Args:
+        select_card: The function to wrap, upstream's or another patch's.
+        utils: The module holding `recognize_cards_in_deck`.
+
+    Returns:
+        The wrapped function.
+    """
+    def wrapped(task, card_names, count=1, action=""):
+        names = list(card_names or [])
+        configured = len(names)
+        original = utils.recognize_cards_in_deck
+
+        def listing(*args, **kwargs):
+            cards = original(*args, **kwargs)
+            names[configured:] = [card["name"] for card in cards if card.get("pinned")]
+            return cards
+
+        with standing_in(utils, recognize_cards_in_deck=listing):
+            return select_card(task, names, count=count, action=action)
+
+    return wrapped
+
+
 def install(utils):
     """Mark every card the recognizers return, and narrow the screens that choose one.
 
@@ -172,6 +203,7 @@ def install(utils):
     for name, recognizer in CHOOSERS.items():
         wrap(utils, name,
              lambda chooser, recognizer=recognizer: narrowing(chooser, utils, recognizer), NARROW_TAG)
+    wrap(utils, "select_card", lambda select_card: taking_on_sight(select_card, utils), EARLY_TAG)
 
 
 def apply():

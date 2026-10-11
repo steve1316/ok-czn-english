@@ -19,10 +19,15 @@ import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(REPO_ROOT / "ok_tasks"))
+
+import utils  # noqa: E402
+
+from src.en.handlers import standing_in  # noqa: E402
 
 from src.en.pins import (  # noqa: E402
     CHOOSERS, DECK_OFFSET, PICK_OFFSET, PROBE, RECOGNIZERS, install, is_pinned, marked,
-    narrowing, only_pinned, probe_box, tagging,
+    narrowing, only_pinned, probe_box, tagging, taking_on_sight,
 )
 
 WIDTH, HEIGHT = 1920, 1080
@@ -250,6 +255,34 @@ class TestNarrowing(unittest.TestCase):
     def test_only_the_choosing_sites_narrow(self):
         # The counting callers - handle_mask_card above all - must not be on this list.
         self.assertEqual({"select_card", "handle_card_reward", "handle_view_original"}, set(CHOOSERS))
+
+
+class TestTakingOnSight(unittest.TestCase):
+    """A pinned card is taken on the page it shows up on, rather than after scrolling to the bottom."""
+
+    def test_upstream_takes_the_pinned_card_without_scrolling(self):
+        # Real upstream `select_card`, so this breaks if it ever stops clicking priority names mid-scroll.
+        def deck_card(name, y, pinned):
+            return {"name": name, "x": 0.4, "y": y, "selected": False, "pinned": pinned,
+                    "feature_name": "attack_in_deck", "type": "", "description": ""}
+
+        pages = [[deck_card("Strike", 0.3, False), deck_card("Mealtime", 0.6, True)], [deck_card("Defend", 0.3, False)]]
+        page, clicks = [0], []
+
+        def scroll(*args):
+            page[0] += 1
+
+        task = types.SimpleNamespace(ocr=lambda: [], box_of_screen=lambda *a: None, log_info=lambda m: None,
+                                     sleep=lambda s: None, feature_exists=lambda n: False, all_texts=[])
+        with standing_in(utils, recognize_cards_in_deck=lambda *a, **k: pages[min(page[0], 1)],
+                         _simplify_texts=lambda texts: texts, region_white_ratio=lambda *a: 0.05,
+                         _point_is_white=lambda *a: False, _scroll_card_page=scroll,
+                         _move_and_click=lambda task_, x, y: clicks.append((x, y)),
+                         _get_config_value=lambda task_, key, default: default,
+                         _get_game_text=lambda task_, key: key):
+            self.assertTrue(taking_on_sight(utils.select_card, utils)(task, [], count=1, action="移除"))
+        self.assertEqual([(0.4, 0.6)], clicks)
+        self.assertEqual(0, page[0])
 
 
 def named(name):
