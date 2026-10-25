@@ -120,7 +120,7 @@ DESCRIPTIONS = {
     "面具卡牌刻印": "The Engraving to hold out for on that Persona Card.",
     "指定记忆卡牌": "Free text matched loosely against a Memory card's name and description, on every Memory screen: the Etched Memory to pick, the Processing option to take and the bonus Refinement holds out for. Leave it empty to use the three settings below instead.",
     ETCHED_MEMORY: "Etched Memories to take at the Interior, best first. A page offering none of them is searched again while searches are left.",
-    MEMORY_BONUS: f"The bonus to hold out for. Memory Processing takes it, and Memory Refinement processes until it is held before refining. {KEEP_BONUS} never processes.",
+    MEMORY_BONUS: f"The bonus for the etched Memory Card. Memory Refinement spends its one Processing only when the card holds a different bonus, and takes a reroll only if one offers this. {KEEP_BONUS} never processes.",
     ENTER_MEMORY_END: "Enter End of Memory after the final boss for the extra fight and its grade upgrade. Turn it off to end the run at the Settlement instead.",
     "刷初始卡牌": "Reroll the starting card until this one appears. Cannot be combined with Farm Gaps.",
     "任务优先级": "Preferred options inside an Unidentified Area, best first, matched loosely against the option's description rather than its title - so prefer distinctive wording, since a short word matches far more than you expect. Your Equipment Slot priorities are tried ahead of this list, and an area that matches nothing is picked at random.",
