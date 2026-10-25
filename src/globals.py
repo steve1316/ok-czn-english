@@ -18,12 +18,13 @@ class Globals(QObject):
         # Everything English-only lives under src/en/ so upstream's files stay untouched and merges stay clean.
         from src.en import (  # noqa: E501
             battle, claims, dashboard, deck, desire, devices, dialogue, dice, draft, enter, equipment, events, frame_log, layout,
-            log_text, memory_limit, monitors, navigation, observe, ocr_text, overrides, persona, picker, pins, rest, rewards, sections, shell,
-            shop, shutdown, templates, notify, stuck, upload,
+            log_text, memory_limit, monitors, navigation, observe, ocr_text, overrides, persona, picker, pins, remote, rest, rewards, sections,
+            shell, shop, shutdown, templates, notify, stuck, upload,
         )
 
-        # Does nothing outside a debug run, and nothing else depends on when it starts.
+        # Neither does anything outside a debug run, and nothing else depends on when they start.
         frame_log.apply()
+        remote.apply()
         layout.apply()
         sections.apply()
         picker.apply()

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "czn": {
+      "command": "uv",
+      "args": ["run", "--quiet", "--script", "scripts/czn_mcp.py"]
+    }
+  }
+}
