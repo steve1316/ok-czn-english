@@ -546,6 +546,21 @@ class TestCallingBackTheTurn(unittest.TestCase):
         task, answers = self.run_frames(names=[], popups=battle.CALLBACKS + 1)
         self.assertEqual(answers, [True] * battle.CALLBACKS + [False])
 
+    def test_a_card_passed_over_for_cost_is_tried_once_the_game_says_it_plays(self):
+        # Live, Rossweisse's Sword Resonance showed 0 AP against the data's 1, and was held at 0 AP for good.
+        with upstream(hand("Sword Resonance"), action_points=False) as (utils_sortie, task):
+            battle.install()
+            handlers = handlers_of(utils_sortie)
+            utils_sortie._try_all_card_keys(task, 1)
+            task.all_texts = list(CARDS_LEFT_PROMPT)
+            self.assertTrue(handlers["handle_cards_left"](task))
+            task.all_texts = []
+            utils_sortie._try_all_card_keys(task, 1)
+            self.assertEqual(task.keys, [battle.END_TURN_KEY, "1", battle.CONFIRM_KEY])
+            # Asked once a turn, so a card the game will not take after all cannot hold the turn open.
+            task.all_texts = list(CARDS_LEFT_PROMPT)
+            self.assertFalse(handlers["handle_cards_left"](task))
+
     def test_a_hand_still_unread_after_a_callback_has_its_keys_tried(self):
         # Live, a 0 AP card never read over its holographic art, so each callback came back to the same empty hand.
         with upstream([]) as (utils_sortie, task):

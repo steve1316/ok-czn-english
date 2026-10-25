@@ -225,6 +225,11 @@ class Turn:
         self.misses = collections.Counter()
         # Keys pressed for a card the counter says is there but OCR never read, each tried once a turn.
         self.blind = set()
+        # Cards passed over for costing more than was left, held when the turn was ended for want of points. A cost can
+        # drop mid-fight - Rossweisse's Sword Resonance showed 0 against the data's 1 - so the game may still take one.
+        self.priced_out = []
+        # Whether the game has already said a card can still be played after the picker ended the turn this turn.
+        self.objected = False
         self.weakness = None
 
 
@@ -347,7 +352,9 @@ def note_hand_read(task, utils_sortie):
 
 
 def handle_cards_left(task):
-    """Cancel the end of a turn upstream called on an unread hand, once the game says a card can still be played.
+    """Cancel the end of a turn once the game says a card can still be played, when the bot may have missed one.
+
+    That is an end upstream called on an unread hand, or one the picker called holding cards it passed over for cost.
 
     Args:
         task: The running task, whose `all_texts` is the current screen.
@@ -357,13 +364,20 @@ def handle_cards_left(task):
         the picker chose on purpose still goes through.
     """
     callbacks = getattr(task, UNREAD_HAND, None)
-    if callbacks is None or callbacks >= CALLBACKS or not text_in_region(task, CARDS_LEFT, CARDS_LEFT_REGION):
+    unread = callbacks is not None and callbacks < CALLBACKS
+    turn = getattr(task, TURN, None)
+    priced_out = turn is not None and turn.priced_out and not turn.objected
+    if not (unread or priced_out) or not text_in_region(task, CARDS_LEFT, CARDS_LEFT_REGION):
         return False
     cancel = text_in_region(task, CANCEL, CANCEL_REGION)
     if not cancel:
         return False
-    task.log_info("the game says cards can still be played, so the hand was not raised yet - cancelling the end of turn")
-    setattr(task, UNREAD_HAND, callbacks + 1)
+    if unread:
+        task.log_info("the game says cards can still be played, so the hand was not raised yet - cancelling the end of turn")
+        setattr(task, UNREAD_HAND, callbacks + 1)
+    else:
+        task.log_info(f"the game says a card can still be played, so one of {turn.priced_out} must cost less than the data says")
+        turn.objected = True
     task.click_box(cancel)
     task.sleep(AFTER_KEY)
     return True
@@ -521,7 +535,8 @@ def install():
         if was_refused(turn.attempted, turn.attempted_copies, names):
             turn.misses[turn.attempted] += 1
             # Live, Magnetic Field stayed in hand once with all three points to spend, and was given up on for the turn.
-            if turn.misses[turn.attempted] >= REFUSALS:
+            # Once the game has said a card plays, each one tried is a guess, so a single miss is enough to move on.
+            if turn.misses[turn.attempted] >= (1 if turn.objected else REFUSALS):
                 turn.refused.add(turn.attempted)
                 task.log_info(f"the game would not play {turn.attempted}, leaving it for the rest of this turn")
 
@@ -536,6 +551,11 @@ def install():
             task.log_info(f"turn opens with {budget}, {against}, hand {names}")
         state = cards.Board(action_points=points, weakness=turn.weakness)
         card = choose(hand, state, turn.refused)
+        if card is None and turn.objected:
+            # The game said a card is still playable, so the best of those passed over for cost is tried as if affordable.
+            card = choose([held for held in hand if cards.cost(held["name"]) > 0], state._replace(action_points=cards.BASE_ACTION_POINTS),
+                          turn.refused)
+        turn.priced_out = []
         if card is None:
             if not names:
                 # Upstream ends an empty hand itself, so there is nothing here to do and nothing to say.
@@ -549,6 +569,8 @@ def install():
                 turn.blind.add(blind)
                 play_key(task, blind)
                 return
+            if not points:
+                turn.priced_out = [name for name in names if cards.cost(name) > 0 and name not in turn.refused]
             spent = "" if points else ", no Action Points left"
             task.log_info(f"nothing left worth playing in {names}{spent}, ending the turn")
             task.send_key(END_TURN_KEY)
