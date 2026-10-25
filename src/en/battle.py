@@ -9,12 +9,13 @@ keeps the frame around it, and a card the Play Priority list names is still play
 
 import collections
 
+import numpy as np
 from ok import Logger
 
 from src.en import board, cards
 from src.en.handlers import StandIn, insert_before, loaded, register, replace, standing_in
 from src.en.overrides import SMART_CARD_PLAY
-from src.en.screen import text_in_region
+from src.en.screen import colour_share, frame_of, patch_of, text_in_region
 
 logger = Logger.get_logger(__name__)
 
@@ -64,6 +65,25 @@ WIDEST_SPAN = (0.218, 0.730)
 MAX_KEY = 9
 # How many times a card has to stay in hand after its key is pressed before it is left for the rest of the turn.
 REFUSALS = 2
+# Sortie's battle screens in its own order: the prompts a card can raise mid-fight, then the fight itself. Story mode
+# borrows them for the fights where the game's Auto is locked, since its own handler only turns Auto on and waits.
+BATTLE_SCREENS = ("handle_battle_crash", "handle_discard_hand_card", "handle_battle_hand_select", "handle_curiosity_activate",
+                  "handle_extra_card_use", "handle_card_function_select", "handle_return_to_draw_pile", "handle_weakness_info",
+                  "handle_battle_page")
+# Story's Auto handler, which the borrowed screens sit behind. Matched as a prefix, because the recorder renames it.
+AUTO_CHECK = "handle_battle_auto_check"
+# The Auto button, and the flat grey of the padlock it shows where a fight does not allow Auto. The padlock covers 0.096-0.100
+# of the box on three locked fights, and Auto lit gold or any other screen covers at most 0.027.
+AUTO_BUTTON = (0.855, 0.020, 0.900, 0.085)
+LOCK_LOW = np.array((0, 0, 120), dtype=np.uint8)
+LOCK_HIGH = np.array((180, 30, 215), dtype=np.uint8)
+MIN_LOCK = 0.05
+# A button this bright is drawn plainly: the padlock peaks at 170, and Auto lit gold or white at 255. A prompt's shade drops the
+# padlock to 74, too dim to tell from the gold, so a shaded button keeps the answer its last plain reading gave. With no plain
+# reading yet, the prompt screens get to look, since Auto's own check would only wait on a prompt.
+PLAIN_BUTTON = 120
+# Parked on the task, so a prompt in a locked fight is still known to be one.
+AUTO_LOCKED = "_en_auto_locked"
 
 _patched = False
 
@@ -354,6 +374,8 @@ def install():
     utils_sortie = loaded("utils_sortie")
     if utils is None or utils_sortie is None:
         return
+    # Before the guard below, so a mode list loaded after the picker went in still gets it. Story loads last.
+    insert_before("handle_center_confirm", handle_cards_left)
     if getattr(utils_sortie._try_all_card_keys, "_en_picker", False):
         return
     blind_fallback = utils_sortie._try_all_card_keys
@@ -493,7 +515,6 @@ def install():
             utils_sortie.random = was
 
     replace("handle_battle_page", handle_battle_page)
-    insert_before("handle_center_confirm", handle_cards_left)
 
     # Marked so a later task load recognises the replacement and does not wrap it in itself.
     _try_all_card_keys._en_picker = True
@@ -521,10 +542,60 @@ def install():
     logger.info("sortie battles now pick a card instead of pressing every key")
 
 
+def auto_locked(task):
+    """Say whether the fight shows the padlock of one that does not allow Auto, remembering it through a shaded prompt.
+
+    Args:
+        task: The running task, whose frame is the battle screen.
+
+    Returns:
+        True when the last plainly drawn Auto button was the padlock, or when none has been drawn plainly yet.
+    """
+    patch = patch_of(frame_of(task), AUTO_BUTTON)
+    # The brightest channel is the HSV value, so this needs no conversion.
+    if patch is not None and patch.size and patch.max() >= PLAIN_BUTTON:
+        setattr(task, AUTO_LOCKED, colour_share(patch, LOCK_LOW, LOCK_HIGH) >= MIN_LOCK)
+    return getattr(task, AUTO_LOCKED, True)
+
+
+def unless_locked(auto_check):
+    """Wrap Story's Auto handler so it lets a fight with Auto locked through to the borrowed screens.
+
+    Args:
+        auto_check: Story's `handle_battle_auto_check`, which turns Auto on and claims every battle frame.
+
+    Returns:
+        The replacement.
+    """
+    def handle_story_auto(task):
+        if auto_locked(task):
+            return False
+        return auto_check(task)
+
+    return handle_story_auto
+
+
+def fight_story_battles():
+    """Have Story mode play the battles that lock the game's Auto with Sortie's screens, and leave Auto to the rest."""
+    utils_sortie = loaded("utils_sortie")
+    utils_story = loaded("utils_story")
+    if utils_sortie is None or utils_story is None:
+        return
+    names = [getattr(handler, "__name__", "") for handler in utils_story.PAGE_HANDLERS]
+    index = next((at for at, name in enumerate(names) if name.startswith(AUTO_CHECK)), None)
+    if index is None:
+        return
+    # Taken from Sortie's list rather than the module, so Story gets the card picker `install` put there.
+    screens = [handler for handler in utils_sortie.PAGE_HANDLERS if getattr(handler, "__name__", "") in BATTLE_SCREENS]
+    utils_story.PAGE_HANDLERS[index:index + 1] = [unless_locked(utils_story.PAGE_HANDLERS[index]), *screens]
+    logger.info(f"story battles with Auto locked now play with Sortie's screens: {[handler.__name__ for handler in screens]}")
+
+
 def apply():
-    """Have the card picker stand in for upstream's fallback, once the modes have been imported."""
+    """Have the card picker stand in for upstream's fallback, and Story fight its own battles, once the modes have been imported."""
     global _patched
     if _patched:
         return
     register(install)
+    register(fight_story_battles)
     _patched = True

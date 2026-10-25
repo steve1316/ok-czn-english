@@ -10,6 +10,7 @@ import types
 import unittest
 from contextlib import contextmanager
 from pathlib import Path
+from unittest import mock
 
 import cv2
 
@@ -17,7 +18,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from src.en import battle, board, cards, overrides  # noqa: E402
-from tests.TestBoard import flat, paint, paint_enemy  # noqa: E402
+from tests.TestBoard import FakeTask, flat, paint, paint_enemy, pasted  # noqa: E402
 from tests.fakes import FakeBox  # noqa: E402
 
 # Haru is Justice and Renoa is Void, and these two cards are otherwise identical: one Action Point, an
@@ -272,6 +273,34 @@ class TestInstalling(unittest.TestCase):
             once = utils_sortie._try_all_card_keys
             battle.install()
             self.assertIs(utils_sortie._try_all_card_keys, once)
+
+    def test_story_leaves_battles_to_auto_unless_it_is_locked(self):
+        # Story's own handler only turns the game's Auto on, so a fight with Auto locked waited there for good.
+        def handle_battle_auto_check_recording(task):
+            return True
+
+        confirm = types.SimpleNamespace(__name__="handle_center_confirm")
+        utils_story = types.SimpleNamespace(PAGE_HANDLERS=[handle_battle_auto_check_recording, confirm])
+        with upstream(hand(ATTACK)) as (utils_sortie, _):
+            battle.install()
+            # Story loads after the picker is in, and unseen its end-of-turn check confirmed a turn ended on an unread hand.
+            with mock.patch.dict(sys.modules, utils_story=utils_story):
+                battle.install()
+                for _ in range(2):
+                    battle.fight_story_battles()
+            gate, picker, *_ = utils_story.PAGE_HANDLERS
+            self.assertEqual([gate, picker, battle.handle_cards_left, confirm], utils_story.PAGE_HANDLERS)
+            self.assertIsNot(picker, utils_sortie.handle_battle_page)
+            left, top, _, _ = battle.AUTO_BUTTON
+            # A prompt shades the padlock too dim to read, so the fight has to be remembered from before it. Started on
+            # the prompt, there is nothing to remember, and Auto's check would only wait on it.
+            task = FakeTask(flat(0))
+            for step, (crop, auto_plays) in enumerate((("story_auto_locked_dim", False), ("story_auto_on", True),
+                                                       ("story_auto_locked_dim", True), ("story_auto_locked", False),
+                                                       ("story_auto_locked_dim", False))):
+                with self.subTest(step=step, crop=crop):
+                    task.frame = pasted(crop, int(left * 1920), int(top * 1080))
+                    self.assertEqual(auto_plays, gate(task))
 
     def test_the_chosen_card_gets_its_hotkey_pressed(self):
         with upstream(hand(ATTACK, BIG_ATTACK)) as (utils_sortie, task):

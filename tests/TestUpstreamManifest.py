@@ -18,6 +18,8 @@ import utils_chaos  # noqa: E402
 import utils_sortie  # noqa: E402
 import utils_story  # noqa: E402
 
+from src.en.battle import BATTLE_SCREENS  # noqa: E402
+
 # Every name the fork reaches for, and the module that has to carry it. Handlers it wraps or replaces, helpers
 # it swaps with `standing_in`, and the few it calls outright.
 UPSTREAM_NAMES = {
@@ -64,6 +66,8 @@ ANCHORS_IN_LISTS = {
     "handle_stuck_log": ("utils_chaos", "utils_sortie"),
     "handle_view_original": ("utils_chaos", "utils_sortie"),
     "log_node_status": ("utils_chaos", "utils_sortie"),
+    # Story mode borrows Sortie's battle screens by name from Sortie's list.
+    **{screen: ("utils_sortie",) for screen in BATTLE_SCREENS},
 }
 
 MODULES = {"utils": utils, "utils_chaos": utils_chaos, "utils_sortie": utils_sortie, "utils_story": utils_story}
