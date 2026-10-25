@@ -26,7 +26,9 @@ TAG = "ranked events"
 # (`encounter_option_eff@eff_description@*`), shared by 134 and 174 options.
 SPARK = ("epiphany", "闪光")
 QUIT = ("end the event",)
-ATTACK = ("initiate battle", "event encounter")
+ATTACK = ("initiate battle",)
+# An option leading into a follow-up event, named in brackets: "Event Encounter: [Interpretation of the Ending]".
+ENCOUNTER = ("event encounter",)
 # An option that only reads out lore. This phrasing was captured from a run rather than read out of the
 # client's tables, so it is one known wording and not the whole set.
 DIALOGUE = ("check information on",)
@@ -52,22 +54,24 @@ SPARK_RANK = 0
 # A Desire card of the faction the run is chasing. Below a spark, which permanently upgrades a card, and
 # above an ordinary reward, because points in one faction compound towards a team-wide bonus at 3, 5 and 7.
 DESIRE_RANK = 1
-REWARD_RANK = 2
+# A follow-up event, which tends to pay more than the single item an ordinary reward hands over.
+ENCOUNTER_RANK = 2
+REWARD_RANK = 3
 # A Desire card of some other faction. Every combatant is meant to reach three points, so it is still worth more than
 # a battle, but the random-faction option ranks as a reward ahead of it because it can land on the faction being chased.
-OFF_FACTION_RANK = 3
+OFF_FACTION_RANK = 4
 # Credits and nothing else. Below every reward that changes how the run plays, and above a battle, which
 # costs health and time for a reward that is not guaranteed to be better.
-CREDIT_RANK = 4
-ATTACK_RANK = 5
-QUIT_RANK = 6
+CREDIT_RANK = 5
+ATTACK_RANK = 6
+QUIT_RANK = 7
 # Worse than quitting, because the cut lasts the rest of the run. Still ahead of lore, which never moves the run on.
-HEALTH_COST_RANK = 7
+HEALTH_COST_RANK = 8
 # Priced like a max Health cut, because the card stays in the deck for the rest of the run.
 CURSE_RANK = HEALTH_COST_RANK
 # Worse than quitting. Ending the event at least moves the run on, while reading lore puts the same screen
 # straight back up.
-DIALOGUE_RANK = 8
+DIALOGUE_RANK = 9
 
 # `_get_region_text` glues the OCR boxes together with no separator and in an unstable order, and the reader
 # loses or invents spaces at line breaks - the same option was captured as "Spark an Epiphany for a" and
@@ -146,8 +150,8 @@ def rank(description, target=None):
         target: The Desire faction the run is chasing, or None when it is not being tracked.
 
     Returns:
-        `SPARK_RANK`, `DESIRE_RANK`, `REWARD_RANK`, `OFF_FACTION_RANK`, `CREDIT_RANK`, `ATTACK_RANK`,
-        `QUIT_RANK`, `HEALTH_COST_RANK`, `CURSE_RANK` or `DIALOGUE_RANK`.
+        `SPARK_RANK`, `DESIRE_RANK`, `ENCOUNTER_RANK`, `REWARD_RANK`, `OFF_FACTION_RANK`, `CREDIT_RANK`,
+        `ATTACK_RANK`, `QUIT_RANK`, `HEALTH_COST_RANK`, `CURSE_RANK` or `DIALOGUE_RANK`.
     """
     text = fold(description)
     # Ahead of every other marker, so a spark or reward on the same option does not hide the cut.
@@ -167,6 +171,8 @@ def rank(description, target=None):
             return DESIRE_RANK
         if contains(text, desire.FACTIONS):
             return OFF_FACTION_RANK
+    if contains(text, ENCOUNTER):
+        return ENCOUNTER_RANK
     if contains(text, ATTACK):
         return ATTACK_RANK
     # After every marker that names a gain, so credits only decide the rank when they are the whole of it.

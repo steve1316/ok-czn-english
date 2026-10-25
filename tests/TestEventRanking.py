@@ -26,7 +26,7 @@ import utils  # noqa: E402
 from StoryMode import StoryMode  # noqa: E402
 
 from src.en.events import (  # noqa: E402
-    ATTACK, ATTACK_RANK, BESIDES_CREDITS, CREDIT_RANK, CURSE_RANK, DESIRE_RANK, DIALOGUE, DIALOGUE_RANK, HEALTH_COST,
+    ATTACK, ATTACK_RANK, BESIDES_CREDITS, CREDIT_RANK, CURSE_RANK, DESIRE_RANK, DIALOGUE, DIALOGUE_RANK, ENCOUNTER, ENCOUNTER_RANK, HEALTH_COST,
     HEALTH_COST_RANK, MIN_LATIN_MARKER_LENGTH, MIN_MARKER_LENGTH, OFF_FACTION_RANK, QUIT, QUIT_RANK,
     REFINED, REWARD_RANK, RankingChoice, SPARK, SPARK_RANK, center_of, double_clicking, drop_unwanted, find_chests, fold,
     leave_after_refinement, open_a_chest, order, rank,
@@ -59,9 +59,11 @@ REAL_OPTIONS = {
     "Give a false OrderIncrease all Combatants'Stress by 5, Increase Creditsby 40, Repeat event": CREDIT_RANK,
     # Credits alongside something that is worth having, which is what the option is worth.
     "Ask about the corpseObtain Equipment [Psionicby80Combat Suit], Increase Credits": REWARD_RANK,
+    # A follow-up event.
+    "Enter InsideEvent Encounter: Inside theBrood Lord": ENCOUNTER_RANK,
+    "Enter through the gateEvent encounter: Inside theTreasure Trove": ENCOUNTER_RANK,
     # Combat.
-    "Enter InsideEvent Encounter: Inside theBrood Lord": ATTACK_RANK,
-    "Enter through the gateEvent encounter: Inside theTreasure Trove": ATTACK_RANK,
+    "Destroy the mining machineInitiate Battle": ATTACK_RANK,
     # Quit. The catalog rewrites the title box to Chinese and OCR mangles the other phrasing four ways.
     "离开End the event": QUIT_RANK,
     "I'll let you live.End the event": QUIT_RANK,
@@ -131,13 +133,13 @@ class TestEventRanking(unittest.TestCase):
 
     def test_every_marker_survives_folding(self):
         """A marker that folded away to nothing would be `in` every description and match everything."""
-        for marker in SPARK + QUIT + ATTACK + DIALOGUE + HEALTH_COST + BESIDES_CREDITS:
+        for marker in SPARK + QUIT + ATTACK + ENCOUNTER + DIALOGUE + HEALTH_COST + BESIDES_CREDITS:
             with self.subTest(marker=marker):
                 self.assertGreaterEqual(len(fold(marker)), MIN_MARKER_LENGTH)
 
     def test_latin_markers_are_whole_phrases(self):
         """Two Chinese characters are a specific word; two Latin letters would match half the screen."""
-        for marker in SPARK + QUIT + ATTACK + DIALOGUE + HEALTH_COST + BESIDES_CREDITS:
+        for marker in SPARK + QUIT + ATTACK + ENCOUNTER + DIALOGUE + HEALTH_COST + BESIDES_CREDITS:
             if marker.isascii():
                 with self.subTest(marker=marker):
                     self.assertGreaterEqual(len(fold(marker)), MIN_LATIN_MARKER_LENGTH)
@@ -199,12 +201,20 @@ class TestEventRanking(unittest.TestCase):
 
     def test_ordering_puts_the_best_option_first(self):
         """Upstream's upper-half shortcut takes the first option it can, so first must mean best."""
-        options = [option("Enter InsideEvent Encounter: Inside theBrood Lord"),
+        options = [option("Destroy the mining machineInitiate Battle"),
                    option("Gather salvageIncrease Credits by 140"),
                    option("Bury the bodySpark an Epiphany for arandom Combatant 1 time(s)")]
         ordered = order(options, [], is_subsequence)
         self.assertEqual(SPARK_RANK, rank(ordered[0]["description"]))
         self.assertEqual(ATTACK_RANK, rank(ordered[-1]["description"]))
+
+    def test_a_follow_up_event_beats_equipment(self):
+        """The event an encounter opens tends to pay more than the single item beside it."""
+        options = [option("Watch the endEvent Encounter:[Interpretation of the Ending]"),
+                   option("Offer comfort togetherDecrease all Combatants'Stress by 3, Increase Creditsby 80"),
+                   option("End the sufferingObtain randomRare-Legendary equipment")]
+        ordered = order(list(reversed(options)), [], is_subsequence)
+        self.assertEqual("Watch the endEvent Encounter:[Interpretation of the Ending]", ordered[0]["description"])
 
     def test_a_configured_priority_beats_the_ranking(self):
         """The user's own list is upstream's contract and must still win, ahead of any tier."""
@@ -259,7 +269,7 @@ class TestCreditOptions(unittest.TestCase):
 
     def test_credits_still_beat_a_battle_and_quitting(self):
         # They are a gain with nothing owed for it, so they are only last among things worth taking.
-        for worse in ("Enter InsideEvent Encounter: Inside theBrood Lord", "离开End the event"):
+        for worse in ("Destroy the mining machineInitiate Battle", "离开End the event"):
             with self.subTest(worse=worse[:40]):
                 self.assertLess(rank(self.CREDITS), rank(worse))
 
