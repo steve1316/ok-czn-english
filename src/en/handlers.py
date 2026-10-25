@@ -86,9 +86,8 @@ def standing_in(target, **replacements):
 def each_list():
     """Yield every handler list the task modules have loaded.
 
-    Found by shape rather than by name: the modes are imported flat (`utils_chaos`, not `ok_tasks.utils_chaos`), a
-    future mode would be missed by a hardcoded list, and `utils_story` has a `PAGE_HANDLERS` of its own containing
-    neither handler this fork touches. All three fall out of looking for the attribute.
+    Found by shape rather than by name: the modes are imported flat (`utils_chaos`, not `ok_tasks.utils_chaos`), and
+    a future mode would be missed by a hardcoded list. Both fall out of looking for the attribute.
 
     Returns:
         A generator of `(module_name, list)` pairs.

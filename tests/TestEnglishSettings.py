@@ -49,6 +49,9 @@ REVIEWED_COLLISIONS = {
     # recognised as a card. The label sits under every card of that type, against one card sharing the name.
     "Attack",
     "Curse",
+    # The Story map's node that opens a Chaos, matched whole by handle_observe. The card of that name has no cost and no
+    # text beyond "No Action" in the dump, so it is never in the hand and never something a user would name.
+    "Observe",
 }
 
 
@@ -307,13 +310,13 @@ class TestReshape(unittest.TestCase):
         self.assertTrue(opt_out, "an empty opt-out would stop the team being read")
         self.assertEqual([], [name for name in COMBATANTS if opt_out in name or name in opt_out])
 
-    def test_switched_on_settings_are_still_declared_upstream(self):
-        """A renamed key would leave the switch at upstream's off with nothing to say so."""
+    def test_forced_defaults_are_still_declared_upstream(self):
+        """A renamed key would leave upstream's default in place with nothing to say so - for the shop, paying Credits to reroll."""
         declared = mode_setting_keys()
-        for key in overrides.SWITCHED_ON:
+        for key, value in overrides.FORCED_DEFAULTS.items():
             with self.subTest(key=key):
                 self.assertIn(key, declared)
-                self.assertIs(True, reshaped({key: False}).default_config[key])
+                self.assertEqual(value, reshaped({key: None}).default_config[key])
 
     def test_route_priority_keeps_its_canonical_values(self):
         """Route values are internal labels built from template feature names, never text read off the screen.

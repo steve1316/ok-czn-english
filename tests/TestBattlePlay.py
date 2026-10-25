@@ -10,6 +10,7 @@ import types
 import unittest
 from contextlib import contextmanager
 from pathlib import Path
+from unittest import mock
 
 import cv2
 
@@ -17,7 +18,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from src.en import battle, board, cards, overrides  # noqa: E402
-from tests.TestBoard import flat, paint, paint_enemy  # noqa: E402
+from tests.TestBoard import FakeTask, flat, paint, paint_enemy, pasted  # noqa: E402
 from tests.fakes import FakeBox  # noqa: E402
 
 # Haru is Justice and Renoa is Void, and these two cards are otherwise identical: one Action Point, an
@@ -29,6 +30,9 @@ CURSE = "Anemia"
 
 # Where the painted enemy stands. Anywhere inside the band the counters are looked for in will do.
 ENEMY_AT = (0.50, 0.25)
+# The game's check when a turn is ended with a card it would still take, with its Cancel and Confirm buttons.
+CARDS_LEFT_PROMPT = (FakeBox("Cards in your hand can still be used.", 0.5, 0.36, width=600),
+                     FakeBox("取消", 0.34, 0.60), FakeBox("确认", 0.67, 0.60))
 
 
 def hand(*names_in_order, keyless=(), at=None):
@@ -46,6 +50,18 @@ def hand(*names_in_order, keyless=(), at=None):
     at = at or [0.2 + 0.1 * index for index in range(len(names_in_order))]
     return [{"name": name, "key": None if name in keyless else str(index + 1), "left_x": left_x}
             for index, (name, left_x) in enumerate(zip(names_in_order, at))]
+
+
+def handlers_of(module):
+    """Index a mode's page handlers by name.
+
+    Args:
+        module: The upstream mode module whose `PAGE_HANDLERS` list is read.
+
+    Returns:
+        A dict of handler name to handler.
+    """
+    return {getattr(handler, "__name__", None): handler for handler in module.PAGE_HANDLERS}
 
 
 @contextmanager
@@ -273,6 +289,34 @@ class TestInstalling(unittest.TestCase):
             battle.install()
             self.assertIs(utils_sortie._try_all_card_keys, once)
 
+    def test_story_leaves_battles_to_auto_unless_it_is_locked(self):
+        # Story's own handler only turns the game's Auto on, so a fight with Auto locked waited there for good.
+        def handle_battle_auto_check_recording(task):
+            return True
+
+        confirm = types.SimpleNamespace(__name__="handle_center_confirm")
+        utils_story = types.SimpleNamespace(PAGE_HANDLERS=[handle_battle_auto_check_recording, confirm])
+        with upstream(hand(ATTACK)) as (utils_sortie, _):
+            battle.install()
+            # Story loads after the picker is in, and unseen its end-of-turn check confirmed a turn ended on an unread hand.
+            with mock.patch.dict(sys.modules, utils_story=utils_story):
+                battle.install()
+                for _ in range(2):
+                    battle.fight_story_battles()
+            gate, picker, *_ = utils_story.PAGE_HANDLERS
+            self.assertEqual([gate, picker, battle.handle_cards_left, confirm], utils_story.PAGE_HANDLERS)
+            self.assertIsNot(picker, utils_sortie.handle_battle_page)
+            left, top, _, _ = battle.AUTO_BUTTON
+            # A prompt shades the padlock too dim to read, so the fight has to be remembered from before it. Started on
+            # the prompt, there is nothing to remember, and Auto's check would only wait on it.
+            task = FakeTask(flat(0))
+            for step, (crop, auto_plays) in enumerate((("story_auto_locked_dim", False), ("story_auto_on", True),
+                                                       ("story_auto_locked_dim", True), ("story_auto_locked", False),
+                                                       ("story_auto_locked_dim", False))):
+                with self.subTest(step=step, crop=crop):
+                    task.frame = pasted(crop, int(left * 1920), int(top * 1080))
+                    self.assertEqual(auto_plays, gate(task))
+
     def test_the_chosen_card_gets_its_hotkey_pressed(self):
         with upstream(hand(ATTACK, BIG_ATTACK)) as (utils_sortie, task):
             battle.install()
@@ -480,12 +524,11 @@ class TestCallingBackTheTurn(unittest.TestCase):
             task.counter = 7
             utils_sortie._hand_card_names = lambda _: list(names)
             battle.install()
-            handlers = {getattr(handler, "__name__", None): handler for handler in utils_sortie.PAGE_HANDLERS}
+            handlers = handlers_of(utils_sortie)
             handlers["handle_battle_page"](task)
             answers = []
             for _ in range(popups):
-                task.all_texts = [FakeBox("Cards in your hand can still be used.", 0.5, 0.36, width=600),
-                                  FakeBox("取消", 0.34, 0.60), FakeBox("确认", 0.67, 0.60)]
+                task.all_texts = list(CARDS_LEFT_PROMPT)
                 answers.append(handlers["handle_cards_left"](task))
         return task, answers
 
@@ -502,6 +545,44 @@ class TestCallingBackTheTurn(unittest.TestCase):
     def test_a_hand_that_never_reads_is_not_called_back_forever(self):
         task, answers = self.run_frames(names=[], popups=battle.CALLBACKS + 1)
         self.assertEqual(answers, [True] * battle.CALLBACKS + [False])
+
+    def test_a_card_passed_over_for_cost_is_tried_once_the_game_says_it_plays(self):
+        # Live, Rossweisse's Sword Resonance showed 0 AP against the data's 1, and was held at 0 AP for good.
+        with upstream(hand("Sword Resonance"), action_points=False) as (utils_sortie, task):
+            battle.install()
+            handlers = handlers_of(utils_sortie)
+            utils_sortie._try_all_card_keys(task, 1)
+            task.all_texts = list(CARDS_LEFT_PROMPT)
+            self.assertTrue(handlers["handle_cards_left"](task))
+            task.all_texts = []
+            utils_sortie._try_all_card_keys(task, 1)
+            self.assertEqual(task.keys, [battle.END_TURN_KEY, "1", battle.CONFIRM_KEY])
+            # Asked once a turn, so a card the game will not take after all cannot hold the turn open.
+            task.all_texts = list(CARDS_LEFT_PROMPT)
+            self.assertFalse(handlers["handle_cards_left"](task))
+
+    def test_a_hand_still_unread_after_a_callback_has_its_keys_tried(self):
+        # Live, a 0 AP card never read over its holographic art, so each callback came back to the same empty hand.
+        with upstream([]) as (utils_sortie, task):
+            task.counter = 3
+            battle.install()
+            handlers = handlers_of(utils_sortie)
+            page, cards_left = handlers["handle_battle_page"], handlers["handle_cards_left"]
+            page(task)
+            task.all_texts = list(CARDS_LEFT_PROMPT)
+            self.assertTrue(cards_left(task))
+            # Key 2 plays and a card is drawn after it. Live, the draw started the keys over from 1, retrying cards the game had
+            # already refused, while the card right of the one played slid onto its key. A key the game turns down at once
+            # is not confirmed, which saves the 2s wait on Enter.
+            toast = [FakeBox("Not enough AP.", 0.5, 0.52)]
+            for counter, texts in ((3, []), (3, toast), (3, []), (2, []), (2, []), (3, []), (3, toast)):
+                task.counter = counter
+                task.all_texts = list(texts)
+                page(task)
+            self.assertEqual(task.keys, ["1", "2", battle.CONFIRM_KEY, "2", battle.CONFIRM_KEY, "3"])
+            # Every key tried, so the game's next check is the end of the turn.
+            task.all_texts = list(CARDS_LEFT_PROMPT)
+            self.assertFalse(cards_left(task))
 
 
 class TestEgoChoice(unittest.TestCase):

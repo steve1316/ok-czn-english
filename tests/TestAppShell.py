@@ -250,6 +250,10 @@ class TestAppShell(unittest.TestCase):
         names = [option.name for option in config["global_configs"]]
         self.assertNotIn("Game Hotkey Config", names)
 
+    def test_a_fresh_install_sends_keys_by_post_message(self):
+        # The first method is the default, and Genshin sends every key as A, so no card or Ego hotkey ever lands.
+        self.assertEqual("PostMessage", config["windows"]["interaction"][0])
+
 
 class TestEmulatorConnect(unittest.TestCase):
     """Refresh dials an emulator only once something is listening on its port."""

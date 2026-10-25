@@ -26,6 +26,8 @@ EXACT_MATCHES = (
      "handle_card_assign rerolls a card reward with this, and unmapped it has never once fired"),
     ("To the Core of Discord", "\u524d\u5f80\u5361\u5384\u601d\u6838\u5fc3",
      "the Settlement screen offers this instead of Continue, and unmapped no handler claims the frame at all"),
+    ("Observe", "观测",
+     "the Story map's Observe node opens a Chaos, and unmapped Story mode sits on the map"),
 )
 
 

@@ -183,6 +183,11 @@ msgstr "卡厄思显现"
 msgid "Next"
 msgstr "下一步"
 
+# From handle_observe: box.name.strip() == "观测" inside (0.092, 0.214, 0.962, 0.792). The Story map's Observe node opens a
+# Chaos, and unmapped the run sits on the map. The card named "Observe" has no cost, so the hand never holds it.
+msgid "Observe"
+msgstr "观测"
+
 # From handle_settlement: _clean_match(box.name, "结算")
 msgid "Settlement"
 msgstr "结算"

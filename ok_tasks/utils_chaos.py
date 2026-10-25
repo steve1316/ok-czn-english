@@ -2,7 +2,7 @@ from ok import TriggerTask
 
 from utils import (
     _move_and_click, _simplify_texts, _get_config_value, _get_card_list, _get_route_priority, _get_game_text, _get_region_text, _get_current_hp_percent, _finish_only_first_layer,
-    find_box_at_point, find_text, recognize_cards,
+    find_box_at_point, find_text, recognize_cards, find_target_card,
     _card_has_type_below, select_card,
     log_credit, log_node_status, handle_battle_crash, handle_close_page, handle_refine_equipment_credit,
     handle_center_confirm, handle_settlement, handle_skip,
@@ -27,9 +27,111 @@ from utils import (
 
 import re
 import random
+import time
 
 
 # ------------------------- 卡厄思模式独有页面处理函数 -------------------------
+
+
+def handle_memory_process(task: TriggerTask):
+    """加工记忆页面：选择命中指定记忆的卡牌，否则跳过。"""
+    title = _get_region_text(task, (0.420, 0.072, 0.584, 0.169))
+    if "加工记忆" not in title:
+        return False
+
+    task.log_info("检测到加工记忆页面")
+    cards = recognize_cards(
+        task, region=(0.095, 0.204, 0.887, 0.868), page="加工记忆页面"
+    )[:3]
+    specified_memory = _get_config_value(task, "指定记忆卡牌", "")
+    if specified_memory:
+        for card in cards:
+            if is_subsequence(specified_memory, card["name"] + "：:" + card["description"]):
+                task.log_info(f"加工记忆页面：命中指定记忆卡牌「{card['name']}」")
+                _move_and_click(task, card["x"], card["y"])
+                task.sleep(1)
+                return True
+
+    task.log_info("加工记忆页面：未匹配到指定记忆卡牌，点击跳过")
+    _move_and_click(task, 0.762, 0.935)
+    task.sleep(1)
+    return True
+
+
+def handle_memory_card_select(task: TriggerTask):
+    """记忆卡牌选择页面：优先目标卡牌，其次指定记忆，否则刷新可搜索的卡牌。"""
+    title = _get_region_text(task, (0.341, 0.011, 0.670, 0.171))
+    if "选择铭刻的记忆" not in title:
+        return False
+
+    task.log_info("检测到记忆卡牌选择页面")
+    cards = recognize_cards(
+        task, region=(0.065, 0.176, 0.931, 0.787), page="记忆卡牌选择页面"
+    )
+    target_boxes, target_click_positions = find_target_card(task)
+    if target_boxes:
+        task.log_info("记忆卡牌选择页面：检测到target卡牌，优先选择")
+        _move_and_click(task, *target_click_positions[0])
+        task.sleep(1)
+        return True
+
+    specified_memory = _get_config_value(task, "指定记忆卡牌", "")
+    if specified_memory:
+        for card in cards:
+            if is_subsequence(specified_memory, card["name"] + "：:" + card["description"]):
+                task.log_info(f"记忆卡牌选择页面：命中指定记忆卡牌「{card['name']}」")
+                _move_and_click(task, card["x"], card["y"])
+                task.sleep(1)
+                return True
+
+    search_boxes = []
+    count_boxes = []
+    for box in task.all_texts:
+        x = (box.x + box.width / 2) / task.width
+        y = (box.y + box.height / 2) / task.height
+        if not (0.109 <= x <= 0.880 and 0.779 <= y <= 0.874):
+            continue
+        if "重新搜索" in box.name:
+            search_boxes.append(box)
+        match = re.fullmatch(r"\s*(\d+)\s*/\s*(\d+)\s*", box.name)
+        if match:
+            count_boxes.append((box, int(match.group(1))))
+
+    refreshed = False
+    for count_box, remaining in sorted(count_boxes, key=lambda item: item[0].x)[:3]:
+        count_x = count_box.x + count_box.width / 2
+        count_y = count_box.y + count_box.height / 2
+        candidates = [
+            box for box in search_boxes
+            if box.x + box.width / 2 < count_x
+            and abs(box.y + box.height / 2 - count_y) <= 0.04 * task.height
+        ]
+        if not candidates:
+            continue
+        search_box = min(
+            candidates,
+            key=lambda box: (box.x + box.width / 2 - count_x) ** 2
+            + (box.y + box.height / 2 - count_y) ** 2,
+        )
+        search_boxes.remove(search_box)
+        if remaining == 0:
+            continue
+        task.log_info(f"记忆卡牌选择页面：剩余搜索次数={remaining}，点击重新搜索")
+        _move_and_click(
+            task,
+            (search_box.x + search_box.width / 2) / task.width,
+            (search_box.y + search_box.height / 2) / task.height,
+        )
+        task.sleep(1)
+        refreshed = True
+    if not refreshed:
+        task.log_info("记忆卡牌选择页面：未命中目标，且未找到可用的重新搜索按钮")
+        if cards:
+            card = random.choice(cards)
+            task.log_info(f"未命中目标且无法继续刷新，随机选择「{card['name']}」")
+            _move_and_click(task, card["x"], card["y"])
+            task.sleep(1)
+    return True
 
 
 def _match_storage_data_value(task: TriggerTask, text: str):
@@ -710,56 +812,74 @@ def handle_mask_card(task: TriggerTask):
     return True
 
 
-def handle_data_collected(task: TriggerTask):
-    """存储数据收集完成页面：按存档价值阈值决定是否删除。"""
-    box = find_box_at_point(task, 0.505, 0.111)
-    if box and _get_game_text(task, '存储数据收集完成') in box.name:
-        retain_threshold = _get_config_value(
-            task, '保留大于多少TB的存档', 62000
-        )
-        if retain_threshold <= 0:
-            task.log_info("保留大于多少TB的存档设置为0，保留全部存档")
-            return False
+def _archive_value_at(task: TriggerTask, center_x, center_y):
+    """读取垃圾桶左侧的存档价值(TB)，读不到返回 None。"""
+    value_box = find_box_at_point(task, center_x - 0.107, center_y - 0.025)
+    if not value_box:
+        return None
+    value_match = re.search(r'\d+', value_box.name.replace(',', ''))
+    return int(value_match.group()) if value_match else None
 
-        for feature_name in ["deletecards", "deletecards2", "deletecards3"]:
-            features = task.find_feature(
-                feature_name=feature_name,
-                horizontal_variance=0.005,
-                vertical_variance=0.005,
-            ) or []
-            for feature in features:
-                feature_center_x = (feature.x + feature.width / 2) / task.width
-                feature_center_y = (feature.y + feature.height / 2) / task.height
-                value_box = find_box_at_point(
-                    task,
-                    feature_center_x - 0.107,
-                    feature_center_y - 0.025,
-                )
-                value_match = (
-                    re.search(r'\d+', value_box.name.replace(',', ''))
-                    if value_box else None
-                )
-                archive_value = int(value_match.group()) if value_match else None
-                if archive_value is not None and archive_value > retain_threshold:
-                    task.log_info(
-                        f"{feature_name}对应存档价值{archive_value}TB高于保留阈值"
-                        f"{retain_threshold}TB，跳过删除"
-                    )
-                    continue
-                if archive_value is None:
-                    task.log_info(
-                        f"{feature_name}未识别到存档价值，按原逻辑点击删除"
-                    )
-                else:
-                    task.log_info(
-                        f"{feature_name}对应存档价值{archive_value}TB不高于阈值"
-                        f"{retain_threshold}TB，点击删除"
-                    )
-                task.click_box(feature)
-                task.sleep(1)
-                return True
-        task.log_info("检测到存储数据收集完成，由通用按钮处理")
+
+def handle_data_collected(task: TriggerTask):
+    """存储数据收集完成页面：低于阈值的存档点垃圾桶，弹确认就交给通用确认处理。"""
+    node_status = getattr(task, 'node_status', None)
+    box = find_box_at_point(task, 0.505, 0.111)
+    if not (box and _get_game_text(task, '存储数据收集完成') in box.name):
+        # 离开页面时清理点击记录，避免影响下一次
+        if node_status is not None:
+            node_status.pop('storage_delete_clicked', None)
         return False
+
+    retain_threshold = _get_config_value(
+        task, '保留大于多少TB的存档', 62000
+    )
+    if retain_threshold <= 0:
+        task.log_info("保留大于多少TB的存档设置为0，保留全部存档")
+        return False
+    if node_status is None:
+        return False
+
+    # 二次确认弹窗已经出现时不再点垃圾桶，交给通用确认按钮处理
+    if any(
+        "确认" in text_box.name or "确定" in text_box.name
+        for text_box in task.all_texts
+    ):
+        return False
+
+    # 刚点过垃圾桶，等一帧确认结果，避免同一槽位被连续点击
+    last_click = node_status.get('storage_delete_clicked')
+    if last_click and time.time() - last_click < 1:
+        return True
+
+    for feature_name in ["deletecards", "deletecards2", "deletecards3"]:
+        features = task.find_feature(
+            feature_name=feature_name,
+            horizontal_variance=0.005,
+            vertical_variance=0.005,
+        ) or []
+        for feature in features:
+            feature_center_x = (feature.x + feature.width / 2) / task.width
+            feature_center_y = (feature.y + feature.height / 2) / task.height
+            archive_value = _archive_value_at(task, feature_center_x, feature_center_y)
+            if archive_value is None:
+                # 读不到价值时不删除，避免误删高价值存档
+                task.log_info(f"{feature_name}未识别到存档价值，跳过删除以避免误删")
+                continue
+            if archive_value > retain_threshold:
+                task.log_info(
+                    f"{feature_name}对应存档价值{archive_value}TB高于保留阈值"
+                    f"{retain_threshold}TB，跳过删除"
+                )
+                continue
+            task.log_info(
+                f"{feature_name}对应存档价值{archive_value}TB不高于阈值"
+                f"{retain_threshold}TB，点击垃圾桶"
+            )
+            task.click_box(feature)
+            node_status['storage_delete_clicked'] = time.time()
+            return True
+    task.log_info("检测到存储数据收集完成，由通用按钮处理")
     return False
 
 
@@ -866,6 +986,110 @@ def handle_go_to_chaos_core(task: TriggerTask):
     return False
 
 
+def handle_go_to_memory_end(task: TriggerTask):
+    """卡厄思结算页面右下角「前往记忆之末」按钮: 检测到后点击进入记忆之末。"""
+    region = (0.740, 0.850, 0.995, 0.980)
+    box = next(
+        (
+            text_box
+            for text_box in task.all_texts
+            if region[0] <= (text_box.x + text_box.width / 2) / task.width <= region[2]
+            and region[1] <= (text_box.y + text_box.height / 2) / task.height <= region[3]
+            and "记忆之末" in text_box.name
+        ),
+        None,
+    )
+    if box:
+        task.log_info("检测到前往记忆之末按钮，点击进入")
+        task.click_box(box)
+        task.sleep(1)
+        return True
+
+    # OCR 可能把按钮文字拆成多个框，退回整块区域文本匹配
+    region_text = _get_region_text(task, region).replace(" ", "")
+    if "记忆之末" not in region_text:
+        return False
+
+    task.log_info("检测到前往记忆之末按钮（区域文本匹配），点击进入")
+    _move_and_click(task, 0.881, 0.908)
+    task.sleep(1)
+    return True
+
+
+def _precision_button_active(task: TriggerTask, box):
+    """精密加工记忆按钮是否可用: 文本左侧胶囊背景为橙色时可用，材料耗尽后会变灰。"""
+    x1 = max(int(box.x) - 30, 0)
+    x2 = max(int(box.x) - 5, x1 + 1)
+    center_y = int(box.y + box.height / 2)
+    patch = task.frame[max(center_y - 6, 0):center_y + 6, x1:x2, :3]
+    if patch.size == 0:
+        return False
+    blue, _, red = patch.mean(axis=(0, 1))
+    return (red - blue) > 30
+
+
+def handle_precision_memory_process(task: TriggerTask):
+    """记忆之末「精密加工记忆」按钮: 可用时优先点击，变灰（材料耗尽）后交给离开按钮处理。"""
+    title_text = _get_region_text(task, (0.400, 0.080, 0.600, 0.170)).replace(" ", "")
+    if "精密加工记忆" not in title_text:
+        return False
+
+    cards = recognize_cards(
+        task, region=(0.366, 0.233, 0.639, 0.900), page="精密加工记忆页面"
+    )
+
+    # 记录已进入过该页面，避免事件对话反复选择「精密加工记忆」造成死循环
+    status = getattr(task, "node_status", None)
+    if status is not None:
+        status["precision_memory_visited"] = True
+
+    specified_memory = _get_config_value(task, "指定记忆卡牌", "")
+    if specified_memory and cards and not any(
+        is_subsequence(specified_memory, card["name"] + "：:" + card["description"])
+        for card in cards
+    ):
+        process_box = next(
+            (
+                box for box in task.all_texts
+                if 0.026 <= (box.x + box.width / 2) / task.width <= 0.315
+                and 0.708 <= (box.y + box.height / 2) / task.height <= 0.867
+                and "加工记忆" in box.name
+            ),
+            None,
+        )
+        if process_box:
+            task.log_info("当前卡牌未命中指定记忆卡牌，点击加工记忆")
+            _move_and_click(
+                task,
+                (process_box.x + process_box.width / 2) / task.width,
+                (process_box.y + process_box.height / 2) / task.height,
+            )
+            task.sleep(1)
+            return True
+
+    region = (0.700, 0.730, 0.995, 0.870)
+    box = next(
+        (
+            text_box
+            for text_box in task.all_texts
+            if region[0] <= (text_box.x + text_box.width / 2) / task.width <= region[2]
+            and region[1] <= (text_box.y + text_box.height / 2) / task.height <= region[3]
+            and "精密加工记忆" in text_box.name
+        ),
+        None,
+    )
+    if not box:
+        return False
+    if not _precision_button_active(task, box):
+        task.log_info("精密加工记忆按钮已变灰（材料耗尽），跳过点击")
+        return False
+
+    task.log_info("检测到精密加工记忆按钮，点击精密加工")
+    task.click_box(box)
+    task.sleep(1)
+    return True
+
+
 def handle_chaos_reward_claim(task: TriggerTask):
     """卡厄思模式奖励领取页面: 如果0.568,0.711处文本包含"获得"，则为奖励领取页面。
     识别0.959,0.281处"\\d/\\d"作为当前/最大战利品验证卡，
@@ -959,6 +1183,7 @@ PAGE_HANDLERS = [
     handle_reflash, #重新闪光按钮
     handle_grant_flash, #赋予闪光按钮
     handle_copy, #复制按钮
+    handle_precision_memory_process, #记忆之末精密加工记忆，优先于离开按钮
     handle_leave, #离开按钮
     handle_mental_breakdown, #精神崩溃，优先级高于下一步按钮
     handle_data_collected, #存储数据收集完成，优先级高于下一步按钮
@@ -979,6 +1204,8 @@ PAGE_HANDLERS = [
     handle_destiny_choice,
     handle_main_member_flash,
     handle_card_reward,
+    handle_memory_process,
+    handle_memory_card_select,
     handle_select_card,
     handle_copy_member,
     handle_convert_card,
@@ -986,6 +1213,7 @@ PAGE_HANDLERS = [
     handle_negotiation,
     handle_chaos_reward_settlement, #卡厄思奖励结算页面，优先级高于继续按钮
     handle_chaos_reward_claim, #卡厄思模式奖励领取页面
+    handle_go_to_memory_end, #卡厄思结算页面右下角「前往记忆之末」按钮
     handle_continue,
     handle_season_chaos_initial_page, #赛季卡厄思初始页面，优先于进入按钮
     handle_zero_system_initial_page, #零式系统初始页面，优先于进入按钮

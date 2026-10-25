@@ -9,12 +9,13 @@ keeps the frame around it, and a card the Play Priority list names is still play
 
 import collections
 
+import numpy as np
 from ok import Logger
 
 from src.en import board, cards
 from src.en.handlers import StandIn, insert_before, loaded, register, replace, standing_in
 from src.en.overrides import SMART_CARD_PLAY
-from src.en.screen import text_in_region
+from src.en.screen import colour_share, frame_of, patch_of, text_in_region
 
 logger = Logger.get_logger(__name__)
 
@@ -55,6 +56,9 @@ UNREAD_HAND = "_en_unread_hand"
 # Callbacks before the game's check is taken as final, so a hand that never reads cannot stall the turn for good. Each
 # one takes about 3s, and a hand has stayed lowered for up to 12s after a play.
 CALLBACKS = 4
+# Parked on the task while keys are pressed blind into an unread hand, as a `Blind`. Kept off `Turn`, which a card drawn
+# mid-turn starts afresh.
+BLIND = "_en_blind"
 # Where the hand lays out its cards, by hand size: the left edge of the first and of the last card's name. Medians
 # over ~2,600 fully read hands in the September logs, one sighting at 8. Wider hands are taken to span as 7 does.
 HAND_SPAN = {2: (0.393, 0.541), 3: (0.328, 0.605), 4: (0.259, 0.675), 5: (0.240, 0.696),
@@ -64,8 +68,39 @@ WIDEST_SPAN = (0.218, 0.730)
 MAX_KEY = 9
 # How many times a card has to stay in hand after its key is pressed before it is left for the rest of the turn.
 REFUSALS = 2
+# Sortie's battle screens in its own order: the prompts a card can raise mid-fight, then the fight itself. Story mode
+# borrows them for the fights where the game's Auto is locked, since its own handler only turns Auto on and waits.
+BATTLE_SCREENS = ("handle_battle_crash", "handle_discard_hand_card", "handle_battle_hand_select", "handle_curiosity_activate",
+                  "handle_extra_card_use", "handle_card_function_select", "handle_return_to_draw_pile", "handle_weakness_info",
+                  "handle_battle_page")
+# Story's Auto handler, which the borrowed screens sit behind. Matched as a prefix, because the recorder renames it.
+AUTO_CHECK = "handle_battle_auto_check"
+# The Auto button, and the flat grey of the padlock it shows where a fight does not allow Auto. The padlock covers 0.096-0.100
+# of the box on three locked fights, and Auto lit gold or any other screen covers at most 0.027.
+AUTO_BUTTON = (0.855, 0.020, 0.900, 0.085)
+LOCK_LOW = np.array((0, 0, 120), dtype=np.uint8)
+LOCK_HIGH = np.array((180, 30, 215), dtype=np.uint8)
+MIN_LOCK = 0.05
+# A button this bright is drawn plainly: the padlock peaks at 170, and Auto lit gold or white at 255. A prompt's shade drops the
+# padlock to 74, too dim to tell from the gold, so a shaded button keeps the answer its last plain reading gave. With no plain
+# reading yet, the prompt screens get to look, since Auto's own check would only wait on a prompt.
+PLAIN_BUTTON = 120
+# Parked on the task, so a prompt in a locked fight is still known to be one.
+AUTO_LOCKED = "_en_auto_locked"
 
 _patched = False
+
+
+Blind = collections.namedtuple("Blind", [
+    # The hand size the counter read when the last key was pressed.
+    "count",
+    # The last key pressed, or None before the first.
+    "key",
+    # Keys known to hold a card the game would not take, as a frozenset of key strings.
+    "refused",
+    # Whether Enter has followed the last key. Held back a frame, since the game refuses a card at its key.
+    "confirmed",
+])
 
 
 class EgoChoice(StandIn):
@@ -190,6 +225,11 @@ class Turn:
         self.misses = collections.Counter()
         # Keys pressed for a card the counter says is there but OCR never read, each tried once a turn.
         self.blind = set()
+        # Cards passed over for costing more than was left, held when the turn was ended for want of points. A cost can
+        # drop mid-fight - Rossweisse's Sword Resonance showed 0 against the data's 1 - so the game may still take one.
+        self.priced_out = []
+        # Whether the game has already said a card can still be played after the picker ended the turn this turn.
+        self.objected = False
         self.weakness = None
 
 
@@ -202,6 +242,15 @@ def play_key(task, key):
     """
     task.send_key(key)
     task.sleep(AFTER_KEY)
+    confirm(task)
+
+
+def confirm(task):
+    """Press Enter on the card a key raised, and wait as upstream does for it to resolve.
+
+    Args:
+        task: The running task.
+    """
     task.send_key(CONFIRM_KEY)
     task.sleep(AFTER_CONFIRM)
 
@@ -287,18 +336,25 @@ def note_hand_read(task, utils_sortie):
     Args:
         task: The running task, which the note is parked on.
         utils_sortie: Upstream's Sortie module, for its hand counter and name reader.
+
+    Returns:
+        The hand size the counter read, or None when it read nothing.
     """
     count = utils_sortie._read_hand_count(task)
     if not count:
-        return
+        return count
     if utils_sortie._hand_card_names(task):
         setattr(task, UNREAD_HAND, None)
+        setattr(task, BLIND, None)
     elif getattr(task, UNREAD_HAND, None) is None:
         setattr(task, UNREAD_HAND, 0)
+    return count
 
 
 def handle_cards_left(task):
-    """Cancel the end of a turn upstream called on an unread hand, once the game says a card can still be played.
+    """Cancel the end of a turn once the game says a card can still be played, when the bot may have missed one.
+
+    That is an end upstream called on an unread hand, or one the picker called holding cards it passed over for cost.
 
     Args:
         task: The running task, whose `all_texts` is the current screen.
@@ -308,15 +364,62 @@ def handle_cards_left(task):
         the picker chose on purpose still goes through.
     """
     callbacks = getattr(task, UNREAD_HAND, None)
-    if callbacks is None or callbacks >= CALLBACKS or not text_in_region(task, CARDS_LEFT, CARDS_LEFT_REGION):
+    unread = callbacks is not None and callbacks < CALLBACKS
+    turn = getattr(task, TURN, None)
+    priced_out = turn is not None and turn.priced_out and not turn.objected
+    if not (unread or priced_out) or not text_in_region(task, CARDS_LEFT, CARDS_LEFT_REGION):
         return False
     cancel = text_in_region(task, CANCEL, CANCEL_REGION)
     if not cancel:
         return False
-    task.log_info("the game says cards can still be played, so the hand was not raised yet - cancelling the end of turn")
-    setattr(task, UNREAD_HAND, callbacks + 1)
+    if unread:
+        task.log_info("the game says cards can still be played, so the hand was not raised yet - cancelling the end of turn")
+        setattr(task, UNREAD_HAND, callbacks + 1)
+    else:
+        task.log_info(f"the game says a card can still be played, so one of {turn.priced_out} must cost less than the data says")
+        turn.objected = True
     task.click_box(cancel)
     task.sleep(AFTER_KEY)
+    return True
+
+
+def press_unread(task, count):
+    """Try the hand's keys blind once the game has said a card can still be played but the hand still reads empty.
+
+    Live, a 0 AP card stayed unread over its holographic art while every other card sat lowered out of the name band.
+
+    Args:
+        task: The running task, which the presses and the callback count are parked on.
+        count: The hand size the hand counter reads.
+
+    Returns:
+        True when a key was pressed. Once every key has been tried, the game's next check is left to confirm.
+    """
+    callbacks = getattr(task, UNREAD_HAND, None)
+    if not count or not callbacks or callbacks >= CALLBACKS:
+        return False
+    last = getattr(task, BLIND, None) or Blind(count, None, frozenset(), True)
+    refused = last.refused
+    if last.key and not last.confirmed:
+        if not out_of_points(task):
+            confirm(task)
+            setattr(task, BLIND, last._replace(confirmed=True))
+            return True
+        task.log_info(f"not enough AP for key {last.key}, so it is not confirmed")
+        refused |= {last.key}
+    elif last.key and count < last.count:
+        # The last key played, so every card right of it slid one key left. A drawn card joins on the right, so it moves nothing.
+        refused = frozenset(key for key in refused if int(key) < int(last.key))
+    elif last.key:
+        refused |= {last.key}
+    key = unread_key([], count, refused)
+    if key is None:
+        setattr(task, UNREAD_HAND, CALLBACKS)
+        return False
+    task.log_info(f"the game says a card can still be played but none of {count} reads, trying key {key}")
+    task.send_key(key)
+    task.sleep(AFTER_KEY)
+    setattr(task, BLIND, Blind(count, key, refused, False))
     return True
 
 
@@ -354,6 +457,8 @@ def install():
     utils_sortie = loaded("utils_sortie")
     if utils is None or utils_sortie is None:
         return
+    # Before the guard below, so a mode list loaded after the picker went in still gets it. Story loads last.
+    insert_before("handle_center_confirm", handle_cards_left)
     if getattr(utils_sortie._try_all_card_keys, "_en_picker", False):
         return
     blind_fallback = utils_sortie._try_all_card_keys
@@ -430,7 +535,8 @@ def install():
         if was_refused(turn.attempted, turn.attempted_copies, names):
             turn.misses[turn.attempted] += 1
             # Live, Magnetic Field stayed in hand once with all three points to spend, and was given up on for the turn.
-            if turn.misses[turn.attempted] >= REFUSALS:
+            # Once the game has said a card plays, each one tried is a guess, so a single miss is enough to move on.
+            if turn.misses[turn.attempted] >= (1 if turn.objected else REFUSALS):
                 turn.refused.add(turn.attempted)
                 task.log_info(f"the game would not play {turn.attempted}, leaving it for the rest of this turn")
 
@@ -445,6 +551,11 @@ def install():
             task.log_info(f"turn opens with {budget}, {against}, hand {names}")
         state = cards.Board(action_points=points, weakness=turn.weakness)
         card = choose(hand, state, turn.refused)
+        if card is None and turn.objected:
+            # The game said a card is still playable, so the best of those passed over for cost is tried as if affordable.
+            card = choose([held for held in hand if cards.cost(held["name"]) > 0], state._replace(action_points=cards.BASE_ACTION_POINTS),
+                          turn.refused)
+        turn.priced_out = []
         if card is None:
             if not names:
                 # Upstream ends an empty hand itself, so there is nothing here to do and nothing to say.
@@ -458,6 +569,8 @@ def install():
                 turn.blind.add(blind)
                 play_key(task, blind)
                 return
+            if not points:
+                turn.priced_out = [name for name in names if cards.cost(name) > 0 and name not in turn.refused]
             spent = "" if points else ", no Action Points left"
             task.log_info(f"nothing left worth playing in {names}{spent}, ending the turn")
             task.send_key(END_TURN_KEY)
@@ -484,16 +597,12 @@ def install():
         """
         if start_attack(task, utils_sortie):
             return True
-        note_hand_read(task, utils_sortie)
-        was = utils_sortie.random
-        utils_sortie.random = EgoChoice(task, was)
-        try:
+        if press_unread(task, note_hand_read(task, utils_sortie)):
+            return True
+        with standing_in(utils_sortie, random=EgoChoice(task, utils_sortie.random)):
             return original_page(task)
-        finally:
-            utils_sortie.random = was
 
     replace("handle_battle_page", handle_battle_page)
-    insert_before("handle_center_confirm", handle_cards_left)
 
     # Marked so a later task load recognises the replacement and does not wrap it in itself.
     _try_all_card_keys._en_picker = True
@@ -521,10 +630,60 @@ def install():
     logger.info("sortie battles now pick a card instead of pressing every key")
 
 
+def auto_locked(task):
+    """Say whether the fight shows the padlock of one that does not allow Auto, remembering it through a shaded prompt.
+
+    Args:
+        task: The running task, whose frame is the battle screen.
+
+    Returns:
+        True when the last plainly drawn Auto button was the padlock, or when none has been drawn plainly yet.
+    """
+    patch = patch_of(frame_of(task), AUTO_BUTTON)
+    # The brightest channel is the HSV value, so this needs no conversion.
+    if patch is not None and patch.size and patch.max() >= PLAIN_BUTTON:
+        setattr(task, AUTO_LOCKED, colour_share(patch, LOCK_LOW, LOCK_HIGH) >= MIN_LOCK)
+    return getattr(task, AUTO_LOCKED, True)
+
+
+def unless_locked(auto_check):
+    """Wrap Story's Auto handler so it lets a fight with Auto locked through to the borrowed screens.
+
+    Args:
+        auto_check: Story's `handle_battle_auto_check`, which turns Auto on and claims every battle frame.
+
+    Returns:
+        The replacement.
+    """
+    def handle_story_auto(task):
+        if auto_locked(task):
+            return False
+        return auto_check(task)
+
+    return handle_story_auto
+
+
+def fight_story_battles():
+    """Have Story mode play the battles that lock the game's Auto with Sortie's screens, and leave Auto to the rest."""
+    utils_sortie = loaded("utils_sortie")
+    utils_story = loaded("utils_story")
+    if utils_sortie is None or utils_story is None:
+        return
+    names = [getattr(handler, "__name__", "") for handler in utils_story.PAGE_HANDLERS]
+    index = next((at for at, name in enumerate(names) if name.startswith(AUTO_CHECK)), None)
+    if index is None:
+        return
+    # Taken from Sortie's list rather than the module, so Story gets the card picker `install` put there.
+    screens = [handler for handler in utils_sortie.PAGE_HANDLERS if getattr(handler, "__name__", "") in BATTLE_SCREENS]
+    utils_story.PAGE_HANDLERS[index:index + 1] = [unless_locked(utils_story.PAGE_HANDLERS[index]), *screens]
+    logger.info(f"story battles with Auto locked now play with Sortie's screens: {[handler.__name__ for handler in screens]}")
+
+
 def apply():
-    """Have the card picker stand in for upstream's fallback, once the modes have been imported."""
+    """Have the card picker stand in for upstream's fallback, and Story fight its own battles, once the modes have been imported."""
     global _patched
     if _patched:
         return
     register(install)
+    register(fight_story_battles)
     _patched = True
