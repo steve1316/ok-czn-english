@@ -4,6 +4,7 @@ A report of a double-tapped button or a stuck screen comes with the log and noth
 frame behind each INFO or louder line, at most one a second, named by that line's own timestamp. Release runs never start it.
 """
 
+import functools
 import logging
 import os
 import queue
@@ -14,7 +15,7 @@ import time
 
 import cv2
 
-from ok import Logger
+from ok import Logger, TaskExecutor
 
 logger = Logger.get_logger(__name__)
 
@@ -33,6 +34,8 @@ SLUG_LENGTH = 40
 # Runs of characters a file name cannot carry cleanly.
 UNSAFE = re.compile(r"[^A-Za-z0-9]+")
 
+# The frame ok-script last captured. It drops its own copy on every sleep, so `nullable_frame` is usually None.
+_latest = None
 _patched = False
 
 
@@ -47,7 +50,7 @@ class FrameLog(logging.Handler):
             folder: This session's folder, made on the first save.
         """
         super().__init__(logging.INFO)
-        # Read on each line for the running task and the frame it last read.
+        # Read on each line for the running task.
         self.executor = executor
         self.folder = folder
         # When the last frame was queued and the frame itself, so an unchanged frame is not saved twice.
@@ -71,7 +74,7 @@ class FrameLog(logging.Handler):
             executor = self.executor()
             if executor is None or executor.current_task is None:
                 return
-            frame = executor.nullable_frame()
+            frame = latest()
             if frame is None or frame is self.last_frame:
                 return
             self.last_at, self.last_frame = record.created, frame
@@ -113,6 +116,26 @@ class FrameLog(logging.Handler):
             logger.warning(f"could not save a debug frame, later failures stay quiet: {error}")
 
 
+def latest():
+    """Return the frame ok-script last captured, or None before the first one."""
+    return _latest
+
+
+def keep_frames():
+    """Keep each frame ok-script captures, so `latest` still has it after a sleep drops the executor's copy."""
+    original = TaskExecutor.next_frame
+
+    @functools.wraps(original)
+    def next_frame(self, *args, **kwargs):
+        global _latest
+        frame = original(self, *args, **kwargs)
+        if frame is not None:
+            _latest = frame
+        return frame
+
+    TaskExecutor.next_frame = next_frame
+
+
 def prune(root, keep):
     """Delete all but the newest session folders. Their names are start times, so they sort oldest first.
 
@@ -137,6 +160,7 @@ def apply():
 
     if not (og.config or {}).get("debug"):
         return
+    keep_frames()
     session = os.path.join(FOLDER, time.strftime("%Y-%m-%d_%H-%M-%S"))
     handler = FrameLog(lambda: og.executor, session)
     threading.Thread(target=handler.write, name="frame_log", daemon=True).start()

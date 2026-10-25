@@ -16,6 +16,7 @@ import cv2
 
 from ok import Logger
 
+from src.en import frame_log
 from src.en.handlers import each_list, register
 from src.en.screen import centre_of
 
@@ -166,7 +167,7 @@ def screenshot():
     Raises:
         RuntimeError: Nothing has been captured yet.
     """
-    frame = _executor().nullable_frame()
+    frame = frame_log.latest()
     if frame is None:
         raise RuntimeError("no frame captured yet")
     _, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, QUALITY])
