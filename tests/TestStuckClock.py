@@ -7,6 +7,7 @@ however long the app sat stopped, and the first frame of a new run could report 
 These run upstream's own detector rather than a stand-in for it, because the bug is in what it remembers.
 """
 
+import importlib
 import sys
 import time
 import unittest
@@ -207,6 +208,29 @@ class TestRestFlag(unittest.TestCase):
                 task = SimpleNamespace(node_status={rest.FLAG: False}, config={}, default_config={})
                 reset(task)
                 self.assertIs(True, task.node_status[rest.FLAG])
+
+    def test_a_run_started_at_a_safe_zone_enters_the_shop_when_set_to(self):
+        # A run started on a safe zone's screen walked out past the open Dellang shop, because only the route
+        # screen ever turned the shop on.
+        for setting in (True, False):
+            with self.subTest(setting=setting):
+                task = SimpleNamespace(node_status={}, config={rest.SHOP_SETTING: setting}, default_config={})
+                utils.reset_all_status(task)
+                seen = []
+                handler = rest.deciding_the_shop(lambda task_: seen.append(task_.node_status[rest.SHOP]), utils)
+                handler(task)
+                self.assertEqual([setting], seen)
+
+    def test_a_shop_already_spent_is_not_reopened(self):
+        task = SimpleNamespace(node_status={rest.SHOP: False}, config={rest.SHOP_SETTING: True}, default_config={})
+        rest.deciding_the_shop(lambda task_: None, utils)(task)
+        self.assertIs(False, task.node_status[rest.SHOP])
+
+    def test_every_handler_reading_the_shop_still_exists_upstream(self):
+        # `wrap` skips a name it cannot find, so an upstream rename would otherwise drop the fix silently.
+        for module_name, handler_name in rest.READS_SHOP:
+            with self.subTest(handler=handler_name):
+                self.assertTrue(callable(getattr(importlib.import_module(module_name), handler_name, None)))
 
 
 class TestOfferedInteraction(unittest.TestCase):

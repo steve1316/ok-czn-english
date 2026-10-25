@@ -51,11 +51,11 @@ GROUPS = [
 # yet, while a character released after the rip is missing from it altogether. So the roster below is the
 # source of truth for who exists, and the dump is used to check it rather than to build it.
 #
-# Source: https://game8.co/games/Chaos-Zero-Nightmare/archives/558105 (checked 2026-09-03)
+# Source: https://game8.co/games/Chaos-Zero-Nightmare/archives/558105 (checked 2026-09-03), plus Rossweisse from the 2026-10-24 update
 PLAYABLE_COMBATANTS = [
     "Adelheid", "Amir", "Arabella", "Beryl", "Cassius", "Chizuru", "Diana", "Fei", "Haru", "Heidemarie",
     "Hilde", "Hugo", "Kayron", "Khalipe", "Lucas", "Luke", "Magna", "Maribell", "Mei Lin", "Mika", "Narja",
-    "Nia", "Nine", "Olga", "Orlea", "Owen", "Rei", "Renoa", "Rin", "Rita", "Selena", "Sereniel", "Tenebria",
+    "Nia", "Nine", "Olga", "Orlea", "Owen", "Rei", "Renoa", "Rin", "Rita", "Rossweisse", "Selena", "Sereniel", "Tenebria",
     "Tiphera", "Tressa", "Veronica", "Yuki",
 ]
 COMBATANT_TABLE = "char_base@char_combatant.json"
