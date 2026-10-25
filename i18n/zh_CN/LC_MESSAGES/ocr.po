@@ -198,6 +198,11 @@ msgstr "结算"
 msgid "To the Core of Discord"
 msgstr "前往卡厄思核心"
 
+# From handle_go_to_memory_end: "记忆之末" in the box inside (0.740, 0.850, 0.995, 0.980). The final Settlement offers this
+# instead of Continue. Unmapped, the event handler reads Exploration Score as an option and taps it forever.
+msgid "End of Memories"
+msgstr "前往记忆之末"
+
 # From handle_escape: _get_game_text(task, "逃脱") in box.name
 msgid "Retreat"
 msgstr "逃脱"
@@ -291,6 +296,18 @@ msgstr "弱点"
 # From handle_sortie_reward_claim: re.search(r"卡.*思战利品", title.name)
 msgid "Chaos Loot"
 msgstr "卡厄思战利品"
+
+# From handle_memory_card_select: "选择铭刻的记忆" in the title strip. Unmapped, the page reads as an event.
+msgid "Select Etched Memory"
+msgstr "选择铭刻的记忆"
+
+# From handle_precision_memory_process: "精密加工记忆" as the Memory End title and its bottom-right button.
+msgid "Memory Refinement"
+msgstr "精密加工记忆"
+
+# From handle_precision_memory_process: "加工记忆" in the bottom-left button, pressed when the card misses 指定记忆卡牌.
+msgid "Memory Processing"
+msgstr "加工记忆"
 
 # From handle_data_collected: _get_game_text(task, "存储数据收集完成") in box.name
 msgid "Save Data collection complete"

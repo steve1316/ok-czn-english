@@ -100,6 +100,9 @@ ARROW_MIN_VALUE = 200
 ARROW_SEPARATION = 60
 # Chests are only opened on the event screen, which always offers "End the event" while any are left.
 LEAVE_MARKERS = ("离开", *QUIT)
+# Set in `task.node_status` by upstream once Memory Refinement is visited. Upstream then leaves on "就此离开", which the
+# Global client prints as "Leave / End the event".
+REFINED = "precision_memory_visited"
 # Seconds between the tap that selects an event option and the one that confirms it.
 CONFIRM_GAP = 0.2
 
@@ -201,6 +204,28 @@ def drop_unwanted(options, target=None):
     if withheld:
         logger.info(f"withholding {len(withheld)} option(s) that give nothing or cost max Health or a Curse - {' | '.join(withheld)}")
     return kept
+
+
+def leave_after_refinement(task, options):
+    """Offer only the way out of the Memory Refinement event once it has been visited.
+
+    Args:
+        task: The running task, whose `node_status` upstream keeps the visited flag in.
+        options: Every recognised option.
+
+    Returns:
+        The options ending the event, or None when the atelier has not been visited or nothing ends the event.
+    """
+    status = getattr(task, "node_status", None)
+    if not isinstance(status, dict) or not status.get(REFINED):
+        return None
+    leave = [option for option in options if contains(fold(option.get("description", "")), QUIT)]
+    if not leave:
+        return None
+    # Cleared here, so a later event offering "End the event" is not forced out too.
+    status[REFINED] = False
+    logger.info("Memory Refinement already visited, ending its event")
+    return leave
 
 
 def order(options, priority_keywords, is_subsequence, target=None):
@@ -423,6 +448,9 @@ def ranking(utils):
             options = original_recognize(task, *args, **kwargs)
             if not options:
                 return options
+            leave = leave_after_refinement(task, options)
+            if leave:
+                return leave
             priority = []
             for slot in range(1, 4):
                 priority.extend(utils._get_card_list(task, f"装备{slot}号位优先级"))

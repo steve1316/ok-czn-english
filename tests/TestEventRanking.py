@@ -28,8 +28,8 @@ from StoryMode import StoryMode  # noqa: E402
 from src.en.events import (  # noqa: E402
     ATTACK, ATTACK_RANK, BESIDES_CREDITS, CREDIT_RANK, CURSE_RANK, DESIRE_RANK, DIALOGUE, DIALOGUE_RANK, HEALTH_COST,
     HEALTH_COST_RANK, MIN_LATIN_MARKER_LENGTH, MIN_MARKER_LENGTH, OFF_FACTION_RANK, QUIT, QUIT_RANK,
-    REWARD_RANK, RankingChoice, SPARK, SPARK_RANK, center_of, double_clicking, drop_unwanted, find_chests, fold,
-    open_a_chest, order, rank,
+    REFINED, REWARD_RANK, RankingChoice, SPARK, SPARK_RANK, center_of, double_clicking, drop_unwanted, find_chests, fold,
+    leave_after_refinement, open_a_chest, order, rank,
 )
 from src.en.enter import OPTION_TEMPLATES, on_the_button  # noqa: E402
 from tests.fakes import HEIGHT, WIDTH, FakeBox  # noqa: E402
@@ -161,6 +161,15 @@ class TestEventRanking(unittest.TestCase):
             with self.subTest(description=description[:40]):
                 only = [option(description)]
                 self.assertEqual(only, drop_unwanted(only))
+
+    def test_the_refinement_event_is_left_once_and_only_once(self):
+        """Anything but Leave sends the run back into Memory Refinement on every pass."""
+        # Upstream still has to set the flag under this name, or this never fires.
+        self.assertIn(f'"{REFINED}"', (REPO_ROOT / "ok_tasks" / "utils_chaos.py").read_text(encoding="utf-8"))
+        task = SimpleNamespace(node_status={REFINED: True})
+        options = [option("Craft MemoryHeed the Planned Revelation"), option("离开End the event")]
+        self.assertEqual(["离开End the event"], [o["description"] for o in leave_after_refinement(task, options)])
+        self.assertIsNone(leave_after_refinement(task, options))
 
     def test_every_quit_phrasing_is_withheld(self):
         quits = [option(text) for text, tier in REAL_OPTIONS.items() if tier == QUIT_RANK]
