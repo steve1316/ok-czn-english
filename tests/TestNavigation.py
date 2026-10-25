@@ -13,7 +13,7 @@ from src.en import navigation  # noqa: E402
 TARGET = "Arabella"
 # What the log shows on the Combatants tab, at the three points upstream reads names from.
 ON_THE_TAB = {(0.159, 0.368): "Arabella", (0.432, 0.368): "Veronica", (0.705, 0.369): "Mika"}
-# A sibling tab: names at the same points, none of them the combatant being farmed.
+# A sibling tab: names at the same points, none of them a combatant.
 ANOTHER_TAB = {(0.159, 0.368): "Whisper", (0.432, 0.368): "Ember", (0.705, 0.369): "Tallow"}
 # The taps upstream's capture makes: the 3-person icon, the Combatants tab, then the one that closes the page.
 CLOSE_PAGE = (0.960, 0.054)
@@ -81,7 +81,7 @@ class TestOnCombatantsTab(unittest.TestCase):
         for name in ("utils", "utils_chaos"):
             sys.modules.pop(name, None)
 
-    def test_the_farmed_combatant_being_on_screen_proves_the_tab_is_open(self):
+    def test_a_combatant_on_screen_proves_the_tab_is_open(self):
         install(ON_THE_TAB)
         self.assertTrue(navigation.on_combatants_tab(FakeTask()))
 
@@ -94,7 +94,7 @@ class TestOnCombatantsTab(unittest.TestCase):
         install({})
         self.assertFalse(navigation.on_combatants_tab(FakeTask()))
 
-    def test_the_combatant_can_be_in_any_of_the_three_slots(self):
+    def test_one_readable_slot_is_enough(self):
         install({(0.705, 0.369): TARGET})
         self.assertTrue(navigation.on_combatants_tab(FakeTask()))
 
@@ -103,8 +103,15 @@ class TestOnCombatantsTab(unittest.TestCase):
         install({(0.159, 0.368): "Arabella Lv40"})
         self.assertTrue(navigation.on_combatants_tab(FakeTask()))
 
-    def test_no_combatant_configured_means_nothing_to_prove_it_with(self):
-        install(ON_THE_TAB, target="")
+    def test_it_does_not_depend_on_who_is_farmed(self):
+        # A run farming nobody clicked the icon and the tab every time, because the farmed name was the only proof.
+        for target in ("", "(none)", "Heidemarie"):
+            with self.subTest(target=target):
+                install(ON_THE_TAB, target=target)
+                self.assertTrue(navigation.on_combatants_tab(FakeTask()))
+
+    def test_a_short_name_inside_a_longer_word_does_not_count(self):
+        install({(0.159, 0.368): "Fenia"})
         self.assertFalse(navigation.on_combatants_tab(FakeTask()))
 
 

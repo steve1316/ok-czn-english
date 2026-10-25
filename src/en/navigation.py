@@ -7,11 +7,12 @@ reading anything, which on a run started there shuts the page and reopens it.
 """
 
 import dataclasses
+import re
 
 from ok import Logger
 
 from src.en.handlers import loaded, register, replace, standing_in, wrap
-from src.en.overrides import FARMED_COMBATANT
+from src.en.game_data import COMBATANTS
 from src.en.screen import combatant_names
 
 logger = Logger.get_logger(__name__)
@@ -23,6 +24,9 @@ MEMBER_INFO_FEATURES = ["memberinfo", "memberinfo2"]
 
 # Where upstream taps to select the Combatants tab, read off the capture. Check this if a rebase moves it.
 COMBATANTS_TAB = (0.201, 0.056)
+# Any combatant on the roster, as a whole word, so a read with a level stuck on still counts and a short name
+# like "Nia" cannot match inside a longer one. The sibling tabs list Partners, who are not on this roster.
+ROSTER_NAME = re.compile(r"\b(?:" + "|".join(re.escape(name) for name in COMBATANTS) + r")\b")
 
 _patched = False
 
@@ -58,28 +62,21 @@ def on_member_info_page(task):
 
 
 def on_combatants_tab(task):
-    """Report whether the Combatants tab is already open on the combatant the run is farming.
+    """Report whether the Combatants tab is already open.
 
-    Reading the configured name off one of the three slots proves both halves at once: the tab listing
-    combatants is the tab in front of us, and it is showing them now. A sibling tab carries other names, so
-    it fails the test and the capture navigates as it always did.
+    The information page opens on this tab, so this is the normal case. A name off the combatant roster in one
+    of the three slots proves it, whoever the run is farming - including nobody.
 
     Args:
         task: The running task.
 
     Returns:
-        True when the farmed combatant is already named on screen.
+        True when a combatant is named in one of the three slots.
     """
     utils = loaded("utils")
     if utils is None:
         return False
-    target = utils._get_config_value(task, FARMED_COMBATANT, "")
-    if not target:
-        # Nothing to recognise the tab by, so nothing to be confident about. Upstream handles the unset case
-        # by closing the page again, and it is welcome to do that the slow way.
-        return False
-    # Upstream's own matching rule, so a name accepted here is one its read would accept too.
-    return any(name and (target in name or name in target) for name in combatant_names(task, utils))
+    return any(ROSTER_NAME.search(name) for name in combatant_names(task, utils))
 
 
 def without_the_tab_tap(original, dropped):

@@ -25,9 +25,10 @@ sys.path.insert(0, str(REPO_ROOT / "ok_tasks"))
 import utils  # noqa: E402
 
 from src.en.events import (  # noqa: E402
-    ATTACK, ATTACK_RANK, BESIDES_CREDITS, CREDIT_RANK, DESIRE_RANK, DIALOGUE, DIALOGUE_RANK, HEALTH_COST,
+    ATTACK, ATTACK_RANK, BESIDES_CREDITS, CREDIT_RANK, CURSE_RANK, DESIRE_RANK, DIALOGUE, DIALOGUE_RANK, HEALTH_COST,
     HEALTH_COST_RANK, MIN_LATIN_MARKER_LENGTH, MIN_MARKER_LENGTH, OFF_FACTION_RANK, QUIT, QUIT_RANK,
-    REWARD_RANK, RankingChoice, SPARK, SPARK_RANK, drop_unwanted, find_chests, fold, open_a_chest, order, rank,
+    REWARD_RANK, RankingChoice, SPARK, SPARK_RANK, center_of, double_clicking, drop_unwanted, find_chests, fold,
+    open_a_chest, order, rank,
 )
 from src.en.enter import OPTION_TEMPLATES, on_the_button  # noqa: E402
 from tests.fakes import HEIGHT, WIDTH, FakeBox  # noqa: E402
@@ -43,6 +44,8 @@ REAL_OPTIONS = {
     "Bury the bodySpark an Epiphany for arandom Combatant 1 time(s)": SPARK_RANK,
     "[Dexterous] Help with the workDice Roll 14Upon success Spark a DivineEpiphany to 1 random card(s)": SPARK_RANK,
     "Extract the essenceA selected combatant gainsEpiphany 1 time, Forcefullyobtain Curse Card(s) [Paras": SPARK_RANK,
+    # A Curse without the spark. "Obtain" would otherwise read it as a reward.
+    "Steal the offeringIncrease Credits by120Forcefully obtain CurseCard(s) [Desire]": CURSE_RANK,
     # Rewards.
     "Activate WaypointObtain Equipment [AssaultGauntlets]": REWARD_RANK,
     "Examine the rootRecover Health by 40%,Decrease all Combatants'Stress by 6": REWARD_RANK,
@@ -374,6 +377,22 @@ class TestTreasureChests(unittest.TestCase):
         task = SimpleNamespace(frame=self.frame_with_band(), all_texts=[], sleep=lambda seconds: None)
         utils = SimpleNamespace(_move_and_click=lambda *_: self.fail("clicked off the event screen"))
         self.assertFalse(open_a_chest(task, utils))
+
+
+class TestOptionDoubleClick(unittest.TestCase):
+    """An event option is selected and confirmed by two taps in one pass, and no other tap is doubled."""
+
+    def test_only_the_option_tap_is_doubled(self):
+        # Upstream's own closure works out where to tap, so the center has to match it exactly or nothing is doubled.
+        option = {"description_region": (0.44, 0.36, 0.90, 0.44)}
+        taps, clicks = [], []
+        task = SimpleNamespace(sleep=lambda seconds: None, click=lambda x, y: clicks.append((x, y)))
+        tap = double_clicking(lambda _, x, y: taps.append((x, y)), {center_of(option)})
+        left, top, right, bottom = option["description_region"]
+        tap(task, (left + right) / 2, (top + bottom) / 2)
+        tap(task, 0.959, 0.053)
+        self.assertEqual(2, len(taps))
+        self.assertEqual(taps[:1], clicks)
 
 
 class TestEnterButton(unittest.TestCase):

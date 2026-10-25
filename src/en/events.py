@@ -13,7 +13,7 @@ import cv2
 from ok import Logger
 
 from src.en import desire
-from src.en.handlers import StandIn, loaded, register, wrap
+from src.en.handlers import StandIn, loaded, register, standing_in, wrap
 from src.en.screen import frame_of, hsv_of, patch_of
 
 logger = Logger.get_logger(__name__)
@@ -36,6 +36,9 @@ DESIRE = ("desire",)
 # An option that permanently cuts max Health, whatever else it hands over. Wording taken from the captured
 # "Increase max Health by 15%", since no run has logged the cut yet.
 HEALTH_COST = ("decrease max health",)
+# An option that forces a Curse card into the deck, whatever else it hands over. Both captured wordings,
+# "Forcefully obtain Curse Card(s) [Desire]" and "Forcefullyobtain Curse Card(s) [Paras", fold to this.
+CURSE = ("obtain curse",)
 # An option whose reward is credits. A pattern rather than the plain containment the other markers use,
 # because the count sits inside the second wording and so leaves no fixed substring to look for. Both wordings
 # come from the 221 options logged off this client: "Increase Credits by N", and "Add N Credits".
@@ -60,6 +63,8 @@ ATTACK_RANK = 5
 QUIT_RANK = 6
 # Worse than quitting, because the cut lasts the rest of the run. Still ahead of lore, which never moves the run on.
 HEALTH_COST_RANK = 7
+# Priced like a max Health cut, because the card stays in the deck for the rest of the run.
+CURSE_RANK = HEALTH_COST_RANK
 # Worse than quitting. Ending the event at least moves the run on, while reading lore puts the same screen
 # straight back up.
 DIALOGUE_RANK = 8
@@ -95,6 +100,8 @@ ARROW_MIN_VALUE = 200
 ARROW_SEPARATION = 60
 # Chests are only opened on the event screen, which always offers "End the event" while any are left.
 LEAVE_MARKERS = ("离开", *QUIT)
+# Seconds between the tap that selects an event option and the one that confirms it.
+CONFIRM_GAP = 0.2
 
 _patched = False
 
@@ -137,7 +144,7 @@ def rank(description, target=None):
 
     Returns:
         `SPARK_RANK`, `DESIRE_RANK`, `REWARD_RANK`, `OFF_FACTION_RANK`, `CREDIT_RANK`, `ATTACK_RANK`,
-        `QUIT_RANK`, `HEALTH_COST_RANK` or `DIALOGUE_RANK`.
+        `QUIT_RANK`, `HEALTH_COST_RANK`, `CURSE_RANK` or `DIALOGUE_RANK`.
     """
     text = fold(description)
     # Ahead of every other marker, so a spark or reward on the same option does not hide the cut.
@@ -145,6 +152,9 @@ def rank(description, target=None):
         return HEALTH_COST_RANK
     if contains(text, SPARK):
         return SPARK_RANK
+    # After the spark, which is worth carrying a Curse for, and ahead of the "obtain" that would rank it a reward.
+    if contains(text, CURSE):
+        return CURSE_RANK
     if contains(text, DIALOGUE):
         return DIALOGUE_RANK
     if contains(text, QUIT):
@@ -165,7 +175,7 @@ def rank(description, target=None):
 
 
 def drop_unwanted(options, target=None):
-    """Withhold the options that give nothing or cost max Health, unless they are all that is on offer.
+    """Withhold the options that give nothing or cost max Health or a Curse, unless they are all that is on offer.
 
     This is what makes "never end or stall the event while something else is available" a guarantee rather than
     a preference. Upstream's upper-half shortcut runs before any ranking and cannot be reasoned with, so those
@@ -189,7 +199,7 @@ def drop_unwanted(options, target=None):
     # yet, and this line is what makes it obvious from a run's log rather than needing a repro.
     withheld = [f"rank {tier}: {option.get('description', '')}" for tier, option in ranked if tier > cutoff]
     if withheld:
-        logger.info(f"withholding {len(withheld)} option(s) that give nothing or cost max Health - {' | '.join(withheld)}")
+        logger.info(f"withholding {len(withheld)} option(s) that give nothing or cost max Health or a Curse - {' | '.join(withheld)}")
     return kept
 
 
@@ -312,6 +322,42 @@ def open_a_chest(task, utils):
     return True
 
 
+def center_of(option):
+    """Find where upstream taps an event option.
+
+    Args:
+        option: One option from `recognize_event_options`.
+
+    Returns:
+        The middle of its description, worked out the same way upstream's `click_event_option` does.
+    """
+    left, top, right, bottom = option["description_region"]
+    return (left + right) / 2, (top + bottom) / 2
+
+
+def double_clicking(original, centers):
+    """Build a `_move_and_click` that taps an event option twice, so it is selected and confirmed in one pass.
+
+    Upstream taps an option once to select it and leaves the confirming tap to the next frame. Every other tap,
+    such as the close button, still goes through once.
+
+    Args:
+        original: The real `_move_and_click`.
+        centers: The set of option centers read this pass, filled in as options are recognized.
+
+    Returns:
+        The replacement.
+    """
+    # Named for the handler it stands in for: `_move_and_click` logs the name of the frame that called it.
+    def handle_event_task(task, x, y):
+        original(task, x, y)
+        if (x, y) in centers:
+            task.sleep(CONFIRM_GAP)
+            task.click(x, y)
+
+    return handle_event_task
+
+
 class RankingChoice(StandIn):
     """Stands in for the `random` module for one call, ranking event options instead of picking blindly.
 
@@ -388,8 +434,7 @@ def ranking(utils):
             if open_a_chest(task, utils):
                 return True
             original_find_feature = task.find_feature
-            original_random = utils.random
-            target = desire.target_faction(task, utils)
+            centers = set()
 
             def find_feature(feature_name=None, *args, **kwargs):
                 # Hiding this one feature stops combat being clicked before anything is ranked. Set on the
@@ -398,15 +443,16 @@ def ranking(utils):
                     return []
                 return original_find_feature(feature_name, *args, **kwargs)
 
-            task.find_feature = find_feature
-            utils.random = RankingChoice(original_random, target)
-            utils.recognize_event_options = ranked_recognize
-            try:
+            def recognize(task, *args, **kwargs):
+                options = ranked_recognize(task, *args, **kwargs)
+                centers.update(center_of(option) for option in options or [])
+                return options
+
+            target = desire.target_faction(task, utils)
+            with (standing_in(utils, random=RankingChoice(utils.random, target), recognize_event_options=recognize,
+                              _move_and_click=double_clicking(utils._move_and_click, centers)),
+                  standing_in(task, find_feature=find_feature)):
                 return original_handle_event_task(task)
-            finally:
-                utils.recognize_event_options = original_recognize
-                utils.random = original_random
-                del task.find_feature
 
         return patched_handle_event_task
 
