@@ -27,10 +27,14 @@ WIDTH, HEIGHT = 1920, 1080
 # neutral white of the padlock it shows while it is off.
 GLOW = (77, 111, 156)
 UNLIT = (168, 168, 168)
+# The lit ring washed out by a scene change, which once read as off and got auto-advance switched off.
+PALE_GLOW = (207, 229, 230)
 # The share of the patch the ring covers when it is lit. Twenty frames of the Global client were sampled over
 # its patch: every frame showing it running ran 0.105 to 0.150 and every frame showing it off came back 0.000,
 # so the thinnest of the lit ones is what the threshold has to sit under.
 MEASURED_GLOW = 0.105
+# The washed-out ring's share of the patch, off the frame where it was misread.
+MEASURED_PALE_GLOW = 0.252
 
 # The line the run stalled on, and the two-line screen the mushroom event showed.
 SOLDIER = "The Soldier's eyes are fixed on the group. The Weapon in their hand is trembling."
@@ -284,9 +288,10 @@ class TestAutoAdvance(unittest.TestCase):
     """Reading the auto-advance button, and reaching for it before tapping the prose."""
 
     def test_the_lit_button_reads_as_running(self):
-        """The thinnest ring the captures measured still has to clear the threshold."""
-        task = FakeTask([], frame_with_button(GLOW, MEASURED_GLOW))
-        self.assertFalse(auto_advance_off(task))
+        """The thinnest ring the captures measured, and the one a scene change washes out, still have to clear the threshold."""
+        for colour, share in ((GLOW, MEASURED_GLOW), (PALE_GLOW, MEASURED_PALE_GLOW)):
+            with self.subTest(colour=colour):
+                self.assertFalse(auto_advance_off(FakeTask([], frame_with_button(colour, share))))
 
     def test_the_unlit_button_reads_as_off(self):
         """Off is drawn in a neutral white that carries no amber at all."""

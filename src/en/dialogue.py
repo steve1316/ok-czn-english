@@ -51,12 +51,12 @@ TOGGLE_REGION = (0.865, 0.028, 0.894, 0.080)
 # The middle of that button, where the tap turning it on lands.
 TOGGLE_POINT = ((TOGGLE_REGION[0] + TOGGLE_REGION[2]) / 2, (TOGGLE_REGION[1] + TOGGLE_REGION[3]) / 2)
 # The amber the ring and its chevrons glow in once auto-advance is running, as OpenCV HSV bounds. Hue is
-# wide because the ring fades from gold at its brightest to a deep orange at its ends.
-GLOW_LOW = np.array((10, 90, 120), dtype=np.uint8)
+# wide because the ring fades from gold at its brightest to a deep orange at its ends. Saturation goes down to
+# 20 because a scene change washes the lit ring out to saturation ~25, while the off ring is white at ~2.
+GLOW_LOW = np.array((10, 20, 120), dtype=np.uint8)
 GLOW_HIGH = np.array((35, 255, 255), dtype=np.uint8)
-# How much of the button's patch has to be amber to call auto-advance running. Across twenty captured frames
-# it measured 0.105 to 0.150 on every frame showing it on and 0.000 on every frame showing it off, so this
-# sits clear of both.
+# How much of the button's patch has to be amber to call auto-advance running. Over 779 captured frames every
+# lit one measured 0.152 or more, the washed-out one 0.252, and all 23 showing it off 0.000.
 MIN_GLOW = 0.05
 # How long the button gets to notice the pointer, and then to redraw before the corner is read again. The
 # hover matters: upstream taps every button this way and the client can drop a click that arrives without one.
