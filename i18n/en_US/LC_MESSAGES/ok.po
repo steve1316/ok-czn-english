@@ -486,7 +486,7 @@ msgid "存储数据保存上限大于多少"
 msgstr "Minimum Save Data Storage Limit"
 
 msgid "保留大于多少TB的存档"
-msgstr "Keep Save Data Above This Many TB"
+msgstr "Delete Saves Worth This Many TB or Less"
 
 msgid "触发器会不断调用run方法"
 msgstr "The trigger calls run() continuously."

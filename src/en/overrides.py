@@ -12,6 +12,7 @@ from ok.util.file import get_relative_path, read_json_file, write_json_file
 from src.en.desire import DEFAULT_FACTION, FACTIONS
 from src.en.game_data import CARDS, COMBATANTS, EQUIPMENT
 from src.en.framework import import_ui
+from src.en.shop import PAID_THRESHOLD
 
 logger = Logger.get_logger(__name__)
 
@@ -72,8 +73,12 @@ SINGLE_CHOICE = {
     FARMED_COMBATANT: ([NO_COMBATANT, *COMBATANTS], "Heidemarie"),
 }
 # Upstream defaults the fork overrides. A saved config keeps whatever it already holds. The shop's Credit threshold
-# is raised out of reach, so a run never pays to reroll unless the user lowers it.
-FORCED_DEFAULTS = {"进入商店": True, "商店刷新信用点阈值": 999999}
+# is `NEVER_PAY`, so a run never pays to reroll unless the user raises it. Loot is safe to claim by default, since
+# upstream switches it off once the Loot Certification Cards run out.
+NEVER_PAY = -1
+FORCED_DEFAULTS = {"进入商店": True, PAID_THRESHOLD: NEVER_PAY, "领取奖励(只使用验证卡)": True}
+# Number settings whose range the fork pins. ok-script opens a negative default's range to -999999.
+NUMBER_RANGES = {PAID_THRESHOLD: {"min": NEVER_PAY}}
 # Free-text settings whose Chinese default cannot carry over. Cleared so the user fills them from what the
 # client actually shows, rather than inheriting a value that can never match.
 CLEARED_TEXT = ["指定面具卡牌", "面具卡牌刻印", "指定记忆卡牌", "刷初始卡牌"]
@@ -124,10 +129,10 @@ DESCRIPTIONS = {
     "第几层boss前自动暂停": "Stop and hand back control before the boss on this floor. Never Pause runs the whole map unattended.",
     "几轮后停止(0为不停止)": "Stop the bot after this many finished runs. Zero keeps it going.",
     "配置操作": "Import or export this mode's settings as a shareable code, and save or switch between local presets.",
-    "存储数据保存上限大于多少": "Only keep a run whose Save Data Storage Limit reaches at least this much.",
-    "保留大于多少TB的存档": "Only keep save data above this size.",
+    "存储数据保存上限大于多少": "Only start a run whose Save Data Storage Limit reaches at least this much, re-rolling until one does. This picks the run, it never deletes anything.",
+    "保留大于多少TB的存档": "After a run, on the Save Data collection screen, delete each stored save worth this many TB or less to free its slot. Zero keeps every save. Not the same as Minimum Save Data Storage Limit, which picks the run before it starts.",
     "优先使用金币治疗": "Always pay Credits for counselling at the Epione Center. Left off, a Communication Pass is spent when you have one and Credits only when you do not.",
-    "商店刷新信用点阈值": "Pay Credits to reroll the Dellang Shop once its free refreshes are used up, but only while holding more than this many. Left at 999999 it never pays.",
+    PAID_THRESHOLD: "Pay Credits to reroll the Dellang Shop once its free refreshes are used up, but only while holding more than this many. -1 never pays, and 0 pays whenever the price is affordable.",
     "进入商店": "Visit the Dellang Shop when a Safe Zone offers one. It pays to remove a card first, up to five a run, then buys from your Card Reward Priority and Equipment Slot lists.",
     "优先移除基础牌": "Clear basic cards out of the deck before anything else.",
     "只打第一层": "Leave after the first floor instead of running the whole map.",
@@ -170,6 +175,10 @@ def reshape(task):
     for key, value in FORCED_DEFAULTS.items():
         if key in task.default_config:
             task.default_config[key] = value
+
+    for key, bounds in NUMBER_RANGES.items():
+        if key in task.default_config:
+            task.config_type[key] = bounds
 
     # Added rather than re-shaped, so it needs no migration: `Config` seeds a key it has never saved from
     # `default_config`, and an existing config simply gains it switched on.
