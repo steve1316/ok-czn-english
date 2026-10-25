@@ -11,7 +11,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.en.memory_limit import STATE, handle_memory_limit  # noqa: E402
+from src.en.memory_limit import STATE, handle_divine_epiphany, handle_memory_limit  # noqa: E402
 from tests.fakes import HEIGHT, WIDTH, FakeBox  # noqa: E402
 
 SKIP_BUTTON = FakeBox("跳过", 0.951, 0.930, units="fraction")
@@ -38,6 +38,15 @@ WARNING_DIALOG = [
     CANCEL_BUTTON,
     FakeBox("确认", 0.666, 0.632, units="fraction"),
 ]
+DIVINE_CONFIRM_BUTTON = FakeBox("确认", 0.666, 0.690, units="fraction")
+# The Divine Epiphany notice, as OCR read it on the Global client. It shares the warning's Faint Memory row and buttons.
+DIVINE_NOTICE = [
+    FakeBox("When obtaining a Card with Divine Epiphany, Faint Memory increases by 20 points.", 0.500, 0.353, width=1000, units="fraction"),
+    FakeBox("Would you like to select this card?", 0.500, 0.393, width=420, units="fraction"),
+    FakeBox("Faint Memory", 0.411, 0.486, width=180, units="fraction"),
+    FakeBox("取消", 0.347, 0.690, units="fraction"),
+    DIVINE_CONFIRM_BUTTON,
+]
 
 
 class FakeTask:
@@ -50,6 +59,9 @@ class FakeTask:
 
     def click_box(self, box, *args, **kwargs):
         self.clicked.append(box)
+
+    def move_relative(self, x, y):
+        pass
 
     def log_info(self, message):
         pass
@@ -87,6 +99,13 @@ class TestMemoryLimit(unittest.TestCase):
         task = FakeTask(REWARD_SCREEN + [box for box in WARNING_DIALOG if box is not CANCEL_BUTTON])
         self.assertTrue(handle_memory_limit(task))
         self.assertEqual([], task.clicked)
+
+    def test_the_divine_epiphany_notice_is_confirmed_and_not_mistaken_for_the_warning(self):
+        """The warning's Cancel would leave the Epiphany page picking the same card forever."""
+        task = FakeTask(DIVINE_NOTICE)
+        self.assertFalse(handle_memory_limit(task))
+        self.assertTrue(handle_divine_epiphany(task))
+        self.assertEqual([DIVINE_CONFIRM_BUTTON], task.clicked)
 
 
 if __name__ == "__main__":
