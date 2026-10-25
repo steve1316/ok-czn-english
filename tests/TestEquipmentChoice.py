@@ -79,11 +79,11 @@ BUCKET_COLOURS = {bucket: rgb for rgb, bucket in BUCKETS.items()} | {TOP_QUALITY
 # this client calls Legend.
 OFFERED = {"name": "Corroded Gauntlets", "slot": 2, "quality": "史诗", "rank": None}
 # Global Equipment screens, each cropped from the full frame at (x, y), with each row's level tag and what upstream
-# should read there. The second highlights the offered piece's slot in both rows and holds a Legend ring. On the
-# first, from upstream issue #13, row 3's ring slot is left out: its whole inside reads (46, 38, 40), one past
-# tolerance, and cannot be let in by colour because a dimmed Legend reads (52, 45, 43).
+# should read there. Both offer a ring, so every row's ring slot is highlighted, and the Recommended row's glows
+# brighter. That lifts it to (34, 30, 27) on the second and to (46, 38, 40) on the first, from upstream issue #13,
+# one past tolerance. It is left out there, as a dimmed Legend reads (52, 45, 43) and leaves no room to let it in.
 SLOT_FRAMES = (("equipment_bare.png", (1430, 270), TAG_Y, (["", "", ""], ["", "", ""], ["", ""])),
-               ("equipment_legend.png", (1390, 390), (467, 707), (["", "", "史诗"], ["", "", ""])))
+               ("equipment_worn.png", (1390, 270), TAG_Y, (["", "普通", "史诗"], ["", "普通", "史诗"], ["", "", ""])))
 
 
 class FakeTask:
