@@ -1,0 +1,113 @@
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["mcp==2.3.0"]
+# ///
+"""MCP server giving Claude a debug run's screen, OCR, settings and clicks.
+
+Claude Code starts this with `uv run --script` (see `.mcp.json`), so `mcp` lives in uv's own environment. Installed
+into the app's Python it would upgrade starlette past what FastAPI accepts. Each tool forwards to `src/en/remote.py`,
+which only a `main_debug.py` run serves.
+"""
+
+import base64
+import json
+import urllib.error
+import urllib.request
+
+from mcp.server.mcpserver import Image, MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
+
+# Where `src/en/remote.py` listens.
+URL = "http://127.0.0.1:47821"
+# Seconds to wait for a reply. Above the remote's own 15 s wait for the page loop, so its clearer error arrives first.
+TIMEOUT = 30
+
+server = MCPServer(
+    "czn",
+    instructions="Drives a running `python main_debug.py` session of the CZN bot. Coordinates are fractions of the 16:9 game frame. "
+                 "Hold the bot before clicking through screens yourself, and release it afterwards.",
+)
+
+
+def call(command, **kwargs):
+    """Send one command to the debug run and return its result.
+
+    Args:
+        command: The remote command name, one of `remote.COMMANDS`.
+        **kwargs: The command's arguments.
+
+    Returns:
+        The command's result, decoded from JSON.
+
+    Raises:
+        ToolError: The debug run is not answering, or the command failed there. Any other exception reaches Claude as
+            a bare "Error executing tool", without its message.
+    """
+    request = urllib.request.Request(f"{URL}/{command}", data=json.dumps(kwargs).encode("utf-8"), method="POST",
+                                     headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+            reply = json.load(response)
+    except urllib.error.URLError as error:
+        raise ToolError(f"nothing answering on {URL} - start `python main_debug.py` first ({error.reason})") from error
+    if not reply["ok"]:
+        raise ToolError(reply["error"])
+    return reply["result"]
+
+
+@server.tool()
+def status() -> dict:
+    """Which task is running, whether the bot is held, and which tasks are switched on."""
+    return call("status")
+
+
+@server.tool()
+def screenshot() -> Image:
+    """The game frame the bot last read, as a JPEG."""
+    return Image(data=base64.b64decode(call("screenshot")["jpeg"]), format="jpeg")
+
+
+@server.tool()
+def texts() -> list:
+    """Every text the running mode read on its last frame, with its centre as fractions of the frame."""
+    return call("texts")
+
+
+@server.tool()
+def click(x: float, y: float) -> str:
+    """Click a point, given as fractions of the frame from 0 to 1. Runs between the bot's frames, so it never races a handler."""
+    return call("click", x=x, y=y)
+
+
+@server.tool()
+def press_key(key: str) -> str:
+    """Press a key in the game, such as `esc`."""
+    return call("press_key", key=key)
+
+
+@server.tool()
+def hold(on: bool = True) -> dict:
+    """Hold the bot so it stops acting on frames, or release it with `on=False`. A held bot still reads every frame."""
+    return call("hold", on=on)
+
+
+@server.tool()
+def settings(task: str = "ChaosMode") -> dict:
+    """Every setting a task carries, by its config key."""
+    return call("settings", task=task)
+
+
+@server.tool()
+def set_setting(key: str, value: str | int | float | bool | list[str], task: str = "ChaosMode") -> str | int | float | bool | list[str]:
+    """Change one setting, saved as the settings card would. Upstream's keys are Chinese, so read `settings` for the exact key."""
+    return call("set_setting", key=key, value=value, task=task)
+
+
+@server.tool()
+def set_running(task: str, running: bool) -> dict:
+    """Start or stop a mode such as `ChaosMode`, as its Start and Stop buttons would. Hold the bot first to start it idle."""
+    return call("set_running", task=task, running=running)
+
+
+if __name__ == "__main__":
+    server.run()

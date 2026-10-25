@@ -1,4 +1,4 @@
-"""Check that a debug run saves one frame per log line a second, named so the line finds it, and keeps only the newest sessions."""
+"""Check the debug-run tools: one saved frame per log line a second, and the remote control's seat in the real mode lists."""
 
 import logging
 import os
@@ -14,8 +14,14 @@ import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(REPO_ROOT / "ok_tasks"))
 
-from src.en import frame_log  # noqa: E402
+import utils_chaos  # noqa: E402
+import utils_sortie  # noqa: E402
+import utils_story  # noqa: E402
+
+from src.en import frame_log, remote  # noqa: E402
+from src.en.handlers import standing_in  # noqa: E402
 
 # 00:48:52,268 local time on the day of a live run, as the log line would print it.
 LOGGED_AT = time.mktime((2026, 10, 25, 0, 48, 52, 0, 0, -1)) + 0.268
@@ -69,6 +75,34 @@ class TestFrameLog(unittest.TestCase):
             os.makedirs(os.path.join(self.folder.name, name))
         frame_log.prune(self.folder.name, frame_log.SESSIONS_KEPT - 1)
         self.assertEqual(["2026-10-24_10-00-00", "2026-10-25_10-00-00"], sorted(os.listdir(self.folder.name)))
+
+
+class TestRemote(unittest.TestCase):
+
+    def tearDown(self):
+        remote._held.clear()
+
+    def test_the_remote_comes_first_in_every_mode(self):
+        """Anywhere lower, a held bot still runs whatever comes before it, and a mode it misses can never be clicked in."""
+        remote.install()
+        remote.install()
+        for module in (utils_chaos, utils_sortie, utils_story):
+            with self.subTest(module.__name__):
+                names = [handler.__name__ for handler in module.PAGE_HANDLERS]
+                self.assertEqual((remote.handle_remote.__name__, 1), (names[0], names.count(names[0])))
+
+    def test_an_abandoned_click_never_lands(self):
+        """A click whose caller gave up would otherwise land on whatever screen the bot reaches next."""
+        clicks = []
+        with standing_in(remote, ACTION_TIMEOUT=0.01), self.assertRaises(TimeoutError):
+            remote.on_bot_thread(clicks.append)
+        self.assertFalse(remote.handle_remote("task"))
+        self.assertEqual([], clicks)
+
+    def test_a_held_bot_gives_up_every_frame(self):
+        """Otherwise the bot acts on the screen being stepped through by hand."""
+        remote._held.set()
+        self.assertTrue(remote.handle_remote("task"))
 
 
 if __name__ == "__main__":
