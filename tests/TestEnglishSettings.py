@@ -49,6 +49,9 @@ REVIEWED_COLLISIONS = {
     # recognised as a card. The label sits under every card of that type, against one card sharing the name.
     "Attack",
     "Curse",
+    # The Story map's node that opens a Chaos, matched whole by handle_observe. The card of that name has no cost and no
+    # text beyond "No Action" in the dump, so it is never in the hand and never something a user would name.
+    "Observe",
 }
 
 
