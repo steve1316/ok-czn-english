@@ -374,8 +374,14 @@ msgstr "Cards to Meditate"
 msgid "多少信用点以上冥想"
 msgstr "Meditate Above This Many Credits"
 
+msgid "商店刷新信用点阈值"
+msgstr "Pay To Refresh Shop Above This Many Credits"
+
 msgid "指定面具卡牌"
 msgstr "Target Persona Card"
+
+msgid "指定记忆卡牌"
+msgstr "Target Memory Card"
 
 msgid "面具卡牌刻印"
 msgstr "Persona Card Engraving"

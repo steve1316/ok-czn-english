@@ -71,11 +71,12 @@ SINGLE_CHOICE = {
     "游戏语言": (GAME_LANGUAGES, "English"),
     FARMED_COMBATANT: ([NO_COMBATANT, *COMBATANTS], "Heidemarie"),
 }
-# Switches upstream ships off that the fork turns on. A saved config keeps whatever it already holds.
-SWITCHED_ON = ["进入商店"]
+# Upstream defaults the fork overrides. A saved config keeps whatever it already holds. The shop's Credit threshold
+# is raised out of reach, so a run never pays to reroll unless the user lowers it.
+FORCED_DEFAULTS = {"进入商店": True, "商店刷新信用点阈值": 999999}
 # Free-text settings whose Chinese default cannot carry over. Cleared so the user fills them from what the
 # client actually shows, rather than inheriting a value that can never match.
-CLEARED_TEXT = ["指定面具卡牌", "面具卡牌刻印", "刷初始卡牌"]
+CLEARED_TEXT = ["指定面具卡牌", "面具卡牌刻印", "指定记忆卡牌", "刷初始卡牌"]
 CLEARED_LISTS = ["闪光优先级", "任务优先级", "拉黑任务"]
 
 # Every setting this module owns, and so may re-seed when the saved config predates it.
@@ -111,6 +112,7 @@ DESCRIPTIONS = {
     FARMED_COMBATANT: f"The combatant whose save data is farmed. Pick {NO_COMBATANT} to favour no one.",
     "指定面具卡牌": "The Persona Card to hold out for, matched against its name and description.",
     "面具卡牌刻印": "The Engraving to hold out for on that Persona Card.",
+    "指定记忆卡牌": "The memory card to take when processing memories, matched against its name and description. A page offering nothing that matches is skipped or searched again.",
     "刷初始卡牌": "Reroll the starting card until this one appears. Cannot be combined with Farm Gaps.",
     "任务优先级": "Preferred options inside an Unidentified Area, best first, matched loosely against the option's description rather than its title - so prefer distinctive wording, since a short word matches far more than you expect. Your Equipment Slot priorities are tried ahead of this list, and an area that matches nothing is picked at random.",
     "拉黑任务": "Never take an Unidentified Area option whose description matches one of these, so an entry like Curse skips anything handing you a Curse Card. If blocking would leave nothing to choose from, the list is ignored for that one screen.",
@@ -125,6 +127,7 @@ DESCRIPTIONS = {
     "存储数据保存上限大于多少": "Only keep a run whose Save Data Storage Limit reaches at least this much.",
     "保留大于多少TB的存档": "Only keep save data above this size.",
     "优先使用金币治疗": "Always pay Credits for counselling at the Epione Center. Left off, a Communication Pass is spent when you have one and Credits only when you do not.",
+    "商店刷新信用点阈值": "Pay Credits to reroll the Dellang Shop once its free refreshes are used up, but only while holding more than this many. Left at 999999 it never pays.",
     "进入商店": "Visit the Dellang Shop when a Safe Zone offers one. It pays to remove a card first, up to five a run, then buys from your Card Reward Priority and Equipment Slot lists.",
     "优先移除基础牌": "Clear basic cards out of the deck before anything else.",
     "只打第一层": "Leave after the first floor instead of running the whole map.",
@@ -164,9 +167,9 @@ def reshape(task):
         if key in task.default_config:
             task.default_config[key] = []
 
-    for key in SWITCHED_ON:
+    for key, value in FORCED_DEFAULTS.items():
         if key in task.default_config:
-            task.default_config[key] = True
+            task.default_config[key] = value
 
     # Added rather than re-shaped, so it needs no migration: `Config` seeds a key it has never saved from
     # `default_config`, and an existing config simply gains it switched on.

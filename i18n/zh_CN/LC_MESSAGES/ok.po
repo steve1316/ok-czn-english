@@ -366,6 +366,9 @@ msgstr "拉黑主战员"
 msgid "指定面具卡牌"
 msgstr "指定面具卡牌"
 
+msgid "指定记忆卡牌"
+msgstr "指定记忆卡牌"
+
 msgid "日文"
 msgstr ""
 
@@ -479,6 +482,9 @@ msgstr "需要冥想的卡牌"
 
 msgid "多少信用点以上冥想"
 msgstr "多少信用点以上冥想"
+
+msgid "商店刷新信用点阈值"
+msgstr "商店刷新信用点阈值"
 
 msgid "丢弃最多2张卡牌"
 msgstr "丢弃最多2张卡牌"
