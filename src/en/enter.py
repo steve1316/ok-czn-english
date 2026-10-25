@@ -3,7 +3,7 @@
 Upstream presses any "进入" across the bottom fifth of the screen. The Global client captions its round action button
 "Enter", and since the 2026-10-01 update it also prints an "Enter" key hint on Select and Confirm buttons, which
 upstream pressed before the screen's own handler had picked anything. On a Sortie event the round button attacks the
-object, so it is also left alone while an option is offered.
+object, so it is also left alone while an option is offered. Story mode keeps upstream's handler as it is.
 """
 
 from ok import Logger
@@ -25,6 +25,9 @@ BUTTON = (0.90, 0.85, 1.0, 1.0)
 OPTION_TEMPLATES = [f"event{number}" for number in range(1, 9)]
 OPTION_BAND = (0.198, 0.840, 0.803, 1.000)
 OPTION_THRESHOLD = 0.70
+# The mode whose Enter is a wide bar on the chapter panel, centred at (0.817, 0.930) - among the key hints, so no region
+# can tell them apart.
+STORY_MODE = "StoryMode"
 
 _patched = False
 
@@ -40,6 +43,8 @@ def on_the_button(utils):
     """
     def factory(original_handle_enter):
         def handle_enter(task):
+            if type(task).__name__ == STORY_MODE:
+                return original_handle_enter(task)
             button = next((box for box in task.all_texts
                            if utils._clean_match(box.name, ENTER) and in_region(box, BUTTON, task.width, task.height)), None)
             if button is None:

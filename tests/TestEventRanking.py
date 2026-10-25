@@ -23,6 +23,7 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "ok_tasks"))
 
 import utils  # noqa: E402
+from StoryMode import StoryMode  # noqa: E402
 
 from src.en.events import (  # noqa: E402
     ATTACK, ATTACK_RANK, BESIDES_CREDITS, CREDIT_RANK, DESIRE_RANK, DIALOGUE, DIALOGUE_RANK, HEALTH_COST,
@@ -381,17 +382,21 @@ class TestEnterButton(unittest.TestCase):
 
     def test_only_the_round_button_is_pressed_and_never_over_an_option(self):
         handle_enter = on_the_button(utils)(utils.handle_enter)
-        for case, enter_at, option_up, pressed in (
+        # Named after upstream's own class, so a rename there stops Story mode being recognised here too.
+        story = type(StoryMode.__name__, (SimpleNamespace,), {})
+        for case, mode, enter_at, option_up, pressed in (
             # The Enter the run moves on with, and the only one upstream ever pressed before the key hints arrived.
-            ("round button", (0.946, 0.923), False, True),
+            ("round button", SimpleNamespace, (0.946, 0.923), False, True),
             # Pressing it here attacked the event object instead - "Cannot attack." on the rally signal.
-            ("event option up", (0.946, 0.923), True, False),
+            ("event option up", SimpleNamespace, (0.946, 0.923), True, False),
             # The key hint on the Select button, pressed over and over before any card was chosen.
-            ("key hint", (0.844, 0.894), False, False),
+            ("key hint", SimpleNamespace, (0.844, 0.894), False, False),
+            # The chapter panel's Enter bar, which left Story mode clicking the episode icon behind it forever.
+            ("story panel", story, (0.817, 0.930), False, True),
         ):
             with self.subTest(case):
                 clicked = []
-                task = SimpleNamespace(
+                task = mode(
                     all_texts=[FakeBox("进入", *enter_at)], width=WIDTH, height=HEIGHT,
                     box_of_screen=lambda *region: region, click_box=clicked.append,
                     find_one=lambda feature_name=None, **_: object() if option_up and feature_name == OPTION_TEMPLATES else None,
