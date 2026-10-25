@@ -23,6 +23,7 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "ok_tasks"))
 
 import utils  # noqa: E402
+import utils_chaos  # noqa: E402
 from StoryMode import StoryMode  # noqa: E402
 
 from src.en.events import (  # noqa: E402
@@ -32,7 +33,27 @@ from src.en.events import (  # noqa: E402
     leave_after_refinement, open_a_chest, order, rank,
 )
 from src.en.enter import OPTION_TEMPLATES, on_the_button  # noqa: E402
+from src.en.etched_memory import (  # noqa: E402
+    ENTER_MEMORY_END, ETCHED_MEMORY, MEMORY_BONUS, MEMORY_CARD, choosing_bonus, entering_memory_end, picking_memory, processing_for_bonus,
+)
+from src.en.handlers import standing_in  # noqa: E402
 from tests.fakes import HEIGHT, WIDTH, FakeBox  # noqa: E402
+
+# Memory Processing on the Global client, read off a 2026-10-25 capture: three rerolls of Memory: Loss, each carrying
+# one bonus over the fixed Justice line, plus the title and the Confirm button.
+PROCESSING = [
+    ("加工记忆", 0.501, 0.13),
+    ("[Memory /Opener]", 0.254, 0.583), ("When an ally Skill Card is stacked,", 0.254, 0.61), ("increase Damage Amount of this", 0.253, 0.635),
+    ("unit by 9% (1 time per turn, 2", 0.252, 0.659), ("times per battle)", 0.253, 0.686), ("Increase DamageAmount of", 0.254, 0.71),
+    ("Justice Attribute Attack Cards of", 0.253, 0.736), ("this unit by25%", 0.253, 0.76),
+    ("[Memory /Opener", 0.504, 0.564), ("When an ally Skill Card is", 0.504, 0.592), ("stacked, +3% Attack to allies", 0.504, 0.619),
+    ("(1 time per turn, 2 times per", 0.504, 0.647), ("battle)", 0.505, 0.676), ("Increase DamageAmount of", 0.505, 0.703),
+    ("Justice Attribute Attack Cards", 0.504, 0.732), ("of this unit by 25%", 0.504, 0.761),
+    ("[Memory", 0.731, 0.584), ("/Opener]", 0.783, 0.585), ("When an ally Skill Card is stacked,", 0.757, 0.61),
+    ("increase Damage Amount of allies", 0.757, 0.635), ("by 5% (1 time per turn, 2 times", 0.756, 0.66), ("per battle)", 0.756, 0.686),
+    ("Increase Damage Amount of", 0.757, 0.71), ("Justice Attribute Attack Cards of", 0.756, 0.736), ("this unit by 25%", 0.756, 0.762),
+    ("确认", 0.843, 0.929),
+]
 
 # The three the mushroom event offers, which is where the lore option was caught looping.
 MUSHROOM_LORE = "Examine the mushroomPheromonesCheck information on Types of"
@@ -442,6 +463,81 @@ class TestEnterButton(unittest.TestCase):
                 )
                 self.assertEqual(pressed, handle_enter(task))
                 self.assertEqual(int(pressed), len(clicked))
+
+
+class MemoryTask:
+    """A Chaos task on one Memory screen, recording where it clicked."""
+
+    width, height = WIDTH, HEIGHT
+
+    def __init__(self, boxes, **config):
+        self.all_texts = boxes
+        self.config = config
+        self.clicked = []
+
+    def log_info(self, message):
+        pass
+
+    def move_relative(self, x, y):
+        pass
+
+    def sleep(self, seconds):
+        pass
+
+    def click(self, x, y):
+        self.clicked.append((x, y))
+
+    def click_box(self, box):
+        self.clicked.append(box.name)
+
+
+class TestEtchedMemory(unittest.TestCase):
+    """Upstream's own Memory handlers, steered by the Season 5 settings."""
+
+    # Two of the three Interior offers, placed where the selection page draws them.
+    OFFERED = [{"name": "Memory: Golden", "description": "+X% Attack to this unit", "x": 0.3, "y": 0.5},
+               {"name": "Memory: Loss", "description": "+X% Attack to this unit", "x": 0.6, "y": 0.5}]
+
+    def pick(self, **config):
+        task = MemoryTask([FakeBox("选择铭刻的记忆", 0.5, 0.08)], **config)
+        with standing_in(utils_chaos, recognize_cards=lambda *args, **kwargs: list(self.OFFERED),
+                         find_target_card=lambda task_: ([], [])):
+            picking_memory(utils_chaos.handle_memory_card_select, utils_chaos)(task)
+        return task.clicked
+
+    def test_the_best_memory_on_offer_is_taken(self):
+        self.assertEqual([(0.6, 0.5)], self.pick(**{MEMORY_CARD: "", ETCHED_MEMORY: ["Memory: Kingdom", "Memory: Loss"]}))
+
+    def test_a_filled_memory_card_still_wins(self):
+        self.assertEqual([(0.3, 0.5)], self.pick(**{MEMORY_CARD: "Golden", ETCHED_MEMORY: ["Memory: Loss"]}))
+
+    def test_processing_confirms_the_reroll_carrying_the_bonus(self):
+        """Upstream's subsequence match finds every bonus inside the fixed Justice line, so it would take whichever card came first."""
+        for bonus, card in (("Self Damage", (0.25, 0.54)), ("Team Attack%", (0.5, 0.54)), ("Team Damage", (0.75, 0.54)), ("Self Attack%", None)):
+            with self.subTest(bonus=bonus):
+                task = MemoryTask([FakeBox(*box) for box in PROCESSING], **{MEMORY_CARD: "", MEMORY_BONUS: bonus})
+                with standing_in(utils_chaos, recognize_cards=lambda *args, **kwargs: []):
+                    choosing_bonus(utils_chaos.handle_memory_process, utils_chaos)(task)
+                clicked = [(round(x, 3), round(y, 3)) for x, y in task.clicked]
+                self.assertEqual([card, (0.843, 0.929)] if card else [(0.762, 0.935)], clicked)
+
+    def test_refinement_processes_only_a_card_holding_another_bonus(self):
+        """Processing is spent once a run, so it is pressed only when the card's bonus reads as a different one."""
+        page = [("精密加工记忆", 0.502, 0.13), ("加工记忆", 0.14, 0.8), ("stacked, +7% Attack to this", 0.5, 0.6), ("unit (1 time per turn", 0.5, 0.63)]
+        for bonus, pressed in (("Team Damage", True), ("Self Attack%", False), ("(keep)", False)):
+            with self.subTest(bonus=bonus):
+                task = MemoryTask([FakeBox(*box) for box in page], **{MEMORY_CARD: "", MEMORY_BONUS: bonus})
+                with standing_in(utils_chaos, recognize_cards=lambda *args, **kwargs: [{"name": "Memory: Loss", "description": "", "x": 0.5, "y": 0.5}]):
+                    processing_for_bonus(utils_chaos.handle_precision_memory_process, utils_chaos)(task)
+                self.assertEqual(pressed, bool(task.clicked))
+
+    def test_the_switch_decides_whether_end_of_memory_is_entered(self):
+        for entered in (True, False):
+            with self.subTest(entered=entered):
+                task = MemoryTask([FakeBox("前往记忆之末", 0.881, 0.908)], **{ENTER_MEMORY_END: entered})
+                handled = entering_memory_end(utils_chaos.handle_go_to_memory_end, utils_chaos)(task)
+                self.assertEqual(entered, handled)
+                self.assertEqual(["前往记忆之末"] if entered else [], task.clicked)
 
 
 if __name__ == "__main__":

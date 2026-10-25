@@ -21,7 +21,7 @@ import polib
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.en import overrides, picker, sections  # noqa: E402
+from src.en import etched_memory, overrides, picker, sections  # noqa: E402
 from src.en.game_data import CARDS, COMBATANTS, EQUIPMENT, NODE_TYPES  # noqa: E402
 from src.en.game_text import DESCRIPTIONS  # noqa: E402
 from src.en.framework import import_ui  # noqa: E402
@@ -38,6 +38,8 @@ UPSTREAM_DESCRIPTION = re.compile(r"""config_description\[['"](.+?)['"]\]""")
 # Above this length the widget factory turns a string setting into a multi-line text box.
 MAX_LINE_EDIT_DEFAULT = 16
 ENTITY_NAMES = set(CARDS) | set(EQUIPMENT) | set(COMBATANTS)
+# The Season 5 settings this fork adds to Chaos, and their defaults.
+SEASON_FIVE = {etched_memory.ETCHED_MEMORY: [], etched_memory.MEMORY_BONUS: etched_memory.KEEP_BONUS, etched_memory.ENTER_MEMORY_END: True}
 # Words that are both a UI button and an entity name. gettext rewrites by exact string with no idea where the
 # text sat on screen, so one of the two has to lose. Each entry here is a decision, not an oversight.
 REVIEWED_COLLISIONS = {
@@ -239,6 +241,30 @@ class TestDesireFaction(unittest.TestCase):
                 self.assertIn(label, msgids)
 
 
+class TestSeasonFive(unittest.TestCase):
+    """The Memory settings, added fork-side the same way as the Desire faction."""
+
+    def test_only_chaos_carries_them(self):
+        chaos = reshaped({overrides.FARMED_COMBATANT: ""})
+        sortie = reshaped({"卡牌奖励优先级": [], "游戏语言": "简体中文"})
+        for key, default in SEASON_FIVE.items():
+            with self.subTest(key=key):
+                self.assertEqual(default, chaos.default_config[key])
+                self.assertIn(key, chaos.config_description)
+                self.assertNotIn(key, sortie.default_config)
+
+    def test_every_boss_memory_can_be_picked(self):
+        # A regenerated `game_data.py` that renamed the Memory cards would leave the pick-list silently empty.
+        self.assertGreaterEqual(len(etched_memory.MEMORIES), 9)
+
+    def test_the_labels_and_options_reach_the_ui_through_the_catalog(self):
+        catalog = polib.pofile(str(REPO_ROOT / "i18n" / "zh_CN" / "LC_MESSAGES" / "ok.po"))
+        msgids = {entry.msgid for entry in catalog}
+        for label in (*SEASON_FIVE, *etched_memory.BONUSES):
+            with self.subTest(label=label):
+                self.assertIn(label, msgids)
+
+
 class TestSeasonSections(unittest.TestCase):
     """The collapsible headers that fold each season's settings away."""
 
@@ -266,7 +292,7 @@ class TestSeasonSections(unittest.TestCase):
 
     def test_every_folded_setting_is_still_declared_upstream(self):
         # A renamed key is not folded and no error says so - the setting just reappears in the flat list.
-        declared = mode_setting_keys() | {overrides.DESIRE_FACTION}
+        declared = mode_setting_keys() | {overrides.DESIRE_FACTION, *SEASON_FIVE}
         for _, keys in sections.SECTIONS:
             for key in keys:
                 with self.subTest(key=key):

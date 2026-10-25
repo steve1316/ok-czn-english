@@ -1,8 +1,8 @@
 """Fold each season's settings behind a collapsible header on the mode settings cards.
 
-ok-script lays a card's settings out as one flat list, so the Persona settings from Season 3 and the Desire
-setting from Season 4 sit among the everyday ones. Its own `sub_configs` can hide rows, but only behind a saved
-switch that reads as turning the feature off, which it does not. These headers are display only.
+ok-script lays a card's settings out as one flat list, so the Persona, Desire and Memory settings from Seasons 3 to 5
+sit among the everyday ones. Its own `sub_configs` can hide rows, but only behind a saved switch that reads as
+turning the feature off, which it does not. These headers are display only.
 """
 
 from dataclasses import dataclass, field
@@ -15,6 +15,7 @@ from qfluentwidgets import FluentIcon, TransparentPushButton
 from ok import Logger, og
 
 from src.en.framework import import_ui
+from src.en.etched_memory import ENTER_MEMORY_END, ETCHED_MEMORY, MEMORY_BONUS, MEMORY_CARD
 from src.en.overrides import DESIRE_FACTION
 
 logger = Logger.get_logger(__name__)
@@ -24,6 +25,7 @@ logger = Logger.get_logger(__name__)
 SECTIONS = [
     ("Season 3 - Persona", ["指定面具卡牌", "面具卡牌刻印"]),
     ("Season 4 - Desire", [DESIRE_FACTION]),
+    ("Season 5 - Memory", [MEMORY_CARD, ETCHED_MEMORY, MEMORY_BONUS, ENTER_MEMORY_END]),
 ]
 # Where a card keeps its built sections, as a list of `Section`.
 SECTIONS_ATTR = "_en_sections"

@@ -359,6 +359,19 @@ msgstr "Season 3 - Persona"
 msgid "Season 4 - Desire"
 msgstr "Season 4 - Desire"
 
+msgid "Season 5 - Memory"
+msgstr "Season 5 - Memory"
+
+# The Season 5 settings this fork adds, already English for the same reason.
+msgid "Etched Memory Priority"
+msgstr "Etched Memory Priority"
+
+msgid "Memory Bonus"
+msgstr "Memory Bonus"
+
+msgid "Enter End of Memory"
+msgstr "Enter End of Memory"
+
 msgid "优先移除基础牌"
 msgstr "Remove Basic Cards First"
 
@@ -486,7 +499,7 @@ msgid "存储数据保存上限大于多少"
 msgstr "Minimum Save Data Storage Limit"
 
 msgid "保留大于多少TB的存档"
-msgstr "Keep Save Data Above This Many TB"
+msgstr "Delete Saves Worth This Many TB or Less"
 
 msgid "触发器会不断调用run方法"
 msgstr "The trigger calls run() continuously."

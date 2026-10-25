@@ -83,6 +83,29 @@ def standing_in(target, **replacements):
                 setattr(target, name, original)
 
 
+def answering(module, key, answer):
+    """Stand in a module's `_get_config_value` so one key reads as `answer` decides, for the length of a block.
+
+    The answer is only worked out when upstream actually reads the key, so a frame showing some other screen costs nothing.
+
+    Args:
+        module: The module whose `_get_config_value` the handler reads through, such as `utils` or `utils_chaos`.
+        key: The config key to answer.
+        answer: Takes the task and the value upstream would have read, and returns the value to read instead.
+
+    Returns:
+        A context manager, from `standing_in`.
+    """
+    # Captured rather than read off the module, which is this stand-in for the length of the block.
+    original = module._get_config_value
+
+    def reading(task, key_, default):
+        value = original(task, key_, default)
+        return answer(task, value) if key_ == key else value
+
+    return standing_in(module, _get_config_value=reading)
+
+
 def each_list():
     """Yield every handler list the task modules have loaded.
 

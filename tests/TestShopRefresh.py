@@ -6,7 +6,8 @@ button rather than skipping the click afterwards is what keeps `handle_leave` - 
 free to walk out.
 
 The floor is inclusive: holding exactly it is still worth a reroll. It is set where the user wants the run to
-give up, not where the price list says a purchase becomes possible.
+give up, not where the price list says a purchase becomes possible. A negative paid-refresh threshold has to
+mean "never", which upstream's own `handle_shop` is run against below.
 """
 
 import sys
@@ -17,16 +18,23 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(REPO_ROOT / "ok_tasks"))
+
+import utils  # noqa: E402
 
 from tests.fakes import FakeBox as Box  # noqa: E402
 
-from src.en.shop import SHOP_FLOOR, free_refresh_box, reading_names_whole, refusing_free_refresh  # noqa: E402
+from src.en.shop import PAID_THRESHOLD, SHOP_FLOOR, free_refresh_box, never_paying, reading_names_whole, refusing_free_refresh  # noqa: E402
 
 WIDTH, HEIGHT = 1920, 1080
 # Where the shop draws its free-refresh button, measured off the captured screen.
 FREE_X, FREE_Y = 0.163, 0.933
 # A shelf price sits well above the refresh band and must never be mistaken for the button.
 SHELF_X, SHELF_Y = 0.500, 0.850
+# Where `handle_shop` reads the sold-out card removal, the run's credits, the paid refreshes left and their price.
+SOLD_OUT_X, SOLD_OUT_Y = 0.727, 0.286
+CREDIT_X, CREDIT_Y = 0.794, 0.054
+COUNT_X, PRICE_X, PAID_Y = 0.080, 0.190, 0.932
 
 
 # The shop places its boxes by share of the screen.
@@ -124,6 +132,46 @@ class TestRefusingFreeRefresh(unittest.TestCase):
 
         wrapped = refusing_free_refresh(recording_handler([]), unexpected)
         self.assertTrue(wrapped(shop_screen(free=False)))
+
+
+class PaidRefreshTask(FakeTask):
+    """The shop with its free refreshes spent, holding 500 credits against a 50-credit paid reroll."""
+
+    name = "自动卡厄思模式"
+
+    def __init__(self, threshold):
+        self.price = FakeBox("50", PRICE_X, PAID_Y)
+        super().__init__([FakeBox("售罄", SOLD_OUT_X, SOLD_OUT_Y), FakeBox("500", CREDIT_X, CREDIT_Y),
+                          FakeBox("2/3", COUNT_X, PAID_Y), self.price])
+        self.config = {PAID_THRESHOLD: threshold}
+        self.node_status = {"shop": False}
+        self.clicked = []
+
+    def find_feature(self, *args, **kwargs):
+        return []
+
+    def box_of_screen(self, *args):
+        return None
+
+    def click_box(self, box):
+        self.clicked.append(box)
+
+    def sleep(self, seconds):
+        pass
+
+
+class TestNeverPaying(unittest.TestCase):
+    """Upstream pays while credits are above the threshold, so -1 would pay on every visit without the wrap."""
+
+    CASES = (("-1 never pays", -1, False), ("0 pays whenever affordable", 0, True), ("above the credits", 999, False))
+
+    def test_only_a_reachable_threshold_pays(self):
+        handler = never_paying(utils.handle_shop, utils)
+        for why, threshold, pays in self.CASES:
+            with self.subTest(why):
+                task = PaidRefreshTask(threshold)
+                handler(task)
+                self.assertEqual(task.clicked, [task.price] if pays else [])
 
 
 class TestReadingNamesWhole(unittest.TestCase):

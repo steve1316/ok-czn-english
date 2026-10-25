@@ -3,11 +3,14 @@
 The shop's refresh is free, so `handle_shop` takes it whenever nothing on the shelf matches the user's
 priority lists - dead time when no reroll could produce something the run can pay for. The shelf also wraps
 long names onto two lines, which upstream glues in OCR order ("JudgmentInstant"), so no name ever matched them.
+Upstream pays for a reroll above any threshold, so a negative one is read as "never".
 """
+
+import sys
 
 from ok import Logger
 
-from src.en.handlers import loaded, register, standing_in, wrap
+from src.en.handlers import answering, loaded, register, standing_in, wrap
 from src.en.screen import lines_in, text_in_region
 from src.en.state import GEAR, say_once
 
@@ -26,6 +29,9 @@ FREE = "免费"
 # Name each change in the shared record of what a function already carries.
 TAG = "shop floor"
 NAMES_TAG = "whole shelf names"
+NEVER_PAID_TAG = "never paid"
+# The paid-refresh threshold. Upstream pays while credits are above it, so -1 would pay on every frame.
+PAID_THRESHOLD = "商店刷新信用点阈值"
 
 _patched = False
 
@@ -92,6 +98,27 @@ def reading_names_whole(handler, utils):
     return wrapped
 
 
+def never_paying(handler, utils):
+    """Wrap `handle_shop` so a negative paid-refresh threshold never pays.
+
+    Args:
+        handler: The handler to wrap, upstream's or another patch's.
+        utils: The loaded `utils` module, whose `_get_config_value` the handler reads the threshold through.
+
+    Returns:
+        The wrapped handler.
+    """
+    def unreachable(task, value):
+        # Out of reach of any credit count, so upstream's own "not above the threshold" branch declines.
+        return sys.maxsize if isinstance(value, int) and value < 0 else value
+
+    def wrapped(task):
+        with answering(utils, PAID_THRESHOLD, unreachable):
+            return handler(task)
+
+    return wrapped
+
+
 def install(utils):
     """Wrap the shop handler wherever the run reaches it.
 
@@ -106,6 +133,7 @@ def install(utils):
         return
     wrap(utils, "handle_shop", lambda handler: refusing_free_refresh(handler, utils._get_current_credit), TAG)
     wrap(utils, "handle_shop", lambda handler: reading_names_whole(handler, utils), NAMES_TAG)
+    wrap(utils, "handle_shop", lambda handler: never_paying(handler, utils), NEVER_PAID_TAG)
 
 
 def apply():

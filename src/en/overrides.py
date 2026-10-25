@@ -10,8 +10,10 @@ from ok.util.config import Config
 from ok.util.file import get_relative_path, read_json_file, write_json_file
 
 from src.en.desire import DEFAULT_FACTION, FACTIONS
+from src.en.etched_memory import BONUSES, ENTER_MEMORY_END, ETCHED_MEMORY, KEEP_BONUS, MEMORIES, MEMORY_BONUS
 from src.en.game_data import CARDS, COMBATANTS, EQUIPMENT
 from src.en.framework import import_ui
+from src.en.shop import PAID_THRESHOLD
 
 logger = Logger.get_logger(__name__)
 
@@ -72,8 +74,12 @@ SINGLE_CHOICE = {
     FARMED_COMBATANT: ([NO_COMBATANT, *COMBATANTS], "Heidemarie"),
 }
 # Upstream defaults the fork overrides. A saved config keeps whatever it already holds. The shop's Credit threshold
-# is raised out of reach, so a run never pays to reroll unless the user lowers it.
-FORCED_DEFAULTS = {"进入商店": True, "商店刷新信用点阈值": 999999}
+# is `NEVER_PAY`, so a run never pays to reroll unless the user raises it. Loot is safe to claim by default, since
+# upstream switches it off once the Loot Certification Cards run out.
+NEVER_PAY = -1
+FORCED_DEFAULTS = {"进入商店": True, PAID_THRESHOLD: NEVER_PAY, "领取奖励(只使用验证卡)": True}
+# Number settings whose range the fork pins. ok-script opens a negative default's range to -999999.
+NUMBER_RANGES = {PAID_THRESHOLD: {"min": NEVER_PAY}}
 # Free-text settings whose Chinese default cannot carry over. Cleared so the user fills them from what the
 # client actually shows, rather than inheriting a value that can never match.
 CLEARED_TEXT = ["指定面具卡牌", "面具卡牌刻印", "指定记忆卡牌", "刷初始卡牌"]
@@ -112,7 +118,10 @@ DESCRIPTIONS = {
     FARMED_COMBATANT: f"The combatant whose save data is farmed. Pick {NO_COMBATANT} to favour no one.",
     "指定面具卡牌": "The Persona Card to hold out for, matched against its name and description.",
     "面具卡牌刻印": "The Engraving to hold out for on that Persona Card.",
-    "指定记忆卡牌": "The memory card to take when processing memories, matched against its name and description. A page offering nothing that matches is skipped or searched again.",
+    "指定记忆卡牌": "Free text matched loosely against a Memory card's name and description, on every Memory screen: the Etched Memory to pick, the Processing option to take and the bonus Refinement holds out for. Leave it empty to use the three settings below instead.",
+    ETCHED_MEMORY: "Etched Memories to take at the Interior, best first. A page offering none of them is searched again while searches are left.",
+    MEMORY_BONUS: f"The bonus for the etched Memory Card. Memory Refinement spends its one Processing only when the card holds a different bonus, and takes a reroll only if one offers this. {KEEP_BONUS} never processes.",
+    ENTER_MEMORY_END: "Enter End of Memory after the final boss for the extra fight and its grade upgrade. Turn it off to end the run at the Settlement instead.",
     "刷初始卡牌": "Reroll the starting card until this one appears. Cannot be combined with Farm Gaps.",
     "任务优先级": "Preferred options inside an Unidentified Area, best first, matched loosely against the option's description rather than its title - so prefer distinctive wording, since a short word matches far more than you expect. Your Equipment Slot priorities are tried ahead of this list, and an area that matches nothing is picked at random.",
     "拉黑任务": "Never take an Unidentified Area option whose description matches one of these, so an entry like Curse skips anything handing you a Curse Card. If blocking would leave nothing to choose from, the list is ignored for that one screen.",
@@ -124,10 +133,10 @@ DESCRIPTIONS = {
     "第几层boss前自动暂停": "Stop and hand back control before the boss on this floor. Never Pause runs the whole map unattended.",
     "几轮后停止(0为不停止)": "Stop the bot after this many finished runs. Zero keeps it going.",
     "配置操作": "Import or export this mode's settings as a shareable code, and save or switch between local presets.",
-    "存储数据保存上限大于多少": "Only keep a run whose Save Data Storage Limit reaches at least this much.",
-    "保留大于多少TB的存档": "Only keep save data above this size.",
+    "存储数据保存上限大于多少": "Only start a run whose Save Data Storage Limit reaches at least this much, re-rolling until one does. This picks the run, it never deletes anything.",
+    "保留大于多少TB的存档": "After a run, on the Save Data collection screen, delete each stored save worth this many TB or less to free its slot. Zero keeps every save. Not the same as Minimum Save Data Storage Limit, which picks the run before it starts.",
     "优先使用金币治疗": "Always pay Credits for counselling at the Epione Center. Left off, a Communication Pass is spent when you have one and Credits only when you do not.",
-    "商店刷新信用点阈值": "Pay Credits to reroll the Dellang Shop once its free refreshes are used up, but only while holding more than this many. Left at 999999 it never pays.",
+    PAID_THRESHOLD: "Pay Credits to reroll the Dellang Shop once its free refreshes are used up, but only while holding more than this many. -1 never pays, and 0 pays whenever the price is affordable.",
     "进入商店": "Visit the Dellang Shop when a Safe Zone offers one. It pays to remove a card first, up to five a run, then buys from your Card Reward Priority and Equipment Slot lists.",
     "优先移除基础牌": "Clear basic cards out of the deck before anything else.",
     "只打第一层": "Leave after the first floor instead of running the whole map.",
@@ -171,6 +180,10 @@ def reshape(task):
         if key in task.default_config:
             task.default_config[key] = value
 
+    for key, bounds in NUMBER_RANGES.items():
+        if key in task.default_config:
+            task.config_type[key] = bounds
+
     # Added rather than re-shaped, so it needs no migration: `Config` seeds a key it has never saved from
     # `default_config`, and an existing config simply gains it switched on.
     if PLAYS_ITS_OWN_CARDS in task.default_config:
@@ -179,6 +192,12 @@ def reshape(task):
     if FARMED_COMBATANT in task.default_config:
         task.default_config[DESIRE_FACTION] = DEFAULT_FACTION
         task.config_type[DESIRE_FACTION] = {"type": "drop_down", "options": list(FACTIONS)}
+        # Season 5's settings, added for the same reason and anchored the same way.
+        task.default_config[ETCHED_MEMORY] = []
+        task.config_type[ETCHED_MEMORY] = {"type": "drop_down", "options_available": MEMORIES}
+        task.default_config[MEMORY_BONUS] = KEEP_BONUS
+        task.config_type[MEMORY_BONUS] = {"type": "drop_down", "options": BONUSES}
+        task.default_config[ENTER_MEMORY_END] = True
 
     for key, text in DESCRIPTIONS.items():
         if key in task.default_config:

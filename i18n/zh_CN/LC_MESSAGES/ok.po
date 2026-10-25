@@ -588,6 +588,33 @@ msgstr "第三赛季 - 人格面具"
 msgid "Season 4 - Desire"
 msgstr "第四赛季 - Desire"
 
+msgid "Season 5 - Memory"
+msgstr "第五赛季 - 记忆"
+
+msgid "Etched Memory Priority"
+msgstr "铭刻记忆优先级"
+
+msgid "Memory Bonus"
+msgstr "记忆加成"
+
+msgid "Enter End of Memory"
+msgstr "进入记忆之末"
+
+msgid "(keep)"
+msgstr "(keep)"
+
+msgid "Self Attack%"
+msgstr "Self Attack%"
+
+msgid "Team Attack%"
+msgstr "Team Attack%"
+
+msgid "Self Damage"
+msgstr "Self Damage"
+
+msgid "Team Damage"
+msgstr "Team Damage"
+
 msgid "Claim"
 msgstr "Claim"
 
