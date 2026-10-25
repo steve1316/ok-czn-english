@@ -30,6 +30,9 @@ CURSE = "Anemia"
 
 # Where the painted enemy stands. Anywhere inside the band the counters are looked for in will do.
 ENEMY_AT = (0.50, 0.25)
+# The game's check when a turn is ended with a card it would still take, with its Cancel and Confirm buttons.
+CARDS_LEFT_PROMPT = (FakeBox("Cards in your hand can still be used.", 0.5, 0.36, width=600),
+                     FakeBox("取消", 0.34, 0.60), FakeBox("确认", 0.67, 0.60))
 
 
 def hand(*names_in_order, keyless=(), at=None):
@@ -47,6 +50,18 @@ def hand(*names_in_order, keyless=(), at=None):
     at = at or [0.2 + 0.1 * index for index in range(len(names_in_order))]
     return [{"name": name, "key": None if name in keyless else str(index + 1), "left_x": left_x}
             for index, (name, left_x) in enumerate(zip(names_in_order, at))]
+
+
+def handlers_of(module):
+    """Index a mode's page handlers by name.
+
+    Args:
+        module: The upstream mode module whose `PAGE_HANDLERS` list is read.
+
+    Returns:
+        A dict of handler name to handler.
+    """
+    return {getattr(handler, "__name__", None): handler for handler in module.PAGE_HANDLERS}
 
 
 @contextmanager
@@ -509,12 +524,11 @@ class TestCallingBackTheTurn(unittest.TestCase):
             task.counter = 7
             utils_sortie._hand_card_names = lambda _: list(names)
             battle.install()
-            handlers = {getattr(handler, "__name__", None): handler for handler in utils_sortie.PAGE_HANDLERS}
+            handlers = handlers_of(utils_sortie)
             handlers["handle_battle_page"](task)
             answers = []
             for _ in range(popups):
-                task.all_texts = [FakeBox("Cards in your hand can still be used.", 0.5, 0.36, width=600),
-                                  FakeBox("取消", 0.34, 0.60), FakeBox("确认", 0.67, 0.60)]
+                task.all_texts = list(CARDS_LEFT_PROMPT)
                 answers.append(handlers["handle_cards_left"](task))
         return task, answers
 
@@ -531,6 +545,29 @@ class TestCallingBackTheTurn(unittest.TestCase):
     def test_a_hand_that_never_reads_is_not_called_back_forever(self):
         task, answers = self.run_frames(names=[], popups=battle.CALLBACKS + 1)
         self.assertEqual(answers, [True] * battle.CALLBACKS + [False])
+
+    def test_a_hand_still_unread_after_a_callback_has_its_keys_tried(self):
+        # Live, a 0 AP card never read over its holographic art, so each callback came back to the same empty hand.
+        with upstream([]) as (utils_sortie, task):
+            task.counter = 3
+            battle.install()
+            handlers = handlers_of(utils_sortie)
+            page, cards_left = handlers["handle_battle_page"], handlers["handle_cards_left"]
+            page(task)
+            task.all_texts = list(CARDS_LEFT_PROMPT)
+            self.assertTrue(cards_left(task))
+            # Key 2 plays and a card is drawn after it. Live, the draw started the keys over from 1, retrying cards the game had
+            # already refused, while the card right of the one played slid onto its key. A key the game turns down at once
+            # is not confirmed, which saves the 2s wait on Enter.
+            toast = [FakeBox("Not enough AP.", 0.5, 0.52)]
+            for counter, texts in ((3, []), (3, toast), (3, []), (2, []), (2, []), (3, []), (3, toast)):
+                task.counter = counter
+                task.all_texts = list(texts)
+                page(task)
+            self.assertEqual(task.keys, ["1", "2", battle.CONFIRM_KEY, "2", battle.CONFIRM_KEY, "3"])
+            # Every key tried, so the game's next check is the end of the turn.
+            task.all_texts = list(CARDS_LEFT_PROMPT)
+            self.assertFalse(cards_left(task))
 
 
 class TestEgoChoice(unittest.TestCase):

@@ -56,6 +56,9 @@ UNREAD_HAND = "_en_unread_hand"
 # Callbacks before the game's check is taken as final, so a hand that never reads cannot stall the turn for good. Each
 # one takes about 3s, and a hand has stayed lowered for up to 12s after a play.
 CALLBACKS = 4
+# Parked on the task while keys are pressed blind into an unread hand, as a `Blind`. Kept off `Turn`, which a card drawn
+# mid-turn starts afresh.
+BLIND = "_en_blind"
 # Where the hand lays out its cards, by hand size: the left edge of the first and of the last card's name. Medians
 # over ~2,600 fully read hands in the September logs, one sighting at 8. Wider hands are taken to span as 7 does.
 HAND_SPAN = {2: (0.393, 0.541), 3: (0.328, 0.605), 4: (0.259, 0.675), 5: (0.240, 0.696),
@@ -86,6 +89,18 @@ PLAIN_BUTTON = 120
 AUTO_LOCKED = "_en_auto_locked"
 
 _patched = False
+
+
+Blind = collections.namedtuple("Blind", [
+    # The hand size the counter read when the last key was pressed.
+    "count",
+    # The last key pressed, or None before the first.
+    "key",
+    # Keys known to hold a card the game would not take, as a frozenset of key strings.
+    "refused",
+    # Whether Enter has followed the last key. Held back a frame, since the game refuses a card at its key.
+    "confirmed",
+])
 
 
 class EgoChoice(StandIn):
@@ -222,6 +237,15 @@ def play_key(task, key):
     """
     task.send_key(key)
     task.sleep(AFTER_KEY)
+    confirm(task)
+
+
+def confirm(task):
+    """Press Enter on the card a key raised, and wait as upstream does for it to resolve.
+
+    Args:
+        task: The running task.
+    """
     task.send_key(CONFIRM_KEY)
     task.sleep(AFTER_CONFIRM)
 
@@ -307,14 +331,19 @@ def note_hand_read(task, utils_sortie):
     Args:
         task: The running task, which the note is parked on.
         utils_sortie: Upstream's Sortie module, for its hand counter and name reader.
+
+    Returns:
+        The hand size the counter read, or None when it read nothing.
     """
     count = utils_sortie._read_hand_count(task)
     if not count:
-        return
+        return count
     if utils_sortie._hand_card_names(task):
         setattr(task, UNREAD_HAND, None)
+        setattr(task, BLIND, None)
     elif getattr(task, UNREAD_HAND, None) is None:
         setattr(task, UNREAD_HAND, 0)
+    return count
 
 
 def handle_cards_left(task):
@@ -337,6 +366,46 @@ def handle_cards_left(task):
     setattr(task, UNREAD_HAND, callbacks + 1)
     task.click_box(cancel)
     task.sleep(AFTER_KEY)
+    return True
+
+
+def press_unread(task, count):
+    """Try the hand's keys blind once the game has said a card can still be played but the hand still reads empty.
+
+    Live, a 0 AP card stayed unread over its holographic art while every other card sat lowered out of the name band.
+
+    Args:
+        task: The running task, which the presses and the callback count are parked on.
+        count: The hand size the hand counter reads.
+
+    Returns:
+        True when a key was pressed. Once every key has been tried, the game's next check is left to confirm.
+    """
+    callbacks = getattr(task, UNREAD_HAND, None)
+    if not count or not callbacks or callbacks >= CALLBACKS:
+        return False
+    last = getattr(task, BLIND, None) or Blind(count, None, frozenset(), True)
+    refused = last.refused
+    if last.key and not last.confirmed:
+        if not out_of_points(task):
+            confirm(task)
+            setattr(task, BLIND, last._replace(confirmed=True))
+            return True
+        task.log_info(f"not enough AP for key {last.key}, so it is not confirmed")
+        refused |= {last.key}
+    elif last.key and count < last.count:
+        # The last key played, so every card right of it slid one key left. A drawn card joins on the right, so it moves nothing.
+        refused = frozenset(key for key in refused if int(key) < int(last.key))
+    elif last.key:
+        refused |= {last.key}
+    key = unread_key([], count, refused)
+    if key is None:
+        setattr(task, UNREAD_HAND, CALLBACKS)
+        return False
+    task.log_info(f"the game says a card can still be played but none of {count} reads, trying key {key}")
+    task.send_key(key)
+    task.sleep(AFTER_KEY)
+    setattr(task, BLIND, Blind(count, key, refused, False))
     return True
 
 
@@ -506,13 +575,10 @@ def install():
         """
         if start_attack(task, utils_sortie):
             return True
-        note_hand_read(task, utils_sortie)
-        was = utils_sortie.random
-        utils_sortie.random = EgoChoice(task, was)
-        try:
+        if press_unread(task, note_hand_read(task, utils_sortie)):
+            return True
+        with standing_in(utils_sortie, random=EgoChoice(task, utils_sortie.random)):
             return original_page(task)
-        finally:
-            utils_sortie.random = was
 
     replace("handle_battle_page", handle_battle_page)
 
