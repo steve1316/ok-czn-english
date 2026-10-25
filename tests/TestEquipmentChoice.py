@@ -78,12 +78,12 @@ BUCKET_COLOURS = {bucket: rgb for rgb, bucket in BUCKETS.items()} | {TOP_QUALITY
 # A piece the install screen is offering, as `_equipment_info` reports it. Epic is upstream's bucket for what
 # this client calls Legend.
 OFFERED = {"name": "Corroded Gauntlets", "slot": 2, "quality": "史诗", "rank": None}
-# A Global Equipment screen with all nine slots bare, from upstream issue #13, cut from the full frame at this (x, y).
-BARE_SLOTS = REPO_ROOT / "tests" / "images" / "equipment_bare.png"
-BARE_CROP_ORIGIN = (1430, 270)
-# How many slots per row upstream reads as bare. Row 3's ring slot is lifted to (46, 38, 40) by the Recommended glow,
-# one past tolerance, and cannot be let in by colour because a dimmed Legend reads (52, 45, 43).
-BARE_PER_ROW = (3, 3, 2)
+# Global Equipment screens, each cropped from the full frame at (x, y), with each row's level tag and what upstream
+# should read there. The second highlights the offered piece's slot in both rows and holds a Legend ring. On the
+# first, from upstream issue #13, row 3's ring slot is left out: its whole inside reads (46, 38, 40), one past
+# tolerance, and cannot be let in by colour because a dimmed Legend reads (52, 45, 43).
+SLOT_FRAMES = (("equipment_bare.png", (1430, 270), TAG_Y, (["", "", ""], ["", "", ""], ["", ""])),
+               ("equipment_legend.png", (1390, 390), (467, 707), (["", "", "史诗"], ["", "", ""])))
 
 
 class FakeTask:
@@ -951,13 +951,13 @@ class TestReadingTheTeamGear(unittest.TestCase):
 class TestUpstreamSlotOffsets(unittest.TestCase):
     """Where upstream's own reader looks for each slot, checked on a real Global frame."""
 
-    def test_bare_slots_read_as_bare(self):
+    def test_each_slot_reads_what_it_holds(self):
         # The old offsets sat above the slots on background and read every one as gear.
-        task = FakeTask([])
-        task.frame = np.zeros((HEIGHT, WIDTH, 3), dtype=np.uint8)
-        crop = cv2.imread(str(BARE_SLOTS))
-        x, y = BARE_CROP_ORIGIN
-        task.frame[y:y + crop.shape[0], x:x + crop.shape[1]] = crop
-        for tag, bare in zip(level_tags(), BARE_PER_ROW):
-            with self.subTest(row=tag.y):
-                self.assertEqual([""] * bare, upstream._member_equipment_qualities(task, tag)[:bare])
+        for name, (x, y), tag_rows, expected in SLOT_FRAMES:
+            task = FakeTask([])
+            task.frame = np.zeros((HEIGHT, WIDTH, 3), dtype=np.uint8)
+            crop = cv2.imread(str(REPO_ROOT / "tests" / "images" / name))
+            task.frame[y:y + crop.shape[0], x:x + crop.shape[1]] = crop
+            for tag_y, row in zip(tag_rows, expected):
+                with self.subTest(frame=name, tag_y=tag_y):
+                    self.assertEqual(row, upstream._member_equipment_qualities(task, FakeBox("等级", TAG_X, tag_y))[:len(row)])
