@@ -13,8 +13,14 @@ import unittest
 from functools import partial
 from pathlib import Path
 
+import cv2
+import numpy as np
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(REPO_ROOT / "ok_tasks"))
+
+import utils as upstream  # noqa: E402
 
 from tests.fakes import FakeBox as Box  # noqa: E402
 
@@ -72,6 +78,12 @@ BUCKET_COLOURS = {bucket: rgb for rgb, bucket in BUCKETS.items()} | {TOP_QUALITY
 # A piece the install screen is offering, as `_equipment_info` reports it. Epic is upstream's bucket for what
 # this client calls Legend.
 OFFERED = {"name": "Corroded Gauntlets", "slot": 2, "quality": "史诗", "rank": None}
+# A Global Equipment screen with all nine slots bare, from upstream issue #13, cut from the full frame at this (x, y).
+BARE_SLOTS = REPO_ROOT / "tests" / "images" / "equipment_bare.png"
+BARE_CROP_ORIGIN = (1430, 270)
+# How many slots per row upstream reads as bare. Row 3's ring slot is lifted to (46, 38, 40) by the Recommended glow,
+# one past tolerance, and cannot be let in by colour because a dimmed Legend reads (52, 45, 43).
+BARE_PER_ROW = (3, 3, 2)
 
 
 class FakeTask:
@@ -934,3 +946,18 @@ class TestReadingTheTeamGear(unittest.TestCase):
         setattr(task, TEAM_GEAR, "Rare/Legend/Mythic, -/Mythic/-, -/-/Mythic")
         reading_the_team_gear(self.capture(utils), utils, utils)(task)
         self.assertEqual("Rare/Legend/Mythic, -/Mythic/-, -/-/Mythic", getattr(task, TEAM_GEAR))
+
+
+class TestUpstreamSlotOffsets(unittest.TestCase):
+    """Where upstream's own reader looks for each slot, checked on a real Global frame."""
+
+    def test_bare_slots_read_as_bare(self):
+        # The old offsets sat above the slots on background and read every one as gear.
+        task = FakeTask([])
+        task.frame = np.zeros((HEIGHT, WIDTH, 3), dtype=np.uint8)
+        crop = cv2.imread(str(BARE_SLOTS))
+        x, y = BARE_CROP_ORIGIN
+        task.frame[y:y + crop.shape[0], x:x + crop.shape[1]] = crop
+        for tag, bare in zip(level_tags(), BARE_PER_ROW):
+            with self.subTest(row=tag.y):
+                self.assertEqual([""] * bare, upstream._member_equipment_qualities(task, tag)[:bare])
