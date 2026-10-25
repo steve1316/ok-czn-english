@@ -10,6 +10,7 @@ from ok.util.config import Config
 from ok.util.file import get_relative_path, read_json_file, write_json_file
 
 from src.en.desire import DEFAULT_FACTION, FACTIONS
+from src.en.etched_memory import BONUSES, ENTER_MEMORY_END, ETCHED_MEMORY, KEEP_BONUS, MEMORIES, MEMORY_BONUS
 from src.en.game_data import CARDS, COMBATANTS, EQUIPMENT
 from src.en.framework import import_ui
 from src.en.shop import PAID_THRESHOLD
@@ -117,7 +118,10 @@ DESCRIPTIONS = {
     FARMED_COMBATANT: f"The combatant whose save data is farmed. Pick {NO_COMBATANT} to favour no one.",
     "指定面具卡牌": "The Persona Card to hold out for, matched against its name and description.",
     "面具卡牌刻印": "The Engraving to hold out for on that Persona Card.",
-    "指定记忆卡牌": "The memory card to take when processing memories, matched against its name and description. A page offering nothing that matches is skipped or searched again.",
+    "指定记忆卡牌": "Free text matched loosely against a Memory card's name and description, on every Memory screen: the Etched Memory to pick, the Processing option to take and the bonus Refinement holds out for. Leave it empty to use the three settings below instead.",
+    ETCHED_MEMORY: "Etched Memories to take at the Interior, best first. A page offering none of them is searched again while searches are left.",
+    MEMORY_BONUS: f"The bonus to hold out for. Memory Processing takes it, and Memory Refinement processes until it is held before refining. {KEEP_BONUS} never processes.",
+    ENTER_MEMORY_END: "Enter End of Memory after the final boss for the extra fight and its grade upgrade. Turn it off to end the run at the Settlement instead.",
     "刷初始卡牌": "Reroll the starting card until this one appears. Cannot be combined with Farm Gaps.",
     "任务优先级": "Preferred options inside an Unidentified Area, best first, matched loosely against the option's description rather than its title - so prefer distinctive wording, since a short word matches far more than you expect. Your Equipment Slot priorities are tried ahead of this list, and an area that matches nothing is picked at random.",
     "拉黑任务": "Never take an Unidentified Area option whose description matches one of these, so an entry like Curse skips anything handing you a Curse Card. If blocking would leave nothing to choose from, the list is ignored for that one screen.",
@@ -188,6 +192,12 @@ def reshape(task):
     if FARMED_COMBATANT in task.default_config:
         task.default_config[DESIRE_FACTION] = DEFAULT_FACTION
         task.config_type[DESIRE_FACTION] = {"type": "drop_down", "options": list(FACTIONS)}
+        # Season 5's settings, added for the same reason and anchored the same way.
+        task.default_config[ETCHED_MEMORY] = []
+        task.config_type[ETCHED_MEMORY] = {"type": "drop_down", "options_available": MEMORIES}
+        task.default_config[MEMORY_BONUS] = KEEP_BONUS
+        task.config_type[MEMORY_BONUS] = {"type": "drop_down", "options": BONUSES}
+        task.default_config[ENTER_MEMORY_END] = True
 
     for key, text in DESCRIPTIONS.items():
         if key in task.default_config:

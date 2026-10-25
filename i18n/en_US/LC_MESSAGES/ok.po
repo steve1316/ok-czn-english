@@ -359,6 +359,19 @@ msgstr "Season 3 - Persona"
 msgid "Season 4 - Desire"
 msgstr "Season 4 - Desire"
 
+msgid "Season 5 - Memory"
+msgstr "Season 5 - Memory"
+
+# The Season 5 settings this fork adds, already English for the same reason.
+msgid "Etched Memory Priority"
+msgstr "Etched Memory Priority"
+
+msgid "Memory Bonus"
+msgstr "Memory Bonus"
+
+msgid "Enter End of Memory"
+msgstr "Enter End of Memory"
+
 msgid "优先移除基础牌"
 msgstr "Remove Basic Cards First"
 

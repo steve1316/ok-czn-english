@@ -23,6 +23,7 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "ok_tasks"))
 
 import utils  # noqa: E402
+import utils_chaos  # noqa: E402
 from StoryMode import StoryMode  # noqa: E402
 
 from src.en.events import (  # noqa: E402
@@ -32,6 +33,8 @@ from src.en.events import (  # noqa: E402
     leave_after_refinement, open_a_chest, order, rank,
 )
 from src.en.enter import OPTION_TEMPLATES, on_the_button  # noqa: E402
+from src.en.etched_memory import ENTER_MEMORY_END, ETCHED_MEMORY, MEMORY_CARD, entering_memory_end, picking_memory  # noqa: E402
+from src.en.handlers import standing_in  # noqa: E402
 from tests.fakes import HEIGHT, WIDTH, FakeBox  # noqa: E402
 
 # The three the mushroom event offers, which is where the lore option was caught looping.
@@ -442,6 +445,61 @@ class TestEnterButton(unittest.TestCase):
                 )
                 self.assertEqual(pressed, handle_enter(task))
                 self.assertEqual(int(pressed), len(clicked))
+
+
+class MemoryTask:
+    """A Chaos task on one Memory screen, recording where it clicked."""
+
+    width, height = WIDTH, HEIGHT
+
+    def __init__(self, boxes, **config):
+        self.all_texts = boxes
+        self.config = config
+        self.clicked = []
+
+    def log_info(self, message):
+        pass
+
+    def move_relative(self, x, y):
+        pass
+
+    def sleep(self, seconds):
+        pass
+
+    def click(self, x, y):
+        self.clicked.append((x, y))
+
+    def click_box(self, box):
+        self.clicked.append(box.name)
+
+
+class TestEtchedMemory(unittest.TestCase):
+    """Upstream's own Memory handlers, steered by the Season 5 settings."""
+
+    # Two of the three Interior offers, placed where the selection page draws them.
+    OFFERED = [{"name": "Memory: Golden", "description": "+X% Attack to this unit", "x": 0.3, "y": 0.5},
+               {"name": "Memory: Loss", "description": "+X% Attack to this unit", "x": 0.6, "y": 0.5}]
+
+    def pick(self, **config):
+        task = MemoryTask([FakeBox("选择铭刻的记忆", 0.5, 0.08)], **config)
+        with standing_in(utils_chaos, recognize_cards=lambda *args, **kwargs: list(self.OFFERED),
+                         find_target_card=lambda task_: ([], [])):
+            picking_memory(utils_chaos.handle_memory_card_select, utils_chaos)(task)
+        return task.clicked
+
+    def test_the_best_memory_on_offer_is_taken(self):
+        self.assertEqual([(0.6, 0.5)], self.pick(**{MEMORY_CARD: "", ETCHED_MEMORY: ["Memory: Kingdom", "Memory: Loss"]}))
+
+    def test_a_filled_memory_card_still_wins(self):
+        self.assertEqual([(0.3, 0.5)], self.pick(**{MEMORY_CARD: "Golden", ETCHED_MEMORY: ["Memory: Loss"]}))
+
+    def test_the_switch_decides_whether_end_of_memory_is_entered(self):
+        for entered in (True, False):
+            with self.subTest(entered=entered):
+                task = MemoryTask([FakeBox("前往记忆之末", 0.881, 0.908)], **{ENTER_MEMORY_END: entered})
+                handled = entering_memory_end(utils_chaos.handle_go_to_memory_end, utils_chaos)(task)
+                self.assertEqual(entered, handled)
+                self.assertEqual(["前往记忆之末"] if entered else [], task.clicked)
 
 
 if __name__ == "__main__":

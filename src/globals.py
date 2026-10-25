@@ -17,7 +17,7 @@ class Globals(QObject):
         super().__init__()
         # Everything English-only lives under src/en/ so upstream's files stay untouched and merges stay clean.
         from src.en import (  # noqa: E501
-            battle, claims, dashboard, deck, desire, devices, dialogue, dice, draft, enter, equipment, events, frame_log, layout,
+            battle, claims, dashboard, deck, desire, devices, dialogue, dice, draft, enter, equipment, etched_memory, events, frame_log, layout,
             log_text, memory_limit, monitors, navigation, observe, ocr_text, overrides, persona, picker, pins, remote, rest, rewards, sections,
             shell, shop, shutdown, templates, notify, stuck, upload,
         )
@@ -40,6 +40,7 @@ class Globals(QObject):
         pins.apply()
         deck.apply()
         desire.apply()
+        etched_memory.apply()
         persona.apply()
         dice.apply()
         draft.apply()
