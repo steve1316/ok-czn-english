@@ -10,7 +10,10 @@ which only a `main_debug.py` run serves.
 """
 
 import base64
+import contextlib
 import json
+import threading
+import time
 import urllib.error
 import urllib.request
 
@@ -21,6 +24,8 @@ from mcp.server.mcpserver.exceptions import ToolError
 URL = "http://127.0.0.1:47821"
 # Seconds to wait for a reply. Above the remote's own 15 s wait for the page loop, so its clearer error arrives first.
 TIMEOUT = 30
+# Seconds between pings, which keep "MCP connected" in the app's title. Below the remote's `STALE`.
+HEARTBEAT = 5
 
 server = MCPServer(
     "czn",
@@ -53,6 +58,14 @@ def call(command, **kwargs):
     if not reply["ok"]:
         raise ToolError(reply["error"])
     return reply["result"]
+
+
+def ping():
+    """Tell the debug run this bridge is alive, for as long as Claude Code keeps it open. Any failure is ignored, so the pings never stop."""
+    while True:
+        with contextlib.suppress(Exception):
+            call("status")
+        time.sleep(HEARTBEAT)
 
 
 @server.tool()
@@ -110,4 +123,5 @@ def set_running(task: str, running: bool) -> dict:
 
 
 if __name__ == "__main__":
+    threading.Thread(target=ping, name="ping", daemon=True).start()
     server.run()

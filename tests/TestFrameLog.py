@@ -20,6 +20,8 @@ import utils_chaos  # noqa: E402
 import utils_sortie  # noqa: E402
 import utils_story  # noqa: E402
 
+from ok import TaskExecutor  # noqa: E402
+
 from src.en import frame_log, remote  # noqa: E402
 from src.en.handlers import standing_in  # noqa: E402
 
@@ -48,8 +50,9 @@ class TestFrameLog(unittest.TestCase):
     def setUp(self):
         self.folder = tempfile.TemporaryDirectory()
         self.addCleanup(self.folder.cleanup)
-        # A fresh frame per read, the way the executor hands over each capture.
-        self.executor = types.SimpleNamespace(current_task=object(), nullable_frame=lambda: np.full((8, 8, 3), 200, np.uint8))
+        self.executor = types.SimpleNamespace(current_task=object())
+        # A fresh frame per read, the way ok-script hands over each capture.
+        self.enterContext(standing_in(frame_log, latest=lambda: np.full((8, 8, 3), 200, np.uint8)))
         self.handler = frame_log.FrameLog(lambda: self.executor, os.path.join(self.folder.name, "session"))
         self.log = logging.Logger("tests.frame_log", logging.DEBUG)
         self.log.addHandler(self.handler)
@@ -103,6 +106,15 @@ class TestRemote(unittest.TestCase):
         """Otherwise the bot acts on the screen being stepped through by hand."""
         remote._held.set()
         self.assertTrue(remote.handle_remote("task"))
+
+    def test_a_screenshot_outlives_the_frame_ok_script_drops(self):
+        """ok-script drops its frame on every sleep, so a held bot would otherwise have nothing to show."""
+        self.assertIn("next_frame", vars(TaskExecutor))
+        captured = np.zeros((9, 16, 3), np.uint8)
+        with standing_in(TaskExecutor, next_frame=lambda executor: captured), standing_in(frame_log, _latest=None):
+            frame_log.keep_frames()
+            TaskExecutor.next_frame(None)
+            self.assertEqual(16, remote.screenshot()["width"])
 
 
 if __name__ == "__main__":

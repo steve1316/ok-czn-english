@@ -11,11 +11,15 @@ import http.server
 import json
 import queue
 import threading
+import time
 
 import cv2
+from PySide6.QtCore import QTimer
 
 from ok import Logger
 
+from src.en import frame_log
+from src.en.framework import import_ui
 from src.en.handlers import each_list, register
 from src.en.screen import centre_of
 
@@ -34,11 +38,17 @@ QUALITY = 90
 DEFAULT_TASK = "ChaosMode"
 # The functions below a request may name, so a path can never reach anything else in the module.
 COMMANDS = ("status", "screenshot", "texts", "click", "press_key", "hold", "settings", "set_setting", "set_running")
+# Seconds since the last request before the window title stops saying the MCP bridge is connected.
+STALE = 15
+# How often, in milliseconds, the window title is brought up to date.
+TITLE_CHECK = 2000
 
 # Actions waiting for the bot's thread, as `(action, future)` pairs.
 _actions = queue.Queue()
 # Set while the bot is held, so every frame goes to the remote handler and nothing else acts on it.
 _held = threading.Event()
+# `time.monotonic()` of the last request, from the MCP bridge's pings or a tool call.
+_last_contact = None
 _patched = False
 
 
@@ -47,6 +57,8 @@ class Remote(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         """Run one command and reply with its result, or with the error it raised."""
+        global _last_contact
+        _last_contact = time.monotonic()
         name = self.path.strip("/")
         try:
             if name not in COMMANDS:
@@ -166,7 +178,7 @@ def screenshot():
     Raises:
         RuntimeError: Nothing has been captured yet.
     """
-    frame = _executor().nullable_frame()
+    frame = frame_log.latest()
     if frame is None:
         raise RuntimeError("no frame captured yet")
     _, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, QUALITY])
@@ -288,6 +300,29 @@ def set_running(task, running):
     return status()
 
 
+def show_connection():
+    """Add "MCP connected" to the main window's title while the MCP bridge is pinging."""
+    main_window = import_ui("MainWindow", "MainWindow")
+    if main_window is None:
+        return
+    original_init = main_window.__init__
+
+    def patched_init(self, *args, **kwargs):
+        original_init(self, *args, **kwargs)
+        title = self.windowTitle().rstrip()
+
+        def update():
+            connected = _last_contact is not None and time.monotonic() - _last_contact < STALE
+            self.setWindowTitle(f"{title}  MCP connected" if connected else title)
+
+        # Parented to the window, so it stops when the window goes.
+        timer = QTimer(self)
+        timer.timeout.connect(update)
+        timer.start(TITLE_CHECK)
+
+    main_window.__init__ = patched_init
+
+
 def apply():
     """Serve the remote control, on a debug run only."""
     global _patched
@@ -299,6 +334,7 @@ def apply():
     if not (og.config or {}).get("debug"):
         return
     register(install)
+    show_connection()
     try:
         server = http.server.ThreadingHTTPServer((HOST, PORT), Remote)
     except OSError as error:
