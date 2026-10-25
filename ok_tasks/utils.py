@@ -467,7 +467,7 @@ def recognize_event_options(
     """按事件选项特征识别最多三个事件描述。"""
     event_region = task.box_of_screen(*region)
     event_features = []
-    for feature_name in ("event1", "event2", "event3", "event4", "event5", "event6", "event7", "event8"):
+    for feature_name in ("event1", "event2", "event3", "event4", "event5", "event6", "event7", "event8", "event9"):
         for feature_box in task.find_feature(
             feature_name=feature_name,
             box=event_region,
@@ -2312,9 +2312,9 @@ def _member_equipment_qualities(task: TriggerTask, level_box):
     level_center_x = (level_box.x + level_box.width / 2) / task.width
     level_center_y = (level_box.y + level_box.height / 2) / task.height
     relative_offsets = (
-        (0.130, -0.0655),
-        (0.201, -0.0665),
-        (0.270, -0.0655),
+        (0.130, -0.044),
+        (0.201, -0.044),
+        (0.270, -0.044),
     )
     qualities = []
     for slot, (offset_x, offset_y) in enumerate(relative_offsets):
@@ -2831,8 +2831,22 @@ def handle_select_card(task: TriggerTask):
     ):
         _scroll_to_target_member_for_card_removal(task)
 
-    select_card(task, _get_card_list(task, config_key), count=count, action=action)
-    return True
+    result = select_card(task, _get_card_list(task, config_key), count=count, action=action)
+    if not result and action in ("闪光", "灵光"):
+        skip_box = next(
+            (
+                b for b in task.all_texts
+                if 0.620 <= (b.x + b.width / 2) / task.width <= 0.990
+                and 0.883 <= (b.y + b.height / 2) / task.height <= 0.983
+                and "跳过" in b.name
+            ),
+            None,
+        )
+        if skip_box:
+            task.log_info(f"卡牌{action}选择无可用卡牌，点击「跳过」")
+            task.click_box(skip_box)
+            return True
+    return result
 
 
 def handle_copy_card_choice(task: TriggerTask):
@@ -3197,6 +3211,20 @@ def handle_event_task(task: TriggerTask):
         description_y = (top + bottom) / 2
         _move_and_click(task, description_x, description_y)
 
+    # 已经进过「精密加工记忆」页面后，优先选择「就此离开」结束事件，避免反复进入造成死循环
+    event_status = getattr(task, "node_status", {})
+    if event_status.get("precision_memory_visited"):
+        leave_task = next(
+            (task_info for task_info in tasks_info if "就此离开" in task_info["description"]),
+            None,
+        )
+        if leave_task is not None:
+            task.log_info("已进入过精密加工记忆，选择「就此离开」结束事件")
+            click_event_option(leave_task)
+            event_status["precision_memory_visited"] = False
+            task.sleep(1)
+            return True
+
     def handle_initial_node_task(description_keyword, purpose):
         """初始节点按描述选择任务；未找到目标描述时点击ESC重新开始。"""
         matched_task = next(
@@ -3219,6 +3247,24 @@ def handle_event_task(task: TriggerTask):
             )
             _move_and_click(task, 0.959, 0.053)
         task.sleep(1)
+        return True
+
+    # 检查任务区域中是否有 treasure、memoryshards、data_of_light 或 eyes 特征
+    treasure_box = task.box_of_screen(0.084, 0.121, 0.991, 0.762)
+    reward_features = task.find_feature(
+        feature_name=["treasure", "memoryshards", "data_of_light", "eyes"],
+        box=treasure_box,
+        threshold=0.7,
+    )
+    if reward_features:
+        task.log_info(f"检测到事件任务区域中有{reward_features[0].name}特征，优先点击")
+        reward_feature = reward_features[0]
+        _move_and_click(
+            task,
+            (reward_feature.x + reward_feature.width / 2) / task.width,
+            (reward_feature.y + reward_feature.height / 2) / task.height,
+        )
+        task.sleep(2)
         return True
 
     upper_event_task = next(
@@ -3254,19 +3300,6 @@ def handle_event_task(task: TriggerTask):
 
     if reroll_empty_deck is True and is_initial_node:
         return handle_initial_node_task("移除2张", "刷空档")
-
-    # 检查任务区域中是否有 treasure 特征
-    treasure_box = task.box_of_screen(0.477, 0.336, 0.841, 0.540)
-    treasure_features = task.find_feature(
-        feature_name="treasure",
-        box=treasure_box,
-        threshold=0.7,
-    )
-    if treasure_features:
-        task.log_info("检测到事件任务区域中有treasure特征，优先点击")
-        task.click_box(treasure_features[0])
-        task.sleep(2)
-        return True
 
     # 读取拉黑任务列表
     blacklist = _get_config_value(task, '拉黑任务', ["咒术卡牌"])
@@ -3350,6 +3383,7 @@ def handle_route_selection(task: TriggerTask):
         if hasattr(task, 'node_status') and task.node_status.get('enter_new_node', False):
             task.node_status['enter_new_node'] = False
             task.node_status['node_count'] += 1
+            task.node_status['precision_memory_visited'] = False
             task.log_info(f"离开路线选择页面，当前节点计数: {task.node_status['node_count']}")
         return False
 
@@ -3621,6 +3655,19 @@ def _wait_for_rest_confirm(task: TriggerTask):
 
 def handle_rest(task: TriggerTask):
     """休息界面: 根据血量、信用点和冥想状态选择休息或冥想。"""
+    special_flash = task.find_one(
+        feature_name=["special_flash_luosi", "special_flash_luosi2"],
+        box=task.box_of_screen(0.219, 0.208, 0.786, 0.814),
+    )
+    if special_flash:
+        _move_and_click(
+            task,
+            (special_flash.x + special_flash.width / 2) / task.width,
+            (special_flash.y + special_flash.height / 2) / task.height,
+        )
+        task.sleep(1)
+        return True
+
     rest_feature = _find_rest_feature(task)
     free_text = _get_region_text(task, (0.154, 0.602, 0.359, 0.847))
     flash_or_rest = (
@@ -3729,7 +3776,7 @@ def handle_rest(task: TriggerTask):
 
 
 def handle_shop(task: TriggerTask):
-    """德朗商店: 优先移除卡牌，其次按配置购买卡牌或装备，最后尝试免费刷新。"""
+    """德朗商店: 优先移除卡牌，其次按配置购买卡牌或装备，最后尝试免费或付费刷新。"""
     box = find_box_at_point(task, 0.729, 0.261)
     soldout = find_box_at_point(task, 0.727, 0.286)
     if (box and "移除卡牌" in box.name) or (soldout and "售" in soldout.name):
@@ -3804,6 +3851,7 @@ def handle_shop(task: TriggerTask):
 
         card_priority = _get_card_reward_priority(task)
         equipment_priorities = [_equipment_priority(task, slot) for slot in range(3)]
+        unaffordable_items = []
         for index, credit_icon in enumerate(credit_icons):
             icon_x = (credit_icon.x + credit_icon.width / 2) / task.width
             icon_y = (credit_icon.y + credit_icon.height / 2) / task.height
@@ -3818,7 +3866,7 @@ def handle_shop(task: TriggerTask):
             is_card = index in card_icon_indexes
             item_type = "卡牌" if is_card else "装备"
             task.log_info(f"德朗商店第{index + 1}个商品: 类型={item_type}，名称=「{item_name}」，价格={price}")
-            if not item_name or price is None or price >= current_credit:
+            if not item_name or price is None:
                 continue
 
             if is_card:
@@ -3846,6 +3894,16 @@ def handle_shop(task: TriggerTask):
                 None,
                 )
             if not matched_name:
+                task.log_info(f"德朗商店: {item_type}「{item_name}」未命中配置，跳过")
+                continue
+            if price >= current_credit:
+                unaffordable_items.append(item_name)
+                reason = "余额不足" if price > current_credit else "余额等于价格，当前购买规则要求余额大于价格"
+                task.log_info(
+                    f"德朗商店: {item_type}「{item_name}」命中配置「{matched_name}」，"
+                    f"价格={price}，当前信用点={current_credit}，"
+                    f"{reason}，跳过购买"
+                )
                 continue
 
             task.log_info(
@@ -3864,10 +3922,75 @@ def handle_shop(task: TriggerTask):
         None,
         )
         if free_box:
-            task.log_info("德朗商店没有符合要求的商品，点击「免费」刷新")
+            if unaffordable_items:
+                task.log_info(
+                    f"德朗商店找到配置商品{unaffordable_items}，但余额未满足购买条件，"
+                    "点击「免费」刷新"
+                )
+            else:
+                task.log_info("德朗商店没有符合要求的商品，点击「免费」刷新")
             task.click_box(free_box)
             task.sleep(1)
             return True
+
+        # 免费次数用完后按钮只显示「剩余刷新次数 + 信用点价格」，按阈值决定是否付费刷新
+        refresh_count_text = "".join(
+            text_box.name.strip()
+            for text_box in sorted(task.all_texts, key=lambda item: item.x)
+            if 0.045 <= (text_box.x + text_box.width / 2) / task.width <= 0.115
+            and 0.912 <= (text_box.y + text_box.height / 2) / task.height <= 0.952
+        )
+        count_match = re.search(r"(\d+)\s*[/／]\s*(\d+)", refresh_count_text)
+        if not count_match:
+            task.log_info(
+                f"德朗商店未识别到刷新次数（识别值「{refresh_count_text}」），不付费刷新"
+            )
+            return False
+        refresh_remaining = int(count_match.group(1))
+        if refresh_remaining <= 0:
+            task.log_info(
+                f"德朗商店付费刷新次数已用完（{refresh_count_text}），不再刷新"
+            )
+            return False
+
+        refresh_credit_threshold = _get_config_value(task, "商店刷新信用点阈值", 300)
+        try:
+            refresh_credit_threshold = int(refresh_credit_threshold)
+        except (TypeError, ValueError):
+            refresh_credit_threshold = 300
+        if current_credit <= refresh_credit_threshold:
+            task.log_info(
+                f"德朗商店免费刷新已用完，当前信用点{current_credit}未超过阈值"
+                f"{refresh_credit_threshold}，不付费刷新"
+            )
+            return False
+
+        refresh_price_box = next(
+        (text_box for text_box in task.all_texts
+         if 0.160 <= (text_box.x + text_box.width / 2) / task.width <= 0.220
+         and 0.915 <= (text_box.y + text_box.height / 2) / task.height <= 0.950
+         and text_box.name.strip().isdigit()),
+        None,
+        )
+        if not refresh_price_box:
+            task.log_info("德朗商店免费刷新已用完，未识别到刷新价格，不付费刷新")
+            return False
+
+        refresh_price = int(refresh_price_box.name.strip())
+        if refresh_price > current_credit:
+            task.log_info(
+                f"德朗商店付费刷新需{refresh_price}信用点，当前{current_credit}，"
+                "不足，不刷新"
+            )
+            return False
+
+        task.log_info(
+            f"德朗商店免费刷新已用完，当前信用点{current_credit}超过阈值"
+            f"{refresh_credit_threshold}，付费刷新需{refresh_price}信用点，点击刷新"
+        )
+        task.click_box(refresh_price_box)
+        task.sleep(1)
+        return True
     return False
 
 
