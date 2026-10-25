@@ -14,9 +14,16 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
+import cv2  # noqa: E402
 from ok import Box  # noqa: E402
+from ok.feature.FeatureSet import read_from_json  # noqa: E402
 
 from src.en import templates  # noqa: E402
+
+# The free Epiphany icon over a combatant at camp, cropped from a Global client frame of the 2026-10-25 run.
+CAMP_EPIPHANY = REPO_ROOT / "tests" / "images" / "camp_epiphany.png"
+# Upstream's `default_threshold` in `src/config.py`, which `handle_rest` matches the icon against.
+THRESHOLD = 0.8
 
 
 class FakeTask:
@@ -96,6 +103,17 @@ class TestTemplateFallback(unittest.TestCase):
         """find_one searches several templates at once by passing a list, which is not hashable."""
         self.assertEqual([], templates.resolve([], ["memberinfo", "memberinfo2"], self.task, None))
         self.assertEqual([], templates.resolve([], None, self.task, None))
+
+    def test_the_camp_epiphany_icon_matches_only_once_resized(self):
+        """At its own size upstream's template misses the Global icon, so the free Epiphany at camp was walked past."""
+        features, *_ = read_from_json(str(REPO_ROOT / "ok_tasks" / "assets" / "coco_annotations.json"), 1920, 1080,
+                                      target_category_name="special_flash_luosi2")
+        feature = features["special_flash_luosi2"]
+        icon = cv2.imread(str(CAMP_EPIPHANY))
+        score = lambda: cv2.minMaxLoc(cv2.matchTemplate(icon, feature.mat, cv2.TM_CCOEFF_NORMED))[1]
+        self.assertLess(score(), THRESHOLD)
+        templates.resize("special_flash_luosi2", feature)
+        self.assertGreaterEqual(score(), THRESHOLD)
 
     def test_the_patch_is_idempotent(self):
         from ok.task.task import FindFeature

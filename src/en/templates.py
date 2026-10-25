@@ -1,10 +1,11 @@
-"""Stand in for the one image template that is a picture of a Chinese word.
+"""Make the image templates that miss on the Global client match it again.
 
-`ok_tasks/assets/` ships 79 templates and 77 of them are icons, which match the Global client unchanged. Of
-the two that are pictures of Chinese words, only `leveltag` is reached by any code: a crop of 等级, the caption
-the client draws as "LEVEL" beside a combatant portrait.
+`ok_tasks/assets/` ships 79 templates and nearly all of them match the Global client unchanged. `leveltag` is a
+crop of 等级, the caption the client draws as "LEVEL" beside a combatant portrait, and the camp's free Epiphany icon
+is drawn larger than on the CN client.
 """
 
+import cv2
 from ok import Logger
 
 logger = Logger.get_logger(__name__)
@@ -18,6 +19,12 @@ logger = Logger.get_logger(__name__)
 # template matching - so the fallback reads the English caption out of the OCR pass the handler already ran.
 TEXT_TEMPLATES = {
     "leveltag": ("LEVEL", "等级"),
+}
+# Each template the Global client draws at another size, and the factor it is resized by. `special_flash_luosi2`, the
+# Epiphany icon over a combatant at camp, scored 0.71-0.72 against the 0.8 cutoff on four camp frames and 0.96-0.97 at
+# 1.1x, while no other frame of the same run passed 0.60.
+RESIZED_TEMPLATES = {
+    "special_flash_luosi2": 1.1,
 }
 
 _patched = False
@@ -72,6 +79,18 @@ def resolve(found, feature_name, task, region):
     if fallback:
         logger.debug(f"{feature_name} template found nothing, matched {len(fallback)} boxes on {captions}")
     return fallback
+
+
+def resize(feature_name, feature):
+    """Resize a template the Global client draws at another size, as ok-script loads it.
+
+    Args:
+        feature_name: The template's name in `coco_annotations.json`.
+        feature: The loaded `Feature`, whose `mat` is replaced in place.
+    """
+    factor = RESIZED_TEMPLATES.get(feature_name)
+    if factor:
+        feature.mat = cv2.resize(feature.mat, None, fx=factor, fy=factor, interpolation=cv2.INTER_LINEAR)
 
 
 def apply():
