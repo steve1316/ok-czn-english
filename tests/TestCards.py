@@ -375,6 +375,26 @@ class TestKits(unittest.TestCase):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
 
+    def test_sereniel_builds_afterglow_before_cashing_it_in(self):
+        """Shining Core makes the lasers, and Cobalt Light and Pale Shooting Star only pay once lasers have fired."""
+        two_fired = ("Homing Laser", "Homing Laser L")
+        for description, cards_in_hand, board, expected in (
+            # Generic play leaves the laser maker as filler behind the attack.
+            ("Shining Core goes before the attacks", ("Pulse Fire", "Shining Core"), cards.Board(action_points=2), ["Shining Core", "Pulse Fire"]),
+            # Generic play buys Cobalt Light's 560 first, with no laser played to build the Afterglow it Ravages on.
+            ("Cobalt Light waits for lasers", ("Cobalt Light", "Homing Laser", "Pulse Fire"), cards.Board(), ["Homing Laser", "Pulse Fire"]),
+            # Generic play ties the two attacks and keeps hand order.
+            ("Cobalt Light goes last", ("Cobalt Light", "Plasma Missile"), cards.Board(action_points=4, played=two_fired),
+             ["Plasma Missile", "Cobalt Light"]),
+            ("Pale Shooting Star waits for a laser", ("Pale Shooting Star", "Homing Laser", "Pulse Fire"), cards.Board(),
+             ["Homing Laser", "Pulse Fire"]),
+            # Pins the hold being released, which generic play passes too.
+            ("Pale Shooting Star plays once a laser fired", ("Pale Shooting Star", "Pulse Fire"), cards.Board(played=("Homing Laser",)),
+             ["Pulse Fire", "Pale Shooting Star"]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+
     def test_magna_plays_her_lead_cards_first(self):
         """Ice Fragment and Storm of Bitter Cold lose their Lead discount once another card has been played."""
         for description, cards_in_hand, board, expected in (
