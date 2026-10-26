@@ -627,6 +627,27 @@ class TestKits(unittest.TestCase):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
 
+    def test_heidemarie_starts_one_linked_chain_after_the_rest(self):
+        """Playing a Linked card discards the other Linked cards in hand, so it comes last, and only one is played."""
+        for description, cards_in_hand, board, expected in (
+            # Generic play buys the 160% Sword Rain ahead of the Flash and plays it first.
+            ("the Linked starter goes after the other attacks", ("Sword Rain", "Sword Flash"), cards.Board(action_points=2),
+             ["Sword Flash", "Sword Rain"]),
+            # Generic play pays for the second Linked card, which the first one has already discarded.
+            ("no second Linked card once one was played", ("Thread of Light", "Sword Flash"), cards.Board(played=("Sword Rain",)),
+             ["Sword Flash"]),
+            # Generic play sees a free skill and plays it, and it can never be played by hand.
+            ("Compression is never played", ("Effulgent Compression", "Sword Flash"), cards.Board(action_points=1), ["Sword Flash"]),
+            # Generic play makes the Blades after the attack that should have been the starter.
+            ("Expansion makes Blades before the attacks", ("Sword Flash", "Effulgent Expansion"), cards.Board(),
+             ["Effulgent Expansion", "Sword Flash"]),
+            # Generic play fires the free nuke first, before the chain has put Blades in the graveyard.
+            ("Release goes after the chain", ("Effulgent Release", "Sword Flash"), cards.Board(action_points=1),
+             ["Sword Flash", "Effulgent Release"]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+
     def test_every_kit_names_real_cards(self):
         # A game patch that renames a card would otherwise switch its kit off without a word.
         for kit in kits.KITS:
