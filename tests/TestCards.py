@@ -506,6 +506,22 @@ class TestKits(unittest.TestCase):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
 
+    def test_veronica_leaves_the_ballistas_and_sets_up_reload_first(self):
+        """Her Ballistas fire themselves at the end of the turn, and Firing Preparation, Bombardment Prep and Pendant feed them."""
+        for description, cards_in_hand, board, expected in (
+            # Generic play clicks the Ballista first, as a free Attack.
+            ("a Ballista is not played", ("Ballista", "Repose"), cards.Board(), ["Repose"]),
+            ("a Ballista alone ends the turn", ("Piercing Ballista",), cards.Board(), []),
+            # Generic play ties the power cards and keeps the buying order, which puts Repose's 260 first.
+            ("Firing Preparation goes first", ("Repose", "Firing Preparation"), cards.Board(), ["Firing Preparation", "Repose"]),
+            ("Bombardment Prep goes before Pendant of Resolution", ("Pendant of Resolution", "Bombardment Prep"), cards.Board(),
+             ["Bombardment Prep", "Pendant of Resolution"]),
+            ("Pendant of Resolution goes before the skills", ("Repose", "Pendant of Resolution"), cards.Board(),
+             ["Pendant of Resolution", "Repose"]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+
     def test_narja_sets_up_before_the_attacks(self):
         """Voluntary Control makes Voracity and Domain of Voracity raises Tenacity damage, and both only help the attacks after them."""
         for description, cards_in_hand, board, expected in (
