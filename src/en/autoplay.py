@@ -6,8 +6,10 @@ rewritten and re-run against the same recording rather than costing another capt
 """
 
 from collections import Counter, namedtuple
+from difflib import SequenceMatcher
 
-from src.en.cards import canonical
+from src.en.cards import CARD_COST, canonical
+from src.en.quality import fold
 
 # One recorded battle frame, as `observe.py` writes it. `hand` holds `(name, key)` pairs in screen order.
 Frame = namedtuple("Frame", ["at", "hand", "count", "points", "weakness", "egos", "enemies"],
@@ -16,6 +18,12 @@ Frame = namedtuple("Frame", ["at", "hand", "count", "points", "weakness", "egos"
 Decision = namedtuple("Decision", ["hand", "played", "points", "weakness"])
 # Everything Auto spent one turn on. `ambiguous` marks a turn where it outran the sampling rate.
 Turn = namedtuple("Turn", ["opening", "played", "ambiguous"])
+
+# How alike two readings must be for one to be the other read again - "Joker" and "Jokel" score 0.8, a played card and the
+# unrelated card drawn after it rarely clear 0.5. A reading cut short is caught apart from this, by being part of the other.
+SAME_READING = 0.75
+# The shortest piece of a name worth matching inside another, so a stray glyph is not taken for every card holding it.
+SHORTEST_PIECE = 3
 
 
 # Nothing here treats a hand as a set. Several copies of a card in one hand is ordinary, so a name still being
@@ -42,9 +50,36 @@ def departures(before, after):
         after: The later frame.
 
     Returns:
-        A `Counter` of canonical names, counting copies rather than testing presence.
+        A `Counter` of canonical names, counting copies rather than testing presence. A card that only re-read under
+        another name - "Illusion of Golden Daffodils" one frame, "lusion of Golden Daffodils" the next - did not leave.
     """
-    return Counter(names_of(before)) - Counter(names_of(after))
+    held, holding = Counter(names_of(before)), Counter(names_of(after))
+    left, arrived = held - holding, holding - held
+    for name in list(left.elements()):
+        again = next((new for new in arrived if arrived[new] and reads_like(name, new)), None)
+        if again:
+            left[name] -= 1
+            arrived[again] -= 1
+    return +left
+
+
+def reads_like(one, other):
+    """Say whether two readings off the hand are likely the same card, read twice.
+
+    Args:
+        one: A name from one frame.
+        other: A name from the next.
+
+    Returns:
+        True when one is part of the other, or the two are only a letter or two apart. Two names the data both knows are
+        two cards, since `Ambush` sits inside `Ambush Cover` and a misreading resolves to neither.
+    """
+    if one in CARD_COST and other in CARD_COST:
+        return False
+    shorter, longer = sorted((fold(one), fold(other)), key=len)
+    if len(shorter) >= SHORTEST_PIECE and shorter in longer:
+        return True
+    return SequenceMatcher(None, shorter, longer).ratio() >= SAME_READING
 
 
 def dealt_again(before, after):
