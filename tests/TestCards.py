@@ -364,6 +364,17 @@ class TestKits(unittest.TestCase):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
 
+    def test_lucas_plays_sss_before_the_bullets(self):
+        """S.S.S buffs the Launcher Bullets played after it for the turn."""
+        for description, cards_in_hand, board, expected in (
+            # Generic play ranks it as a plain 100% attack, below the 210 bullet, so it lands after it.
+            ("S.S.S goes before the bullets it buffs", ("Flame Shot", "S.S.S"), cards.Board(action_points=2), ["S.S.S", "Flame Shot"]),
+            # Generic play keeps hand order between the two 100% attacks.
+            ("S.S.S goes before a plain attack", ("Machine Gun", "S.S.S"), cards.Board(action_points=2), ["S.S.S", "Machine Gun"]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+
     def test_every_kit_names_real_cards(self):
         # A game patch that renames a card would otherwise switch its kit off without a word.
         for kit in kits.KITS:
