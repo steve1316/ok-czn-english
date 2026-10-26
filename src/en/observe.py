@@ -6,16 +6,18 @@ reads once a second. Watching it costs one more read of what is already there.
 """
 
 import json
+import logging
 import os
 import threading
 import time
+from logging.handlers import RotatingFileHandler
 from types import SimpleNamespace
 
 import cv2
 import numpy as np
 from ok import Box, Logger
 
-from src.en import board
+from src.en import analysis, board
 from src.en.handlers import loaded, register, replace
 from src.en.screen import patch_of
 
@@ -53,6 +55,16 @@ MOVED = 24
 THUMBNAIL = (148, 40)
 # High enough that OCR reads a saved band as it would the live frame.
 JPEG_QUALITY = 90
+# Where the burst threads' lines below WARNING go. The read-back runs upstream's hand reader thousands of times a battle, and its
+# debug lines would otherwise flood the terminal and the main log.
+BURST_LOG = os.path.join("logs", "auto_burst.log")
+# Bytes the burst log reaches before it rolls over, and the old files kept.
+BURST_LOG_BYTES = 20 * 1024 ** 2
+BURST_LOG_KEPT = 2
+# Start of both burst threads' names, which is how their lines are told apart.
+BURST_THREAD = "auto-burst"
+# The main log's own line layout, copied from ok's private `_ok_log_formatter` so the burst log reads the same.
+LOG_FORMAT = "%(asctime)s %(levelname)s %(threadName)s %(message)s"
 
 _patched = False
 # What the recorder has already said it could not do, so each failure is logged once rather than one hiding another.
@@ -131,6 +143,39 @@ def read_back(task, engine, band, at):
     return {"at": at, "hand": [[card.get("name"), card.get("key")] for card in hand], "count": utils_sortie._read_hand_count(screen)}
 
 
+class BurstLog(logging.Filter):
+    """Send the burst threads' lines below WARNING to `BURST_LOG`, and keep them from every other handler.
+
+    A filter on ok-script's one logger sees every line, and survives `config_logger` replacing that logger's handlers.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.file = None  # the `BURST_LOG` handler, opened on the first diverted line
+
+    def filter(self, record):
+        """Write a burst thread's line to its own file instead of the main log.
+
+        Args:
+            record: The log record, whose thread name says where it came from.
+
+        Returns:
+            False for a diverted line, so no other handler sees it.
+        """
+        if not record.threadName.startswith(BURST_THREAD) or record.levelno >= logging.WARNING:
+            return True
+        # Never logged from here, since that would come straight back through this filter.
+        try:
+            if self.file is None:
+                os.makedirs(os.path.dirname(BURST_LOG), exist_ok=True)
+                self.file = RotatingFileHandler(BURST_LOG, maxBytes=BURST_LOG_BYTES, backupCount=BURST_LOG_KEPT, encoding="utf-8")
+                self.file.setFormatter(logging.Formatter(LOG_FORMAT))
+            self.file.handle(record)
+        except Exception:
+            pass
+        return False
+
+
 class Burst:
     """Grab the hand many times a second during a battle, and read the grabs back once it is over."""
 
@@ -149,6 +194,7 @@ class Burst:
         self.live_until = time.time() + LIVE_FOR
         if first:
             os.makedirs(BURST_DIR, exist_ok=True)
+            logging.getLogger("ok").addFilter(BurstLog())
             threading.Thread(target=self.grab, name="auto-burst-grab", daemon=True).start()
             threading.Thread(target=self.read, name="auto-burst-read", daemon=True).start()
 
@@ -285,17 +331,17 @@ def install():
             Whatever upstream's own handler returns, untouched.
         """
         on_battle = original(task)
+        # Off unless the Auto Analysis switch is on. Read every frame, so flipping it mid-run takes effect at once.
+        recording = on_battle and analysis.enabled()
         # Captured before the first change, so what gets handed back is upstream's own figure.
         if not hasattr(task, NORMAL_INTERVAL):
             setattr(task, NORMAL_INTERVAL, task.trigger_interval)
-        # Restored the moment the battle leaves the screen, so nothing else in the run is paced differently.
-        task.trigger_interval = BATTLE_INTERVAL if on_battle else getattr(task, NORMAL_INTERVAL)
-        if on_battle:
+        # Restored the moment the battle leaves the screen or the switch goes off, so nothing else is paced differently.
+        task.trigger_interval = BATTLE_INTERVAL if recording else getattr(task, NORMAL_INTERVAL)
+        if recording:
             try:
                 write(task)
-                # Debug runs only. The extra grabs and a second OCR engine are a study aid a release run has no use for.
-                if getattr(task, "debug", False):
-                    BURST.battle_seen(task)
+                BURST.battle_seen(task)
             except Exception as error:
                 complain(error, "record the battle frame")
         return on_battle
