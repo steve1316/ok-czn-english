@@ -8,7 +8,7 @@ rewritten and re-run against the same recording rather than costing another capt
 from collections import Counter, namedtuple
 from difflib import SequenceMatcher
 
-from src.en.cards import CARD_COST, canonical
+from src.en.cards import CARD_COST, canonical, is_card_name
 from src.en.quality import fold
 
 # One recorded battle frame, as `observe.py` writes it. `hand` holds `(name, key)` pairs in screen order.
@@ -37,9 +37,10 @@ def names_of(frame):
         frame: The recorded frame.
 
     Returns:
-        The canonical names, in screen order.
+        The canonical names, in screen order. A label the reader passed off as a card is left out, by today's label test rather
+        than the one the recording was made under.
     """
-    return [canonical(name) for name, _ in frame.hand]
+    return [canonical(name) for name, _ in frame.hand if is_card_name(name)]
 
 
 def departures(before, after):
