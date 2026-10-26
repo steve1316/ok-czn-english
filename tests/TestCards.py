@@ -467,6 +467,22 @@ class TestKits(unittest.TestCase):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
 
+    def test_adelheid_sets_up_and_waits_for_a_pack(self):
+        """Once Upon A Time blesses before Protect Us draws, Garden of Secrets is a top spend, and Doggie (Pack) comes in twos."""
+        for description, cards_in_hand, board, expected in (
+            # Generic play keeps hand order, so Protect Us draws Blessing cards before any exist.
+            ("Once Upon A Time goes before Protect Us", ("Protect Us", "Once Upon A Time"), cards.Board(), ["Once Upon A Time", "Protect Us"]),
+            # Generic play rates Garden's 200% shield at 120 and buys the 200% attack ahead of it.
+            ("Garden of Secrets ties her best attack", ("Garden of Secrets", "Truth Behind A Story"), cards.Board(action_points=1),
+             ["Garden of Secrets"]),
+            # Generic play plays the free Doggie at once.
+            ("a lone Doggie (Pack) waits", ("Doggie (Pack)", "Gather Around"), cards.Board(), ["Gather Around"]),
+            # Pins the hold being released, so it passes without the kit too.
+            ("two Doggie (Pack) are played", ("Doggie (Pack)", "Doggie (Pack)"), cards.Board(), ["Doggie (Pack)", "Doggie (Pack)"]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+
     def test_every_kit_names_real_cards(self):
         # A game patch that renames a card would otherwise switch its kit off without a word.
         for kit in kits.KITS:
