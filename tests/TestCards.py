@@ -409,6 +409,25 @@ class TestKits(unittest.TestCase):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
 
+    def test_tenebria_plays_rhythms_before_the_cards_that_feed_on_them(self):
+        """Call & Response is a Rhythm while held, Encore procs only a Rhythm played just before it, and Spotlight returns a played one."""
+        for description, cards_in_hand, board, expected in (
+            # Generic play spends Call & Response first, which takes it out of hand and its +30% off every Rhythm.
+            ("Call & Response stays in hand beside a Rhythm", ("Call & Response", "Rhythm"), cards.Board(), ["Rhythm"]),
+            # Generic play spends Spotlight before the Rhythm it is meant to return.
+            ("Spotlight waits for a Rhythm to be played", ("Spotlight", "Rhythm"), cards.Board(), ["Rhythm"]),
+            # Generic play plays Encore cold, where it has no Rhythm to proc.
+            ("Encore waits for a Rhythm", ("Encore", "Sound Check"), cards.Board(), ["Sound Check"]),
+            ("Encore follows the Rhythm at once", ("Spotlight", "Encore"), cards.Board(played=("Rhythm",)), ["Encore", "Spotlight"]),
+            ("Encore waits when a Rhythm was not the last card", ("Encore", "Sound Check"), cards.Board(played=("Rhythm", "Sound Check")),
+             ["Sound Check"]),
+            # Pins the hold being released, which generic play passes too.
+            ("Spotlight plays once a Rhythm has been", ("Spotlight", "Rhythm"), cards.Board(played=("Rhythm: Arpeggio",)),
+             ["Spotlight", "Rhythm"]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+
     def test_maribell_fires_shelter_strike_after_her_shields(self):
         """Shelter Strike deals Fixed Damage equal to the Shield she owns."""
         for description, cards_in_hand, board, expected in (
