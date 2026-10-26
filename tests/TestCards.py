@@ -316,6 +316,8 @@ class TestKits(unittest.TestCase):
             # Both read this way in the Chaos recordings.
             ("a misread Shard is still a Shard", ("Shard:l", "Sword Slash", "nard:Dark"), ["Sword Slash"]),
             ("a Shard left alone is played", ("Shard:Dark",), ["Shard:Dark"]),
+            # Generic play lists the unplayable Tassel as a free Skill and presses it first.
+            ("a Sword Tassel is never played", ("Shard:Light", "Sword Tassel", "Sword Slash", "Shard:Dark"), ["Sword Slash"]),
         ):
             with self.subTest(description):
                 self.assertCountEqual(played(cards.plan(hand(*cards_in_hand), cards.Board())), expected)

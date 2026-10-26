@@ -16,6 +16,8 @@ SHARDS = ("Shard:Light", "Shard:Dark")
 FUSED = "Flicker Blade"
 # How a Shard still reads once OCR mangles it - "Sharc", "nard:Dark", "Shard:l" - matched on folded text. No other card's name matches.
 READS_AS_SHARD = re.compile(r"shar|ard(?:light|dark)")
+# What each Shard trigger makes. Unplayable, and it stays in hand beside the Shards until they fuse.
+TASSEL = "Sword Tassel"
 
 
 def is_shard(name):
@@ -28,6 +30,18 @@ def is_shard(name):
         True for a Shard.
     """
     return bool(READS_AS_SHARD.search(fold(name)))
+
+
+def is_waiting_card(name):
+    """Say whether a card just sits in hand until the fusion, so it does not count as the middle.
+
+    Args:
+        name: A card name from the hand, canonical or as OCR left it.
+
+    Returns:
+        True for a Shard or a Sword Tassel.
+    """
+    return is_shard(name) or base_name(name) == TASSEL
 
 
 def fused(shards):
@@ -47,21 +61,21 @@ def fused(shards):
 
 
 class Rossweisse(Kit):
-    """Keeps the Shards, prices every card between them as a step toward the fusion, and waits the fusion out."""
+    """Keeps the Shards and their Tassels, prices every card between them as a step toward the fusion, and waits the fusion out."""
 
     name = "Rossweisse"
-    cards = frozenset(SHARDS)
+    cards = frozenset((*SHARDS, TASSEL))
 
     def claims(self, name):
-        """Switch on for a Shard in hand, however OCR read it.
+        """Switch on for a Shard in hand, however OCR read it, or a Sword Tassel, so a hand of Tassels is not played.
 
         Args:
             name: A card name from the hand.
 
         Returns:
-            True for a Shard.
+            True for a Shard or a Tassel.
         """
-        return is_shard(name)
+        return is_waiting_card(name)
 
     def reading(self, hand, count):
         """Take an end card OCR could not name to be a Shard, when the Shard at the other end did read.
@@ -87,16 +101,16 @@ class Rossweisse(Kit):
         return read
 
     def held(self, name, board):
-        """Keep a Shard while anything else is still in hand.
+        """Keep every Sword Tassel, and a Shard while anything but Shards and Tassels is still in hand.
 
         Args:
             name: The card in question.
             board: The `cards.Board` it would be played into.
 
         Returns:
-            True for a Shard with other cards beside it.
+            True for a Tassel, or a Shard with middle cards beside it.
         """
-        return is_shard(name) and not all(is_shard(other) for other in board.hand)
+        return base_name(name) == TASSEL or (is_shard(name) and not all(map(is_waiting_card, board.hand)))
 
     def worth(self, name, board, base, rate):
         """Price each card between the Shards as a step toward the fusion.
@@ -118,7 +132,7 @@ class Rossweisse(Kit):
         return base + rate(fused(shards))
 
     def waiting(self, names, count):
-        """Wait while the two Shards alone are in hand, which reads for 1-2s before they fuse.
+        """Wait while the two Shards and their Tassels alone are in hand, which reads for 1-2s before they fuse.
 
         Args:
             names: Every card the hand reads as.
@@ -127,7 +141,7 @@ class Rossweisse(Kit):
         Returns:
             True while the fusion is still to come.
         """
-        return count <= len(SHARDS) and len(names) == len(SHARDS) and all(is_shard(name) for name in names)
+        return count <= len(names) and sum(map(is_shard, names)) == len(SHARDS) and all(map(is_waiting_card, names))
 
 
 KIT = Rossweisse()

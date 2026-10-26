@@ -705,7 +705,8 @@ class TestKits(unittest.TestCase):
             battle.install()
             page = handlers_of(utils_sortie)["handle_battle_page"]
             utils_sortie._try_all_card_keys(task, 3)
-            task.hand_cards = hand("Shard:Light", "Shard:Dark")
+            # The Tassels the Shards made sit in hand with them until they fuse.
+            task.hand_cards = hand("Shard:Light", "Sword Tassel", "Shard:Dark")
             # A counter that blanks mid-animation is no reason to wait, and no reason to raise either.
             self.assertFalse(battle.kit_waiting(task, utils_sortie, None))
             page(task)
