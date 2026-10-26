@@ -712,6 +712,25 @@ class TestKits(unittest.TestCase):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
 
+    def test_olga_stacks_before_she_cashes_in(self):
+        """Rift and Desire stack and activate Fracture and Agony, Break Apart returns them, and Reckoning cashes the stacks in."""
+        stacker = ("Rift of Severance",)
+        for description, cards_in_hand, board, expected in (
+            # Generic play fires the free Reckoning first, before any stack exists.
+            ("Reckoning waits for a stack", ("Reckoning", "Reaping Slash"), cards.Board(), ["Reaping Slash"]),
+            ("Reckoning follows the stacker", ("Reckoning", "Dispersed Desire"), cards.Board(action_points=1), ["Dispersed Desire", "Reckoning"]),
+            # Pins the hold being released by last turn's stacker.
+            ("Reckoning plays on a stack from last turn", ("Reckoning",), cards.Board(last_turn=stacker), ["Reckoning"]),
+            # Generic play buys the plain 100% over an 80% that activates the stacks.
+            ("a stacker is bought over Reaping Slash", ("Reaping Slash", "Rift of Severance"), cards.Board(action_points=1),
+             ["Rift of Severance"]),
+            # Generic play puts the Break Apart skill after every attack, so it fetches nothing back in time.
+            ("Break Apart follows the first stacker", ("Dispersed Desire", "Break Apart & Renew"), cards.Board(action_points=2, played=stacker),
+             ["Break Apart & Renew", "Dispersed Desire"]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+
     def test_every_kit_names_real_cards(self):
         # A game patch that renames a card would otherwise switch its kit off without a word.
         for kit in kits.KITS:
