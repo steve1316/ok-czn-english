@@ -760,6 +760,26 @@ class TestKits(unittest.TestCase):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), cards.Board())), expected)
 
+    def test_renoa_keeps_her_bullets_in_hand(self):
+        """Dirge Bullets fire when the turn ends, and the payoff attacks scale with the bullets still in hand."""
+        bullets = ("Dirge Bullet",) * 5
+        for description, cards_in_hand, board, expected in (
+            # Generic play spends a point on the bullet, which would have fired for free at turn end.
+            ("a bullet is never played", ("Dirge Bullet", "Annihilation Shot"), cards.Board(), ["Annihilation Shot"]),
+            # Generic play buys the 300% card on sight, with two bullets for it to count.
+            ("Last-Ditch Assault waits for bullets", ("Last-Ditch Assault", "Dirge Bullet", "Dirge Bullet", "Annihilation Shot"), cards.Board(),
+             ["Annihilation Shot"]),
+            ("Last-Ditch Assault plays with five bullets", ("Last-Ditch Assault", *bullets), cards.Board(), ["Last-Ditch Assault"]),
+            # Generic play buys the payoffs by value, Last-Ditch Assault first, so it discards the bullets the others count.
+            ("the payoffs go Ballad, Instant Judgment, Last-Ditch", ("Last-Ditch Assault", "Instant Judgment", "Ballad of Pitch Black", *bullets),
+             cards.Board(), ["Ballad of Pitch Black", "Instant Judgment", "Last-Ditch Assault"]),
+            # Generic play buys the 180% Ballad first, before the bullet Echo of Sorrow makes for it to count.
+            ("Echo of Sorrow goes before Ballad", ("Ballad of Pitch Black", "Echo of Sorrow"), cards.Board(action_points=2),
+             ["Echo of Sorrow", "Ballad of Pitch Black"]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+
     def test_every_kit_names_real_cards(self):
         # A game patch that renames a card would otherwise switch its kit off without a word.
         for kit in kits.KITS:
