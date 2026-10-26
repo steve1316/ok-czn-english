@@ -41,9 +41,10 @@ PHASE_ESCAPE = 0
 PHASE_EPIPHANY = 1
 PHASE_FREE = 2
 PHASE_SETUP = 3
-PHASE_ATTACK = 4
-PHASE_OTHER = 5
-PHASE_SPENDS_EVERYTHING = 6
+PHASE_PRIME = 4
+PHASE_ATTACK = 5
+PHASE_OTHER = 6
+PHASE_SPENDS_EVERYTHING = 7
 
 # Roughly what one drawn card is worth, said in damage. A card drawn is about one more card played, and the
 # ordinary card costing one point does 100% damage, so that is the exchange rate the data itself suggests.
@@ -68,6 +69,10 @@ EPIPHANY_BONUS = 1000
 DAMAGE = re.compile(r"(\d+)%[^\n]{0,24}?Damage(?!\s+Amount)(?:\s*[×x]\s*(\d+))?")
 SHIELD = re.compile(r"(\d+)%[^\n]{0,20}?Shield")
 DRAW = re.compile(r"\bDraw (\d+)")
+# A card that makes the next attack hit harder, or the target take more - "Add 1 Hit(s) to the next Attack Card", "+X% Damage
+# Amount to the next Bullet card", "2 Vulnerable". Played after the attacks, as its category alone left it, it lands on nothing.
+PRIME = re.compile(r"(?:Damage Amount|Hit\(s\)|Proc)[^|\n]*?\bnext\b[^|\n]*?\b(?:Attack|Bullet|Bind) Card"
+                   r"|(?:\b\d+ Vulnerable|Vulnerable \d+)(?! to (?:allies|self))|Damage Amount taken by the target", re.I)
 
 # What a card does, in the terms the ordering cares about.
 Features = namedtuple("Features", ["damage", "shield", "draw"])
@@ -415,6 +420,8 @@ def phase(name, board):
     kind = category(name)
     if kind == SETUP_CATEGORY or features(name).draw:
         return PHASE_SETUP
+    if kind not in DEALT_TO_YOU and PRIME.search(description(name)):
+        return PHASE_PRIME
     if kind == ATTACK_CATEGORY:
         return PHASE_ATTACK
     return PHASE_OTHER

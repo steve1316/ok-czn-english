@@ -100,6 +100,12 @@ class TestOrdering(unittest.TestCase):
         chosen = cards.plan(hand(JUSTICE_ATTACK, BUFF), cards.Board())
         self.assertEqual(played(chosen), [BUFF, JUSTICE_ATTACK])
 
+    def test_a_card_that_primes_the_next_attack_goes_before_it(self):
+        # Both are Skills, which sorted them after the attack Wind Charge adds a hit to and Frost Charge's Vulnerable would have raised.
+        for primer, attack in (("Wind Charge", JUSTICE_ATTACK), ("Frost Charge", JUSTICE_ATTACK)):
+            with self.subTest(primer=primer):
+                self.assertEqual(played(cards.plan(hand(attack, primer), cards.Board())), [primer, attack])
+
     def test_the_better_value_attack_goes_first(self):
         # 220% for two points beats 100% for one, and three points pays for both.
         chosen = cards.plan(hand(JUSTICE_ATTACK, BIG_ATTACK), cards.Board())
