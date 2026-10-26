@@ -119,6 +119,9 @@ ARCHETYPE_READ = re.compile(r"(?:rchet|het[yv]p)[a-z]*?([○△□oc0]?)$|^arche
 ARCHETYPES = {"△": "Archetype: △", "□": "Archetype: □"}
 # All three cost nothing, so which one a reading that lost its glyph is taken for changes how it ranks, never whether it is played.
 ARCHETYPE_UNREAD = "Archetype: ○"
+# The keyword tags a card's tooltip lists, like "[Unique / Bullet]", which the reader picks up when the tooltip covers the hand.
+# No card name holds a bracket or a slash.
+KEYWORD_TAG = re.compile(r"[\[\]/]")
 
 
 def looks_like_label(folded):
@@ -210,7 +213,7 @@ def is_card_name(reading):
         True when it should be treated as a card.
     """
     folded = fold(reading)
-    if not folded:
+    if not folded or KEYWORD_TAG.search(reading):
         return False
     # Two real cards are named exactly after a label, `Attack!` and `Curse`. `ocr.po` already ruled on both:
     # the label appears under every card of that type while the card is one of 794, so the label wins. Curse

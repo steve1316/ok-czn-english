@@ -29,27 +29,25 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 from src.en import autoplay, cards  # noqa: E402
 from src.en.game_battle import CARD_OWNER  # noqa: E402
 from src.en.kits.kit import base_name  # noqa: E402
-from src.en.observe import RECORDING  # noqa: E402
+from src.en.observe import BURST_RECORDING, RECORDING  # noqa: E402
 
 # How many of the most common disagreements to print. Long enough to see a pattern, short enough to read.
 WORST = 15
 
 
-def load(path):
-    """Read a recording back into frames.
+def read_frames(path):
+    """Read one recording file into frames.
 
     Args:
-        path: The recording's path.
+        path: A file `observe.py` wrote, either the full frames or the burst grabs.
 
     Returns:
-        A list of `Frame`, in the order they were written.
-
-    Raises:
-        SystemExit: When the recording does not exist yet.
+        A list of `Frame`, in the order they were written, or none when the file does not exist. A burst line's missing
+        board fields take the defaults.
     """
-    if not Path(path).exists():
-        raise SystemExit(f"no recording at {path} - run Chaos with the observer installed first")
     frames = []
+    if not Path(path).exists():
+        return frames
     with open(path, encoding="utf-8") as recording:
         for line in recording:
             line = line.strip()
@@ -62,6 +60,24 @@ def load(path):
                                          weakness=record.get("weakness"), egos=tuple(record.get("egos", ())),
                                          enemies=record.get("enemies", 0)))
     return frames
+
+
+def load(path, burst=BURST_RECORDING):
+    """Read a recording back into frames, with any burst grabs slotted in by time.
+
+    Args:
+        path: The recording's path.
+        burst: The burst grabs' path. A missing file just means a recording made without them.
+
+    Returns:
+        A list of `Frame`, in time order.
+
+    Raises:
+        SystemExit: When the recording does not exist yet.
+    """
+    if not Path(path).exists():
+        raise SystemExit(f"no recording at {path} - run Chaos with the observer installed first")
+    return autoplay.merged(read_frames(path), read_frames(burst))
 
 
 def our_pick(decision):

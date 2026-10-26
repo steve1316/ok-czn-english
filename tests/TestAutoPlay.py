@@ -8,15 +8,21 @@ which is offline-only and exercised by `scripts/study_auto.py` rather than from 
 import sys
 import types
 import unittest
+from collections import Counter
 from contextlib import contextmanager
+from unittest import mock
 from pathlib import Path
 
 import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(REPO_ROOT / "ok_tasks"))
 
-from src.en import observe  # noqa: E402
+import utils_sortie  # noqa: E402,F401
+from ok.task.task import OCR  # noqa: E402
+
+from src.en import autoplay, observe  # noqa: E402
 
 # A real card name, so canonical folding is exercised rather than bypassed.
 ATTACK = "Anchor"
@@ -84,6 +90,21 @@ def collected():
         yield written
     finally:
         observe.write = saved
+
+
+def quad(x, y, width, height):
+    """Build an OCR engine's corner list for a box.
+
+    Args:
+        x: The box's left edge in pixels.
+        y: The box's top edge in pixels.
+        width: The box's width in pixels.
+        height: The box's height in pixels.
+
+    Returns:
+        The four corners, clockwise from the top left, as the engine reports them.
+    """
+    return [[x, y], [x + width, y], [x + width, y + height], [x, y + height]]
 
 
 class TestRecording(unittest.TestCase):
@@ -168,6 +189,57 @@ class TestRecording(unittest.TestCase):
             once = utils_chaos.PAGE_HANDLERS[0]
             observe.install()
             self.assertIs(utils_chaos.PAGE_HANDLERS[0], once)
+
+    def test_only_a_debug_run_grabs_the_hand_between_frames(self):
+        # The grabs and their second OCR engine are a study aid. A release run paying for them gets nothing back.
+        with mock.patch.object(observe.BURST, "battle_seen") as started:
+            for debug in (False, True):
+                with self.subTest(debug=debug), chaos([{"name": ATTACK, "key": "1"}]) as (utils_chaos, task):
+                    task.debug = debug
+                    observe.install()
+                    with collected():
+                        utils_chaos.PAGE_HANDLERS[0](task)
+                    self.assertEqual(started.call_count, int(debug))
+
+
+class TestBurst(unittest.TestCase):
+    """The burst grabs, read back after the battle and merged into the recording."""
+
+    def test_a_saved_band_reads_back_as_the_live_hand_would(self):
+        # Against upstream's real hand reader, so a box left in band coordinates misses its region and comes back empty,
+        # and a rename of anything the read-back leans on fails here rather than as a silent empty recording.
+        left, top = observe.band_origin(1920, 1080)
+        on_screen = [((500, 760, 120, 30), ATTACK), ((490, 715, 20, 25), "1"), ((960, 1035, 50, 30), "1/10")]
+        engine = types.SimpleNamespace(ocr=lambda band: [[(quad(x - left, y - top, width, height), (text, 0.9))
+                                                          for (x, y, width, height), text in on_screen]])
+        task = types.SimpleNamespace(width=1920, height=1080, ocr_default_threshold=0.2, fix_texts=lambda boxes: None)
+        task.get_box = OCR.get_box.__get__(task)
+        record = observe.read_back(task, engine, np.zeros((432, 1420, 3), dtype=np.uint8), 5.0)
+        self.assertEqual(record, {"at": 5.0, "hand": [[ATTACK, "1"]], "count": 1})
+
+    def test_a_grab_borrows_the_board_of_the_frame_before_it(self):
+        # A grab only reads the hand. Taking the defaults instead would claim Action Points on every grab, and a turn ended
+        # into a fresh deal would then look like a draw.
+        frames = [autoplay.Frame(at=1.0, hand=((ATTACK, "1"), ("Joker", "2")), count=2, points=False, weakness="Justice"),
+                  autoplay.Frame(at=5.0, hand=(), count=0)]
+        grabs = [autoplay.Frame(at=at, hand=(("Joker", "1"),), count=1) for at in (3.0, 3.2)]
+        every = autoplay.merged(frames, grabs)
+        self.assertEqual([frame.at for frame in every], [1.0, 3.0, 5.0])
+        self.assertEqual(every[1], frames[0]._replace(at=3.0, hand=(("Joker", "1"),), count=1))
+
+    def test_only_a_hand_at_rest_counts_as_a_play(self):
+        # Each case but the last is a hand Auto never played from, read wrongly in the middle. Counting that frame fakes a play.
+        held = ((ATTACK, "1"), ("Joker", "2"))
+        grabs = [autoplay.Frame(at=at / 10, hand=held, count=2) for at in range(10, 20)]
+        cases = {"a full frame missing a card": ([autoplay.Frame(at=1.45, hand=held[:1], count=2)], grabs, Counter()),
+                 "an empty read mid-animation": ([], grabs[:4] + [grab._replace(hand=()) for grab in grabs[4:6]] + grabs[6:], Counter()),
+                 "a card read once as gone": ([], grabs[:5] + [grabs[5]._replace(hand=held[:1])] + grabs[6:], Counter()),
+                 "a card lost for a moment": ([], grabs[:4] + [grab._replace(hand=held[:1]) for grab in grabs[4:7]] + grabs[7:], Counter()),
+                 "a card that really left": ([], grabs[:4] + [grab._replace(hand=held[:1]) for grab in grabs[4:]], Counter(Joker=1))}
+        for case, (frames, read, expected) in cases.items():
+            with self.subTest(case=case):
+                played = sum((turn.played for turn in autoplay.turns(autoplay.merged(frames, read))), Counter())
+                self.assertEqual(played, expected)
 
 
 if __name__ == "__main__":
