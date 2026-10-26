@@ -476,6 +476,23 @@ class TestKits(unittest.TestCase):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
 
+    def test_tressa_curses_first_and_makes_daggers_before_throwing(self):
+        """Curse counts only Attacks played after it, and Unsheathe Dagger and Shadow Reload make the daggers the turn is spent on."""
+        for description, cards_in_hand, board, expected in (
+            # Generic play ranks Curse at a flat 100, below a free 120% attack, and so plays the attack first.
+            ("Curse goes before a free attack", ("Homing Laser", "Curse"), cards.Board(), ["Curse", "Homing Laser"]),
+            # Generic play throws first, and the dagger maker waits behind it as filler.
+            ("Unsheathe Dagger goes before Dagger Throw", ("Dagger Throw", "Unsheathe Dagger"), cards.Board(action_points=2),
+             ["Unsheathe Dagger", "Dagger Throw"]),
+            ("Shadow Reload goes before Dagger Throw", ("Dagger Throw", "Shadow Reload"), cards.Board(action_points=2),
+             ["Shadow Reload", "Dagger Throw"]),
+            # Generic play ties them and keeps hand order, which spends the Retain card before the plain attack.
+            ("Advanced Shadow Dagger goes after Dagger Throw", ("Advanced Shadow Dagger", "Dagger Throw"), cards.Board(),
+             ["Dagger Throw", "Advanced Shadow Dagger"]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+
     def test_mika_spends_points_on_the_partner_first(self):
         """Water Arrow, Water Barrier and Whirlpool are cut from her deck by the guides, so a partner's card is bought first."""
         for description, cards_in_hand, board, expected in (
