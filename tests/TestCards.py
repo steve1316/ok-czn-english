@@ -389,6 +389,23 @@ class TestKits(unittest.TestCase):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
 
+    def test_maribell_fires_shelter_strike_after_her_shields(self):
+        """Shelter Strike deals Fixed Damage equal to the Shield she owns."""
+        for description, cards_in_hand, board, expected in (
+            # Generic play buys the 100% Strike over the shield worth 60.
+            ("Strike waits for a shield in hand", ("Shelter Strike", "Shelter Defense"), cards.Board(action_points=1), ["Shelter Defense"]),
+            # Generic play puts the attack ahead of the skill.
+            ("Strike goes after the skill that built the Shield", ("Shelter Strike", "Oh... I see."),
+             cards.Board(action_points=2, played=("Shelter Defense",)), ["Oh... I see.", "Shelter Strike"]),
+            # Generic play buys Resolute Blitz's 140 over the Strike's 100.
+            ("Strike is bought over Blitz once a shield is up", ("Resolute Blitz", "Shelter Strike"),
+             cards.Board(action_points=1, played=("Shelter Defense",)), ["Shelter Strike"]),
+            # Pins the release: with no shield left in hand the Strike is played.
+            ("a lone Strike is played", ("Shelter Strike",), cards.Board(action_points=1), ["Shelter Strike"]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+
     def test_every_kit_names_real_cards(self):
         # A game patch that renames a card would otherwise switch its kit off without a word.
         for kit in kits.KITS:
