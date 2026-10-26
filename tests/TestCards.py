@@ -648,6 +648,23 @@ class TestKits(unittest.TestCase):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
 
+    def test_hilde_fills_the_draw_pile_before_drawing(self):
+        """Quiver Reload makes the arrows every draw pulls, and Vortex Arrow gains a hit per attack card drawn before it."""
+        for description, cards_in_hand, board, expected in (
+            # Generic play draws first, and plays the Quiver with the fillers at the end.
+            ("the Quiver goes first and Vortex Arrow last", ("Vortex Arrow", "Quiver Reload", "Draw & Release"), cards.Board(),
+             ["Quiver Reload", "Draw & Release", "Vortex Arrow"]),
+            # Generic play ties the Quiver with Big Game Ranger and takes whichever sits first in hand.
+            ("the Quiver is bought over Big Game Ranger", ("Big Game Ranger", "Quiver Reload", "Vortex Arrow", "Draw & Release"),
+             cards.Board(), ["Quiver Reload", "Draw & Release", "Vortex Arrow"]),
+            ("Big Game Ranger goes before the draw", ("Draw & Release", "Big Game Ranger"), cards.Board(action_points=2),
+             ["Big Game Ranger", "Draw & Release"]),
+            ("Plasma Rain goes before the arrows it should debuff", ("Vortex Arrow", "Plasma Rain"), cards.Board(action_points=2),
+             ["Plasma Rain", "Vortex Arrow"]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+
     def test_every_kit_names_real_cards(self):
         # A game patch that renames a card would otherwise switch its kit off without a word.
         for kit in kits.KITS:
