@@ -422,6 +422,19 @@ class TestKits(unittest.TestCase):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
 
+    def test_mika_spends_points_on_the_partner_first(self):
+        """Water Arrow, Water Barrier and Whirlpool are cut from her deck by the guides, so a partner's card is bought first."""
+        for description, cards_in_hand, board, expected in (
+            # Generic play ties Water Arrow with the partner's 100% attack and takes the one that comes first in hand.
+            ("a partner attack beats Water Arrow", ("Water Arrow", JUSTICE_ATTACK), cards.Board(action_points=1), [JUSTICE_ATTACK]),
+            ("a partner attack beats Water Barrier", ("Water Barrier", JUSTICE_ATTACK), cards.Board(action_points=1), [JUSTICE_ATTACK]),
+            # Generic play ties Whirlpool's 100 per point with the attacks and takes it first.
+            ("two partner attacks beat Whirlpool", ("Whirlpool", JUSTICE_ATTACK, JUSTICE_ATTACK), cards.Board(action_points=2),
+             [JUSTICE_ATTACK, JUSTICE_ATTACK]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+
     def test_every_kit_names_real_cards(self):
         # A game patch that renames a card would otherwise switch its kit off without a word.
         for kit in kits.KITS:
