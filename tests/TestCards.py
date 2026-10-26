@@ -780,6 +780,25 @@ class TestKits(unittest.TestCase):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
 
+    def test_rin_takes_the_stance_before_attacking(self):
+        """Dark Mist Stance buffs her attacks and Inner Art, Black Dance counts Skill cards in hand, and an ally attack ends the stance."""
+        for description, cards_in_hand, board, expected in (
+            # Generic play buys Drawing Slash's 120% first, so its bonus lands before the stance is up.
+            ("Destruction goes before Drawing Slash", ("Drawing Slash", "Dark Mist Secret Art: Destruction"), cards.Board(),
+             ["Dark Mist Secret Art: Destruction", "Drawing Slash"]),
+            # Generic play files the buff skill after the attacks.
+            ("Inner Art goes before the attack", ("Dark Mist Sword: First Form", "Dark Mist Inner Art"), cards.Board(),
+             ["Dark Mist Inner Art", "Dark Mist Sword: First Form"]),
+            # Generic play spends the shield, which is one Skill card fewer for Black Dance to count.
+            ("Protection stays in hand for Black Dance", ("Dark Mist Secret Art: Black Dance", "Protection"), cards.Board(action_points=2),
+             ["Dark Mist Secret Art: Black Dance"]),
+            # Generic play takes hand order, so the ally's attack ends the stance before Rin's.
+            ("an ally's attack goes after Rin's", ("Annihilation Shot", "Dark Mist Sword: First Form"), cards.Board(action_points=2),
+             ["Dark Mist Sword: First Form", "Annihilation Shot"]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+
     def test_every_kit_names_real_cards(self):
         # A game patch that renames a card would otherwise switch its kit off without a word.
         for kit in kits.KITS:
