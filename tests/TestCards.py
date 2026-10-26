@@ -310,6 +310,27 @@ class TestKits(unittest.TestCase):
             with self.subTest(description):
                 self.assertCountEqual(played(cards.plan(hand(*cards_in_hand), cards.Board())), expected)
 
+    def test_luke_fires_his_bullets_before_cashing_them_in(self):
+        """Finisher Round unlocks after five Handgun Bullets this turn, and Dance of the Demon gains a hit per Bullet fired."""
+        five_fired = ("Magnum Shot", "Magnum Shot", "Silver Shot", "Uranium Shot", "Tracer Shot")
+        for description, cards_in_hand, board, expected in (
+            # Generic play tries the free 500% card first, and the game refuses it every turn.
+            ("Finisher Round waits for five bullets", ("Finisher Round", "Magnum Shot", "Single Shot"), cards.Board(),
+             ["Magnum Shot", "Single Shot"]),
+            ("Finisher Round plays once five bullets fired", ("Single Shot", "Finisher Round"), cards.Board(played=five_fired),
+             ["Finisher Round", "Single Shot"]),
+            # Generic play fires the free bullet first, before Seize buffs it and before Stealth Reload adds more.
+            ("the makers and Seize go before the bullets", ("Magnum Shot", "Seize the Opportunity", "Stealth Reload"), cards.Board(),
+             ["Stealth Reload", "Seize the Opportunity", "Magnum Shot"]),
+            ("Dance waits for every bullet and attack", ("Dance of the Demon", "Magnum Shot", "Silver Shot", "Single Shot"),
+             cards.Board(action_points=2), ["Magnum Shot", "Silver Shot", "Single Shot", "Dance of the Demon"]),
+            # Its 50% looks worse than Single Shot's 100% until the hits from fired bullets are counted.
+            ("Dance is bought over a Single Shot once bullets fired", ("Single Shot", "Dance of the Demon"),
+             cards.Board(action_points=1, played=five_fired[:3]), ["Dance of the Demon"]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+
     def test_every_kit_names_real_cards(self):
         # A game patch that renames a card would otherwise switch its kit off without a word.
         for kit in kits.KITS:
