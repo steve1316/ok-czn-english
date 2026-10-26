@@ -576,6 +576,28 @@ class TestKits(unittest.TestCase):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
 
+    def test_diana_discards_her_quietus_attacks(self):
+        """Quietus cards fire free when discarded, so Diana keeps them for Blooming Love and Heart Breaker rather than paying for them."""
+        milk = "C\u2019mere, Milk & Pong!"
+        for description, cards_in_hand, board, expected in (
+            # Generic play pays a point for each attack as a plain hit.
+            ("the attacks are held while Blooming Love can discard them", ("With All My Heart!", "Pistol of Purification", "Blooming Love"),
+             cards.Board(), ["Blooming Love"]),
+            ("the attacks are held while Heart Breaker can discard them", ("Pistol of Purification", "Heart Breaker"), cards.Board(),
+             ["Heart Breaker"]),
+            ("Cupid Shot is held for a discard too", ("Cupid Shot", "Blooming Love"), cards.Board(), ["Blooming Love"]),
+            # Generic play makes the Shakers last of all.
+            ("Milk & Pong makes Shakers before the rest", ("Protect Me", milk), cards.Board(action_points=2), [milk, "Protect Me"]),
+            # Generic play fires the 500% card at once, with no bullet types in hand to count.
+            ("Liberated Feelings waits for both bullet types", ("Liberated Feelings", "Heart Shaker", "Disruption Fire"), cards.Board(),
+             ["Heart Shaker", "Disruption Fire"]),
+            # Generic play plays the free bullets first, which empties the hand it counts.
+            ("Liberated Feelings counts the bullets before they are played", ("Heart Shaker", "Heart Breaker", "Liberated Feelings"),
+             cards.Board(), ["Liberated Feelings", "Heart Shaker", "Heart Breaker"]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+
     def test_every_kit_names_real_cards(self):
         # A game patch that renames a card would otherwise switch its kit off without a word.
         for kit in kits.KITS:
