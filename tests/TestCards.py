@@ -747,6 +747,19 @@ class TestKits(unittest.TestCase):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), cards.Board())), expected)
 
+    def test_rei_buffs_before_the_attacks(self):
+        """Strike of Darkness, Dark Condensation and Predator's Blade buff the attacks played after them."""
+        for description, cards_in_hand, expected in (
+            # Generic play files the 100% buff attack with the plain attacks, in hand order.
+            ("Strike of Darkness goes before the basic attack", ("Dark Blade", "Strike of Darkness"), ["Strike of Darkness", "Dark Blade"]),
+            # Generic play files this one as a skill, after every attack.
+            ("Dark Condensation goes before the attack", ("Dark Blade", "Dark Condensation"), ["Dark Condensation", "Dark Blade"]),
+            ("the buffs keep their order", ("Predator's Blade", "Dark Condensation", "Strike of Darkness"),
+             ["Strike of Darkness", "Dark Condensation", "Predator's Blade"]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), cards.Board())), expected)
+
     def test_every_kit_names_real_cards(self):
         # A game patch that renames a card would otherwise switch its kit off without a word.
         for kit in kits.KITS:
