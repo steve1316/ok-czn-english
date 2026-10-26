@@ -1,8 +1,8 @@
-"""Take the card the user's build preset pinned, wherever a card screen offers one.
+"""Take the card the user's build preset pinned, and hand a card to the combatant it pinned.
 
 A build preset marks the cards a combatant's build wants, and the client draws a small orange pin in the
-top-right corner of every marked card. Nothing in `ok_tasks/` knows about it - the mark is a Global-client
-feature - so the pick has always come down to the priority lists alone.
+top-right corner of every marked card, and of the combatant row a granted card belongs to. Nothing in `ok_tasks/`
+knows about it - the mark is a Global-client feature - so the pick has always come down to the priority lists alone.
 """
 
 import numpy as np
@@ -18,6 +18,9 @@ logger = Logger.get_logger(__name__)
 # removal and Epiphany screens; the three-card pick draws larger cards and needs its own.
 DECK_OFFSET = (0.0964, -0.0532)
 PICK_OFFSET = (0.1411, -0.0713)
+# Where a combatant row's pin sits on the card assign screen, relative to that row's LEVEL tag. This pin is larger
+# and has a white glyph across its middle, so the probe sits on its solid lower-right: 0.76 orange there, 0.00 on an unpinned row.
+ROW_OFFSET = (0.4497, -0.1056)
 # The patch sampled at that point, in pixels. The pin is about 29 across, so this stays well inside it and
 # tolerates the pixel or two the offset drifts between screens.
 PROBE = 19
@@ -44,6 +47,7 @@ CHOOSERS = {
 MARK_TAG = "pin marks"
 NARROW_TAG = "pinned only"
 EARLY_TAG = "pinned on sight"
+ROW_TAG = "pinned combatant"
 
 _patched = False
 
@@ -76,10 +80,23 @@ def is_pinned(task, card, offset):
     Returns:
         True when the pin is there.
     """
-    feature_box = card.get("feature_box")
-    if task.frame is None or feature_box is None:
+    return pinned_from(task, card.get("feature_box"), offset)
+
+
+def pinned_from(task, anchor, offset):
+    """Report whether the pin is drawn at an offset from an anchor box.
+
+    Args:
+        task: The running task, whose `frame` holds the current capture.
+        anchor: The box the offset is measured from, a card's type icon or a row's LEVEL tag.
+        offset: The layout's `(dx, dy)`.
+
+    Returns:
+        True when the pin is there.
+    """
+    if task.frame is None or anchor is None:
         return False
-    x, y = probe_box(task, feature_box, offset)
+    x, y = probe_box(task, anchor, offset)
     patch = task.frame[y:y + PROBE, x:x + PROBE, :3]
     return colour_share(patch, PIN_LOW, PIN_HIGH) >= MIN_ORANGE
 
@@ -190,8 +207,40 @@ def taking_on_sight(select_card, utils):
     return wrapped
 
 
+def to_pinned_combatant(handler, utils):
+    """Wrap `handle_card_assign` so a granted card goes to the combatant the build preset pinned.
+
+    The pinned row is put first, which is where upstream falls back to. A save-data combatant still wins, as do
+    upstream's own checks for a row that cannot take the card.
+
+    Args:
+        handler: The handler to wrap, upstream's or another patch's.
+        utils: The module holding the row reader.
+
+    Returns:
+        The wrapped handler.
+    """
+    def wrapped(task):
+        read_rows = utils._find_member_level_tags
+
+        def pinned_first(task_, *args, **kwargs):
+            tags = read_rows(task_, *args, **kwargs)
+            pinned = [index for index, tag in enumerate(tags) if pinned_from(task_, tag, ROW_OFFSET)]
+            # Row 0 is already the fallback, and more than one pin says nothing about which to take.
+            if len(pinned) != 1 or not pinned[0]:
+                return tags
+            row = pinned[0]
+            logger.info(f"build preset pins combatant {row + 1} of {len(tags)}, so the card goes there")
+            return [tags[row], *tags[:row], *tags[row + 1:]]
+
+        with standing_in(utils, _find_member_level_tags=pinned_first):
+            return handler(task)
+
+    return wrapped
+
+
 def install(utils):
-    """Mark every card the recognizers return, and narrow the screens that choose one.
+    """Mark every card the recognizers return, narrow the screens that choose one, and follow a pinned combatant.
 
     Args:
         utils: The loaded `utils` module, or None when it is not importable yet.
@@ -204,6 +253,7 @@ def install(utils):
         wrap(utils, name,
              lambda chooser, recognizer=recognizer: narrowing(chooser, utils, recognizer), NARROW_TAG)
     wrap(utils, "select_card", lambda select_card: taking_on_sight(select_card, utils), EARLY_TAG)
+    wrap(utils, "handle_card_assign", lambda handler: to_pinned_combatant(handler, utils), ROW_TAG)
 
 
 def apply():

@@ -26,14 +26,17 @@ import utils  # noqa: E402
 from src.en.handlers import standing_in  # noqa: E402
 
 from src.en.pins import (  # noqa: E402
-    CHOOSERS, DECK_OFFSET, PICK_OFFSET, PROBE, RECOGNIZERS, install, is_pinned, marked,
-    narrowing, only_pinned, probe_box, tagging, taking_on_sight,
+    CHOOSERS, DECK_OFFSET, PICK_OFFSET, PROBE, RECOGNIZERS, ROW_OFFSET, install, is_pinned, marked,
+    narrowing, only_pinned, probe_box, tagging, taking_on_sight, to_pinned_combatant,
 )
+from tests.fakes import FakeBox  # noqa: E402
 
 WIDTH, HEIGHT = 1920, 1080
 # The orange the pin is drawn in, and a colour from an unpinned card's corner, both sampled from the captures.
 PIN_BGR = (41, 120, 239)
 PLAIN_BGR = (115, 115, 113)
+# The card assign screen's three LEVEL tags down the screen, from a 2026-10-25 capture.
+ROW_TAGS = (0.3171, 0.5407, 0.7611)
 
 
 class FakeMatch:
@@ -301,6 +304,32 @@ def named(name):
     return handler
 
 
+class TestPinnedCombatant(unittest.TestCase):
+    """Handing a granted card to the combatant the build preset pinned, through upstream's own handler."""
+
+    def test_the_card_goes_to_the_pinned_row(self):
+        """Upstream falls back to the top row, which once gave Memory: Desire away while the pin sat on row 3. A save-data combatant still wins."""
+        top, middle, bottom = ROW_TAGS
+        for pinned, saver, expected in ((None, None, top), (middle, None, middle), (bottom, None, bottom), (bottom, middle, middle)):
+            with self.subTest(pinned=pinned, saver=saver):
+                task = FakeTask()
+                task.all_texts = [FakeBox("请选择要接受卡牌的主战员", 0.863, 0.133)]
+                task.default_config, task.sleep = {"刷存档主战员": "(none)"}, lambda seconds: None
+                tags = [FakeBox("LEVEL", 0.4495, y, width=40, height=20) for y in ROW_TAGS]
+                # Upstream binds the save-data combatant by position, so it is found in whatever order the rows arrive.
+                bind = lambda task_, rows, *a, **k: next((i for i, row in enumerate(rows) if saver and row is tags[ROW_TAGS.index(saver)]), None)
+                if pinned is not None:
+                    task.paint(round((0.4495 + ROW_OFFSET[0]) * WIDTH), round((pinned + ROW_OFFSET[1]) * HEIGHT), PIN_BGR)
+                clicked = []
+                with standing_in(utils, _get_game_text=lambda task_, text: text, _get_card_list=lambda *a: [],
+                                 _get_card_reward_priority=lambda *a: [], _find_target_member_index=bind,
+                                 recognize_cards=lambda *a, **k: [{"name": "Memory: Desire", "description": ""}],
+                                 _find_member_level_tags=lambda *a, **k: tags,
+                                 _move_and_click=lambda task_, x, y: clicked.append(round(y, 4))):
+                    to_pinned_combatant(utils.handle_card_assign, utils)(task)
+                self.assertEqual([expected], clicked)
+
+
 class TestInstall(unittest.TestCase):
     """Putting the wrappers where the run will actually reach them."""
 
@@ -313,6 +342,7 @@ class TestInstall(unittest.TestCase):
             select_card=named("select_card"),
             handle_card_reward=named("handle_card_reward"),
             handle_view_original=named("handle_view_original"),
+            handle_card_assign=named("handle_card_assign"),
         )
         self.module = types.ModuleType("fake_mode_for_pins_test")
         self.module.PAGE_HANDLERS = [named("handle_card_reward"), named("handle_view_original")]
