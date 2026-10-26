@@ -483,6 +483,20 @@ class TestKits(unittest.TestCase):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
 
+    def test_amir_builds_metalization_and_ends_on_iron_skin(self):
+        """Hovering Metal and Metal Extraction give Metalization first, Iron Skin ends the turn, and Steel Barrier sets off a hit after Hurricane."""
+        for description, cards_in_hand, board, expected in (
+            # Generic play puts the generators in the late skill phase, after the attack that would spend their stacks.
+            ("the generators go before the attacks", ("Rapier", "Hovering Metal"), cards.Board(action_points=2), ["Hovering Metal", "Rapier"]),
+            # Generic play keeps hand order among the late skills, so the Finale ends the turn on top of the shield.
+            ("Iron Skin goes after every other card", ("Iron Skin", "Steel Barrier"), cards.Board(action_points=2), ["Steel Barrier", "Iron Skin"]),
+            # Generic play rates its 100% shield below Rapier's 100% hit.
+            ("Steel Barrier beats Rapier once Hurricane is played", ("Rapier", "Steel Barrier"),
+             cards.Board(action_points=1, played=("Full Metal Hurricane",)), ["Steel Barrier"]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+
     def test_every_kit_names_real_cards(self):
         # A game patch that renames a card would otherwise switch its kit off without a word.
         for kit in kits.KITS:
