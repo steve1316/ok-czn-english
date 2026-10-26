@@ -665,6 +665,17 @@ class TestKits(unittest.TestCase):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
 
+    def test_kayron_exhausts_before_the_finishers(self):
+        """Black Hole grows with every Futility exhausted, so it waits until the Futility is played."""
+        for description, cards_in_hand, board, expected in (
+            # Generic play buys Black Hole's 240% over the Futility and plays it first.
+            ("Black Hole waits for the Futility", ("Black Hole", "Futility"), cards.Board(), ["Futility"]),
+            # Pins the hold being released, so it passes with the kit removed.
+            ("Black Hole is played once the Futility is gone", ("Black Hole",), cards.Board(), ["Black Hole"]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+
     def test_every_kit_names_real_cards(self):
         # A game patch that renames a card would otherwise switch its kit off without a word.
         for kit in kits.KITS:
