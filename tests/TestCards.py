@@ -816,6 +816,20 @@ class TestKits(unittest.TestCase):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
 
+    def test_selena_marks_before_attacking(self):
+        """Marks make each later attack card fire an extra attack, so the cards that give them go before the attacks."""
+        for description, cards_in_hand, expected in (
+            # Generic play files the Mark skill after the attacks, so the Marks wait for next turn.
+            ("High-Power Scope goes before the attack", ("Engagement Fire", "High-Power Scope"), ["High-Power Scope", "Engagement Fire"]),
+            # Generic play buys the 210% attack first and plays it first, before Target Spotted's Mark.
+            ("Target Spotted leads the attacks", ("Cold Shot", "Target Spotted"), ["Target Spotted", "Cold Shot"]),
+            ("Drone Bombing goes before the plain attack", ("Cold Shot", "Drone Bombing"), ["Drone Bombing", "Cold Shot"]),
+            ("the Marks come before Drone Bombing", ("Drone Bombing", "Target Spotted", "High-Power Scope"),
+             ["High-Power Scope", "Target Spotted", "Drone Bombing"]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), cards.Board())), expected)
+
     def test_every_kit_names_real_cards(self):
         # A game patch that renames a card would otherwise switch its kit off without a word.
         for kit in kits.KITS:
