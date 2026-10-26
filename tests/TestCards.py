@@ -497,6 +497,23 @@ class TestKits(unittest.TestCase):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
 
+    def test_anika_discounts_one_big_attack_and_ends_on_reloading(self):
+        """Warming Up waits for a two-cost attack and plays just before it, Rampage Trigger lands four hits last, and Reloading ends the turn."""
+        for description, cards_in_hand, board, expected in (
+            # Generic play spends the free Finale first and throws the hand away.
+            ("Reloading goes last", ("Reloading", "Shock Gun"), cards.Board(action_points=1), ["Shock Gun", "Reloading"]),
+            # Generic play discounts a card that costs one anyway.
+            ("Warming Up waits for a big attack", ("Warming Up", "Shock Gun"), cards.Board(action_points=2), ["Shock Gun"]),
+            # Generic play prices its 100% line at a single hit, so Shock Gun and Blaster Swing take the points.
+            ("Rampage Trigger is bought for its four hits", ("Rampage Trigger", "Blaster Swing", "Shock Gun"), cards.Board(),
+             ["Shock Gun", "Rampage Trigger"]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+        # With only Rampage Trigger to discount, generic play still puts Warming Up ahead of Shock Gun and wastes the discount on it.
+        board = cards.Board(hand=("Warming Up", "Shock Gun", "Rampage Trigger"))
+        self.assertGreater(cards.phase("Warming Up", board), cards.phase("Shock Gun", board))
+
     def test_every_kit_names_real_cards(self):
         # A game patch that renames a card would otherwise switch its kit off without a word.
         for kit in kits.KITS:
