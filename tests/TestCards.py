@@ -539,6 +539,17 @@ class TestKits(unittest.TestCase):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
 
+    def test_yuki_enables_inspiration_before_the_attacks_and_ends_on_iceberg(self):
+        """Trickery Strike enables Inspiration on the attacks played after it, and Iceberg Cleave is the payoff after the buffs."""
+        for description, cards_in_hand, board, expected in (
+            # Generic play ties Trickery Strike with the other 180 attack and keeps hand order.
+            ("Trickery Strike goes before the attacks", ("Iceberg Cleave", "Trickery Strike"), cards.Board(), ["Trickery Strike", "Iceberg Cleave"]),
+            # Generic play buys Iceberg Cleave's 180 per point first and plays it first.
+            ("Iceberg Cleave goes after Flash Slash", ("Iceberg Cleave", "Flash Slash"), cards.Board(), ["Flash Slash", "Iceberg Cleave"]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+
     def test_nia_orders_her_cycling_cards(self):
         """Adagio leaves a discard on top for G Chord, Soul Riff counts later discards, and Mute Accent discards the dearest card."""
         for description, cards_in_hand, board, expected in (
