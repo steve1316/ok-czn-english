@@ -689,6 +689,29 @@ class TestKits(unittest.TestCase):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
 
+    def test_nine_levels_hew_before_firing_it(self):
+        """Hew grows a level each time it is exhausted, so Nine holds it until the top level and spends the exhaust cards on it."""
+        for description, cards_in_hand, board, expected in (
+            # Generic play spends all three points on a Hew that has grown nothing.
+            ("a low Hew is held", ("Hew Lv. 1", "Fighting Spirit"), cards.Board(), ["Fighting Spirit"]),
+            # Generic play buys Experienced Strike's 140% over a skill worth 100.
+            ("Fighting Spirit is bought to level Hew", ("Experienced Strike", "Hew Lv. 1", "Fighting Spirit"),
+             cards.Board(action_points=1), ["Fighting Spirit"]),
+            # Pins the hold being released at the top level.
+            ("a full Hew is played", ("Hew Lv. 3",), cards.Board(), ["Hew Lv. 3"]),
+            ("Extreme is not full at level 4", ("Hew (Extreme) Lv. 4", "Slash"), cards.Board(), ["Slash"]),
+            # Generic play takes the one-point attack that would exhaust the full Hew.
+            ("Fatal Strike waits while Hew is full", ("Fatal Strike", "Hew Lv. 3"), cards.Board(), ["Hew Lv. 3"]),
+            ("Fighting Spirit fires a full Hew", ("Hew Lv. 3", "Fighting Spirit"), cards.Board(), ["Fighting Spirit"]),
+            # Generic play puts the boost after the Hew it was meant for.
+            ("Experienced Strike goes before the Hew", ("Hew Lv. 3", "Experienced Strike"), cards.Board(), ["Experienced Strike", "Hew Lv. 3"]),
+            # Generic play spends a point on a skill that has no Hew to fire.
+            ("Fighting Spirit has nothing to fire once Hew is gone", ("Fighting Spirit", "Slash"), cards.Board(played=("Hew Lv. 3",)),
+             ["Slash"]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+
     def test_every_kit_names_real_cards(self):
         # A game patch that renames a card would otherwise switch its kit off without a word.
         for kit in kits.KITS:
