@@ -13,7 +13,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.en import cards  # noqa: E402
+from src.en import cards, kits  # noqa: E402
 
 JUSTICE_ATTACK = "Anchor"
 VOID_ATTACK = "Annihilation Shot"
@@ -250,6 +250,34 @@ class TestReadingNames(unittest.TestCase):
     def test_an_unreadable_card_does_not_stop_the_rest_of_the_turn(self):
         chosen = cards.plan(hand("", JUSTICE_ATTACK), cards.Board())
         self.assertIn(JUSTICE_ATTACK, played(chosen))
+
+
+class TestKits(unittest.TestCase):
+    """Playstyles the generic value per point cannot see."""
+
+    def test_rossweisse_keeps_her_shards_for_the_fusion(self):
+        """Rossweisse's Shards fire while held and fuse into a free Flicker Blade once they are the only cards left."""
+        for description, cards_in_hand, expected in (
+            # Generic play buys the Shard's 80% hit with the two points the Slash leaves.
+            ("a Shard is not bought while the middle holds a card", ("Shard:Light", "Sword Slash", "Shard:Dark"), ["Sword Slash"]),
+            # Value per point buys Blade of the Cycle and Charge Launcher, two cards. Clearing the middle wants three.
+            ("the middle is cleared before value per point",
+             ("Shard:Light", "Charge Launcher", "Sword Slash", "Standing Blade", "Blade of the Cycle", "Shard:Dark"),
+             ["Sword Slash", "Standing Blade", "Blade of the Cycle"]),
+            ("an upgraded Shard is still a Shard", ("Shard:Light (Cycle)", "Sword Slash", "Shard:Dark (Cycle)"), ["Sword Slash"]),
+            # Both read this way in the Chaos recordings.
+            ("a misread Shard is still a Shard", ("Shard:l", "Sword Slash", "nard:Dark"), ["Sword Slash"]),
+            ("a Shard left alone is played", ("Shard:Dark",), ["Shard:Dark"]),
+        ):
+            with self.subTest(description):
+                self.assertCountEqual(played(cards.plan(hand(*cards_in_hand), cards.Board())), expected)
+
+    def test_every_kit_names_real_cards(self):
+        # A game patch that renames a card would otherwise switch its kit off without a word.
+        for kit in kits.KITS:
+            for name in kit.cards:
+                with self.subTest(kit=kit.name, card=name):
+                    self.assertIn(name, cards.CARD_COST)
 
 
 if __name__ == "__main__":

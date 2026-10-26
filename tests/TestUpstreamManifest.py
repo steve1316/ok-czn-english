@@ -39,7 +39,7 @@ UPSTREAM_NAMES = {
     ),
     "utils_sortie": (
         "_hand_card_names", "_hand_cards", "_is_card_name", "_read_hand_count", "_read_member_slots",
-        "_try_all_card_keys", "handle_battle_page", "handle_get_card",
+        "_try_all_card_keys", "handle_battle_hand_select", "handle_battle_page", "handle_get_card", "handle_return_to_draw_pile", "random",
     ),
 }
 
@@ -49,6 +49,7 @@ UPSTREAM_NAMES = {
 ANCHORS_IN_LISTS = {
     "handle_archive_target_member": ("utils_chaos", "utils_sortie"),
     "handle_battle_auto_check": ("utils_chaos", "utils_story"),
+    "handle_battle_hand_select": ("utils_sortie",),
     "handle_battle_page": ("utils_sortie",),
     "handle_card_assign": ("utils_chaos", "utils_sortie"),
     "handle_card_reward": ("utils_chaos", "utils_sortie"),
@@ -61,6 +62,7 @@ ANCHORS_IN_LISTS = {
     "handle_mask_card": ("utils_chaos",),
     "handle_member_selection": ("utils_sortie",),
     "handle_negotiation": ("utils_chaos", "utils_sortie"),
+    "handle_return_to_draw_pile": ("utils_sortie",),
     "handle_save_target_member": ("utils_chaos",),
     "handle_shop": ("utils_chaos", "utils_sortie"),
     "handle_stuck_log": ("utils_chaos", "utils_sortie"),

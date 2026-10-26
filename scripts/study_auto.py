@@ -27,6 +27,8 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from src.en import autoplay, cards  # noqa: E402
+from src.en.game_battle import CARD_OWNER  # noqa: E402
+from src.en.kits.kit import base_name  # noqa: E402
 from src.en.observe import RECORDING  # noqa: E402
 
 # How many of the most common disagreements to print. Long enough to see a pattern, short enough to read.
@@ -119,6 +121,37 @@ def report_agreement(made):
             print(f"  x{count:<4} {theirs!r} -> {ours!r}")
 
 
+def owner_of(name):
+    """Say whose card Auto played, for the per-combatant report.
+
+    Args:
+        name: The card name as the recording read it.
+
+    Returns:
+        The owning combatant, "neutral" for a known card nobody owns, or "unread" for a reading the data cannot name.
+    """
+    known = cards.canonical(name)
+    if known not in cards.CARD_COST:
+        return "unread"
+    return CARD_OWNER.get(base_name(known)) or "neutral"
+
+
+def report_owners(made):
+    """Print how often the picker agrees with Auto, by whose card Auto played. The lowest rows want a kit next.
+
+    Args:
+        made: The `Decision` list reconstructed from the recording.
+    """
+    plays, agreed = Counter(), Counter()
+    for decision in made:
+        owner = owner_of(decision.played)
+        plays[owner] += 1
+        agreed[owner] += our_pick(decision) == decision.played
+    print("\nagreement by owner of the card Auto played:")
+    for owner, count in plays.most_common():
+        print(f"  {owner:<20} {count:5}  {100 * agreed[owner] / count:3.0f}%")
+
+
 def our_turn(turn):
     """Say which cards the picker would have spent a turn on.
 
@@ -164,13 +197,17 @@ def main():
     """Read the recording and print the report."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--recording", default=RECORDING, help="the file observe.py wrote")
+    parser.add_argument("--by-owner", action="store_true", help="also break agreement down by whose card Auto played")
     arguments = parser.parse_args()
     frames = load(arguments.recording)
     report_feasibility(frames)
     # The turn view leads. It uses every frame, where a single-card label needs Auto to have been caught
     # between two of them - on a real recording that is 25 usable turns against 14 decisions.
     report_turns(autoplay.turns(frames))
-    report_agreement(autoplay.decisions(frames))
+    made = autoplay.decisions(frames)
+    report_agreement(made)
+    if arguments.by_owner:
+        report_owners(made)
 
 
 if __name__ == "__main__":

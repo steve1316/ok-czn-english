@@ -16,8 +16,13 @@ import cv2
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(REPO_ROOT / "ok_tasks"))
+
+# The real module, for a prompt the fork runs unchanged over a different reading of the screen.
+import utils_sortie as real_sortie  # noqa: E402
 
 from src.en import battle, board, cards, overrides  # noqa: E402
+from src.en.handlers import standing_in  # noqa: E402
 from tests.TestBoard import FakeTask, flat, paint, paint_enemy, pasted  # noqa: E402
 from tests.fakes import FakeBox  # noqa: E402
 
@@ -259,9 +264,20 @@ def upstream(hand_cards, smart=True, action_points=True, egos=(), weakness=None)
                                    "wait": utils_sortie.random.uniform(0.2, 0.8)})
 
     utils_sortie.handle_battle_page = handle_battle_page
+
+    def handle_battle_hand_select(task):
+        """Stand in for upstream's hand prompt, which clicks a box chosen at random from the hand.
+
+        Args:
+            task: The task whose `all_texts` holds the hand.
+        """
+        task.click_box(utils_sortie.random.choice(task.all_texts))
+
+    utils_sortie.handle_battle_hand_select = handle_battle_hand_select
+    utils_sortie.handle_return_to_draw_pile = types.SimpleNamespace(__name__="handle_return_to_draw_pile")
     # The seam edits this list rather than the module attribute, so the fake has to carry one too, with the anchor
     # the fork inserts its own handler in front of.
-    utils_sortie.PAGE_HANDLERS = [handle_battle_page, types.SimpleNamespace(__name__="handle_center_confirm")]
+    utils_sortie.PAGE_HANDLERS = [handle_battle_page, handle_battle_hand_select, types.SimpleNamespace(__name__="handle_center_confirm")]
     saved = {name: sys.modules.get(name) for name in ("utils", "utils_sortie")}
     sys.modules["utils"], sys.modules["utils_sortie"] = utils, utils_sortie
     try:
@@ -303,9 +319,10 @@ class TestInstalling(unittest.TestCase):
                 battle.install()
                 for _ in range(2):
                     battle.fight_story_battles()
-            gate, picker, *_ = utils_story.PAGE_HANDLERS
-            self.assertEqual([gate, picker, battle.handle_cards_left, confirm], utils_story.PAGE_HANDLERS)
+            gate, picker, prompt, *_ = utils_story.PAGE_HANDLERS
+            self.assertEqual([gate, picker, prompt, battle.handle_cards_left, confirm], utils_story.PAGE_HANDLERS)
             self.assertIsNot(picker, utils_sortie.handle_battle_page)
+            self.assertIsNot(prompt, utils_sortie.handle_battle_hand_select)
             left, top, _, _ = battle.AUTO_BUTTON
             # A prompt shades the padlock too dim to read, so the fight has to be remembered from before it. Started on
             # the prompt, there is nothing to remember, and Auto's check would only wait on it.
@@ -653,6 +670,53 @@ class TestStartingTheFight(unittest.TestCase):
         region = cv2.imread(str(REPO_ROOT / "tests" / "images" / "attack_button.png"))
         score = cv2.minMaxLoc(cv2.matchTemplate(region, template, cv2.TM_CCOEFF_NORMED))[1]
         self.assertGreaterEqual(score, 0.8)
+
+
+class TestKits(unittest.TestCase):
+    """Rossweisse's Shards, which need the turn and its prompts handled differently, not just the cards ranked differently."""
+
+    # Her hand mid-turn, as a hand prompt reads it.
+    SHARDS_AROUND_A_SLASH = (("Shard:Light", 0.25), ("Sword Slash", 0.50), ("Shard:Dark", 0.75))
+
+    def test_the_turn_waits_for_the_shards_to_fuse(self):
+        # Upstream ends the turn on an empty read, and the hand reads empty for a second mid-fusion.
+        with upstream(hand("Shard:Light", "Sword Slash", "Shard:Dark")) as (utils_sortie, task):
+            battle.install()
+            page = handlers_of(utils_sortie)["handle_battle_page"]
+            utils_sortie._try_all_card_keys(task, 3)
+            task.hand_cards = hand("Shard:Light", "Shard:Dark")
+            # A counter that blanks mid-animation is no reason to wait, and no reason to raise either.
+            self.assertFalse(battle.kit_waiting(task, utils_sortie, None))
+            page(task)
+            task.hand_cards, task.counter = [], 2
+            for _ in range(battle.KIT_WAIT - 1):
+                page(task)
+            self.assertEqual(utils_sortie.asked, [])
+            # A fusion that never comes cannot hold the turn for good.
+            page(task)
+            self.assertEqual(len(utils_sortie.asked), 1)
+
+    def test_a_hand_prompt_never_gives_up_a_shard(self):
+        with upstream(hand(ATTACK)) as (utils_sortie, task):
+            battle.install()
+            task.all_texts = [FakeBox(name, x, 0.80) for name, x in self.SHARDS_AROUND_A_SLASH]
+            handlers_of(utils_sortie)["handle_battle_hand_select"](task)
+            self.assertEqual([box.name for box in task.clicked], ["Sword Slash"])
+
+    def test_return_to_draw_pile_passes_over_the_shard_on_the_left(self):
+        # Upstream's own handler takes the leftmost card, and the leftmost card is always Shard:Light.
+        for description, in_hand, expected in (
+                ("a card between the Shards", self.SHARDS_AROUND_A_SLASH, "Sword Slash"),
+                # Card text in the same band is not a card, so it must not count as one still to clear.
+                ("only the Shards, over their card text", (("Shard:Light", 0.25), ("150% Damage", 0.50), ("Shard:Dark", 0.75)), "Shard:Light"),
+        ):
+            with self.subTest(description):
+                task = Pressed([])
+                task.all_texts = [FakeBox("请选择1张要移动至抽牌堆的卡牌", 0.484, 0.111, width=600), *(FakeBox(name, x, 0.80) for name, x in in_hand)]
+                with standing_in(task, all_texts=battle.unheld_texts(task)):
+                    self.assertTrue(real_sortie.handle_return_to_draw_pile(task))
+                self.assertEqual([box.name for box in task.clicked], [expected])
+
 
 if __name__ == "__main__":
     unittest.main()
