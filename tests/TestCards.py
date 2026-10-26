@@ -612,6 +612,21 @@ class TestKits(unittest.TestCase):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
 
+    def test_haru_keeps_her_buffs_for_the_shot(self):
+        """Anchor Pointer fetches an Anchor Shot only when none is in hand, and the buffs only work on a card in hand."""
+        for description, cards_in_hand, board, expected in (
+            # Generic play fetches the Shot while one is already in hand.
+            ("Pointer waits while a Shot is in hand", ("Anchor Pointer", "Anchor Shot"), cards.Board(), ["Anchor Shot"]),
+            # Generic play spends the buff with no Shot in hand to take it.
+            ("Lift Anchor waits for a Shot", ("Lift Anchor", "Anchor"), cards.Board(action_points=1), ["Anchor"]),
+            ("Charge Energy waits for an attack", ("Charge Energy", "Anchor Drop"), cards.Board(action_points=1), ["Anchor Drop"]),
+            # Pins the hold being released, so it passes with the kit removed.
+            ("Pointer fetches a Shot that is not in hand", ("Anchor Pointer", "Anchor Drop"), cards.Board(action_points=1),
+             ["Anchor Pointer", "Anchor Drop"]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+
     def test_every_kit_names_real_cards(self):
         # A game patch that renames a card would otherwise switch its kit off without a word.
         for kit in kits.KITS:
