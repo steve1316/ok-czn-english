@@ -731,6 +731,22 @@ class TestKits(unittest.TestCase):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
 
+    def test_orlea_keeps_cards_that_need_creatures(self):
+        """Growing Creature is better kept, Will of Light and Growth Acceleration need creatures in hand, and Softie buffs first."""
+        swiftie, softie, sturdie = "Swiftie \u2605\u2605\u2605", "Softie \u2605\u2605\u2605", "Sturdie \u2605"
+        for description, cards_in_hand, expected in (
+            # Generic play spends a point to make a one-star creature that waiting would have made a three-star one.
+            ("Growing Creature is never played", ("Growing Creature", "Attack, My Minions"), ["Attack, My Minions"]),
+            ("Will of Light waits for a hand of creatures", ("Will of Light", swiftie, softie), [softie, swiftie]),
+            # Pins the hold being released at three creatures.
+            ("Will of Light plays with three creatures", ("Will of Light", swiftie, softie, sturdie), [softie, swiftie, sturdie, "Will of Light"]),
+            ("Growth Acceleration waits for a creature", ("Growth Acceleration", "Healing of Light"), ["Healing of Light"]),
+            # Generic play takes hand order, so the Swiftie attacks before the buff is up.
+            ("Softie goes before Swiftie", (swiftie, softie), [softie, swiftie]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), cards.Board())), expected)
+
     def test_every_kit_names_real_cards(self):
         # A game patch that renames a card would otherwise switch its kit off without a word.
         for kit in kits.KITS:
