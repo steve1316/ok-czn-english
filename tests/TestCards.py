@@ -514,6 +514,24 @@ class TestKits(unittest.TestCase):
         board = cards.Board(hand=("Warming Up", "Shock Gun", "Rampage Trigger"))
         self.assertGreater(cards.phase("Warming Up", board), cards.phase("Shock Gun", board))
 
+    def test_arabella_applies_fracture_before_it_detonates(self):
+        """Scream For Me and Hollow Verdict apply Fracture, Sadistic Restraint detonates it, and The Art of Unmaking waits for it."""
+        for description, cards_in_hand, board, expected in (
+            # Generic play orders the three by hand order, so Sadistic Restraint detonates Fracture that is not there yet.
+            ("apply, then detonate", ("Sadistic Restraint", "Hollow Verdict", "Scream For Me"), cards.Board(),
+             ["Scream For Me", "Hollow Verdict", "Sadistic Restraint"]),
+            # Generic play opens with the 200% card, which has no harmful effect to grow on.
+            ("The Art of Unmaking waits for an applier", ("The Art of Unmaking", "Scream For Me"), cards.Board(action_points=2), ["Scream For Me"]),
+            # Pins the hold being released once a Fracture card has been played, so it passes without the kit too.
+            ("The Art of Unmaking plays after an applier", ("The Art of Unmaking", "Sadistic Restraint"),
+             cards.Board(action_points=2, played=("Scream For Me",)), ["The Art of Unmaking", "Sadistic Restraint"]),
+            # Generic play buys the 60% Diagonal Slash ahead of the 40% appliers.
+            ("filler yields to the Fracture cards", ("Diagonal Slash", "Scream For Me", "Hollow Verdict"), cards.Board(action_points=2),
+             ["Scream For Me", "Hollow Verdict"]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+
     def test_every_kit_names_real_cards(self):
         # A game patch that renames a card would otherwise switch its kit off without a word.
         for kit in kits.KITS:
