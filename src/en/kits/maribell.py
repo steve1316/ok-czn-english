@@ -4,25 +4,13 @@ Shelter Strike deals Fixed Damage equal to the Shield she owns, and Shield does 
 The generic picker rates it as a flat 100% attack and plays it before her shield skills, so it hits an empty Shield.
 """
 
-from src.en.kits.kit import PHASE_OTHER, Kit, base_name, owned
+from src.en.kits.kit import PHASE_OTHER, Kit, base_name, count, owned
 
 STRIKE = "Shelter Strike"
 # Cards that give her Shield, so Strike has something to deal.
 SHIELDERS = frozenset({"Shelter Defense", "Shelter Hold", "Oh... I see.", "Maribell Shelter MK.II", "Resolute Blitz"})
 # The attacks Strike is raised above once Shield is up.
 RIVALS = ("Resolute Blitz", "Maribell Shelter MK.II")
-
-
-def shielded(names):
-    """Count the Shield-giving cards among some cards.
-
-    Args:
-        names: Canonical card names, from the hand or from what the turn has played.
-
-    Returns:
-        How many give Shield, in any Epiphany.
-    """
-    return sum(base_name(name) in SHIELDERS for name in names)
 
 
 class Maribell(Kit):
@@ -43,7 +31,7 @@ class Maribell(Kit):
         Returns:
             True for a Strike that would hit an empty Shield.
         """
-        return base_name(name) == STRIKE and not shielded(board.played) and shielded(board.hand) > 0
+        return base_name(name) == STRIKE and not count(board.played, SHIELDERS) and count(board.hand, SHIELDERS)
 
     def worth(self, name, board, base, rate):
         """Rate Shelter Strike above her other attacks once a shield has been played this turn.
@@ -57,7 +45,7 @@ class Maribell(Kit):
         Returns:
             The value to plan with.
         """
-        if base_name(name) == STRIKE and shielded(board.played):
+        if base_name(name) == STRIKE and count(board.played, SHIELDERS):
             return max(base, *(rate(rival) + 1 for rival in RIVALS))
         return base
 

@@ -5,12 +5,11 @@ The generic picker plays Drawing Slash before Destruction, Inner Art after the a
 """
 
 from src.en.game_battle import CARD_CATEGORY, CARD_OWNER
-from src.en.kits.kit import PHASE_ATTACK, PHASE_FREE, PHASE_PRIME, Kit, base_name, owned
+from src.en.kits.kit import ATTACK_CATEGORY, PHASE_ATTACK, PHASE_FREE, PHASE_PRIME, Kit, base_name, owned
 
 # Black Dance gains a hit per Skill card in hand, so the shield skill stays in hand while it does.
 BLACK_DANCE = "Dark Mist Secret Art: Black Dance"
 PROTECTION = "Protection"
-ATTACK_CATEGORY = "ATK"
 
 
 class Rin(Kit):

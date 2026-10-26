@@ -293,6 +293,16 @@ class TestReadingNames(unittest.TestCase):
 class TestKits(unittest.TestCase):
     """Playstyles the generic value per point cannot see."""
 
+    def plays(self, cases):
+        """Check that each hand plans to exactly the cards expected, in the order expected.
+
+        Args:
+            cases: `(description, cards_in_hand, board, expected)` rows, where `expected` is the planned card names in play order.
+        """
+        for description, cards_in_hand, board, expected in cases:
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+
     def test_rossweisse_keeps_her_shards_for_the_fusion(self):
         """Rossweisse's Shards fire while held and fuse into a free Flicker Blade once they are the only cards left."""
         for description, cards_in_hand, expected in (
@@ -313,7 +323,7 @@ class TestKits(unittest.TestCase):
     def test_luke_fires_his_bullets_before_cashing_them_in(self):
         """Finisher Round unlocks after five Handgun Bullets this turn, and Dance of the Demon gains a hit per Bullet fired."""
         five_fired = ("Magnum Shot", "Magnum Shot", "Silver Shot", "Uranium Shot", "Tracer Shot")
-        for description, cards_in_hand, board, expected in (
+        self.plays((
             # Generic play tries the free 500% card first, and the game refuses it every turn.
             ("Finisher Round waits for five bullets", ("Finisher Round", "Magnum Shot", "Single Shot"), cards.Board(),
              ["Magnum Shot", "Single Shot"]),
@@ -327,13 +337,11 @@ class TestKits(unittest.TestCase):
             # Its 50% looks worse than Single Shot's 100% until the hits from fired bullets are counted.
             ("Dance is bought over a Single Shot once bullets fired", ("Single Shot", "Dance of the Demon"),
              cards.Board(action_points=1, played=five_fired[:3]), ["Dance of the Demon"]),
-        ):
-            with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+        ))
 
     def test_hugo_builds_stacks_before_spending_them(self):
         """Commence the Hunt stacks come from skills and Dingo Howling and Fan of Daggers, and attacks spend them."""
-        for description, cards_in_hand, board, expected in (
+        self.plays((
             # Generic play puts the shield skill after the attacks that spend its two stacks.
             ("Dingo Howling goes before the attacks", ("Knife Toss", "Dingo Howling"), cards.Board(), ["Dingo Howling", "Knife Toss"]),
             # Generic play buys Knife Toss's 100% ahead of Fan's 60% x3, and plays it first.
@@ -345,13 +353,11 @@ class TestKits(unittest.TestCase):
             # Owen's shield feeds Hunting Instincts a stack, so it goes before the attack rather than after.
             ("another combatant's skill goes before the attacks", ("Knife Toss", "Weapon Block"), cards.Board(action_points=2),
              ["Weapon Block", "Knife Toss"]),
-        ):
-            with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+        ))
 
     def test_owen_lands_wind_charge_on_an_attack(self):
         """Wind Charge adds a hit to Owen's next attack, and Wind Riding fetches it back from the discard pile."""
-        for description, cards_in_hand, board, expected in (
+        self.plays((
             # Generic play spends a point on a hit no Owen attack will take.
             ("Wind Charge waits for an Owen attack", ("Wind Charge", "Weapon Block"), cards.Board(), ["Weapon Block"]),
             ("Break Armor goes first, so it does not take the hit", ("Wind Charge", "Break Armor"), cards.Board(), ["Break Armor"]),
@@ -360,25 +366,21 @@ class TestKits(unittest.TestCase):
             # Generic play buys the 100% attack over a shield worth 90.
             ("Wind Riding is bought to fetch last turn's Wind Charge", ("Downward Cut", "Wind Riding"),
              cards.Board(action_points=1, last_turn=("Wind Charge",)), ["Wind Riding"]),
-        ):
-            with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+        ))
 
     def test_lucas_plays_sss_before_the_bullets(self):
         """S.S.S buffs the Launcher Bullets played after it for the turn."""
-        for description, cards_in_hand, board, expected in (
+        self.plays((
             # Generic play ranks it as a plain 100% attack, below the 210 bullet, so it lands after it.
             ("S.S.S goes before the bullets it buffs", ("Flame Shot", "S.S.S"), cards.Board(action_points=2), ["S.S.S", "Flame Shot"]),
             # Generic play keeps hand order between the two 100% attacks.
             ("S.S.S goes before a plain attack", ("Machine Gun", "S.S.S"), cards.Board(action_points=2), ["S.S.S", "Machine Gun"]),
-        ):
-            with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+        ))
 
     def test_sereniel_builds_afterglow_before_cashing_it_in(self):
         """Shining Core makes the lasers, and Cobalt Light and Pale Shooting Star only pay once lasers have fired."""
         two_fired = ("Homing Laser", "Homing Laser L")
-        for description, cards_in_hand, board, expected in (
+        self.plays((
             # Generic play leaves the laser maker as filler behind the attack.
             ("Shining Core goes before the attacks", ("Pulse Fire", "Shining Core"), cards.Board(action_points=2), ["Shining Core", "Pulse Fire"]),
             # Generic play buys Cobalt Light's 560 first, with no laser played to build the Afterglow it Ravages on.
@@ -391,13 +393,11 @@ class TestKits(unittest.TestCase):
             # Pins the hold being released, which generic play passes too.
             ("Pale Shooting Star plays once a laser fired", ("Pale Shooting Star", "Pulse Fire"), cards.Board(played=("Homing Laser",)),
              ["Pulse Fire", "Pale Shooting Star"]),
-        ):
-            with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+        ))
 
     def test_magna_plays_her_lead_cards_first(self):
         """Ice Fragment and Storm of Bitter Cold lose their Lead discount once another card has been played."""
-        for description, cards_in_hand, board, expected in (
+        self.plays((
             # Generic play spends the free card first.
             ("Ice Fragment goes before a free card", ("Adagio", "Ice Fragment"), cards.Board(action_points=1), ["Ice Fragment", "Adagio"]),
             ("Storm of Bitter Cold goes before a free card", ("Adagio", "Storm of Bitter Cold"), cards.Board(action_points=1),
@@ -405,13 +405,11 @@ class TestKits(unittest.TestCase):
             # Pins the release: the discount is gone once a card is played, so the free card keeps its usual place.
             ("Ice Fragment keeps its place once a card is played", ("Ice Fragment", "Adagio"),
              cards.Board(action_points=1, played=(JUSTICE_ATTACK,)), ["Adagio", "Ice Fragment"]),
-        ):
-            with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+        ))
 
     def test_tenebria_plays_rhythms_before_the_cards_that_feed_on_them(self):
         """Call & Response is a Rhythm while held, Encore procs only a Rhythm played just before it, and Spotlight returns a played one."""
-        for description, cards_in_hand, board, expected in (
+        self.plays((
             # Generic play spends Call & Response first, which takes it out of hand and its +30% off every Rhythm.
             ("Call & Response stays in hand beside a Rhythm", ("Call & Response", "Rhythm"), cards.Board(), ["Rhythm"]),
             # Generic play spends Spotlight before the Rhythm it is meant to return.
@@ -424,13 +422,11 @@ class TestKits(unittest.TestCase):
             # Pins the hold being released, which generic play passes too.
             ("Spotlight plays once a Rhythm has been", ("Spotlight", "Rhythm"), cards.Board(played=("Rhythm: Arpeggio",)),
              ["Spotlight", "Rhythm"]),
-        ):
-            with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+        ))
 
     def test_maribell_fires_shelter_strike_after_her_shields(self):
         """Shelter Strike deals Fixed Damage equal to the Shield she owns."""
-        for description, cards_in_hand, board, expected in (
+        self.plays((
             # Generic play buys the 100% Strike over the shield worth 60.
             ("Strike waits for a shield in hand", ("Shelter Strike", "Shelter Defense"), cards.Board(action_points=1), ["Shelter Defense"]),
             # Generic play puts the attack ahead of the skill.
@@ -441,13 +437,11 @@ class TestKits(unittest.TestCase):
              cards.Board(action_points=1, played=("Shelter Defense",)), ["Shelter Strike"]),
             # Pins the release: with no shield left in hand the Strike is played.
             ("a lone Strike is played", ("Shelter Strike",), cards.Board(action_points=1), ["Shelter Strike"]),
-        ):
-            with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+        ))
 
     def test_tiphera_copies_archetypes_and_draws_only_after_a_seed(self):
         """Dual Creation copies the Archetypes a Quantum Seed creates, and Form Convergence draws Archetypes only a Seed has made."""
-        for description, cards_in_hand, board, expected in (
+        self.plays((
             # Generic play makes the Archetypes first, so Dual Creation copies none of that pair.
             ("Dual Creation goes before the Seed", ("Quantum Seed", "Dual Creation"), cards.Board(), ["Dual Creation", "Quantum Seed"]),
             # Generic play buys Form Convergence's 200 first, with no Archetype made for it to draw.
@@ -456,13 +450,11 @@ class TestKits(unittest.TestCase):
             # Pins the hold being released, which generic play passes too.
             ("Form Convergence plays once last turn's Seed made Archetypes", ("Form Convergence",), cards.Board(last_turn=("Quantum Seed",)),
              ["Form Convergence"]),
-        ):
-            with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+        ))
 
     def test_mei_lin_buffs_first_and_ends_on_the_spire(self):
         """Rising Dragon Spire gains hits from the cards before it, and Spirit of the Aromata buffs the cards after it."""
-        for description, cards_in_hand, board, expected in (
+        self.plays((
             # Generic play keeps hand order among the attacks.
             ("the Spire follows the Strikes", ("Rising Dragon Spire", "Strike", "Strike"), cards.Board(action_points=3),
              ["Strike", "Strike", "Rising Dragon Spire"]),
@@ -472,13 +464,11 @@ class TestKits(unittest.TestCase):
             # Generic play buys Sovereignty's 300% for the two points, ahead of two Strikes.
             ("Sovereignty does not take the points from the Strikes", ("Flame Dragon's Sovereignty", "Strike", "Strike"),
              cards.Board(action_points=2), ["Strike", "Strike"]),
-        ):
-            with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+        ))
 
     def test_tressa_curses_first_and_makes_daggers_before_throwing(self):
         """Curse counts only Attacks played after it, and Unsheathe Dagger and Shadow Reload make the daggers the turn is spent on."""
-        for description, cards_in_hand, board, expected in (
+        self.plays((
             # Generic play ranks Curse at a flat 100, below a free 120% attack, and so plays the attack first.
             ("Curse goes before a free attack", ("Homing Laser", "Curse"), cards.Board(), ["Curse", "Homing Laser"]),
             # Generic play throws first, and the dagger maker waits behind it as filler.
@@ -489,26 +479,22 @@ class TestKits(unittest.TestCase):
             # Generic play ties them and keeps hand order, which spends the Retain card before the plain attack.
             ("Advanced Shadow Dagger goes after Dagger Throw", ("Advanced Shadow Dagger", "Dagger Throw"), cards.Board(),
              ["Dagger Throw", "Advanced Shadow Dagger"]),
-        ):
-            with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+        ))
 
     def test_mika_spends_points_on_the_partner_first(self):
         """Water Arrow, Water Barrier and Whirlpool are cut from her deck by the guides, so a partner's card is bought first."""
-        for description, cards_in_hand, board, expected in (
+        self.plays((
             # Generic play ties Water Arrow with the partner's 100% attack and takes the one that comes first in hand.
             ("a partner attack beats Water Arrow", ("Water Arrow", JUSTICE_ATTACK), cards.Board(action_points=1), [JUSTICE_ATTACK]),
             ("a partner attack beats Water Barrier", ("Water Barrier", JUSTICE_ATTACK), cards.Board(action_points=1), [JUSTICE_ATTACK]),
             # Generic play ties Whirlpool's 100 per point with the attacks and takes it first.
             ("two partner attacks beat Whirlpool", ("Whirlpool", JUSTICE_ATTACK, JUSTICE_ATTACK), cards.Board(action_points=2),
              [JUSTICE_ATTACK, JUSTICE_ATTACK]),
-        ):
-            with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+        ))
 
     def test_veronica_leaves_the_ballistas_and_sets_up_reload_first(self):
         """Her Ballistas fire themselves at the end of the turn, and Firing Preparation, Bombardment Prep and Pendant feed them."""
-        for description, cards_in_hand, board, expected in (
+        self.plays((
             # Generic play clicks the Ballista first, as a free Attack.
             ("a Ballista is not played", ("Ballista", "Repose"), cards.Board(), ["Repose"]),
             ("a Ballista alone ends the turn", ("Piercing Ballista",), cards.Board(), []),
@@ -518,13 +504,11 @@ class TestKits(unittest.TestCase):
              ["Bombardment Prep", "Pendant of Resolution"]),
             ("Pendant of Resolution goes before the skills", ("Repose", "Pendant of Resolution"), cards.Board(),
              ["Pendant of Resolution", "Repose"]),
-        ):
-            with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+        ))
 
     def test_narja_sets_up_before_the_attacks(self):
         """Voluntary Control makes Voracity and Domain of Voracity raises Tenacity damage, and both only help the attacks after them."""
-        for description, cards_in_hand, board, expected in (
+        self.plays((
             # Generic play runs the skill after every attack.
             ("Voluntary Control goes before the attacks", (JUSTICE_ATTACK, "Voluntary Control"), cards.Board(action_points=2),
              ["Voluntary Control", JUSTICE_ATTACK]),
@@ -535,39 +519,33 @@ class TestKits(unittest.TestCase):
              ["Voluntary Control", "Domain of Voracity"]),
             # Generic play ties it with a real attack and takes the one first in hand.
             ("Attack Response gives way to a real attack", ("NA: Attack Response", JUSTICE_ATTACK), cards.Board(action_points=1), [JUSTICE_ATTACK]),
-        ):
-            with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+        ))
 
     def test_yuki_enables_inspiration_before_the_attacks_and_ends_on_iceberg(self):
         """Trickery Strike enables Inspiration on the attacks played after it, and Iceberg Cleave is the payoff after the buffs."""
-        for description, cards_in_hand, board, expected in (
+        self.plays((
             # Generic play ties Trickery Strike with the other 180 attack and keeps hand order.
             ("Trickery Strike goes before the attacks", ("Iceberg Cleave", "Trickery Strike"), cards.Board(), ["Trickery Strike", "Iceberg Cleave"]),
             # Generic play buys Iceberg Cleave's 180 per point first and plays it first.
             ("Iceberg Cleave goes after Flash Slash", ("Iceberg Cleave", "Flash Slash"), cards.Board(), ["Flash Slash", "Iceberg Cleave"]),
-        ):
-            with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+        ))
 
     def test_nia_orders_her_cycling_cards(self):
         """Adagio leaves a discard on top for G Chord, Soul Riff counts later discards, and Mute Accent discards the dearest card."""
-        for description, cards_in_hand, board, expected in (
+        self.plays((
             # Generic play puts the skill after the attack.
             ("G Chord goes before the attacks", (JUSTICE_ATTACK, "G Chord"), cards.Board(action_points=2), ["G Chord", JUSTICE_ATTACK]),
             # Generic play runs the free discarder first, so Soul Riff counts none of it.
             ("Soul Riff goes before Adagio", (FREE_DRAW, "Soul Riff"), cards.Board(action_points=1), ["Soul Riff", FREE_DRAW]),
-            ("Curiosity goes before the attacks", (JUSTICE_ATTACK, "Nia’s Curiosity"), cards.Board(action_points=2),
-             ["Nia’s Curiosity", JUSTICE_ATTACK]),
+            ("Curiosity goes before the attacks", (JUSTICE_ATTACK, "Nia\u2019s Curiosity"), cards.Board(action_points=2),
+             ["Nia\u2019s Curiosity", JUSTICE_ATTACK]),
             # Generic play throws the 2 AP card away along with its own 220%.
             ("Mute Accent waits while a dearer card is in hand", ("Mute Accent", BIG_ATTACK), cards.Board(action_points=3), [BIG_ATTACK]),
-        ):
-            with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+        ))
 
     def test_adelheid_sets_up_and_waits_for_a_pack(self):
         """Once Upon A Time blesses before Protect Us draws, Garden of Secrets is a top spend, and Doggie (Pack) comes in twos."""
-        for description, cards_in_hand, board, expected in (
+        self.plays((
             # Generic play keeps hand order, so Protect Us draws Blessing cards before any exist.
             ("Once Upon A Time goes before Protect Us", ("Protect Us", "Once Upon A Time"), cards.Board(), ["Once Upon A Time", "Protect Us"]),
             # Generic play rates Garden's 200% shield at 120 and buys the 200% attack ahead of it.
@@ -577,13 +555,11 @@ class TestKits(unittest.TestCase):
             ("a lone Doggie (Pack) waits", ("Doggie (Pack)", "Gather Around"), cards.Board(), ["Gather Around"]),
             # Pins the hold being released, so it passes without the kit too.
             ("two Doggie (Pack) are played", ("Doggie (Pack)", "Doggie (Pack)"), cards.Board(), ["Doggie (Pack)", "Doggie (Pack)"]),
-        ):
-            with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+        ))
 
     def test_amir_builds_metalization_and_ends_on_iron_skin(self):
         """Hovering Metal and Metal Extraction give Metalization first, Iron Skin ends the turn, and Steel Barrier sets off a hit after Hurricane."""
-        for description, cards_in_hand, board, expected in (
+        self.plays((
             # Generic play puts the generators in the late skill phase, after the attack that would spend their stacks.
             ("the generators go before the attacks", ("Rapier", "Hovering Metal"), cards.Board(action_points=2), ["Hovering Metal", "Rapier"]),
             # Generic play keeps hand order among the late skills, so the Finale ends the turn on top of the shield.
@@ -591,13 +567,11 @@ class TestKits(unittest.TestCase):
             # Generic play rates its 100% shield below Rapier's 100% hit.
             ("Steel Barrier beats Rapier once Hurricane is played", ("Rapier", "Steel Barrier"),
              cards.Board(action_points=1, played=("Full Metal Hurricane",)), ["Steel Barrier"]),
-        ):
-            with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+        ))
 
     def test_anika_discounts_one_big_attack_and_ends_on_reloading(self):
         """Warming Up waits for a two-cost attack and plays just before it, Rampage Trigger lands four hits last, and Reloading ends the turn."""
-        for description, cards_in_hand, board, expected in (
+        self.plays((
             # Generic play spends the free Finale first and throws the hand away.
             ("Reloading goes last", ("Reloading", "Shock Gun"), cards.Board(action_points=1), ["Shock Gun", "Reloading"]),
             # Generic play discounts a card that costs one anyway.
@@ -605,16 +579,14 @@ class TestKits(unittest.TestCase):
             # Generic play prices its 100% line at a single hit, so Shock Gun and Blaster Swing take the points.
             ("Rampage Trigger is bought for its four hits", ("Rampage Trigger", "Blaster Swing", "Shock Gun"), cards.Board(),
              ["Shock Gun", "Rampage Trigger"]),
-        ):
-            with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+        ))
         # With only Rampage Trigger to discount, generic play still puts Warming Up ahead of Shock Gun and wastes the discount on it.
         board = cards.Board(hand=("Warming Up", "Shock Gun", "Rampage Trigger"))
         self.assertGreater(cards.phase("Warming Up", board), cards.phase("Shock Gun", board))
 
     def test_arabella_applies_fracture_before_it_detonates(self):
         """Scream For Me and Hollow Verdict apply Fracture, Sadistic Restraint detonates it, and The Art of Unmaking waits for it."""
-        for description, cards_in_hand, board, expected in (
+        self.plays((
             # Generic play orders the three by hand order, so Sadistic Restraint detonates Fracture that is not there yet.
             ("apply, then detonate", ("Sadistic Restraint", "Hollow Verdict", "Scream For Me"), cards.Board(),
              ["Scream For Me", "Hollow Verdict", "Sadistic Restraint"]),
@@ -626,13 +598,11 @@ class TestKits(unittest.TestCase):
             # Generic play buys the 60% Diagonal Slash ahead of the 40% appliers.
             ("filler yields to the Fracture cards", ("Diagonal Slash", "Scream For Me", "Hollow Verdict"), cards.Board(action_points=2),
              ["Scream For Me", "Hollow Verdict"]),
-        ):
-            with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+        ))
 
     def test_beryl_lets_charged_shot_grow_in_hand(self):
         """Charged Shot only takes points nothing else wants, and Heavy Weapons Specialist creates its card before the attacks."""
-        for description, cards_in_hand, board, expected in (
+        self.plays((
             # Generic play spends two points on the 270% Charged Shot at once, leaving one for a single attack.
             ("cheaper attacks take the points", ("Charged Shot", "Launcher", "Opening Found"), cards.Board(), ["Opening Found", "Launcher"]),
             # Pins the hold being released when the points would otherwise go unused, so it passes without the kit too.
@@ -640,13 +610,11 @@ class TestKits(unittest.TestCase):
             # Generic play files the Specialist with the late skills, after the attack.
             ("the Specialist goes before the attacks", ("Launcher", "Heavy Weapons Specialist"), cards.Board(action_points=2),
              ["Heavy Weapons Specialist", "Launcher"]),
-        ):
-            with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+        ))
 
     def test_cassius_keeps_to_his_deck_cards(self):
         """Wild Card, Cards and Mana Field are filler, Triple 0 follows the attacks it counts, and Shuffle is a rescue."""
-        for description, cards_in_hand, board, expected in (
+        self.plays((
             # Generic play buys the 220% Wild Card for two points and has none left for Pop Eyed Popper.
             ("filler yields to Joker and the Popper", ("Wild Card", "Joker", "Pop Eyed Popper"), cards.Board(), ["Joker", "Pop Eyed Popper"]),
             # Generic play plays the free Quest card first, before any attack has been counted.
@@ -655,13 +623,11 @@ class TestKits(unittest.TestCase):
             ("Shuffle waits while a card can be played", ("Shuffle", "Devil Dice"), cards.Board(), ["Devil Dice"]),
             # Pins the hold being released when nothing else is playable, so it passes without the kit too.
             ("Shuffle rescues a dead hand", ("Shuffle", CURSE), cards.Board(), ["Shuffle"]),
-        ):
-            with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+        ))
 
     def test_chizuru_spends_her_buffs_on_one_shadow(self):
         """Shadow of the Moon waits for Oni Hunt and Tsukuyomi and plays last, Karmic Flames leads, and Tsukuyomi sits right before Oni Hunt."""
-        for description, cards_in_hand, board, expected in (
+        self.plays((
             # Generic play spends Shadow of the Moon at once, with the Oni Hunt buff still unplayed.
             ("Shadow waits for the buffs", ("Shadow of the Moon", "Oni Hunt"), cards.Board(action_points=2), ["Oni Hunt"]),
             # Generic play keeps hand order among the attacks, so Shadow goes first.
@@ -670,14 +636,12 @@ class TestKits(unittest.TestCase):
             ("Karmic Flames leads the attacks", ("Moonslash", "Karmic Flames"), cards.Board(action_points=2), ["Karmic Flames", "Moonslash"]),
             # Generic play plays the free Tsukuyomi ahead of every setup card, and so well before Oni Hunt.
             ("Tsukuyomi sits right before Oni Hunt", ("Tsukuyomi", BUFF, "Oni Hunt"), cards.Board(action_points=2), [BUFF, "Tsukuyomi", "Oni Hunt"]),
-        ):
-            with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+        ))
 
     def test_diana_discards_her_quietus_attacks(self):
         """Quietus cards fire free when discarded, so Diana keeps them for Blooming Love and Heart Breaker rather than paying for them."""
         milk = "C\u2019mere, Milk & Pong!"
-        for description, cards_in_hand, board, expected in (
+        self.plays((
             # Generic play pays a point for each attack as a plain hit.
             ("the attacks are held while Blooming Love can discard them", ("With All My Heart!", "Pistol of Purification", "Blooming Love"),
              cards.Board(), ["Blooming Love"]),
@@ -692,27 +656,23 @@ class TestKits(unittest.TestCase):
             # Generic play plays the free bullets first, which empties the hand it counts.
             ("Liberated Feelings counts the bullets before they are played", ("Heart Shaker", "Heart Breaker", "Liberated Feelings"),
              cards.Board(), ["Liberated Feelings", "Heart Shaker", "Heart Breaker"]),
-        ):
-            with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+        ))
 
     def test_fei_sets_up_before_drawing_and_cashing_in(self):
         """Formation must precede the draws, Blazing War Dance follows the Descent they gain, and Soulfire Dance wants the points left."""
         formation = "Exorcist\u2019s Formation"
-        for description, cards_in_hand, board, expected in (
+        self.plays((
             # Generic play draws first, and Soliloquy discards the Formation it draws.
             ("Formation goes before the draws", ("Soliloquy", formation), cards.Board(), [formation, "Soliloquy"]),
             # Generic play fires the free War Dance at the start of the turn, with no Descent gained.
             ("Blazing War Dance goes after the attacks", ("Blazing War Dance", "Azure Flame"), cards.Board(), ["Azure Flame", "Blazing War Dance"]),
             # Generic play spends the points on the small cards, so Soulfire Dance is left with none.
             ("small cards are held for Soulfire Dance", ("Azure Flame", "Soulfire Dance", "Melancholy"), cards.Board(), ["Soulfire Dance"]),
-        ):
-            with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+        ))
 
     def test_haru_keeps_her_buffs_for_the_shot(self):
         """Anchor Pointer fetches an Anchor Shot only when none is in hand, and the buffs only work on a card in hand."""
-        for description, cards_in_hand, board, expected in (
+        self.plays((
             # Generic play fetches the Shot while one is already in hand.
             ("Pointer waits while a Shot is in hand", ("Anchor Pointer", "Anchor Shot"), cards.Board(), ["Anchor Shot"]),
             # Generic play spends the buff with no Shot in hand to take it.
@@ -721,13 +681,11 @@ class TestKits(unittest.TestCase):
             # Pins the hold being released, so it passes with the kit removed.
             ("Pointer fetches a Shot that is not in hand", ("Anchor Pointer", "Anchor Drop"), cards.Board(action_points=1),
              ["Anchor Pointer", "Anchor Drop"]),
-        ):
-            with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+        ))
 
     def test_heidemarie_starts_one_linked_chain_after_the_rest(self):
         """Playing a Linked card discards the other Linked cards in hand, so it comes last, and only one is played."""
-        for description, cards_in_hand, board, expected in (
+        self.plays((
             # Generic play buys the 160% Sword Rain ahead of the Flash and plays it first.
             ("the Linked starter goes after the other attacks", ("Sword Rain", "Sword Flash"), cards.Board(action_points=2),
              ["Sword Flash", "Sword Rain"]),
@@ -742,13 +700,11 @@ class TestKits(unittest.TestCase):
             # Generic play fires the free nuke first, before the chain has put Blades in the graveyard.
             ("Release goes after the chain", ("Effulgent Release", "Sword Flash"), cards.Board(action_points=1),
              ["Sword Flash", "Effulgent Release"]),
-        ):
-            with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+        ))
 
     def test_hilde_fills_the_draw_pile_before_drawing(self):
         """Quiver Reload makes the arrows every draw pulls, and Vortex Arrow gains a hit per attack card drawn before it."""
-        for description, cards_in_hand, board, expected in (
+        self.plays((
             # Generic play draws first, and plays the Quiver with the fillers at the end.
             ("the Quiver goes first and Vortex Arrow last", ("Vortex Arrow", "Quiver Reload", "Draw & Release"), cards.Board(),
              ["Quiver Reload", "Draw & Release", "Vortex Arrow"]),
@@ -759,37 +715,31 @@ class TestKits(unittest.TestCase):
              ["Big Game Ranger", "Draw & Release"]),
             ("Plasma Rain goes before the arrows it should debuff", ("Vortex Arrow", "Plasma Rain"), cards.Board(action_points=2),
              ["Plasma Rain", "Vortex Arrow"]),
-        ):
-            with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+        ))
 
     def test_kayron_exhausts_before_the_finishers(self):
         """Black Hole grows with every Futility exhausted, so it waits until the Futility is played."""
-        for description, cards_in_hand, board, expected in (
+        self.plays((
             # Generic play buys Black Hole's 240% over the Futility and plays it first.
             ("Black Hole waits for the Futility", ("Black Hole", "Futility"), cards.Board(), ["Futility"]),
             # Pins the hold being released, so it passes with the kit removed.
             ("Black Hole is played once the Futility is gone", ("Black Hole",), cards.Board(), ["Black Hole"]),
-        ):
-            with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+        ))
 
     def test_khalipe_lets_vulture_ejection_fire_free(self):
         """Vulture Ejection fires free when a 2-cost card is played with it in hand, and Aquila costs 2 while it is."""
-        for description, cards_in_hand, board, expected in (
+        self.plays((
             # Generic play pays all three points for the Ejection, ahead of a 2-cost card worth less per point.
             ("the Ejection is held for a 2-cost card", ("Vulture Ejection", "Mutation: Atomic Decomposition"), cards.Board(),
              ["Mutation: Atomic Decomposition"]),
             # Generic play plays the better 2-cost card first, which uses the Ejection up before Aquila can take its bonus.
             ("Aquila goes first while the Ejection is in hand", ("Hew Lv. 3", "Greatsword Aquila", "Vulture Ejection"), cards.Board(),
              ["Greatsword Aquila", "Hew Lv. 3"]),
-        ):
-            with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+        ))
 
     def test_nine_levels_hew_before_firing_it(self):
         """Hew grows a level each time it is exhausted, so Nine holds it until the top level and spends the exhaust cards on it."""
-        for description, cards_in_hand, board, expected in (
+        self.plays((
             # Generic play spends all three points on a Hew that has grown nothing.
             ("a low Hew is held", ("Hew Lv. 1", "Fighting Spirit"), cards.Board(), ["Fighting Spirit"]),
             # Generic play buys Experienced Strike's 140% over a skill worth 100.
@@ -806,14 +756,12 @@ class TestKits(unittest.TestCase):
             # Generic play spends a point on a skill that has no Hew to fire.
             ("Fighting Spirit has nothing to fire once Hew is gone", ("Fighting Spirit", "Slash"), cards.Board(played=("Hew Lv. 3",)),
              ["Slash"]),
-        ):
-            with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+        ))
 
     def test_olga_stacks_before_she_cashes_in(self):
         """Rift and Desire stack and activate Fracture and Agony, Break Apart returns them, and Reckoning cashes the stacks in."""
         stacker = ("Rift of Severance",)
-        for description, cards_in_hand, board, expected in (
+        self.plays((
             # Generic play fires the free Reckoning first, before any stack exists.
             ("Reckoning waits for a stack", ("Reckoning", "Reaping Slash"), cards.Board(), ["Reaping Slash"]),
             ("Reckoning follows the stacker", ("Reckoning", "Dispersed Desire"), cards.Board(action_points=1), ["Dispersed Desire", "Reckoning"]),
@@ -825,9 +773,7 @@ class TestKits(unittest.TestCase):
             # Generic play puts the Break Apart skill after every attack, so it fetches nothing back in time.
             ("Break Apart follows the first stacker", ("Dispersed Desire", "Break Apart & Renew"), cards.Board(action_points=2, played=stacker),
              ["Break Apart & Renew", "Dispersed Desire"]),
-        ):
-            with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+        ))
 
     def test_orlea_keeps_cards_that_need_creatures(self):
         """Growing Creature is better kept, Will of Light and Growth Acceleration need creatures in hand, and Softie buffs first."""
@@ -861,7 +807,7 @@ class TestKits(unittest.TestCase):
     def test_renoa_keeps_her_bullets_in_hand(self):
         """Dirge Bullets fire when the turn ends, and the payoff attacks scale with the bullets still in hand."""
         bullets = ("Dirge Bullet",) * 5
-        for description, cards_in_hand, board, expected in (
+        self.plays((
             # Generic play spends a point on the bullet, which would have fired for free at turn end.
             ("a bullet is never played", ("Dirge Bullet", "Annihilation Shot"), cards.Board(), ["Annihilation Shot"]),
             # Generic play buys the 300% card on sight, with two bullets for it to count.
@@ -874,13 +820,11 @@ class TestKits(unittest.TestCase):
             # Generic play buys the 180% Ballad first, before the bullet Echo of Sorrow makes for it to count.
             ("Echo of Sorrow goes before Ballad", ("Ballad of Pitch Black", "Echo of Sorrow"), cards.Board(action_points=2),
              ["Echo of Sorrow", "Ballad of Pitch Black"]),
-        ):
-            with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+        ))
 
     def test_rin_takes_the_stance_before_attacking(self):
         """Dark Mist Stance buffs her attacks and Inner Art, Black Dance counts Skill cards in hand, and an ally attack ends the stance."""
-        for description, cards_in_hand, board, expected in (
+        self.plays((
             # Generic play buys Drawing Slash's 120% first, so its bonus lands before the stance is up.
             ("Destruction goes before Drawing Slash", ("Drawing Slash", "Dark Mist Secret Art: Destruction"), cards.Board(),
              ["Dark Mist Secret Art: Destruction", "Drawing Slash"]),
@@ -893,13 +837,11 @@ class TestKits(unittest.TestCase):
             # Generic play takes hand order, so the ally's attack ends the stance before Rin's.
             ("an ally's attack goes after Rin's", ("Annihilation Shot", "Dark Mist Sword: First Form"), cards.Board(action_points=2),
              ["Dark Mist Sword: First Form", "Annihilation Shot"]),
-        ):
-            with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+        ))
 
     def test_rita_builds_chronicle_before_time_paradox(self):
         """Time Paradox converts Chronicle that spent AP builds, Time Axis Collapse counts the Cost left in hand, and Future Decreed is a gamble."""
-        for description, cards_in_hand, board, expected in (
+        self.plays((
             # Generic play converts at once, when this turn has built no Chronicle to convert.
             ("Time Paradox waits for other plays", ("Time Paradox", "Anchor", "Time Axis Collapse"), cards.Board(), ["Time Axis Collapse", "Anchor"]),
             # Pins the hold being released once two cards have been played.
@@ -910,9 +852,7 @@ class TestKits(unittest.TestCase):
              ["Time Axis Collapse", "Break Armor"]),
             # Generic play plays it as a skill and gets a random 3-Cost card.
             ("Future Decreed stays in hand", ("Future Decreed", "Anchor"), cards.Board(), ["Anchor"]),
-        ):
-            with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+        ))
 
     def test_selena_marks_before_attacking(self):
         """Marks make each later attack card fire an extra attack, so the cards that give them go before the attacks."""

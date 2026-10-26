@@ -8,13 +8,6 @@ from src.en.game_battle import CARD_COST
 from src.en.kits.kit import PHASE_FREE, PHASE_OTHER, PHASE_SETUP, Kit, base_name, owned
 
 MUTE_ACCENT = "Mute Accent"
-# Soul Riff before the discarders, Adagio at `PHASE_FREE`, then G Chord to play what Adagio left on top, then Curiosity, and Mute Accent last.
-PLACES = {
-    "Soul Riff": PHASE_FREE - 0.5,
-    "G Chord": PHASE_SETUP,
-    "Nia\u2019s Curiosity": PHASE_SETUP + 0.5,
-    MUTE_ACCENT: PHASE_OTHER + 0.5,
-}
 
 
 class Nia(Kit):
@@ -22,7 +15,13 @@ class Nia(Kit):
 
     name = "Nia"
     cards = owned("Nia")
-    places = PLACES
+    # Soul Riff before the discarders, Adagio at `PHASE_FREE`, then G Chord to play what Adagio left on top, then Curiosity, and Mute Accent last.
+    places = {
+        "Soul Riff": PHASE_FREE - 0.5,
+        "G Chord": PHASE_SETUP,
+        "Nia\u2019s Curiosity": PHASE_SETUP + 0.5,
+        MUTE_ACCENT: PHASE_OTHER + 0.5,
+    }
 
     def held(self, name, board):
         """Keep Mute Accent while a dearer card is in hand, since it discards the highest cost one.

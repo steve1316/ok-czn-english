@@ -1,6 +1,7 @@
 """The shape every kit takes, and the name a card has before its Epiphany."""
 
 import re
+from functools import lru_cache
 
 from src.en.game_battle import CARD_OWNER
 
@@ -17,7 +18,13 @@ PHASE_ATTACK = 5
 PHASE_OTHER = 6
 PHASE_SPENDS_EVERYTHING = 7
 
+# The data's categories for attack and skill cards.
+ATTACK_CATEGORY = "ATK"
+SKILL_CATEGORY = "SKILL"
 
+
+# Every hook strips the same few names many times a frame.
+@lru_cache(maxsize=1024)
 def base_name(name):
     """Drop the Epiphany from a card name.
 
@@ -28,6 +35,19 @@ def base_name(name):
         The name the card has before any Epiphany.
     """
     return EPIPHANY_SUFFIX.sub("", name)
+
+
+def count(names, group):
+    """Count the cards from one group among some cards.
+
+    Args:
+        names: Canonical card names, from the hand or from what a turn has played.
+        group: Base names of the cards to count.
+
+    Returns:
+        How many are in `group`, in any Epiphany.
+    """
+    return sum(base_name(name) in group for name in names)
 
 
 def owned(combatant):

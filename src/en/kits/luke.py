@@ -4,7 +4,7 @@ Finisher Round is Unactivatable until five Handgun Bullets have fired this turn,
 The generic picker tries the free 500% Finisher Round first every turn, and plays the bullet makers and Dance in hand order.
 """
 
-from src.en.kits.kit import PHASE_FREE, PHASE_SPENDS_EVERYTHING, Kit, base_name, owned
+from src.en.kits.kit import PHASE_FREE, PHASE_SPENDS_EVERYTHING, Kit, base_name, count, owned
 
 # The Handgun Bullets his cards create. All four are free attacks.
 BULLETS = frozenset({"Magnum Shot", "Silver Shot", "Uranium Shot", "Tracer Shot"})
@@ -18,18 +18,6 @@ FINISHER = "Finisher Round"
 # Handgun Bullets that must fire this turn before Finisher Round can be played. The count starts again every turn.
 FINISHER_UNLOCK = 5
 DANCE = "Dance of the Demon"
-
-
-def fired(names):
-    """Count the Handgun Bullets among some cards.
-
-    Args:
-        names: Canonical card names, from the hand or from what the turn has played.
-
-    Returns:
-        How many are Handgun Bullets, in any Epiphany.
-    """
-    return sum(base_name(name) in BULLETS for name in names)
 
 
 class Luke(Kit):
@@ -55,7 +43,7 @@ class Luke(Kit):
         Returns:
             True for a Finisher Round the game would still refuse.
         """
-        return base_name(name) == FINISHER and fired(board.played) < FINISHER_UNLOCK
+        return base_name(name) == FINISHER and count(board.played, BULLETS) < FINISHER_UNLOCK
 
     def worth(self, name, board, base, rate):
         """Price the bullet makers by the bullets they bring, and Dance of the Demon by the bullets it will follow.
@@ -75,7 +63,7 @@ class Luke(Kit):
             return RELOADED * sum(rate(bullet) for bullet in BULLETS) / len(BULLETS)
         if card == DANCE:
             # Every bullet in hand goes before it, so each one there is a hit it will have.
-            return base * (1 + fired(board.played) + fired(board.hand))
+            return base * (1 + count(board.played, BULLETS) + count(board.hand, BULLETS))
         return base
 
 

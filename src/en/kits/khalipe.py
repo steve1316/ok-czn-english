@@ -5,7 +5,7 @@ hand. The generic picker buys Vulture Ejection as a 3-point attack and plays Aqu
 """
 
 from src.en.game_battle import CARD_COST
-from src.en.kits.kit import PHASE_ATTACK, Kit, base_name, owned
+from src.en.kits.kit import PHASE_ATTACK, Kit, base_name, count, owned
 
 EJECTION = "Vulture Ejection"
 # Costs 1 more with an Ejection in hand, so it is itself the 2-cost card that fires it.
@@ -42,8 +42,7 @@ class Khalipe(Kit):
         Returns:
             True for an Ejection that a 2-cost card, or Aquila, would fire for free.
         """
-        bases = [base_name(other) for other in board.hand]
-        return base_name(name) == EJECTION and (triggers(board.hand) or AQUILA in bases)
+        return base_name(name) == EJECTION and (triggers(board.hand) or count(board.hand, {AQUILA}) > 0)
 
     def phase(self, name, board, base):
         """Play Aquila ahead of the other attacks while an Ejection is in hand, so the Ejection is still there for its bonus.

@@ -5,13 +5,12 @@ between turns. The generic picker plays Dingo Howling after the attacks that spe
 """
 
 from src.en.game_battle import CARD_CATEGORY, CARD_OWNER
-from src.en.kits.kit import PHASE_ATTACK, PHASE_OTHER, PHASE_PRIME, Kit, base_name, owned
+from src.en.kits.kit import PHASE_ATTACK, PHASE_OTHER, PHASE_PRIME, SKILL_CATEGORY, Kit, base_name, owned
 
 # His cards that give Commence the Hunt stacks.
 STACKERS = frozenset({"Dingo Howling", "Fan of Daggers"})
 # Draws only in a Commence the Hunt state, so without a recent stack-giver it waits for one.
 QUICK_FIX = "Quick Fix"
-SKILL_CATEGORY = "SKILL"
 
 
 class Hugo(Kit):

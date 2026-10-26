@@ -6,7 +6,7 @@ and Experienced Strike boosts exhaust cards. The generic picker plays a low Hew 
 
 import re
 
-from src.en.kits.kit import PHASE_PRIME, Kit, base_name, owned
+from src.en.kits.kit import PHASE_PRIME, Kit, base_name, count, owned
 
 # A Hew as the client writes it: "Hew", "Hew Lv. 2" or "Hew (Extreme) Lv. 5".
 HEW = re.compile(r"^Hew(?: \((?P<variant>[^)]+)\))?(?: Lv\. (?P<level>\d+))?$")
@@ -63,13 +63,12 @@ class Nine(Kit):
         Returns:
             True to keep the card in hand.
         """
-        hand = [base_name(card) for card in board.hand]
         grown = stage(name)
         if grown == "low":
             return True
         if grown == "max":
             # Fighting Spirit fires a full Hew for one point instead of two.
-            return FIGHTING_SPIRIT in hand
+            return count(board.hand, {FIGHTING_SPIRIT}) > 0
         card = base_name(name)
         if card == FATAL_STRIKE:
             # It would exhaust a full Hew and lose it for the turn.

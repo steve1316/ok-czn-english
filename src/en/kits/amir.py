@@ -1,6 +1,6 @@
 """Amir: build Metalization first, spend it with Full Metal Hurricane, and keep Iron Skin for last.
 
-Hovering Metal and Metal Extraction give Metalization, each Shield she gains then spends a stack on a hit, and Iron Skin is a Finale that ends the turn.
+Hovering Metal and Metal Extraction give Metalization, each Shield she gains then spends a stack on a hit, and Iron Skin is a Finale ending the turn.
 The generic picker plays the generators and Iron Skin in value order after the attacks, and rates Steel Barrier below Rapier.
 """
 

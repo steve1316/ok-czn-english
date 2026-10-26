@@ -60,8 +60,8 @@ class Owen(Kit):
             The value to plan with.
         """
         card = base_name(name)
-        if card == CHARGE and target(board.hand):
-            return rate(target(board.hand))
+        if card == CHARGE and (aim := target(board.hand)):
+            return rate(aim)
         # Only a Wind Charge from an earlier turn is in the discard pile for it to fetch, per im_Tsu and Adachi.
         if card == RIDING and any(base_name(played) == CHARGE for played in board.last_turn):
             return base + rate(CHARGE)

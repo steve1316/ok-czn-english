@@ -5,7 +5,7 @@ generic picker plays all three free cards at the start of the turn, when Pointer
 """
 
 from src.en.game_battle import CARD_CATEGORY
-from src.en.kits.kit import Kit, base_name, owned
+from src.en.kits.kit import ATTACK_CATEGORY, Kit, base_name, owned
 
 SHOT = "Anchor Shot"
 # Fetches Anchor Shot, which does nothing while one is already in hand.
@@ -14,7 +14,6 @@ POINTER = "Anchor Pointer"
 LIFT = "Lift Anchor"
 # Buffs the attacks in hand.
 CHARGE = "Charge Energy"
-ATTACK_CATEGORY = "ATK"
 
 
 class Haru(Kit):

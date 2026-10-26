@@ -8,7 +8,7 @@ from src.en.kits.kit import PHASE_FREE, Kit, base_name, owned
 
 SEED = "Quantum Seed"
 # The cards that draw Archetypes: Form Convergence, and the square one the Seed makes.
-DRAWERS = frozenset({"Form Convergence", "Archetype: □"})
+DRAWERS = frozenset({"Form Convergence", "Archetype: \u25a1"})
 
 
 class Tiphera(Kit):

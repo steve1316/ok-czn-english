@@ -30,8 +30,8 @@ class Tenebria(Kit):
 
     name = "Tenebria"
     cards = owned("Tenebria")
-    # Call & Response last of the attacks, once the Rhythms are gone.
-    places = {CALL: PHASE_ATTACK + 0.5}
+    # Encore the moment a Rhythm was the last card played, before anything else can come between. Call & Response last of the attacks.
+    places = {ENCORE: PHASE_ESCAPE + 0.5, CALL: PHASE_ATTACK + 0.5}
 
     def held(self, name, board):
         """Keep Call & Response while a Rhythm is in hand, Spotlight until one is played, and Encore until one is the last card played.
@@ -52,21 +52,6 @@ class Tenebria(Kit):
         if card == ENCORE:
             return not rhythms(board.played[-1:])
         return False
-
-    def phase(self, name, board, base):
-        """Play Encore the moment a Rhythm was the last card played, before anything else can come between.
-
-        Args:
-            name: The card being placed.
-            board: The `cards.Board` it would be played into.
-            base: Where the generic order puts it.
-
-        Returns:
-            The card's place in the turn.
-        """
-        if base_name(name) == ENCORE:
-            return PHASE_ESCAPE + 0.5
-        return super().phase(name, board, base)
 
 
 KIT = Tenebria()

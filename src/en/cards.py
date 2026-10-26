@@ -13,7 +13,7 @@ from functools import lru_cache
 from src.en.game_battle import CARD_CATEGORY, CARD_COST, CARD_OWNER, COMBATANT_ATTRIBUTE, X_COST
 from src.en import kits
 from src.en.game_text import DESCRIPTIONS
-from src.en.kits.kit import (PHASE_ATTACK, PHASE_EPIPHANY, PHASE_ESCAPE, PHASE_FREE, PHASE_OTHER, PHASE_PRIME, PHASE_SETUP,
+from src.en.kits.kit import (ATTACK_CATEGORY, PHASE_ATTACK, PHASE_EPIPHANY, PHASE_ESCAPE, PHASE_FREE, PHASE_OTHER, PHASE_PRIME, PHASE_SETUP,
                              PHASE_SPENDS_EVERYTHING, base_name)
 from src.en.quality import fold, index, one_edit_apart
 
@@ -29,7 +29,6 @@ DEALT_TO_YOU = frozenset({"ABNORM", "CURSE"})
 HELD_HARM = re.compile(r"\b(?:if|when) (?:this card is )?in hand|if the turn ends when in hand|when this card is retained", re.I)
 # A card that only makes other cards better, so it wants to land before them.
 SETUP_CATEGORY = "POWER"
-ATTACK_CATEGORY = "ATK"
 # What a card the data has never heard of is assumed to cost. One is both the commonest price and the
 # forgiving guess: too low only risks a card that will not play, while too high would refuse it outright.
 ASSUMED_COST = 1

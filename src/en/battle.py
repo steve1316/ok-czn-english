@@ -670,7 +670,7 @@ def install():
             # Settled once, so a frame that returns before picking again cannot count the same play twice.
             turn.played.append(turn.attempted)
             turn.attempted = None
-        elif was_refused(turn.attempted, turn.attempted_copies, names):
+        elif turn.attempted is not None:
             turn.misses[turn.attempted] += 1
             # Live, Magnetic Field stayed in hand once with all three points to spend, and was given up on for the turn.
             # Once the game has said a card plays, each one tried is a guess, so a single miss is enough to move on.

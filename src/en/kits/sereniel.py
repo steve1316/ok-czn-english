@@ -4,7 +4,7 @@ Shining Core creates Homing Laser L, lasers build Afterglow, and an attack then 
 The generic picker plays Shining Core as late filler and buys Cobalt Light cold, before any laser has built Afterglow for it to cash in.
 """
 
-from src.en.kits.kit import PHASE_ATTACK, PHASE_SETUP, Kit, base_name, owned
+from src.en.kits.kit import PHASE_ATTACK, PHASE_SETUP, Kit, base_name, count, owned
 
 # Both spellings of the laser: the starter and the one Shining Core creates.
 LASERS = frozenset({"Homing Laser", "Homing Laser L"})
@@ -13,18 +13,6 @@ COBALT = "Cobalt Light"
 PALE = "Pale Shooting Star"
 # Lasers that must fire before each cash-in card, for the Afterglow it needs. Cobalt Light has to Ravage to refund its points.
 UNLOCK = {COBALT: 2, PALE: 1}
-
-
-def lasers(names):
-    """Count the Homing Lasers among some cards.
-
-    Args:
-        names: Canonical card names, from the hand or from what the turn has played.
-
-    Returns:
-        How many are Homing Lasers, in any Epiphany.
-    """
-    return sum(base_name(name) in LASERS for name in names)
 
 
 def coming(board):
@@ -36,7 +24,7 @@ def coming(board):
     Returns:
         True when a laser will be played this turn without anything else drawn.
     """
-    return bool(lasers(board.hand)) or any(base_name(name) == CORE for name in board.hand)
+    return count(board.hand, LASERS | {CORE}) > 0
 
 
 class Sereniel(Kit):
@@ -58,7 +46,7 @@ class Sereniel(Kit):
             True for a cash-in card the lasers have not yet built up for.
         """
         needed = UNLOCK.get(base_name(name))
-        return needed is not None and coming(board) and lasers(board.played) < needed
+        return needed is not None and coming(board) and count(board.played, LASERS) < needed
 
 
 KIT = Sereniel()

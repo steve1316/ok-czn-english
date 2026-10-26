@@ -4,6 +4,8 @@ Upstream plays the first hand card a user-typed list names, and `cards.plan` rep
 point. Neither knows a kit that wants cards held or played in an order, so each such combatant gets a file here.
 """
 
+from functools import lru_cache
+
 from src.en.kits import (
     adelheid, amir, anika, arabella, beryl, cassius, chizuru, diana, fei, haru, heidemarie, hilde, hugo, kayron,
     khalipe, lucas, luke, magna, maribell, mei_lin, mika, narja, nia, nine, olga, orlea, owen, rei, renoa, rin, rita,
@@ -28,7 +30,21 @@ def active(names):
     Returns:
         The kits with a card in hand, in `KITS` order.
     """
-    return [kit for kit in KITS if any(kit.claims(name) for name in names)]
+    return switched_on(tuple(names))
+
+
+# Every hook asks again for every card, and the hand only changes between frames.
+@lru_cache(maxsize=64)
+def switched_on(names):
+    """Find the kits a hand switches on, once per hand.
+
+    Args:
+        names: Every card in hand, as a tuple.
+
+    Returns:
+        The kits with a card in hand, in `KITS` order.
+    """
+    return tuple(kit for kit in KITS if any(kit.claims(name) for name in names))
 
 
 def reading(hand, count):

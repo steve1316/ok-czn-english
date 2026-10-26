@@ -4,7 +4,7 @@ Scream For Me and Hollow Verdict put Fracture on the enemies, Sadistic Restraint
 The generic picker plays by value, so Sadistic Restraint detonates before any Fracture is up and The Art of Unmaking opens the turn.
 """
 
-from src.en.kits.kit import PHASE_ATTACK, PHASE_PRIME, Kit, base_name, owned
+from src.en.kits.kit import PHASE_ATTACK, PHASE_PRIME, Kit, base_name, count, owned
 
 SCREAM = "Scream For Me"
 HOLLOW = "Hollow Verdict"
@@ -14,18 +14,6 @@ ART = "The Art of Unmaking"
 FRACTURE = frozenset({SCREAM, HOLLOW, SADISTIC})
 # Both guides tell her to cut these, so they only take Action Points nothing else wants.
 FILLER = frozenset({"Diagonal Slash", "Crimson Domain"})
-
-
-def has(names):
-    """Say whether any of some cards applies or detonates Fracture.
-
-    Args:
-        names: Canonical card names, from the hand or from what the turn has played.
-
-    Returns:
-        True when one is a Fracture card, in any Epiphany.
-    """
-    return any(base_name(name) in FRACTURE for name in names)
 
 
 class Arabella(Kit):
@@ -46,7 +34,7 @@ class Arabella(Kit):
         Returns:
             True for The Art of Unmaking with no harmful effect on the target yet.
         """
-        return base_name(name) == ART and has(board.hand) and not has(board.played)
+        return base_name(name) == ART and count(board.hand, FRACTURE) and not count(board.played, FRACTURE)
 
     def worth(self, name, board, base, rate):
         """Rank her filler last while a Fracture card is in hand.
@@ -60,7 +48,7 @@ class Arabella(Kit):
         Returns:
             The value to plan with.
         """
-        return 0 if base_name(name) in FILLER and has(board.hand) else base
+        return 0 if base_name(name) in FILLER and count(board.hand, FRACTURE) else base
 
 
 KIT = Arabella()

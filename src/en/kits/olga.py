@@ -4,7 +4,7 @@ Rift of Severance and Dispersed Desire activate the stacks already on the enemy,
 The generic picker plays Reckoning first before anything is stacked, and rates the 80% Rift and Desire under the plain Reaping Slash.
 """
 
-from src.en.kits.kit import PHASE_ATTACK, Kit, base_name, owned
+from src.en.kits.kit import PHASE_ATTACK, Kit, base_name, count, owned
 
 # The two attacks that stack a damage over time and activate it.
 STACKERS = frozenset({"Rift of Severance", "Dispersed Desire"})
@@ -14,18 +14,6 @@ BREAK_APART = "Break Apart & Renew"
 # Her plain 100% attack, which every guide cuts from the deck.
 REAPING_SLASH = "Reaping Slash"
 RIFT = "Rift of Severance"
-
-
-def stacked(names):
-    """Count the stackers among some cards.
-
-    Args:
-        names: Canonical card names, from the hand or from what the turns have played.
-
-    Returns:
-        How many are Rift of Severance or Dispersed Desire, in any Epiphany.
-    """
-    return sum(base_name(name) in STACKERS for name in names)
 
 
 class Olga(Kit):
@@ -44,7 +32,7 @@ class Olga(Kit):
         Returns:
             True for a Reckoning with no stacks to cash in.
         """
-        return base_name(name) == RECKONING and not stacked((*board.played, *board.last_turn, *board.hand))
+        return base_name(name) == RECKONING and not count((*board.played, *board.last_turn, *board.hand), STACKERS)
 
     def worth(self, name, board, base, rate):
         """Rate Rift and Desire as a basic attack at least, and the basic attack under them.
@@ -79,7 +67,7 @@ class Olga(Kit):
         card = base_name(name)
         if card == RECKONING:
             return PHASE_ATTACK + 0.5
-        if stacked(board.played):
+        if count(board.played, STACKERS):
             # Break Apart returns the stacker just played, so it goes before the next one.
             if card == BREAK_APART:
                 return PHASE_ATTACK + 0.25
