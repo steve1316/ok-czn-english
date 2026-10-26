@@ -83,6 +83,28 @@ def reads_like(one, other):
     return SequenceMatcher(None, shorter, longer).ratio() >= SAME_READING
 
 
+def merged(frames, grabs):
+    """Slot the burst grabs in among the full frames, by time.
+
+    A grab only read the hand, so it borrows the board of the full frame before it. At a tie the full frame goes first.
+
+    Args:
+        frames: The full recorded frames.
+        grabs: Frames read back from the burst grabs, where only `at`, `hand` and `count` mean anything.
+
+    Returns:
+        Every frame, in time order.
+    """
+    every, board = [], Frame()
+    for frame, grabbed in sorted([(frame, False) for frame in frames] + [(grab, True) for grab in grabs], key=lambda pair: pair[0].at):
+        if grabbed:
+            frame = board._replace(at=frame.at, hand=frame.hand, count=frame.count)
+        else:
+            board = frame
+        every.append(frame)
+    return every
+
+
 def dealt_again(before, after):
     """Say whether the hand was dealt again between two frames.
 
