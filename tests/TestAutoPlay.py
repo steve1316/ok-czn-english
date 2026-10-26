@@ -5,7 +5,9 @@ and swallows everything after. What can be reconstructed from a recording afterw
 which is offline-only and exercised by `scripts/study_auto.py` rather than from here.
 """
 
+import logging
 import sys
+import tempfile
 import types
 import unittest
 from collections import Counter
@@ -22,7 +24,7 @@ sys.path.insert(0, str(REPO_ROOT / "ok_tasks"))
 import utils_sortie  # noqa: E402,F401
 from ok.task.task import OCR  # noqa: E402
 
-from src.en import autoplay, observe  # noqa: E402
+from src.en import analysis, autoplay, observe  # noqa: E402
 
 # A real card name, so canonical folding is exercised rather than bypassed.
 ATTACK = "Anchor"
@@ -67,8 +69,10 @@ def chaos(hand_cards):
     utils_chaos.PAGE_HANDLERS = [handle_battle_auto_check]
     saved = {name: sys.modules.get(name) for name in ("utils_sortie", "utils_chaos")}
     sys.modules["utils_sortie"], sys.modules["utils_chaos"] = utils_sortie, utils_chaos
+    # Switched on, and kept off the real `configs/` file. Burst threads are never started from a test.
     try:
-        yield utils_chaos, FakeTask(hand_cards)
+        with mock.patch.object(analysis, "enabled", return_value=True), mock.patch.object(observe.BURST, "battle_seen"):
+            yield utils_chaos, FakeTask(hand_cards)
     finally:
         for name, module in saved.items():
             if module is None:
@@ -190,20 +194,35 @@ class TestRecording(unittest.TestCase):
             observe.install()
             self.assertIs(utils_chaos.PAGE_HANDLERS[0], once)
 
-    def test_only_a_debug_run_grabs_the_hand_between_frames(self):
-        # The grabs and their second OCR engine are a study aid. A release run paying for them gets nothing back.
-        with mock.patch.object(observe.BURST, "battle_seen") as started:
-            for debug in (False, True):
-                with self.subTest(debug=debug), chaos([{"name": ATTACK, "key": "1"}]) as (utils_chaos, task):
-                    task.debug = debug
-                    observe.install()
-                    with collected():
-                        utils_chaos.PAGE_HANDLERS[0](task)
-                    self.assertEqual(started.call_count, int(debug))
+    def test_nothing_is_recorded_while_auto_analysis_is_off(self):
+        # The frames, the faster pace and the burst grabs with their second OCR engine all cost a run that is not being studied.
+        with chaos([{"name": ATTACK, "key": "1"}]) as (utils_chaos, task), mock.patch.object(analysis, "enabled", return_value=False):
+            observe.install()
+            with collected() as written:
+                self.assertTrue(utils_chaos.PAGE_HANDLERS[0](task))
+            self.assertEqual(written, [])
+            self.assertEqual(task.trigger_interval, 1)
+            observe.BURST.battle_seen.assert_not_called()
 
 
 class TestBurst(unittest.TestCase):
     """The burst grabs, read back after the battle and merged into the recording."""
+
+    def test_only_the_burst_threads_quiet_lines_leave_the_main_log(self):
+        # The read-back logs thousands of debug lines a battle, which buried the terminal. Its warnings still belong in the main log.
+        with tempfile.TemporaryDirectory() as folder, mock.patch.object(observe, "BURST_LOG", str(Path(folder) / "auto_burst.log")):
+            burst_log = observe.BurstLog()
+            for description, thread, level, kept in (
+                    ("a burst debug line", "auto-burst-read", logging.DEBUG, False),
+                    ("a burst warning", "auto-burst-read", logging.WARNING, True),
+                    ("the main loop's debug line", "MainThread", logging.DEBUG, True),
+            ):
+                with self.subTest(description):
+                    record = logging.LogRecord("ok", level, __file__, 0, description, None, None)
+                    record.threadName = thread
+                    self.assertEqual(burst_log.filter(record), kept)
+            burst_log.file.close()
+            self.assertEqual(len(Path(observe.BURST_LOG).read_text(encoding="utf-8").splitlines()), 1)
 
     def test_a_saved_band_reads_back_as_the_live_hand_would(self):
         # Against upstream's real hand reader, so a box left in band coordinates misses its region and comes back empty,
