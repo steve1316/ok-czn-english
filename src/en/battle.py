@@ -12,10 +12,10 @@ import collections
 import numpy as np
 from ok import Logger
 
-from src.en import board, cards
+from src.en import board, cards, kits
 from src.en.handlers import StandIn, insert_before, loaded, register, replace, standing_in
 from src.en.overrides import SMART_CARD_PLAY
-from src.en.screen import colour_share, frame_of, patch_of, text_in_region
+from src.en.screen import colour_share, frame_of, in_region, patch_of, text_in_region
 
 logger = Logger.get_logger(__name__)
 
@@ -87,6 +87,12 @@ MIN_LOCK = 0.05
 PLAIN_BUTTON = 120
 # Parked on the task, so a prompt in a locked fight is still known to be one.
 AUTO_LOCKED = "_en_auto_locked"
+# Frames a turn may sit waiting on a kit before playing on regardless, and the pause each one takes. Rossweisse's Shards read
+# alone for 1-2s before they fuse, so five half-second frames cover it however fast the loop runs.
+KIT_WAIT = 5
+KIT_PAUSE = 0.5
+# Where upstream's hand prompts read the hand cards they choose between.
+PROMPT_HAND = (0.116, 0.697, 0.859, 0.908)
 
 _patched = False
 
@@ -144,6 +150,43 @@ class EgoChoice(StandIn):
             # Upstream reads the bar as full and fires anyway, so this is the case worth naming.
             logger.info("the EP bar covers no Ego, so upstream's pick would not have played")
         return self.original.choice(options)
+
+
+def kept_boxes(boxes):
+    """Find the hand cards a kit is keeping among some OCR boxes, judged against the boxes that read as cards.
+
+    Args:
+        boxes: OCR boxes off the hand, which may hold cost digits and card text as well as names.
+
+    Returns:
+        The `id` of every box a kit is keeping.
+    """
+    named = []
+    for box in boxes:
+        name = cards.canonical(getattr(box, "name", ""))
+        if name in cards.CARD_COST or kits.active([name]):
+            named.append((box, name))
+    names = [name for _, name in named]
+    return {id(box) for box, name in named if kits.held(name, names)}
+
+
+class KeepHeld(StandIn):
+    """Stands in for the module's `random` while a hand prompt runs, so it never gives up a card a kit is keeping."""
+
+    def choice(self, options):
+        """Choose at random among the hand cards on offer, leaving out the ones a kit is keeping.
+
+        Args:
+            options: What upstream is choosing between, the OCR boxes of the hand cards for a hand prompt.
+
+        Returns:
+            One of the options no kit is keeping, or one of all of them when a kit would keep every one.
+        """
+        options = list(options)
+        kept = kept_boxes(options)
+        if kept:
+            logger.info(f"leaving {[option.name for option in options if id(option) in kept]} out of the hand prompt")
+        return self.original.choice([option for option in options if id(option) not in kept] or options)
 
 
 def choose(hand, board, refused):
@@ -231,6 +274,9 @@ class Turn:
         # Whether the game has already said a card can still be played after the picker ended the turn this turn.
         self.objected = False
         self.weakness = None
+        # Frames spent waiting on a kit this turn, and whether the last frame was one.
+        self.kit_waits = 0
+        self.kit_waited = False
 
 
 def play_key(task, key):
@@ -423,6 +469,47 @@ def press_unread(task, count):
     return True
 
 
+def unheld_texts(task):
+    """Read the screen without the hand cards a kit is keeping, for a prompt that takes the first card it finds.
+
+    Args:
+        task: The running task, whose `all_texts` is the current screen.
+
+    Returns:
+        The OCR boxes, less any kept card inside `PROMPT_HAND`.
+    """
+    kept = kept_boxes([box for box in task.all_texts if in_region(box, PROMPT_HAND, task.width, task.height)])
+    return [box for box in task.all_texts if id(box) not in kept]
+
+
+def kit_waiting(task, utils_sortie, count):
+    """Let a kit hold the turn while the game is about to change the hand by itself.
+
+    An empty read straight after a wait keeps waiting too: a hand reads empty mid-fusion, and upstream ends the turn on one.
+
+    Args:
+        task: The running task, which the turn is parked on.
+        utils_sortie: Upstream's Sortie module, for its hand reader.
+        count: The hand size the counter read.
+
+    Returns:
+        True when this frame is spent waiting, capped at `KIT_WAIT` a turn so a change that never comes cannot stall it.
+    """
+    turn = getattr(task, TURN, None)
+    if turn is None:
+        return False
+    names = [cards.canonical(card["name"]) for card in utils_sortie._hand_cards(task) or []]
+    kit = kits.waiting(names, count) if names and count else None
+    still = turn.kit_waited and not names and 0 < (count or 0) <= turn.hand_count
+    turn.kit_waited = (kit is not None or still) and turn.kit_waits < KIT_WAIT
+    if not turn.kit_waited:
+        return False
+    turn.kit_waits += 1
+    task.log_info(f"{kit.name if kit else 'still'} waiting on the hand {names} ({turn.kit_waits}/{KIT_WAIT})")
+    task.sleep(KIT_PAUSE)
+    return True
+
+
 def turn_of(task, hand_count):
     """Bring the per-turn bookkeeping up to date and hand it back.
 
@@ -528,7 +615,7 @@ def install():
 
         # Canonical, because OCR spells a name differently from frame to frame and a refusal has to match the
         # card it was about across them.
-        hand = [{**card, "name": cards.canonical(card["name"])} for card in utils_sortie._hand_cards(task) or []]
+        hand = kits.reading([{**card, "name": cards.canonical(card["name"])} for card in utils_sortie._hand_cards(task) or []], count)
         names = [card["name"] for card in hand]
         turn = turn_of(task, count)
 
@@ -549,7 +636,7 @@ def install():
             against = f"enemies weak to {turn.weakness}" if turn.weakness else "no shared enemy weakness"
             budget = "Action Points to spend" if points else "no Action Points"
             task.log_info(f"turn opens with {budget}, {against}, hand {names}")
-        state = cards.Board(action_points=points, weakness=turn.weakness)
+        state = cards.Board(action_points=points, weakness=turn.weakness, hand=tuple(names))
         card = choose(hand, state, turn.refused)
         if card is None and turn.objected:
             # The game said a card is still playable, so the best of those passed over for cost is tried as if affordable.
@@ -597,12 +684,42 @@ def install():
         """
         if start_attack(task, utils_sortie):
             return True
-        if press_unread(task, note_hand_read(task, utils_sortie)):
+        count = note_hand_read(task, utils_sortie)
+        if kit_waiting(task, utils_sortie, count) or press_unread(task, count):
             return True
         with standing_in(utils_sortie, random=EgoChoice(task, utils_sortie.random)):
             return original_page(task)
 
     replace("handle_battle_page", handle_battle_page)
+    original_hand_select = utils_sortie.handle_battle_hand_select
+    original_return = utils_sortie.handle_return_to_draw_pile
+
+    def handle_battle_hand_select(task):
+        """Run upstream's hand prompt, choosing among the cards no kit is keeping.
+
+        Args:
+            task: The running task.
+
+        Returns:
+            Whatever upstream's own handler returns.
+        """
+        with standing_in(utils_sortie, random=KeepHeld(utils_sortie.random)):
+            return original_hand_select(task)
+
+    def handle_return_to_draw_pile(task):
+        """Run upstream's return-to-draw-pile prompt, which takes the leftmost card, over a hand without the cards a kit is keeping.
+
+        Args:
+            task: The running task.
+
+        Returns:
+            Whatever upstream's own handler returns.
+        """
+        with standing_in(task, all_texts=unheld_texts(task)):
+            return original_return(task)
+
+    replace("handle_battle_hand_select", handle_battle_hand_select)
+    replace("handle_return_to_draw_pile", handle_return_to_draw_pile)
 
     # Marked so a later task load recognises the replacement and does not wrap it in itself.
     _try_all_card_keys._en_picker = True

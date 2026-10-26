@@ -11,6 +11,7 @@ from collections import namedtuple
 from functools import lru_cache
 
 from src.en.game_battle import CARD_CATEGORY, CARD_COST, CARD_OWNER, COMBATANT_ATTRIBUTE, X_COST
+from src.en import kits
 from src.en.game_text import DESCRIPTIONS
 from src.en.quality import fold, index, one_edit_apart
 
@@ -68,12 +69,17 @@ DRAW = re.compile(r"\bDraw (\d+)")
 
 # What a card does, in the terms the ordering cares about.
 Features = namedtuple("Features", ["damage", "shield", "draw"])
-# What the picker knows about the moment it is choosing in. `weakness` is the attribute the enemies are weak
-# to, which `board.weakness` reads off the badge beside each enemy's action counter. `epiphany` is the hand
-# card the run has lit up, and nothing reads that yet - no capture so far holds one to pin the region against
-# - so it arrives as None and the scoring that uses it waits for a reader.
-Board = namedtuple("Board", ["action_points", "weakness", "epiphany"],
-                   defaults=[BASE_ACTION_POINTS, None, None])
+# What the picker knows about the moment it is choosing in.
+Board = namedtuple("Board", [
+    # Action Points to plan against.
+    "action_points",
+    # The attribute the enemies are weak to, which `board.weakness` reads off the badge beside each enemy's action counter.
+    "weakness",
+    # The hand card the run has lit up. Nothing reads it yet - no capture holds one to pin the region against - so it is None.
+    "epiphany",
+    # Every card in hand as canonical names, for the kits. Empty means `plan` fills it from the hand it is given.
+    "hand",
+], defaults=[BASE_ACTION_POINTS, None, None, ()])
 
 # How many distinct readings to remember the folding of. OCR invents new misspellings all session, so this
 # is bounded rather than unlimited, and it is far larger than the ten names one frame ever asks about.
@@ -289,7 +295,20 @@ def worth_playing(name):
 
 
 def value(name, board):
-    """Say what a card is worth here, in damage terms.
+    """Say what a card is worth here, in damage terms, once the kits in play have had their say.
+
+    Args:
+        name: The card name, in any spelling.
+        board: The `Board` it would be played into.
+
+    Returns:
+        The generic `rated` figure, adjusted by every kit the hand switches on.
+    """
+    return kits.worth(canonical(name), board.hand, rated(name, board), lambda other: rated(other, board))
+
+
+def rated(name, board):
+    """Say what a card is worth by its own text alone.
 
     Args:
         name: The card name, in any spelling.
@@ -383,7 +402,9 @@ def plan(hand, board):
     Returns:
         The hand cards to play, in order, costing no more than the Action Points available.
     """
-    playable = (card for card in hand if worth_playing(card["name"]))
+    if not board.hand:
+        board = board._replace(hand=tuple(canonical(card["name"]) for card in hand))
+    playable = (card for card in hand if worth_playing(card["name"]) and not kits.held(canonical(card["name"]), board.hand))
     budget = board.action_points
     chosen = []
     for card in sorted(playable, key=lambda held: buying_order(held["name"], board)):
