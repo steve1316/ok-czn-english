@@ -406,6 +406,22 @@ class TestKits(unittest.TestCase):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
 
+    def test_mei_lin_buffs_first_and_ends_on_the_spire(self):
+        """Rising Dragon Spire gains hits from the cards before it, and Spirit of the Aromata buffs the cards after it."""
+        for description, cards_in_hand, board, expected in (
+            # Generic play keeps hand order among the attacks.
+            ("the Spire follows the Strikes", ("Rising Dragon Spire", "Strike", "Strike"), cards.Board(action_points=3),
+             ["Strike", "Strike", "Rising Dragon Spire"]),
+            # Generic play puts the buff after the attacks it was meant to raise.
+            ("Spirit goes before the attacks", ("Strike", "Spirit of the Aromata"), cards.Board(action_points=2),
+             ["Spirit of the Aromata", "Strike"]),
+            # Generic play buys Sovereignty's 300% for the two points, ahead of two Strikes.
+            ("Sovereignty does not take the points from the Strikes", ("Flame Dragon's Sovereignty", "Strike", "Strike"),
+             cards.Board(action_points=2), ["Strike", "Strike"]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+
     def test_every_kit_names_real_cards(self):
         # A game patch that renames a card would otherwise switch its kit off without a word.
         for kit in kits.KITS:
