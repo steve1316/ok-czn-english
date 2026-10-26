@@ -532,6 +532,20 @@ class TestKits(unittest.TestCase):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
 
+    def test_beryl_lets_charged_shot_grow_in_hand(self):
+        """Charged Shot only takes points nothing else wants, and Heavy Weapons Specialist creates its card before the attacks."""
+        for description, cards_in_hand, board, expected in (
+            # Generic play spends two points on the 270% Charged Shot at once, leaving one for a single attack.
+            ("cheaper attacks take the points", ("Charged Shot", "Launcher", "Opening Found"), cards.Board(), ["Opening Found", "Launcher"]),
+            # Pins the hold being released when the points would otherwise go unused, so it passes without the kit too.
+            ("spare points go to Charged Shot", ("Charged Shot",), cards.Board(), ["Charged Shot"]),
+            # Generic play files the Specialist with the late skills, after the attack.
+            ("the Specialist goes before the attacks", ("Launcher", "Heavy Weapons Specialist"), cards.Board(action_points=2),
+             ["Heavy Weapons Specialist", "Launcher"]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+
     def test_every_kit_names_real_cards(self):
         # A game patch that renames a card would otherwise switch its kit off without a word.
         for kit in kits.KITS:
