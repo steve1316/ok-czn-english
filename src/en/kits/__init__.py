@@ -4,12 +4,12 @@ Upstream plays the first hand card a user-typed list names, and `cards.plan` rep
 point. Neither knows a kit that wants cards held or played in an order, so each such combatant gets a file here.
 """
 
-from src.en.kits import adelheid, amir, anika, arabella, beryl, cassius, hugo, lucas, luke, magna, maribell, mei_lin, mika, narja, nia, owen, rossweisse
+from src.en.kits import adelheid, amir, anika, arabella, beryl, cassius, chizuru, hugo, lucas, luke, magna, maribell, mei_lin, mika, narja, nia, owen, rossweisse
 
 # Every kit, listed by hand rather than found by scanning the folder, so the packaged build sees each import.
 KITS = (
     rossweisse.KIT, luke.KIT, hugo.KIT, owen.KIT, lucas.KIT, magna.KIT, maribell.KIT, mei_lin.KIT, mika.KIT, narja.KIT,
-    nia.KIT, adelheid.KIT, amir.KIT, anika.KIT, arabella.KIT, beryl.KIT, cassius.KIT,
+    nia.KIT, adelheid.KIT, amir.KIT, anika.KIT, arabella.KIT, beryl.KIT, cassius.KIT, chizuru.KIT,
 )
 
 

@@ -561,6 +561,21 @@ class TestKits(unittest.TestCase):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
 
+    def test_chizuru_spends_her_buffs_on_one_shadow(self):
+        """Shadow of the Moon waits for Oni Hunt and Tsukuyomi and plays last, Karmic Flames leads, and Tsukuyomi sits right before Oni Hunt."""
+        for description, cards_in_hand, board, expected in (
+            # Generic play spends Shadow of the Moon at once, with the Oni Hunt buff still unplayed.
+            ("Shadow waits for the buffs", ("Shadow of the Moon", "Oni Hunt"), cards.Board(action_points=2), ["Oni Hunt"]),
+            # Generic play keeps hand order among the attacks, so Shadow goes first.
+            ("Shadow goes last", ("Shadow of the Moon", "Moonslash"), cards.Board(action_points=2), ["Moonslash", "Shadow of the Moon"]),
+            # Generic play keeps hand order, so the curse lands after the other hit.
+            ("Karmic Flames leads the attacks", ("Moonslash", "Karmic Flames"), cards.Board(action_points=2), ["Karmic Flames", "Moonslash"]),
+            # Generic play plays the free Tsukuyomi ahead of every setup card, and so well before Oni Hunt.
+            ("Tsukuyomi sits right before Oni Hunt", ("Tsukuyomi", BUFF, "Oni Hunt"), cards.Board(action_points=2), [BUFF, "Tsukuyomi", "Oni Hunt"]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+
     def test_every_kit_names_real_cards(self):
         # A game patch that renames a card would otherwise switch its kit off without a word.
         for kit in kits.KITS:
