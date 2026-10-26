@@ -375,6 +375,20 @@ class TestKits(unittest.TestCase):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
 
+    def test_magna_plays_her_lead_cards_first(self):
+        """Ice Fragment and Storm of Bitter Cold lose their Lead discount once another card has been played."""
+        for description, cards_in_hand, board, expected in (
+            # Generic play spends the free card first.
+            ("Ice Fragment goes before a free card", ("Adagio", "Ice Fragment"), cards.Board(action_points=1), ["Ice Fragment", "Adagio"]),
+            ("Storm of Bitter Cold goes before a free card", ("Adagio", "Storm of Bitter Cold"), cards.Board(action_points=1),
+             ["Storm of Bitter Cold", "Adagio"]),
+            # Pins the release: the discount is gone once a card is played, so the free card keeps its usual place.
+            ("Ice Fragment keeps its place once a card is played", ("Ice Fragment", "Adagio"),
+             cards.Board(action_points=1, played=(JUSTICE_ATTACK,)), ["Adagio", "Ice Fragment"]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+
     def test_every_kit_names_real_cards(self):
         # A game patch that renames a card would otherwise switch its kit off without a word.
         for kit in kits.KITS:
