@@ -62,8 +62,9 @@ EPIPHANY_BONUS = 1000
 
 # A damage figure is a percentage followed shortly by the word Damage. "Damage Amount" is excluded on purpose:
 # that phrasing is always a modifier on some other card's damage, as in "Increases Damage Amount by 20%", and
-# counting it would rate a card that does nothing by itself as though it hit hard.
-DAMAGE = re.compile(r"(\d+)%[^\n]{0,24}?Damage(?!\s+Amount)")
+# counting it would rate a card that does nothing by itself as though it hit hard. A hit count after it, as in
+# "40% Damage x 3", multiplies the figure. The client mostly writes a multiplication sign, and a few cards a plain x.
+DAMAGE = re.compile(r"(\d+)%[^\n]{0,24}?Damage(?!\s+Amount)(?:\s*[×x]\s*(\d+))?")
 SHIELD = re.compile(r"(\d+)%[^\n]{0,20}?Shield")
 DRAW = re.compile(r"\bDraw (\d+)")
 
@@ -100,6 +101,12 @@ LABEL_PREFIX = 2
 # How much of a name has to survive before a truncated reading is worth repairing. Below this a stub matches
 # too many cards to mean anything - four would rescue only two more readings out of 1,662 and risk far more.
 MIN_STUB = 5
+# Tiphera's three Archetype cards differ only by a glyph the reader seldom keeps - "Archetype:O", "Archetyp", "rchetype:".
+# Matched on folded text, on a piece of the word, with a real glyph or the O, C or 0 the reader takes the circle for at the end.
+ARCHETYPE_READ = re.compile(r"(?:rchet|hetyp)[a-z]*?([○△□oc0]?)$|^arche$")
+ARCHETYPES = {"△": "Archetype: △", "□": "Archetype: □"}
+# All three cost nothing, so which one a reading that lost its glyph is taken for changes how it ranks, never whether it is played.
+ARCHETYPE_UNREAD = "Archetype: ○"
 
 
 @lru_cache(maxsize=CACHED_READINGS)
@@ -129,6 +136,9 @@ def canonical(name):
         matches = {real for folded_name, real in CARD_INDEX.exact.items() if folded_name.startswith(stub)}
         if len(matches) == 1:
             return matches.pop()
+    archetype = ARCHETYPE_READ.search(stub)
+    if archetype:
+        return ARCHETYPES.get(archetype.group(1) or "", ARCHETYPE_UNREAD)
     return name
 
 
@@ -200,7 +210,7 @@ def parsed(name):
     """
     text = DESCRIPTIONS.get(name) or ""
     return Features(
-        damage=sum(int(found) for found in DAMAGE.findall(text)),
+        damage=sum(int(share) * int(hits or 1) for share, hits in DAMAGE.findall(text)),
         shield=sum(int(found) for found in SHIELD.findall(text)),
         draw=sum(int(found) for found in DRAW.findall(text)),
     )
