@@ -435,6 +435,23 @@ class TestKits(unittest.TestCase):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
 
+    def test_narja_sets_up_before_the_attacks(self):
+        """Voluntary Control makes Voracity and Domain of Voracity raises Tenacity damage, and both only help the attacks after them."""
+        for description, cards_in_hand, board, expected in (
+            # Generic play runs the skill after every attack.
+            ("Voluntary Control goes before the attacks", (JUSTICE_ATTACK, "Voluntary Control"), cards.Board(action_points=2),
+             ["Voluntary Control", JUSTICE_ATTACK]),
+            # Generic play keeps hand order among the attacks.
+            ("Domain of Voracity goes before the attacks", (JUSTICE_ATTACK, "Domain of Voracity"), cards.Board(action_points=2),
+             ["Domain of Voracity", JUSTICE_ATTACK]),
+            ("Voluntary Control goes before Domain", ("Domain of Voracity", "Voluntary Control"), cards.Board(action_points=2),
+             ["Voluntary Control", "Domain of Voracity"]),
+            # Generic play ties it with a real attack and takes the one first in hand.
+            ("Attack Response gives way to a real attack", ("NA: Attack Response", JUSTICE_ATTACK), cards.Board(action_points=1), [JUSTICE_ATTACK]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+
     def test_every_kit_names_real_cards(self):
         # A game patch that renames a card would otherwise switch its kit off without a word.
         for kit in kits.KITS:
