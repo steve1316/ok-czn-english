@@ -546,6 +546,21 @@ class TestKits(unittest.TestCase):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
 
+    def test_cassius_keeps_to_his_deck_cards(self):
+        """Wild Card, Cards and Mana Field are filler, Triple 0 follows the attacks it counts, and Shuffle is a rescue."""
+        for description, cards_in_hand, board, expected in (
+            # Generic play buys the 220% Wild Card for two points and has none left for Pop Eyed Popper.
+            ("filler yields to Joker and the Popper", ("Wild Card", "Joker", "Pop Eyed Popper"), cards.Board(), ["Joker", "Pop Eyed Popper"]),
+            # Generic play plays the free Quest card first, before any attack has been counted.
+            ("Triple 0 follows the attacks", ("Triple 0", "Dice Trick"), cards.Board(action_points=2), ["Dice Trick", "Triple 0"]),
+            # Generic play shuffles the hand away after the draw.
+            ("Shuffle waits while a card can be played", ("Shuffle", "Devil Dice"), cards.Board(), ["Devil Dice"]),
+            # Pins the hold being released when nothing else is playable, so it passes without the kit too.
+            ("Shuffle rescues a dead hand", ("Shuffle", CURSE), cards.Board(), ["Shuffle"]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+
     def test_every_kit_names_real_cards(self):
         # A game patch that renames a card would otherwise switch its kit off without a word.
         for kit in kits.KITS:
