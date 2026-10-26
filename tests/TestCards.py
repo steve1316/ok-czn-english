@@ -799,6 +799,23 @@ class TestKits(unittest.TestCase):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
 
+    def test_rita_builds_chronicle_before_time_paradox(self):
+        """Time Paradox converts Chronicle that spent AP builds, Time Axis Collapse counts the Cost left in hand, and Future Decreed is a gamble."""
+        for description, cards_in_hand, board, expected in (
+            # Generic play converts at once, when this turn has built no Chronicle to convert.
+            ("Time Paradox waits for other plays", ("Time Paradox", "Anchor", "Time Axis Collapse"), cards.Board(), ["Time Axis Collapse", "Anchor"]),
+            # Pins the hold being released once two cards have been played.
+            ("Time Paradox plays after two cards", ("Time Paradox", "Anchor"), cards.Board(played=("Time Axis Collapse", "Anchor")),
+             ["Time Paradox", "Anchor"]),
+            # Generic play leaves the prime card ahead of it, which takes its Cost out of the hand first.
+            ("Time Axis Collapse goes before the hand empties", ("Break Armor", "Time Axis Collapse"), cards.Board(),
+             ["Time Axis Collapse", "Break Armor"]),
+            # Generic play plays it as a skill and gets a random 3-Cost card.
+            ("Future Decreed stays in hand", ("Future Decreed", "Anchor"), cards.Board(), ["Anchor"]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+
     def test_every_kit_names_real_cards(self):
         # A game patch that renames a card would otherwise switch its kit off without a word.
         for kit in kits.KITS:
