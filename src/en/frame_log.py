@@ -4,6 +4,7 @@ A report of a double-tapped button or a stuck screen comes with the log and noth
 frame behind each INFO or louder line, at most one a second, named by that line's own timestamp. Release runs never start it.
 """
 
+import collections
 import functools
 import logging
 import os
@@ -21,8 +22,10 @@ logger = Logger.get_logger(__name__)
 
 # Where each session's frames go. Not ok-script's `screenshots/`, which it wipes at startup once it passes 300 MB.
 FOLDER = os.path.join("logs", "frames")
-# Session folders kept, counting the new one. A session itself has no cap.
+# Session folders kept, counting the new one.
 SESSIONS_KEPT = 3
+# Bytes one session keeps before its oldest frames go, so the three sessions top out at ~3 GB.
+SESSION_CAP = 1024 ** 3
 # Seconds between saved frames, so a battle that logs every frame does not save every frame.
 INTERVAL = 1.0
 # JPEG quality. A 1080p frame comes to ~0.3 MB here against ~2.5 MB as PNG.
@@ -58,6 +61,9 @@ class FrameLog(logging.Handler):
         self.last_frame = None
         # Frames waiting for the writer thread, as `(path, frame)` pairs.
         self.pending = queue.Queue(QUEUE_SIZE)
+        # Frames this session saved, oldest first, as `(path, bytes)` pairs, and their total.
+        self.saved = collections.deque()
+        self.saved_bytes = 0
         self.complained = False
 
     def emit(self, record):
@@ -96,6 +102,14 @@ class FrameLog(logging.Handler):
             os.makedirs(self.folder, exist_ok=True)
             if not cv2.imwrite(path, frame, [cv2.IMWRITE_JPEG_QUALITY, QUALITY]):
                 self.complain(f"OpenCV would not write {path}")
+                return
+            size = os.path.getsize(path)
+            self.saved.append((path, size))
+            self.saved_bytes += size
+            while self.saved_bytes > SESSION_CAP:
+                oldest, size = self.saved.popleft()
+                self.saved_bytes -= size
+                os.remove(oldest)
         except Exception as error:
             self.complain(error)
 

@@ -73,6 +73,15 @@ class TestFrameLog(unittest.TestCase):
         self.log.handle(record(logging.INFO, LOGGED_AT + 4))
         self.assertEqual(1, self.handler.pending.qsize())
 
+    def test_a_full_session_drops_its_oldest_frames(self):
+        paths = [os.path.join(self.folder.name, "session", f"{index}.jpg") for index in range(3)]
+        frame = np.full((8, 8, 3), 200, np.uint8)
+        self.handler.save(paths[0], frame)
+        with standing_in(frame_log, SESSION_CAP=os.path.getsize(paths[0]) * 2):
+            for path in paths[1:]:
+                self.handler.save(path, frame)
+        self.assertEqual([False, True, True], [os.path.exists(path) for path in paths])
+
     def test_only_the_newest_sessions_are_kept(self):
         for name in ("2026-10-22_10-00-00", "2026-10-23_10-00-00", "2026-10-24_10-00-00", "2026-10-25_10-00-00"):
             os.makedirs(os.path.join(self.folder.name, name))
