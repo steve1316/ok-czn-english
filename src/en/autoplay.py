@@ -5,8 +5,11 @@ the screen showed and nothing else, so every inference about what Auto actually 
 rewritten and re-run against the same recording rather than costing another capture session.
 """
 
+from bisect import bisect_left, bisect_right
 from collections import Counter, namedtuple
 from difflib import SequenceMatcher
+from functools import reduce
+from operator import or_
 
 from src.en.cards import CARD_COST, canonical, is_card_name
 from src.en.quality import fold
@@ -24,6 +27,14 @@ Turn = namedtuple("Turn", ["opening", "played", "ambiguous"])
 SAME_READING = 0.75
 # The shortest piece of a name worth matching inside another, so a stray glyph is not taken for every card holding it.
 SHORTEST_PIECE = 3
+# Seconds from a burst grab within which a full frame's hand is dropped. The full frame and the band are read by separate
+# OCR passes, which disagree on a card often enough that interleaving them fakes plays.
+COVERED = 1.0
+# The longest gap between two grabs that can still show one settled hand. Grabs come every ~0.13s.
+STEADY = 0.5
+# Seconds either side of a grab to look for a card it missed. On a live battle the reader lost Chain Fire for 0.6s and got it
+# back, and no window wider than this removed any more fake plays.
+FLICKER = 1.5
 
 
 # Nothing here treats a hand as a set. Several copies of a card in one hand is ordinary, so a name still being
@@ -83,24 +94,69 @@ def reads_like(one, other):
     return SequenceMatcher(None, shorter, longer).ratio() >= SAME_READING
 
 
+def settled(grabs):
+    """Keep the burst grabs that caught a hand at rest.
+
+    A grab taken mid-animation reads a card sliding out as gone and back again, which counts as two plays. A grab that
+    could not read the counter was covered by a tooltip, and one that read no cards over a non-zero counter caught a play.
+    The band reader also drops a card for a second at a time, so a card the grabs either side still read is put back.
+
+    Args:
+        grabs: Frames read back from the burst grabs, in time order.
+
+    Returns:
+        Each readable grab whose next grab, taken soon after, read the same hand, with any card it missed added under an
+        empty key.
+    """
+    readable = [(grab, Counter(names_of(grab))) for grab in grabs if grab.count is not None]
+    readable = [(grab, held) for grab, held in readable if held or not grab.count]
+    steady = [(one, held) for (one, held), (other, read) in zip(readable, readable[1:]) if other.at - one.at < STEADY and held == read]
+    times = [grab.at for grab, _ in steady]
+    kept = []
+    for index, (grab, held) in enumerate(steady):
+        before = reduce(or_, (counts for _, counts in steady[bisect_left(times, grab.at - FLICKER):index]), Counter())
+        after = reduce(or_, (counts for _, counts in steady[index + 1:bisect_right(times, grab.at + FLICKER)]), Counter())
+        kept.append(grab._replace(hand=grab.hand + tuple((name, "") for name in ((before & after) - held).elements())))
+    return kept
+
+
+def covered(times, at):
+    """Say whether a burst grab was taken close to a moment.
+
+    Args:
+        times: Every grab's time, sorted.
+        at: The full frame's time.
+
+    Returns:
+        True when a grab sits within `COVERED` seconds either side.
+    """
+    after = bisect_left(times, at)
+    return any(abs(times[index] - at) <= COVERED for index in (after - 1, after) if 0 <= index < len(times))
+
+
 def merged(frames, grabs):
     """Slot the burst grabs in among the full frames, by time.
 
-    A grab only read the hand, so it borrows the board of the full frame before it. At a tie the full frame goes first.
+    Where grabs were running they own the hand, and a full frame there only updates the board. A grab borrows the board
+    of the full frame before it, since it read nothing else. At a tie the full frame goes first.
 
     Args:
         frames: The full recorded frames.
         grabs: Frames read back from the burst grabs, where only `at`, `hand` and `count` mean anything.
 
     Returns:
-        Every frame, in time order.
+        Every frame kept, in time order.
     """
+    grabs = sorted(grabs, key=lambda grab: grab.at)
+    times = [grab.at for grab in grabs]
     every, board = [], Frame()
-    for frame, grabbed in sorted([(frame, False) for frame in frames] + [(grab, True) for grab in grabs], key=lambda pair: pair[0].at):
+    for frame, grabbed in sorted([(frame, False) for frame in frames] + [(grab, True) for grab in settled(grabs)], key=lambda pair: pair[0].at):
         if grabbed:
             frame = board._replace(at=frame.at, hand=frame.hand, count=frame.count)
         else:
             board = frame
+            if covered(times, frame.at):
+                continue
         every.append(frame)
     return every
 

@@ -8,6 +8,7 @@ which is offline-only and exercised by `scripts/study_auto.py` rather than from 
 import sys
 import types
 import unittest
+from collections import Counter
 from contextlib import contextmanager
 from unittest import mock
 from pathlib import Path
@@ -219,12 +220,26 @@ class TestBurst(unittest.TestCase):
     def test_a_grab_borrows_the_board_of_the_frame_before_it(self):
         # A grab only reads the hand. Taking the defaults instead would claim Action Points on every grab, and a turn ended
         # into a fresh deal would then look like a draw.
-        frames = [autoplay.Frame(at=1.0, hand=(("A", "1"), ("B", "2")), count=2, points=False, weakness="Justice"),
-                  autoplay.Frame(at=3.0, hand=(), count=0)]
-        grabs = [autoplay.Frame(at=2.0, hand=(("B", "1"),), count=1)]
+        frames = [autoplay.Frame(at=1.0, hand=((ATTACK, "1"), ("Joker", "2")), count=2, points=False, weakness="Justice"),
+                  autoplay.Frame(at=5.0, hand=(), count=0)]
+        grabs = [autoplay.Frame(at=at, hand=(("Joker", "1"),), count=1) for at in (3.0, 3.2)]
         every = autoplay.merged(frames, grabs)
-        self.assertEqual([frame.at for frame in every], [1.0, 2.0, 3.0])
-        self.assertEqual(every[1], frames[0]._replace(at=2.0, hand=(("B", "1"),), count=1))
+        self.assertEqual([frame.at for frame in every], [1.0, 3.0, 5.0])
+        self.assertEqual(every[1], frames[0]._replace(at=3.0, hand=(("Joker", "1"),), count=1))
+
+    def test_only_a_hand_at_rest_counts_as_a_play(self):
+        # Each case but the last is a hand Auto never played from, read wrongly in the middle. Counting that frame fakes a play.
+        held = ((ATTACK, "1"), ("Joker", "2"))
+        grabs = [autoplay.Frame(at=at / 10, hand=held, count=2) for at in range(10, 20)]
+        cases = {"a full frame missing a card": ([autoplay.Frame(at=1.45, hand=held[:1], count=2)], grabs, Counter()),
+                 "an empty read mid-animation": ([], grabs[:4] + [grab._replace(hand=()) for grab in grabs[4:6]] + grabs[6:], Counter()),
+                 "a card read once as gone": ([], grabs[:5] + [grabs[5]._replace(hand=held[:1])] + grabs[6:], Counter()),
+                 "a card lost for a moment": ([], grabs[:4] + [grab._replace(hand=held[:1]) for grab in grabs[4:7]] + grabs[7:], Counter()),
+                 "a card that really left": ([], grabs[:4] + [grab._replace(hand=held[:1]) for grab in grabs[4:]], Counter(Joker=1))}
+        for case, (frames, read, expected) in cases.items():
+            with self.subTest(case=case):
+                played = sum((turn.played for turn in autoplay.turns(autoplay.merged(frames, read))), Counter())
+                self.assertEqual(played, expected)
 
 
 if __name__ == "__main__":

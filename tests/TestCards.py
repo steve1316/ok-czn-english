@@ -217,6 +217,12 @@ class TestTellingCardsFromLabels(unittest.TestCase):
             with self.subTest(badge=badge):
                 self.assertFalse(cards.is_card_name(badge))
 
+    def test_a_tooltip_keyword_tag_is_not_a_card(self):
+        # Read off live hands while a tooltip covered them, each counted as a card Auto played.
+        for tag in ("[Unique / Bullet]", "[Ephemeral / Exhaust /", "Bullet]"):
+            with self.subTest(tag=tag):
+                self.assertFalse(cards.is_card_name(tag))
+
     def test_a_card_cut_short_to_something_label_like_is_still_a_card(self):
         # "Quant" is "Quantum Seed", and only one letter from the start of "Attack" once the type icon is trimmed off.
         for stub in ("Quant", "NA:Defens"):
