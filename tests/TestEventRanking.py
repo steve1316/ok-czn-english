@@ -513,7 +513,7 @@ class TestEtchedMemory(unittest.TestCase):
 
     def test_processing_confirms_the_reroll_carrying_the_bonus(self):
         """Upstream's subsequence match finds every bonus inside the fixed Justice line, so it would take whichever card came first."""
-        for bonus, card in (("Self Damage", (0.25, 0.54)), ("Team Attack%", (0.5, 0.54)), ("Team Damage", (0.75, 0.54)), ("Self Attack%", None)):
+        for bonus, card in (("% Damage Amount to this unit", (0.25, 0.54)), ("% Attack to allies", (0.5, 0.54)), ("% Damage Amount to allies", (0.75, 0.54)), ("% Attack to this unit", None)):
             with self.subTest(bonus=bonus):
                 task = MemoryTask([FakeBox(*box) for box in PROCESSING], **{MEMORY_CARD: "", MEMORY_BONUS: bonus})
                 with standing_in(utils_chaos, recognize_cards=lambda *args, **kwargs: []):
@@ -524,7 +524,7 @@ class TestEtchedMemory(unittest.TestCase):
     def test_refinement_processes_only_a_card_holding_another_bonus(self):
         """Processing is spent once a run, so it is pressed only when the card's bonus reads as a different one."""
         page = [("精密加工记忆", 0.502, 0.13), ("加工记忆", 0.14, 0.8), ("stacked, +7% Attack to this", 0.5, 0.6), ("unit (1 time per turn", 0.5, 0.63)]
-        for bonus, pressed in (("Team Damage", True), ("Self Attack%", False), ("(keep)", False)):
+        for bonus, pressed in (("% Damage Amount to allies", True), ("% Attack to this unit", False), ("(keep)", False)):
             with self.subTest(bonus=bonus):
                 task = MemoryTask([FakeBox(*box) for box in page], **{MEMORY_CARD: "", MEMORY_BONUS: bonus})
                 with standing_in(utils_chaos, recognize_cards=lambda *args, **kwargs: [{"name": "Memory: Loss", "description": "", "x": 0.5, "y": 0.5}]):

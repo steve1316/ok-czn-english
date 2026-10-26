@@ -603,17 +603,17 @@ msgstr "进入记忆之末"
 msgid "(keep)"
 msgstr "(keep)"
 
-msgid "Self Attack%"
-msgstr "Self Attack%"
+msgid "% Attack to this unit"
+msgstr "% Attack to this unit"
 
-msgid "Team Attack%"
-msgstr "Team Attack%"
+msgid "% Damage Amount to this unit"
+msgstr "% Damage Amount to this unit"
 
-msgid "Self Damage"
-msgstr "Self Damage"
+msgid "% Attack to allies"
+msgstr "% Attack to allies"
 
-msgid "Team Damage"
-msgstr "Team Damage"
+msgid "% Damage Amount to allies"
+msgstr "% Damage Amount to allies"
 
 msgid "Claim"
 msgstr "Claim"

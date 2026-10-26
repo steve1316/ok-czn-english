@@ -27,10 +27,10 @@ KEEP_BONUS = "(keep)"
 # Memory Bonus choice -> its effect as `fold` leaves it, matched as a substring. Upstream's subsequence match cannot tell
 # them apart: Memory: Loss's fixed "Damage Amount of Justice Attribute Attack Cards of this unit" holds every one in order.
 BONUS_MARKERS = {
-    "Self Attack%": "attacktothis",
-    "Team Attack%": "attacktoallies",
-    "Self Damage": "damageamountofthis",
-    "Team Damage": "damageamountofallies",
+    "% Attack to this unit": "attacktothis",
+    "% Damage Amount to this unit": "damageamountofthis",
+    "% Attack to allies": "attacktoallies",
+    "% Damage Amount to allies": "damageamountofallies",
 }
 BONUSES = [KEEP_BONUS, *BONUS_MARKERS]
 # Where upstream reads the Processing title. Memory Refinement's own title holds the same word.
