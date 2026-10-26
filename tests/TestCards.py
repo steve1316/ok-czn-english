@@ -115,6 +115,11 @@ class TestOrdering(unittest.TestCase):
         chosen = cards.plan(hand(JUSTICE_ATTACK, BIG_ATTACK), cards.Board(action_points=2))
         self.assertEqual(played(chosen), [BIG_ATTACK])
 
+    def test_every_hit_of_a_multi_hit_attack_counts(self):
+        # 40% three times is 120%, which beats 100% once. Read as its first hit alone it lost to it.
+        chosen = cards.plan(hand(JUSTICE_ATTACK, "Aggressive Assault"), cards.Board(action_points=1))
+        self.assertEqual(played(chosen), ["Aggressive Assault"])
+
 
 class TestSpendsEverything(unittest.TestCase):
     """A card with no fixed price takes whatever is left, so it can only ever be played last."""
@@ -239,6 +244,10 @@ class TestReadingNames(unittest.TestCase):
             # Two cards start this way, so guessing between them would be worse than not knowing.
             ("an ambiguous stub is left alone", "Attac", "Attac"),
             ("a stub too short to be sure is left alone", "Bas", "Bas"),
+            # Tiphera's Archetypes, read hundreds of times in one Chaos recording without the glyph that names them.
+            ("an Archetype keeps a glyph the reader kept", "hetype:△", "Archetype: △"),
+            ("an Archetype read with an O for its circle", "Archetype:O", "Archetype: ○"),
+            ("an Archetype that lost its glyph is still an Archetype", "Archetyp", "Archetype: ○"),
         ):
             with self.subTest(description):
                 self.assertEqual(cards.canonical(reading), expected)
