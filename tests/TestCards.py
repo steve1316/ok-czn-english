@@ -452,6 +452,21 @@ class TestKits(unittest.TestCase):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
 
+    def test_nia_orders_her_cycling_cards(self):
+        """Adagio leaves a discard on top for G Chord, Soul Riff counts later discards, and Mute Accent discards the dearest card."""
+        for description, cards_in_hand, board, expected in (
+            # Generic play puts the skill after the attack.
+            ("G Chord goes before the attacks", (JUSTICE_ATTACK, "G Chord"), cards.Board(action_points=2), ["G Chord", JUSTICE_ATTACK]),
+            # Generic play runs the free discarder first, so Soul Riff counts none of it.
+            ("Soul Riff goes before Adagio", (FREE_DRAW, "Soul Riff"), cards.Board(action_points=1), ["Soul Riff", FREE_DRAW]),
+            ("Curiosity goes before the attacks", (JUSTICE_ATTACK, "Nia’s Curiosity"), cards.Board(action_points=2),
+             ["Nia’s Curiosity", JUSTICE_ATTACK]),
+            # Generic play throws the 2 AP card away along with its own 220%.
+            ("Mute Accent waits while a dearer card is in hand", ("Mute Accent", BIG_ATTACK), cards.Board(action_points=3), [BIG_ATTACK]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+
     def test_every_kit_names_real_cards(self):
         # A game patch that renames a card would otherwise switch its kit off without a word.
         for kit in kits.KITS:
