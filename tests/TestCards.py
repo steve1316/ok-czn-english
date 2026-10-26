@@ -445,6 +445,21 @@ class TestKits(unittest.TestCase):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
 
+    def test_tiphera_copies_archetypes_and_draws_only_after_a_seed(self):
+        """Dual Creation copies the Archetypes a Quantum Seed creates, and Form Convergence draws Archetypes only a Seed has made."""
+        for description, cards_in_hand, board, expected in (
+            # Generic play makes the Archetypes first, so Dual Creation copies none of that pair.
+            ("Dual Creation goes before the Seed", ("Quantum Seed", "Dual Creation"), cards.Board(), ["Dual Creation", "Quantum Seed"]),
+            # Generic play buys Form Convergence's 200 first, with no Archetype made for it to draw.
+            ("Form Convergence waits for a Seed", ("Form Convergence", "Dual Creation"), cards.Board(), ["Dual Creation"]),
+            ("the square Archetype waits for a Seed", ("Archetype: \u25a1", "Quantum Seed"), cards.Board(), ["Quantum Seed"]),
+            # Pins the hold being released, which generic play passes too.
+            ("Form Convergence plays once last turn's Seed made Archetypes", ("Form Convergence",), cards.Board(last_turn=("Quantum Seed",)),
+             ["Form Convergence"]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+
     def test_mei_lin_buffs_first_and_ends_on_the_spire(self):
         """Rising Dragon Spire gains hits from the cards before it, and Spirit of the Aromata buffs the cards after it."""
         for description, cards_in_hand, board, expected in (
