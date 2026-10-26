@@ -676,6 +676,19 @@ class TestKits(unittest.TestCase):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
 
+    def test_khalipe_lets_vulture_ejection_fire_free(self):
+        """Vulture Ejection fires free when a 2-cost card is played with it in hand, and Aquila costs 2 while it is."""
+        for description, cards_in_hand, board, expected in (
+            # Generic play pays all three points for the Ejection, ahead of a 2-cost card worth less per point.
+            ("the Ejection is held for a 2-cost card", ("Vulture Ejection", "Mutation: Atomic Decomposition"), cards.Board(),
+             ["Mutation: Atomic Decomposition"]),
+            # Generic play plays the better 2-cost card first, which uses the Ejection up before Aquila can take its bonus.
+            ("Aquila goes first while the Ejection is in hand", ("Hew Lv. 3", "Greatsword Aquila", "Vulture Ejection"), cards.Board(),
+             ["Greatsword Aquila", "Hew Lv. 3"]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+
     def test_every_kit_names_real_cards(self):
         # A game patch that renames a card would otherwise switch its kit off without a word.
         for kit in kits.KITS:
