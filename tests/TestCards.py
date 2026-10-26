@@ -598,6 +598,20 @@ class TestKits(unittest.TestCase):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
 
+    def test_fei_sets_up_before_drawing_and_cashing_in(self):
+        """Formation must precede the draws, Blazing War Dance follows the Descent they gain, and Soulfire Dance wants the points left."""
+        formation = "Exorcist\u2019s Formation"
+        for description, cards_in_hand, board, expected in (
+            # Generic play draws first, and Soliloquy discards the Formation it draws.
+            ("Formation goes before the draws", ("Soliloquy", formation), cards.Board(), [formation, "Soliloquy"]),
+            # Generic play fires the free War Dance at the start of the turn, with no Descent gained.
+            ("Blazing War Dance goes after the attacks", ("Blazing War Dance", "Azure Flame"), cards.Board(), ["Azure Flame", "Blazing War Dance"]),
+            # Generic play spends the points on the small cards, so Soulfire Dance is left with none.
+            ("small cards are held for Soulfire Dance", ("Azure Flame", "Soulfire Dance", "Melancholy"), cards.Board(), ["Soulfire Dance"]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+
     def test_every_kit_names_real_cards(self):
         # A game patch that renames a card would otherwise switch its kit off without a word.
         for kit in kits.KITS:
