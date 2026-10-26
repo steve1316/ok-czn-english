@@ -100,6 +100,12 @@ class TestOrdering(unittest.TestCase):
         chosen = cards.plan(hand(JUSTICE_ATTACK, BUFF), cards.Board())
         self.assertEqual(played(chosen), [BUFF, JUSTICE_ATTACK])
 
+    def test_a_card_that_primes_the_next_attack_goes_before_it(self):
+        # Both are Skills, which sorted them after the attack Wind Charge adds a hit to and Frost Charge's Vulnerable would have raised.
+        for primer, attack in (("Wind Charge", JUSTICE_ATTACK), ("Frost Charge", JUSTICE_ATTACK)):
+            with self.subTest(primer=primer):
+                self.assertEqual(played(cards.plan(hand(attack, primer), cards.Board())), [primer, attack])
+
     def test_the_better_value_attack_goes_first(self):
         # 220% for two points beats 100% for one, and three points pays for both.
         chosen = cards.plan(hand(JUSTICE_ATTACK, BIG_ATTACK), cards.Board())
@@ -191,13 +197,13 @@ class TestTellingCardsFromLabels(unittest.TestCase):
 
     def test_a_type_label_misread_by_one_letter_is_not_a_card(self):
         # "Attacl" and "Attach" were read off live hands, and the fold landed both on the card `Attack!`.
-        for misread in ("Attacl", "Attach", "Jpgrade"):
+        for misread in ("Attacl", "Attach", "Jpgrade", "XAttacl", "Attad", "Basio", "Skiu", "△Skilll"):
             with self.subTest(misread=misread):
                 self.assertFalse(cards.is_card_name(misread))
 
     def test_a_truncated_type_label_is_not_a_card(self):
         # "Basic Atta" was the single most common junk reading in a real Chaos recording.
-        for stub in ("Basic Atta", "Status Ailm", "XBasic A", "Basic"):
+        for stub in ("Basic Atta", "Status Ailm", "XBasic A", "Basic", "grade"):
             with self.subTest(stub=stub):
                 self.assertFalse(cards.is_card_name(stub))
 
@@ -205,6 +211,17 @@ class TestTellingCardsFromLabels(unittest.TestCase):
         # `ocr.po` turns "Defense" into this, and upstream's own exclude list has no defense keyword, so it
         # reached the hand as a card name 22 times in one recording.
         self.assertFalse(cards.is_card_name("防御力"))
+
+    def test_the_level_badge_is_not_a_card(self):
+        for badge in ("@ Lv.", "等级"):
+            with self.subTest(badge=badge):
+                self.assertFalse(cards.is_card_name(badge))
+
+    def test_a_card_cut_short_to_something_label_like_is_still_a_card(self):
+        # "Quant" is "Quantum Seed", and only one letter from the start of "Attack" once the type icon is trimmed off.
+        for stub in ("Quant", "NA:Defens"):
+            with self.subTest(stub=stub):
+                self.assertTrue(cards.is_card_name(stub))
 
     def test_a_card_whose_name_starts_with_a_label_is_still_a_card(self):
         # These are the ones a careless label test deletes. Each is a real card whose name begins with a type
@@ -248,6 +265,12 @@ class TestReadingNames(unittest.TestCase):
             ("an Archetype keeps a glyph the reader kept", "hetype:△", "Archetype: △"),
             ("an Archetype read with an O for its circle", "Archetype:O", "Archetype: ○"),
             ("an Archetype that lost its glyph is still an Archetype", "Archetyp", "Archetype: ○"),
+            ("an Archetype read with a v for its y", "chetvpe", "Archetype: ○"),
+            # The commonest misreads left in the Chaos recording once the labels were out of it.
+            ("a card's own Epiphanies do not make its stub ambiguous", "Shard:Lig", "Shard:Light"),
+            ("the letter the reader cut at may be wrong", "Barrier Der", "Barrier Deployment"),
+            ("a name cut at the front is repaired", "lusion of Golden Daffodils", "Illusion of Golden Daffodils"),
+            ("a label misread finds no card inside it", "XAttacl", "XAttacl"),
         ):
             with self.subTest(description):
                 self.assertEqual(cards.canonical(reading), expected)

@@ -13,6 +13,7 @@ from functools import lru_cache
 from src.en.game_battle import CARD_CATEGORY, CARD_COST, CARD_OWNER, COMBATANT_ATTRIBUTE, X_COST
 from src.en import kits
 from src.en.game_text import DESCRIPTIONS
+from src.en.kits.kit import base_name
 from src.en.quality import fold, index, one_edit_apart
 
 # Action Points a turn starts with, before anything in a run changes the figure.
@@ -40,9 +41,10 @@ PHASE_ESCAPE = 0
 PHASE_EPIPHANY = 1
 PHASE_FREE = 2
 PHASE_SETUP = 3
-PHASE_ATTACK = 4
-PHASE_OTHER = 5
-PHASE_SPENDS_EVERYTHING = 6
+PHASE_PRIME = 4
+PHASE_ATTACK = 5
+PHASE_OTHER = 6
+PHASE_SPENDS_EVERYTHING = 7
 
 # Roughly what one drawn card is worth, said in damage. A card drawn is about one more card played, and the
 # ordinary card costing one point does 100% damage, so that is the exchange rate the data itself suggests.
@@ -67,6 +69,10 @@ EPIPHANY_BONUS = 1000
 DAMAGE = re.compile(r"(\d+)%[^\n]{0,24}?Damage(?!\s+Amount)(?:\s*[×x]\s*(\d+))?")
 SHIELD = re.compile(r"(\d+)%[^\n]{0,20}?Shield")
 DRAW = re.compile(r"\bDraw (\d+)")
+# A card that makes the next attack hit harder, or the target take more - "Add 1 Hit(s) to the next Attack Card", "+X% Damage
+# Amount to the next Bullet card", "2 Vulnerable". Played after the attacks, as its category alone left it, it lands on nothing.
+PRIME = re.compile(r"(?:Damage Amount|Hit\(s\)|Proc)[^|\n]*?\bnext\b[^|\n]*?\b(?:Attack|Bullet|Bind) Card"
+                   r"|(?:\b\d+ Vulnerable|Vulnerable \d+)(?! to (?:allies|self))|Damage Amount taken by the target", re.I)
 
 # What a card does, in the terms the ordering cares about.
 Features = namedtuple("Features", ["damage", "shield", "draw"])
@@ -92,21 +98,71 @@ CARD_INDEX = index(CARD_COST)
 # Chinese `ocr.po` rewrites some of them into. Upstream's own filter lists only Chinese, so every English
 # label reached the hand as a card name - `Basic Atta` was the commonest junk reading in a Chaos recording.
 # `Defense` is here because the catalog does rewrite it, to a literal upstream's exclude list never had.
+# The level badge an upgraded card carries is read the same way, as "@ Lv." or as the 等级 `ocr.po` rewrites "LV" to.
 TYPE_LABELS = ("basic attack", "basic skill", "status ailment", "attack", "skill", "curse", "power",
-               "upgrade", "defense", "攻击力", "防御力", "状态异常")
+               "upgrade", "defense", "攻击力", "防御力", "状态异常", "lv", "等级")
 FOLDED_LABELS = tuple(fold(label) for label in TYPE_LABELS)
 # The type icon shares the label's OCR box and is read as a stray letter or two in front of it, which is why
 # `XBasic A` occurs. `src/en/ocr_text.py` trims the same way for the same reason.
 LABEL_PREFIX = 2
+# The shortest piece from inside a label, rather than its start, taken for that label - "tack", "grade" and "pgrad" are real readings.
+LABEL_PIECE = 4
 # How much of a name has to survive before a truncated reading is worth repairing. Below this a stub matches
 # too many cards to mean anything - four would rescue only two more readings out of 1,662 and risk far more.
 MIN_STUB = 5
+# How many letters at the end of a name cut short may be wrong. The reader mangles the letter it cut at, as in "Quantun",
+# "Barrier Der" and "Fairy's Prc", so a stub that fits nothing is retried with up to this many dropped.
+GARBLED_TAIL = 2
 # Tiphera's three Archetype cards differ only by a glyph the reader seldom keeps - "Archetype:O", "Archetyp", "rchetype:".
 # Matched on folded text, on a piece of the word, with a real glyph or the O, C or 0 the reader takes the circle for at the end.
-ARCHETYPE_READ = re.compile(r"(?:rchet|hetyp)[a-z]*?([○△□oc0]?)$|^arche$")
+ARCHETYPE_READ = re.compile(r"(?:rchet|het[yv]p)[a-z]*?([○△□oc0]?)$|^arche$")
 ARCHETYPES = {"△": "Archetype: △", "□": "Archetype: □"}
 # All three cost nothing, so which one a reading that lost its glyph is taken for changes how it ranks, never whether it is played.
 ARCHETYPE_UNREAD = "Archetype: ○"
+
+
+def looks_like_label(folded):
+    """Say whether a reading is a type label, read whole, cut short or a letter wrong.
+
+    Args:
+        folded: The reading, already folded, maybe with the type icon read as a letter or two in front.
+
+    Returns:
+        True when it is a label, the start of one or a piece from inside one, give or take one letter.
+    """
+    for trimmed in (folded[cut:] for cut in range(LABEL_PREFIX + 1)):
+        if not trimmed:
+            continue
+        for label in FOLDED_LABELS:
+            start = label[:len(trimmed)]
+            if trimmed == start or one_edit_apart(trimmed, start) or one_edit_apart(trimmed, label) or (len(trimmed) >= LABEL_PIECE and trimmed in label):
+                return True
+    return False
+
+
+def stub_card(stub):
+    """Find the one card a name cut short can be.
+
+    The reader cuts from either end - "Knife Tos" and "rrier Der" are both real readings - so a stub is tried as the start
+    of a name and then as a piece of one. Two cards that fit means the reading cannot say which, and a shorter stub only fits more.
+    A reading that looks like a label only gets the first try, so "Quant" is still Quantum Seed but "XAttacl" finds no card.
+
+    Args:
+        stub: A folded reading the index has no spelling for.
+
+    Returns:
+        The card, or None when nothing or more than one card fits. A card and its Epiphanies count as one card, the plainest of them.
+    """
+    tries = [(cut, fits) for cut in range(GARBLED_TAIL + 1) for fits in (str.startswith, str.__contains__)]
+    for cut, fits in tries[:1] if looks_like_label(stub) else tries:
+        piece = stub[:len(stub) - cut]
+        if len(piece) < MIN_STUB:
+            return None
+        # Over the exact spellings only: the fallback spellings in the index rearrange or rewrite letters, so a piece of one means nothing.
+        matches = [real for folded, real in CARD_INDEX.exact.items() if fits(folded, piece)]
+        if matches:
+            return min(matches, key=len) if len({base_name(real) for real in matches}) == 1 else None
+    return None
 
 
 @lru_cache(maxsize=CACHED_READINGS)
@@ -130,12 +186,9 @@ def canonical(name):
     # The reader also cuts a name short while the hand animates, so "Knife Tos" arrives for "Knife Toss".
     # Only an unambiguous stub is repaired: two cards start "Attac", and guessing between them would be
     # worse than leaving the reading alone for the label test to deal with.
-    if len(stub) >= MIN_STUB:
-        # Over the exact spellings only: a stub is a prefix of how the name is really written, and the
-        # fallback spellings in the index rearrange or rewrite letters, so a prefix of one means nothing.
-        matches = {real for folded_name, real in CARD_INDEX.exact.items() if folded_name.startswith(stub)}
-        if len(matches) == 1:
-            return matches.pop()
+    known = stub_card(stub)
+    if known:
+        return known
     archetype = ARCHETYPE_READ.search(stub)
     if archetype:
         return ARCHETYPES.get(archetype.group(1) or "", ARCHETYPE_UNREAD)
@@ -169,14 +222,7 @@ def is_card_name(reading):
     # Cobalt Light was played as `Attack!` and pressed Cobalt Light's key in its place.
     if fold(known) in FOLDED_LABELS:
         return False
-    if known in CARD_COST:
-        return True
-    if any(one_edit_apart(folded, label) for label in FOLDED_LABELS):
-        return False
-    for trimmed in (folded[cut:] for cut in range(LABEL_PREFIX + 1)):
-        if trimmed and any(label.startswith(trimmed) for label in FOLDED_LABELS):
-            return False
-    return True
+    return known in CARD_COST or not looks_like_label(folded)
 
 
 def features(name):
@@ -374,6 +420,8 @@ def phase(name, board):
     kind = category(name)
     if kind == SETUP_CATEGORY or features(name).draw:
         return PHASE_SETUP
+    if kind not in DEALT_TO_YOU and PRIME.search(description(name)):
+        return PHASE_PRIME
     if kind == ATTACK_CATEGORY:
         return PHASE_ATTACK
     return PHASE_OTHER
