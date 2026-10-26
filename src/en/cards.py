@@ -13,7 +13,8 @@ from functools import lru_cache
 from src.en.game_battle import CARD_CATEGORY, CARD_COST, CARD_OWNER, COMBATANT_ATTRIBUTE, X_COST
 from src.en import kits
 from src.en.game_text import DESCRIPTIONS
-from src.en.kits.kit import base_name
+from src.en.kits.kit import (PHASE_ATTACK, PHASE_EPIPHANY, PHASE_ESCAPE, PHASE_FREE, PHASE_OTHER, PHASE_PRIME, PHASE_SETUP,
+                             PHASE_SPENDS_EVERYTHING, base_name)
 from src.en.quality import fold, index, one_edit_apart
 
 # Action Points a turn starts with, before anything in a run changes the figure.
@@ -35,16 +36,6 @@ ASSUMED_COST = 1
 
 # Cards whose "unexpected result" can end the fight outright, so they are tried before anything else is spent.
 ESCAPE_CARDS = frozenset({"Fear"})
-
-# Where a card sits in a turn, lowest first.
-PHASE_ESCAPE = 0
-PHASE_EPIPHANY = 1
-PHASE_FREE = 2
-PHASE_SETUP = 3
-PHASE_PRIME = 4
-PHASE_ATTACK = 5
-PHASE_OTHER = 6
-PHASE_SPENDS_EVERYTHING = 7
 
 # Roughly what one drawn card is worth, said in damage. A card drawn is about one more card played, and the
 # ordinary card costing one point does 100% damage, so that is the exchange rate the data itself suggests.
@@ -86,7 +77,11 @@ Board = namedtuple("Board", [
     "epiphany",
     # Every card in hand as canonical names, for the kits. Empty means `plan` fills it from the hand it is given.
     "hand",
-], defaults=[BASE_ACTION_POINTS, None, None, ()])
+    # Canonical names of the cards the game took this turn, oldest first, for kits that count what has been played.
+    "played",
+    # The same for the turn before, which is empty on a battle's first turn.
+    "last_turn",
+], defaults=[BASE_ACTION_POINTS, None, None, (), (), ()])
 
 # How many distinct readings to remember the folding of. OCR invents new misspellings all session, so this
 # is bounded rather than unlimited, and it is far larger than the ten names one frame ever asks about.
@@ -363,7 +358,7 @@ def value(name, board):
     Returns:
         The generic `rated` figure, adjusted by every kit the hand switches on.
     """
-    return kits.worth(canonical(name), board.hand, rated(name, board), lambda other: rated(other, board))
+    return kits.worth(canonical(name), board, rated(name, board), lambda other: rated(other, board))
 
 
 def rated(name, board):
@@ -415,6 +410,9 @@ def phase(name, board):
         return PHASE_ESCAPE
     if lit_up(name, board):
         return PHASE_EPIPHANY
+    placed = kits.phase(canonical(name), board)
+    if placed is not None:
+        return placed
     price = cost(name)
     if price == X_COST:
         return PHASE_SPENDS_EVERYTHING
@@ -465,7 +463,7 @@ def plan(hand, board):
     """
     if not board.hand:
         board = board._replace(hand=tuple(canonical(card["name"]) for card in hand))
-    playable = (card for card in hand if worth_playing(card["name"]) and not kits.held(canonical(card["name"]), board.hand))
+    playable = (card for card in hand if worth_playing(card["name"]) and not kits.held(canonical(card["name"]), board))
     budget = board.action_points
     chosen = []
     for card in sorted(playable, key=lambda held: buying_order(held["name"], board)):

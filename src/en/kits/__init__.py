@@ -37,34 +37,47 @@ def reading(hand, count):
     return hand
 
 
-def held(name, names):
+def held(name, board):
     """Say whether any kit in play wants a card kept in hand.
 
     Args:
         name: The card in question.
-        names: Every card in hand.
+        board: The `cards.Board` it would be played into.
 
     Returns:
         True to keep it.
     """
-    return any(kit.held(name, names) for kit in active(names))
+    return any(kit.held(name, board) for kit in active(board.hand))
 
 
-def worth(name, names, base, rate):
+def worth(name, board, base, rate):
     """Run a card's value past every kit in play.
 
     Args:
         name: The card being valued.
-        names: Every card in hand.
+        board: The `cards.Board` it would be played into.
         base: What the generic picker made of it.
         rate: Gives the generic value of any card by name.
 
     Returns:
         The value to plan with.
     """
-    for kit in active(names):
-        base = kit.worth(name, names, base, rate)
+    for kit in active(board.hand):
+        base = kit.worth(name, board, base, rate)
     return base
+
+
+def phase(name, board):
+    """Find where the first kit in play that places a card puts it.
+
+    Args:
+        name: The card being placed.
+        board: The `cards.Board` it would be played into.
+
+    Returns:
+        The kit's phase, or None when no kit places the card.
+    """
+    return next((placed for kit in active(board.hand) if (placed := kit.phase(name, board)) is not None), None)
 
 
 def waiting(names, count):

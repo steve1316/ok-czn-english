@@ -86,31 +86,31 @@ class Rossweisse(Kit):
             read.append(card)
         return read
 
-    def held(self, name, names):
+    def held(self, name, board):
         """Keep a Shard while anything else is still in hand.
 
         Args:
             name: The card in question.
-            names: Every card in hand.
+            board: The `cards.Board` it would be played into.
 
         Returns:
             True for a Shard with other cards beside it.
         """
-        return is_shard(name) and not all(is_shard(other) for other in names)
+        return is_shard(name) and not all(is_shard(other) for other in board.hand)
 
-    def worth(self, name, names, base, rate):
+    def worth(self, name, board, base, rate):
         """Price each card between the Shards as a step toward the fusion.
 
         Args:
             name: The card being valued.
-            names: Every card in hand.
+            board: The `cards.Board` it would be played into.
             base: What the generic picker made of it.
             rate: Gives the generic value of any card by name, here Flicker Blade's.
 
         Returns:
             The value to plan with.
         """
-        shards = [other for other in names if is_shard(other)]
+        shards = [other for other in board.hand if is_shard(other)]
         if len(shards) < len(SHARDS) or is_shard(name):
             return base
         # Each card cleared from the middle brings the free Flicker Blade a step closer, so it is worth that on top of itself.

@@ -154,17 +154,17 @@ class TestTurnTracking(unittest.TestCase):
     def test_nothing_attempted_is_not_a_refusal(self):
         self.assertFalse(battle.was_refused(None, 0, [ATTACK]))
 
-    def test_a_bigger_hand_means_a_new_turn(self):
-        self.assertTrue(battle.new_turn(before=1, after=5))
-
-    def test_the_same_hand_is_not_a_new_turn(self):
-        self.assertFalse(battle.new_turn(before=5, after=5))
-
-    def test_a_shrinking_hand_is_not_a_new_turn(self):
-        self.assertFalse(battle.new_turn(before=5, after=4))
-
-    def test_the_first_frame_of_a_battle_is_a_new_turn(self):
-        self.assertTrue(battle.new_turn(before=None, after=5))
+    def test_only_a_deal_after_end_turn_is_a_new_turn(self):
+        for description, before, after, ended, expected in (
+                ("a bigger hand after end turn", 1, 5, True, True),
+                ("the same hand", 5, 5, True, False),
+                ("a shrinking hand", 5, 4, True, False),
+                ("the first frame of a battle", None, 5, False, True),
+                # Luke's Stealth Reload adds bullets mid-turn, and Finisher Round counts what the turn has played.
+                ("a hand grown by a card mid-turn", 4, 6, False, False),
+        ):
+            with self.subTest(description):
+                self.assertEqual(battle.new_turn(before, after, ended), expected)
 
 
 class Pressed:
@@ -448,9 +448,30 @@ class TestInstalling(unittest.TestCase):
             battle.install()
             with counting(board, "weakness") as reads:
                 utils_sortie._try_all_card_keys(task, 2)
+                battle.end_of_turn(task)
                 task.hand_cards = hand(ATTACK, BIG_ATTACK, CURSE)
                 utils_sortie._try_all_card_keys(task, 3)
             self.assertEqual(len(reads), 2)
+
+    def test_a_hand_grown_mid_turn_keeps_the_turn_and_its_plays(self):
+        with upstream(hand(ATTACK, BIG_ATTACK)) as (utils_sortie, task):
+            battle.install()
+            utils_sortie._try_all_card_keys(task, 2)
+            turn = getattr(task, battle.TURN)
+            task.hand_cards = hand(ATTACK, ATTACK, ATTACK)
+            utils_sortie._try_all_card_keys(task, 3)
+            self.assertIs(getattr(task, battle.TURN), turn)
+            self.assertEqual(turn.played, [BIG_ATTACK])
+
+    def test_an_end_turn_upstream_presses_closes_the_turn(self):
+        # Upstream ends an empty hand itself, so the card tried last left the hand without the picker seeing it go.
+        with upstream(hand(ATTACK)) as (utils_sortie, task):
+            battle.install()
+            utils_sortie._try_all_card_keys(task, 1)
+            battle.noting_end_of_turn(task)(battle.END_TURN_KEY)
+            task.hand_cards = hand(ATTACK, BIG_ATTACK)
+            utils_sortie._try_all_card_keys(task, 2)
+            self.assertEqual(getattr(task, battle.TURN).last_turn, (ATTACK,))
 
     def test_every_copy_of_a_card_gets_played(self):
         # Caught live: a hand of three Escapism played one, read the other two as the game refusing it, and
