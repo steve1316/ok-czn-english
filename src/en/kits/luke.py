@@ -4,7 +4,7 @@ Finisher Round is Unactivatable until five Handgun Bullets have fired this turn,
 The generic picker tries the free 500% Finisher Round first every turn, and plays the bullet makers and Dance in hand order.
 """
 
-from src.en.kits.kit import PHASE_FREE, PHASE_SPENDS_EVERYTHING, Kit, base_name
+from src.en.kits.kit import PHASE_FREE, PHASE_SPENDS_EVERYTHING, Kit, base_name, owned
 
 # The Handgun Bullets his cards create. All four are free attacks.
 BULLETS = frozenset({"Magnum Shot", "Silver Shot", "Uranium Shot", "Tracer Shot"})
@@ -18,14 +18,6 @@ FINISHER = "Finisher Round"
 # Handgun Bullets that must fire this turn before Finisher Round can be played. The count starts again every turn.
 FINISHER_UNLOCK = 5
 DANCE = "Dance of the Demon"
-
-# Where each card goes in the turn, around the free bullets at `PHASE_FREE`. Dance waits for every bullet but still beats an X-cost card.
-PLACES = {
-    **dict.fromkeys(MAKERS, PHASE_FREE - 0.5),
-    SEIZE: PHASE_FREE - 0.25,
-    FINISHER: PHASE_FREE + 0.5,
-    DANCE: PHASE_SPENDS_EVERYTHING - 0.5,
-}
 
 
 def fired(names):
@@ -44,7 +36,14 @@ class Luke(Kit):
     """Holds Finisher Round until it unlocks, orders the turn around the bullets, and prices Dance by the bullets it will follow."""
 
     name = "Luke"
-    cards = frozenset({*BULLETS, *MAKERS, SEIZE, FINISHER, DANCE, "Single Shot", "Shadow Concealment"})
+    cards = owned("Luke") | BULLETS
+    # Makers, then Seize, then the free bullets at `PHASE_FREE`, then Finisher Round. Dance waits for every bullet but still beats an X-cost card.
+    places = {
+        **dict.fromkeys(MAKERS, PHASE_FREE - 0.5),
+        SEIZE: PHASE_FREE - 0.25,
+        FINISHER: PHASE_FREE + 0.5,
+        DANCE: PHASE_SPENDS_EVERYTHING - 0.5,
+    }
 
     def held(self, name, board):
         """Keep Finisher Round until enough Handgun Bullets have fired this turn to unlock it.
@@ -78,18 +77,6 @@ class Luke(Kit):
             # Every bullet in hand goes before it, so each one there is a hit it will have.
             return base * (1 + fired(board.played) + fired(board.hand))
         return base
-
-    def phase(self, name, board):
-        """Put the makers first, Seize the Opportunity before the bullets, then Finisher Round, and Dance of the Demon last.
-
-        Args:
-            name: The card being placed.
-            board: The `cards.Board` it would be played into.
-
-        Returns:
-            The card's place in the turn, or None for one the generic order already places.
-        """
-        return PLACES.get(base_name(name))
 
 
 KIT = Luke()

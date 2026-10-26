@@ -404,15 +404,24 @@ def phase(name, board):
         board: The `Board` it would be played into.
 
     Returns:
-        One of the `PHASE_` values, lowest being earliest in the turn.
+        One of the `PHASE_` values, or a kit's place between two of them, lowest being earliest in the turn.
     """
     if canonical(name) in ESCAPE_CARDS:
         return PHASE_ESCAPE
     if lit_up(name, board):
         return PHASE_EPIPHANY
-    placed = kits.phase(canonical(name), board)
-    if placed is not None:
-        return placed
+    return kits.phase(canonical(name), board, generic_phase(name))
+
+
+def generic_phase(name):
+    """Say when in a turn a card belongs by its cost and text alone.
+
+    Args:
+        name: The card name, in any spelling.
+
+    Returns:
+        One of the `PHASE_` values from `PHASE_FREE` on.
+    """
     price = cost(name)
     if price == X_COST:
         return PHASE_SPENDS_EVERYTHING

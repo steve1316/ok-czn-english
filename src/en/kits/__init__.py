@@ -4,10 +4,10 @@ Upstream plays the first hand card a user-typed list names, and `cards.plan` rep
 point. Neither knows a kit that wants cards held or played in an order, so each such combatant gets a file here.
 """
 
-from src.en.kits import luke, rossweisse
+from src.en.kits import hugo, luke, owen, rossweisse
 
 # Every kit, listed by hand rather than found by scanning the folder, so the packaged build sees each import.
-KITS = (rossweisse.KIT, luke.KIT)
+KITS = (rossweisse.KIT, luke.KIT, hugo.KIT, owen.KIT)
 
 
 def active(names):
@@ -67,17 +67,20 @@ def worth(name, board, base, rate):
     return base
 
 
-def phase(name, board):
-    """Find where the first kit in play that places a card puts it.
+def phase(name, board, base):
+    """Run a card's place in the turn past every kit in play.
 
     Args:
         name: The card being placed.
         board: The `cards.Board` it would be played into.
+        base: Where the generic order puts it.
 
     Returns:
-        The kit's phase, or None when no kit places the card.
+        The phase to sort by.
     """
-    return next((placed for kit in active(board.hand) if (placed := kit.phase(name, board)) is not None), None)
+    for kit in active(board.hand):
+        base = kit.phase(name, board, base)
+    return base
 
 
 def waiting(names, count):

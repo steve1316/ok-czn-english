@@ -102,7 +102,7 @@ class TestOrdering(unittest.TestCase):
 
     def test_a_card_that_primes_the_next_attack_goes_before_it(self):
         # Both are Skills, which sorted them after the attack Wind Charge adds a hit to and Frost Charge's Vulnerable would have raised.
-        for primer, attack in (("Wind Charge", JUSTICE_ATTACK), ("Frost Charge", JUSTICE_ATTACK)):
+        for primer, attack in (("Wind Charge", "Downward Cut"), ("Frost Charge", JUSTICE_ATTACK)):
             with self.subTest(primer=primer):
                 self.assertEqual(played(cards.plan(hand(attack, primer), cards.Board())), [primer, attack])
 
@@ -331,10 +331,43 @@ class TestKits(unittest.TestCase):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
 
+    def test_hugo_builds_stacks_before_spending_them(self):
+        """Commence the Hunt stacks come from skills and Dingo Howling and Fan of Daggers, and attacks spend them."""
+        for description, cards_in_hand, board, expected in (
+            # Generic play puts the shield skill after the attacks that spend its two stacks.
+            ("Dingo Howling goes before the attacks", ("Knife Toss", "Dingo Howling"), cards.Board(), ["Dingo Howling", "Knife Toss"]),
+            # Generic play buys Knife Toss's 100% ahead of Fan's 60% x3, and plays it first.
+            ("Fan of Daggers leads the attacks", ("Knife Toss", "Fan of Daggers"), cards.Board(), ["Fan of Daggers", "Knife Toss"]),
+            # Generic play draws first, before any stack is up for the draw to need.
+            ("Quick Fix waits for a stack", ("Quick Fix", "Dingo Howling"), cards.Board(), ["Dingo Howling", "Quick Fix"]),
+            ("Quick Fix draws first once a stack is up", ("Dingo Howling", "Quick Fix"), cards.Board(last_turn=("Dingo Howling",)),
+             ["Quick Fix", "Dingo Howling"]),
+            # Owen's shield feeds Hunting Instincts a stack, so it goes before the attack rather than after.
+            ("another combatant's skill goes before the attacks", ("Knife Toss", "Weapon Block"), cards.Board(action_points=2),
+             ["Weapon Block", "Knife Toss"]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+
+    def test_owen_lands_wind_charge_on_an_attack(self):
+        """Wind Charge adds a hit to Owen's next attack, and Wind Riding fetches it back from the discard pile."""
+        for description, cards_in_hand, board, expected in (
+            # Generic play spends a point on a hit no Owen attack will take.
+            ("Wind Charge waits for an Owen attack", ("Wind Charge", "Weapon Block"), cards.Board(), ["Weapon Block"]),
+            ("Break Armor goes first, so it does not take the hit", ("Wind Charge", "Break Armor"), cards.Board(), ["Break Armor"]),
+            ("Wind Charge lands between Break Armor and the attack", ("Wind Charge", "Gale Strike", "Break Armor"),
+             cards.Board(action_points=4), ["Break Armor", "Wind Charge", "Gale Strike"]),
+            # Generic play buys the 100% attack over a shield worth 90.
+            ("Wind Riding is bought to fetch last turn's Wind Charge", ("Downward Cut", "Wind Riding"),
+             cards.Board(action_points=1, last_turn=("Wind Charge",)), ["Wind Riding"]),
+        ):
+            with self.subTest(description):
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+
     def test_every_kit_names_real_cards(self):
         # A game patch that renames a card would otherwise switch its kit off without a word.
         for kit in kits.KITS:
-            for name in kit.cards:
+            for name in kit.cards | set(kit.places):
                 with self.subTest(kit=kit.name, card=name):
                     self.assertIn(name, cards.CARD_COST)
 

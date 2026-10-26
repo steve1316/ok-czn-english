@@ -2,6 +2,8 @@
 
 import re
 
+from src.en.game_battle import CARD_OWNER
+
 # The Epiphany a card has been upgraded with, which the client writes as a suffix: "Shard:Light (Cycle)".
 EPIPHANY_SUFFIX = re.compile(r"\s*\([^)]*\)$")
 
@@ -28,6 +30,18 @@ def base_name(name):
     return EPIPHANY_SUFFIX.sub("", name)
 
 
+def owned(combatant):
+    """Find the cards a combatant brings to a deck.
+
+    Args:
+        combatant: The combatant's name, as `CARD_OWNER` spells it.
+
+    Returns:
+        The base names of every card the data says is theirs.
+    """
+    return frozenset(base_name(name) for name, owner in CARD_OWNER.items() if owner == combatant)
+
+
 class Kit:
     """One playstyle. Every hook does nothing unless a subclass overrides it, so a kit only says what it changes.
 
@@ -38,6 +52,8 @@ class Kit:
     name = ""
     # Base names of the cards that switch the kit on while one is in hand.
     cards = frozenset()
+    # Base names of the cards the kit moves in the turn, and the phase each goes to, for the default `phase`.
+    places = {}
 
     def claims(self, name):
         """Say whether a card switches this kit on.
@@ -88,17 +104,18 @@ class Kit:
         """
         return base
 
-    def phase(self, name, board):
+    def phase(self, name, board, base):
         """Place a card in the turn where the generic order puts it wrong.
 
         Args:
             name: The card being placed.
             board: The `cards.Board` it would be played into.
+            base: Where the generic order puts it.
 
         Returns:
-            A `PHASE_` value, or a number between two of them, or None to leave the card where the generic order puts it.
+            A `PHASE_` value or a number between two of them, the card's `places` entry by default, else `base`.
         """
-        return None
+        return self.places.get(base_name(name), base)
 
     def waiting(self, names, count):
         """Say whether the turn should sit for a frame rather than play or end.
