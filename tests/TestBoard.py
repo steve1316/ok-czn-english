@@ -134,11 +134,11 @@ def paint(frame, slots):
 class TestEgoBadges(unittest.TestCase):
     """Which Ego skills the EP bar can actually pay for, read off the badge beside each one."""
 
-    def test_an_affordable_badge_reads_blue(self):
-        self.assertGreater(board.blue_fraction(fixture("ego_badge_ready")), board.EGO_READY)
-
-    def test_a_badge_that_cannot_be_paid_for_has_no_blue_at_all(self):
-        self.assertEqual(board.blue_fraction(fixture("ego_badge_spent")), 0.0)
+    def test_a_badge_reads_affordable_only_when_tinted(self):
+        # A reduced cost draws the badge yellow-green rather than blue, and that Ego can still be paid for.
+        for name, affordable in (("ego_badge_ready", True), ("ego_badge_reduced", True), ("ego_badge_spent", False)):
+            with self.subTest(name):
+                self.assertEqual(affordable, board.tinted_fraction(fixture(name)) > board.EGO_READY)
 
     def test_the_slots_that_are_lit_are_the_ones_offered(self):
         task = FakeTask(paint(flat(0), ("F1", "F3")))

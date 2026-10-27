@@ -34,14 +34,12 @@ EGO_KEYS = ("F1", "F2", "F3")
 EGO_BADGE_X = 0.065
 EGO_BADGE_Y = {"F1": 0.7140, "F2": 0.8050, "F3": 0.8960}
 EGO_BADGE_HALF = (0.0090, 0.0150)
-# What the game paints an affordable badge: its own UI blue, well clear of the grey a spent one is drawn in.
-BLUE_HUE = (95, 125)
-BLUE_SATURATION = 80
-BLUE_VALUE = 120
-# How much of a badge has to be that blue before the Ego behind it is treated as one that can be fired. Over
-# 30 badges an affordable one is at least 21% blue and an unaffordable one exactly 0% at every supported
-# resolution - the widest margin anything here is judged on.
-EGO_READY = 0.10
+# The game tints an affordable badge, pale blue or the yellow-green of a reduced cost, and draws one it cannot pay for in grey.
+BADGE_LIT = 120
+TINT_SATURATION = 30
+# How much of a badge's lit pixels have to be tinted before the Ego behind it is treated as one that can be fired. Measured: 1.0 on a
+# blue badge, 0.995 on a reduced one and under 0.01 on a grey one.
+EGO_READY = 0.5
 
 # Where the enemies' counters and badges are drawn: below the top HUD, above the cards and the combatants.
 ENEMY_BAND = (0.30, 0.12, 1.00, 0.60)
@@ -122,8 +120,8 @@ def has_action_points(task):
     return lit_fraction(patch) >= LIT_ENOUGH
 
 
-def blue_fraction(patch):
-    """Say how much of a lit patch is drawn in the game's own UI blue.
+def tinted_fraction(patch):
+    """Say how much of a lit patch is drawn in colour rather than grey.
 
     Measured against the lit pixels rather than the whole patch, so a badge sitting on a dark background and
     one sitting on a bright scene are judged the same way.
@@ -132,15 +130,14 @@ def blue_fraction(patch):
         patch: The pixels to measure, in BGR.
 
     Returns:
-        The blue share of the lit pixels, from 0 to 1, and 0 for an empty patch.
+        The tinted share of the lit pixels, from 0 to 1, and 0 for an empty patch.
     """
     hsv = hsv_of(patch)
     if hsv is None:
         return 0.0
-    hue, saturation, value = cv2.split(hsv)
-    lit = value > BLUE_VALUE
-    blue = lit & (saturation > BLUE_SATURATION) & (hue > BLUE_HUE[0]) & (hue < BLUE_HUE[1])
-    return float(np.count_nonzero(blue)) / max(int(np.count_nonzero(lit)), 1)
+    _, saturation, value = cv2.split(hsv)
+    lit = value > BADGE_LIT
+    return float(np.count_nonzero(lit & (saturation > TINT_SATURATION))) / max(int(np.count_nonzero(lit)), 1)
 
 
 def affordable_egos(task):
@@ -157,7 +154,7 @@ def affordable_egos(task):
     ready = []
     for key in EGO_KEYS:
         box = box_around(EGO_BADGE_X, EGO_BADGE_Y[key], EGO_BADGE_HALF)
-        if blue_fraction(patch_of(frame, box)) > EGO_READY:
+        if tinted_fraction(patch_of(frame, box)) > EGO_READY:
             ready.append(key)
     return ready
 
