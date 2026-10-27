@@ -6,6 +6,7 @@ for it, what happens when the game refuses one, and when a turn should just be e
 
 import json
 import sys
+import tempfile
 import types
 import unittest
 from contextlib import contextmanager
@@ -13,6 +14,7 @@ from pathlib import Path
 from unittest import mock
 
 import cv2
+import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
@@ -156,6 +158,16 @@ class TestEgoPlanner(unittest.TestCase):
                             ("Gain 120% Shield. Draw 1 card", {ego.GUARD, ego.SETUP})):
             with self.subTest(text=text):
                 self.assertEqual(ego.roles_of(text), roles)
+
+    def test_a_learnt_ego_is_known_to_the_next_run(self):
+        # The point of saving them: a restart must not preview every Ego again.
+        mark = np.linspace(-1, 1, 128, dtype=np.float32)
+        mark /= np.linalg.norm(mark)
+        with tempfile.TemporaryDirectory() as folder, mock.patch.object(ego, "EGO_FILE", str(Path(folder) / "data" / "egos.json")), \
+                mock.patch.object(ego, "_known", None):
+            ego.learn(mark, ego.Ego("Legato of Faith", ego.roles_of("Heal 140%"), "Heal 140%"))
+            ego._known = None
+            self.assertEqual(ego.recall(ego.known(), mark), GUARD_EGO._replace(text="Heal 140%"))
 
     def test_the_first_rule_that_applies_wins(self):
         every = [("F1", GUARD_EGO, True), ("F2", STRIKE_EGO, True), ("F3", SETUP_EGO, True)]

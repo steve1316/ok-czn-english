@@ -1,11 +1,13 @@
 """Fire Sortie's Ego skills when they help, instead of at random once the EP bar is full.
 
 Upstream fires one of the three Egos at random only when the bar is full, partway through a turn, so a buff lands after the attacks it
-was for and a heal goes off whether the team needs it or not. This previews each Ego once to read what it does, then fires a guard
+was for and a heal goes off whether the team needs it or not. This previews each Ego once ever to read what it does, then fires a guard
 before a hit the team cannot take and a set-up ahead of the attacks, and spends a full bar on whatever fits the moment.
 """
 
 import collections
+import json
+import os
 import re
 
 import cv2
@@ -17,11 +19,16 @@ from src.en.screen import centre_of, frame_of, in_region, lines_in, patch_of, ra
 
 logger = Logger.get_logger(__name__)
 
-# Parked on the task for the run: every Ego read so far, as `(signature, Ego)` pairs. The panel moves Egos between slots as they are
-# used, so an Ego is known by its portrait rather than its key.
-KNOWN = "_en_egos"
-# More than a run's partners and combatants could ever show.
-MAX_KNOWN = 24
+# The `(signature, Ego)` pairs from `EGO_FILE`, loaded on first use.
+_known = None
+
+# Every Ego read so far, kept across runs so each is previewed only once. `data/` is in `.gitignore`, and deleting the file only costs
+# the previews. The panel moves Egos between slots as they are used, so an Ego is known by its portrait rather than its key.
+EGO_FILE = "data/egos.json"
+# Well over every partner and combatant in the game.
+MAX_KNOWN = 200
+# Decimals a saved signature keeps, which is far finer than `SAME_EGO` can tell apart.
+SAVED_DECIMALS = 4
 # Where a slot's portrait sits relative to its cost badge, and the size of the signature it is boiled down to.
 PORTRAIT_X = (0.078, 0.135)
 PORTRAIT_Y = (-0.015, 0.050)
@@ -112,11 +119,50 @@ def signature(frame, key):
     return grey / spread
 
 
+def known():
+    """List every Ego read so far, loading the ones earlier runs saved on first use.
+
+    Returns:
+        The `(signature, Ego)` pairs, oldest first. Empty when nothing is saved or the file does not read.
+    """
+    global _known
+    if _known is None:
+        _known = []
+        try:
+            with open(EGO_FILE, encoding="utf-8") as saved:
+                # Roles are worked out again from the text, so a change to the keywords reaches Egos learnt before it.
+                _known = [(np.array(entry["signature"], dtype=np.float32), Ego(entry["name"], roles_of(entry["text"]), entry["text"]))
+                          for entry in json.load(saved)]
+        except FileNotFoundError:
+            pass
+        except Exception as error:
+            logger.warning(f"could not read the saved Egos from {EGO_FILE}, previewing them again: {error}")
+    return _known
+
+
+def learn(mark, ego):
+    """Remember an Ego by its portrait, and save it for later runs.
+
+    Args:
+        mark: Its portrait signature, from `signature`.
+        ego: The `Ego` its preview read as.
+    """
+    global _known
+    _known = (known() + [(mark, ego)])[-MAX_KNOWN:]
+    try:
+        os.makedirs(os.path.dirname(EGO_FILE), exist_ok=True)
+        with open(EGO_FILE, "w", encoding="utf-8") as saved:
+            json.dump([{"name": ego.name, "text": ego.text, "signature": [round(float(value), SAVED_DECIMALS) for value in mark]}
+                       for mark, ego in _known], saved)
+    except Exception as error:
+        logger.warning(f"could not save the Egos to {EGO_FILE}, so the next run previews them again: {error}")
+
+
 def recall(known, mark):
     """Find the Ego a portrait signature belongs to.
 
     Args:
-        known: The `(signature, Ego)` pairs read so far this run.
+        known: The `(signature, Ego)` pairs read so far, from `known`.
         mark: The signature to look up, or None.
 
     Returns:
@@ -241,11 +287,11 @@ def take_turn(task, utils, turn):
         return False
     frame = frame_of(task)
     affordable = set(board.affordable_egos(task))
-    known = getattr(task, KNOWN, [])
+    seen = known()
     slots = []
     for key in board.EGO_KEYS:
         mark = signature(frame, key)
-        ego = recall(known, mark)
+        ego = recall(seen, mark)
         if ego is None and mark is not None and key not in turn.ego_unread:
             ego = identify(task, utils, key)
             if ego is None:
@@ -253,7 +299,7 @@ def take_turn(task, utils, turn):
                 turn.ego_unread.add(key)
             else:
                 task.log_info(f"the Ego on {key} is {ego.name or 'unnamed'} ({', '.join(sorted(ego.roles))}): {ego.text}")
-                setattr(task, KNOWN, (known + [(mark, ego)])[-MAX_KNOWN:])
+                learn(mark, ego)
             return True
         slots.append((key, ego, key in affordable))
     banked = board.banked_points(frame)
