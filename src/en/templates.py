@@ -2,11 +2,13 @@
 
 `ok_tasks/assets/` ships 79 templates and nearly all of them match the Global client unchanged. `leveltag` is a
 crop of 等级, the caption the client draws as "LEVEL" beside a combatant portrait, and the camp's free Epiphany icon
-is drawn larger than on the CN client.
+is drawn larger than on the CN client. A card-type icon can also match the sparkle beside a party card's portrait.
 """
 
 import cv2
 from ok import Logger
+
+from src.en.handlers import loaded, register, standing_in, wrap
 
 logger = Logger.get_logger(__name__)
 
@@ -26,6 +28,10 @@ TEXT_TEMPLATES = {
 RESIZED_TEMPLATES = {
     "special_flash_luosi2": 1.1,
 }
+
+# The function every card recognizer reads through, and the name of this change on it.
+RECOGNIZER = "_recognize_cards_by_features"
+NAMED_TAG = "named icons only"
 
 _patched = False
 
@@ -93,11 +99,75 @@ def resize(feature_name, feature):
         feature.mat = cv2.resize(feature.mat, None, fx=factor, fy=factor, interpolation=cv2.INTER_LINEAR)
 
 
+def name_region(task, box, offsets):
+    """Work out where a card's name sits for one icon match, the way upstream's recognizer does.
+
+    Args:
+        task: The running task, for the screen's size.
+        box: The card-type icon match, in pixels.
+        offsets: The recognizer's `name_offsets`, as (left, top, right, bottom) from the icon's centre.
+
+    Returns:
+        The region as screen fractions, clamped to the frame.
+    """
+    center_x = (box.x + box.width / 2) / task.width
+    center_y = (box.y + box.height / 2) / task.height
+    return (max(0.0, center_x + offsets[0]), max(0.0, center_y + offsets[1]),
+            min(1.0, center_x + offsets[2]), min(1.0, center_y + offsets[3]))
+
+
+def named_only(recognise, utils):
+    """Wrap upstream's card recognizer so an icon match with no card name beside it never hides one that has a name.
+
+    Upstream keeps the most confident match in each neighbourhood and drops the rest unread, then drops a match whose
+    name reads empty. On the Global client the Upgrade bolt scores 0.794 on the sparkle beside a party card's portrait,
+    just over the 0.79 of the Skill icon beside it, so the card was never read. Filtering the nameless matches first
+    changes nothing else.
+
+    Args:
+        recognise: The recognizer to wrap, upstream's or another patch's.
+        utils: The module holding `_get_region_text`.
+
+    Returns:
+        The wrapped recognizer.
+    """
+    def wrapped(task, *args, **kwargs):
+        offsets = kwargs.get("name_offsets")
+        if offsets is None:
+            return recognise(task, *args, **kwargs)
+        find_feature = task.find_feature
+
+        def named(*inner_args, **inner_kwargs):
+            kept = []
+            for box in find_feature(*inner_args, **inner_kwargs) or []:
+                if utils._get_region_text(task, name_region(task, box, offsets)).strip():
+                    kept.append(box)
+                else:
+                    logger.debug(f"{inner_kwargs.get('feature_name')} icon at ({box.x}, {box.y}) has no card name beside it, so it is dropped")
+            return kept
+
+        with standing_in(task, find_feature=named):
+            return recognise(task, *args, **kwargs)
+
+    return wrapped
+
+
+def install(utils):
+    """Drop nameless icon matches before upstream's card recognizer deduplicates them.
+
+    Args:
+        utils: The loaded `utils` module, or None when it is not importable yet.
+    """
+    if utils is not None:
+        wrap(utils, RECOGNIZER, lambda recognise: named_only(recognise, utils), NAMED_TAG)
+
+
 def apply():
-    """Fall back to the English caption when a Chinese-text template finds nothing."""
+    """Fall back to the English caption when a Chinese-text template finds nothing, and read past nameless icon matches."""
     global _patched
     if _patched:
         return
+    register(lambda: install(loaded("utils")))
     from ok.task.task import FindFeature
 
     original_find_feature = FindFeature.find_feature

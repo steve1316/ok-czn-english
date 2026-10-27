@@ -13,17 +13,35 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(REPO_ROOT / "ok_tasks"))
 
 import cv2  # noqa: E402
 from ok import Box  # noqa: E402
 from ok.feature.FeatureSet import read_from_json  # noqa: E402
 
+import utils  # noqa: E402
+
 from src.en import templates  # noqa: E402
+from src.en.handlers import standing_in  # noqa: E402
+from tests.fakes import FakeBox  # noqa: E402
 
 # The free Epiphany icon over a combatant at camp, cropped from a Global client frame of the 2026-10-25 run.
 CAMP_EPIPHANY = REPO_ROOT / "tests" / "images" / "camp_epiphany.png"
 # Upstream's `default_threshold` in `src/config.py`, which `handle_rest` matches the icon against.
 THRESHOLD = 0.8
+# The icon matches upstream found on the 2026-10-27 Obtain Card screen, as (centre x, centre y, confidence) per template.
+# Each Upgrade match is the sparkle beside a party card's portrait, just above the Skill icon on that card.
+REWARD_ICONS = {
+    "attack": [(0.1844, 0.3472, 0.917)],
+    "skill": [(0.461, 0.348, 0.790), (0.738, 0.347, 0.728)],
+    "enhance": [(0.388, 0.309, 0.794), (0.665, 0.309, 0.785)],
+}
+# What OCR read off that screen, one name, type and description per card.
+REWARD_TEXTS = [
+    ("Harmonization: Moon of Destruction", 0.2458, 0.3125), ("攻击", 0.22, 0.345), ("528% Damage", 0.229, 0.65),
+    ("Distortion: Financial Therapy", 0.5208, 0.313), ("技能", 0.4849, 0.3454), ("Heal 264%", 0.505, 0.679),
+    ("Dark Condensation", 0.798, 0.313), ("技能", 0.7552, 0.3454), ("Select 1 Attack Card(s)", 0.78, 0.648),
+]
 
 
 class FakeTask:
@@ -31,6 +49,39 @@ class FakeTask:
 
     def __init__(self, all_texts):
         self.all_texts = all_texts
+
+
+def scored(box, confidence):
+    """Give a box the confidence upstream's recognizer logs and ranks by.
+
+    Args:
+        box: The `FakeBox` to score.
+        confidence: The OCR or template-match confidence, from 0 to 1.
+
+    Returns:
+        The same box.
+    """
+    box.confidence = confidence
+    return box
+
+
+class RewardScreen:
+    """Stands in for a task looking at the Obtain Card screen, for upstream's own card recognizer."""
+
+    width, height = 1920, 1080
+
+    def __init__(self):
+        self.all_texts = [scored(FakeBox(name, x, y, units="fraction"), 1.0) for name, x, y in REWARD_TEXTS]
+
+    def find_feature(self, feature_name=None, box=None, threshold=0):
+        return [scored(FakeBox(feature_name, x, y, width=30, height=30, units="fraction"), confidence)
+                for x, y, confidence in REWARD_ICONS.get(feature_name, ())]
+
+    def box_of_screen(self, *region):
+        return region
+
+    def log_info(self, message):
+        pass
 
 
 def caption(name, x, y):
@@ -114,6 +165,16 @@ class TestTemplateFallback(unittest.TestCase):
         self.assertLess(score(), THRESHOLD)
         templates.resize("special_flash_luosi2", feature)
         self.assertGreaterEqual(score(), THRESHOLD)
+
+    def test_a_sparkle_beside_a_portrait_does_not_hide_the_card(self):
+        """The sparkle out-scored the Skill icon on both party cards, so the reward was skipped as offering nothing wanted."""
+        screen = RewardScreen()
+        self.assertEqual(["Harmonization: Moon of Destruction"], [card["name"] for card in utils.recognize_cards(screen)])
+        named = templates.named_only(utils._recognize_cards_by_features, utils)
+        with standing_in(utils, _recognize_cards_by_features=named):
+            cards = utils.recognize_cards(screen)
+        self.assertEqual(["Harmonization: Moon of Destruction", "Distortion: Financial Therapy", "Dark Condensation"],
+                         [card["name"] for card in cards])
 
     def test_the_patch_is_idempotent(self):
         from ok.task.task import FindFeature
