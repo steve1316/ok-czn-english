@@ -9,6 +9,7 @@ reading anything, which on a run started there shuts the page and reopens it. So
 import contextlib
 import dataclasses
 import re
+import time
 
 from ok import Logger
 
@@ -32,14 +33,12 @@ COMBATANTS_TAB = (0.201, 0.056)
 ROSTER_NAME = re.compile(r"\b(?:" + "|".join(re.escape(name) for name in COMBATANTS) + r")\b")
 # Where the map draws the team's portraits. Tapping one opens the information page - the tap Chaos makes in `handle_save_target_member`.
 TEAM_PORTRAITS = (0.182, 0.081)
-# Counts in `node_status` the taps Sortie has made towards the team, so a page that never opens costs a few tries rather than every frame.
-# Upstream rebuilds `node_status` when a run or a layer starts, which is what clears it.
+# Holds in `node_status` how many taps Sortie has made towards the team and when the last one was, so a page that never opens costs a few
+# tries rather than every frame. Upstream rebuilds `node_status` when a run or a layer starts, which is what clears it.
 TEAM_TAPPED = "_en_team_tapped"
-TEAM_TRIES = 3
-# The two marks `handle_route_selection` knows the route map by. Check these if a rebase moves them.
-ROUTE_POSITION = (0.335, 0.568, 0.453, 0.751)
-ROUTE_NOTICE = (0.186, 0.850)
-ROUTE_NOTICE_TEXT = "无法接收到梦境号"
+TEAM_TRIES = 5
+# Seconds between tries. A pending dialog, like the rest screen's, swallows the tap, and the gap lets its own handler clear it first.
+TEAM_RETRY_SECONDS = 5
 # The handler Sortie's trip runs ahead of, the same place Chaos lists its own.
 SORTIE_ANCHOR = "handle_route_selection"
 
@@ -170,26 +169,11 @@ def reading_in_place(original):
     return handle_archive_target_member
 
 
-def on_route_map(task, utils):
-    """Tell whether the route selection map is up, by the same marks `handle_route_selection` checks.
-
-    Args:
-        task: The running Sortie task, whose current frame is read.
-        utils: Upstream's `utils` module, for its text lookup at a point.
-
-    Returns:
-        True on the route map.
-    """
-    notice = utils.find_box_at_point(task, *ROUTE_NOTICE)
-    return bool(task.find_feature(feature_name="position", box=task.box_of_screen(*ROUTE_POSITION))
-                or (notice and ROUTE_NOTICE_TEXT in notice.name))
-
-
 def handle_open_team(task):
-    """Open the information page from the route map as a Sortie run or layer starts, so the team is read before a battle.
+    """Open the information page as a Sortie run or layer starts, so the team is read off its Combatants tab before a battle.
 
-    `handle_archive_target_member` then reads the names and closes the page, as it does for Chaos. Other screens show the portraits too, but a
-    pending dialog there swallows the tap, so only the map is trusted. A tap that reads no team is retried, up to `TEAM_TRIES`.
+    `handle_archive_target_member` then reads the names and closes the page, as it does for Chaos. A tap that reads no team is tried again
+    after `TEAM_RETRY_SECONDS`, up to `TEAM_TRIES` times.
 
     Args:
         task: The running Sortie task.
@@ -198,14 +182,17 @@ def handle_open_team(task):
         True when the tap was made this frame.
     """
     utils = loaded("utils")
-    tries = task.node_status.get(TEAM_TAPPED, 0)
-    if utils is None or tries >= TEAM_TRIES or (tries and getattr(task, PARTY, None)) or not on_route_map(task, utils):
+    tries, last = task.node_status.get(TEAM_TAPPED, (0, 0.0))
+    if utils is None or tries >= TEAM_TRIES or (tries and getattr(task, PARTY, None)):
         return False
-    task.node_status[TEAM_TAPPED] = tries + 1
+    now = time.monotonic()
+    if tries and now - last < TEAM_RETRY_SECONDS or not utils._get_current_hp_percent(task):
+        return False
+    task.node_status[TEAM_TAPPED] = (tries + 1, now)
     if not tries:
         # A new run may field a new team, and an empty party leaves every card in play until the read below replaces it.
         setattr(task, PARTY, frozenset())
-    logger.info("opening the information page to read the team")
+    logger.info(f"opening the information page to read the team, try {tries + 1} of {TEAM_TRIES}")
     utils._move_and_click(task, *TEAM_PORTRAITS)
     task.sleep(2)
     return True
