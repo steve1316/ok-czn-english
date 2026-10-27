@@ -19,7 +19,7 @@ class Globals(QObject):
         from src.en import (  # noqa: E501
             analysis, battle, claims, dashboard, deck, desire, devices, dialogue, dice, draft, enter, equipment, etched_memory, events, frame_log, layout,
             log_text, memory_limit, monitors, navigation, observe, ocr_text, overrides, persona, picker, pins, remote, rest, rewards, sections,
-            reason, shell, shop, shutdown, templates, notify, stuck, upload,
+            reason, shell, shop, shutdown, summary, templates, notify, stuck, upload,
         )
 
         # Neither does anything outside a debug run, and nothing else depends on when they start.
@@ -61,6 +61,7 @@ class Globals(QObject):
         stuck.apply()
         rest.apply()
         memory_limit.apply()
+        summary.apply()
         shutdown.apply()
         devices.apply()
         monitors.apply()
