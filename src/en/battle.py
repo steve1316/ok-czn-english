@@ -27,8 +27,8 @@ TURN = "_en_turn"
 # `all_texts` list every frame, so identity tells frames apart, and a matching list can only ever produce a
 # matching hand. Upstream reads the hand twice a frame already; this makes all of those one reading.
 HAND_CACHE = "_en_hand_for"
-# The combatants whose cards have been read in hand, parked on the task. Never cleared, since a member from an earlier run only
-# widens what a name cut short may be, which is how every name was read before.
+# The combatants in the party, parked on the task. Read off the Combatants screen at the start of a run, then topped up from the
+# owners of cards read in hand.
 PARTY = "_en_party"
 
 # Upstream's own timings for playing a card, kept so the two paths feel the same to the game.

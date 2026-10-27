@@ -8,6 +8,7 @@ its place in the table and what it says before it has been read.
 from ok import Logger
 
 from src.en import quality
+from src.en.battle import PARTY
 from src.en.dashboard import COMBATANTS, UNREAD
 from src.en.handlers import insert_before, loaded, register, replace
 from src.en.overrides import FARMED_COMBATANT
@@ -50,6 +51,10 @@ def remember_team(task, utils):
     names = [name for name in combatant_names(task, utils) if name]
     if names:
         task.info_set(COMBATANTS, ", ".join(names))
+    party = frozenset(filter(None, map(quality.COMBATANT_INDEX.look_up, names)))
+    if party:
+        # Read off the screen, so it replaces whatever the hand taught the card picker before.
+        setattr(task, PARTY, party)
     classes = quality.team_classes(names)
     if classes:
         setattr(task, TEAM, classes)

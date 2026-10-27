@@ -1,9 +1,9 @@
-"""Skip the trip to the Combatants screen when the run already starts there.
+"""Take Sortie to the Combatants screen once a run, and skip the trip when a run already starts there.
 
 Capturing the target combatant's portrait takes two handlers, and both tap their way to a page that may already
 be open. `handle_save_target_member` taps the menu icon and waits two seconds, guarded only by a "have I done
 this yet" flag, and `handle_archive_target_member` then taps the 3-person icon and the Combatants tab before
-reading anything, which on a run started there shuts the page and reopens it.
+reading anything, which on a run started there shuts the page and reopens it. Sortie never makes the trip at all.
 """
 
 import dataclasses
@@ -11,7 +11,8 @@ import re
 
 from ok import Logger
 
-from src.en.handlers import loaded, register, replace, standing_in, wrap
+from src.en.battle import PARTY
+from src.en.handlers import insert_before, loaded, register, replace, standing_in, wrap
 from src.en.game_data import COMBATANTS
 from src.en.screen import combatant_names
 
@@ -27,6 +28,13 @@ COMBATANTS_TAB = (0.201, 0.056)
 # Any combatant on the roster, as a whole word, so a read with a level stuck on still counts and a short name
 # like "Nia" cannot match inside a longer one. The sibling tabs list Partners, who are not on this roster.
 ROSTER_NAME = re.compile(r"\b(?:" + "|".join(re.escape(name) for name in COMBATANTS) + r")\b")
+# Where the map draws the team's portraits. Tapping one opens the information page - the tap Chaos makes in `handle_save_target_member`.
+TEAM_PORTRAITS = (0.182, 0.081)
+# Set in `node_status` once Sortie has tapped through to the team, so a page that never opens costs one try rather than every frame.
+# Upstream rebuilds `node_status` when a run or a layer starts, which is what clears it.
+TEAM_TAPPED = "_en_team_tapped"
+# The handler Sortie's trip runs ahead of, the same place Chaos lists its own.
+SORTIE_ANCHOR = "handle_route_selection"
 
 _patched = False
 
@@ -152,8 +160,31 @@ def reading_in_place(original):
     return handle_archive_target_member
 
 
+def handle_open_team(task):
+    """Open the information page as a Sortie run or layer starts, so the team is read off its Combatants tab before a battle.
+
+    `handle_archive_target_member` then reads the names and closes the page, as it does for Chaos.
+
+    Args:
+        task: The running Sortie task.
+
+    Returns:
+        True when the tap was made this frame.
+    """
+    utils = loaded("utils")
+    if utils is None or task.node_status.get(TEAM_TAPPED) or not utils._get_current_hp_percent(task):
+        return False
+    task.node_status[TEAM_TAPPED] = True
+    # A new run may field a new team, and an empty party leaves every card in play until the read below replaces it.
+    setattr(task, PARTY, frozenset())
+    logger.info("opening the information page to read the team")
+    utils._move_and_click(task, *TEAM_PORTRAITS)
+    task.sleep(2)
+    return True
+
+
 def apply():
-    """Stop the bot navigating to a screen it is already on."""
+    """Take Sortie to the team once a run, and stop the bot navigating to a screen it is already on."""
     global _patched
     if _patched:
         return
@@ -167,6 +198,8 @@ def apply():
         # Composed through `wrap` rather than `replace` because the install runs once per task load and the
         # wrapper carries the handler's own name, which `replace` matches on and would stack a layer per load.
         wrap(utils_chaos, "handle_archive_target_member", reading_in_place, "reading in place")
+        # Sortie's list alone, since Chaos makes this trip already.
+        insert_before(SORTIE_ANCHOR, handle_open_team, only=("utils_sortie",))
 
         original = utils_chaos.handle_save_target_member
         if getattr(original, "_en_skips_when_present", False):

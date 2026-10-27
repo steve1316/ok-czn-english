@@ -1,4 +1,4 @@
-"""Check that a run starting on the Combatants tab reads it instead of tapping its way back to it."""
+"""Check that a run starting on the Combatants tab reads it instead of tapping its way back to it, and that Sortie goes there once a run."""
 
 import sys
 import types
@@ -8,7 +8,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.en import navigation  # noqa: E402
+from src.en import navigation, rewards  # noqa: E402
+from src.en.battle import PARTY  # noqa: E402
 
 TARGET = "Arabella"
 # What the log shows on the Combatants tab, at the three points upstream reads names from.
@@ -217,6 +218,41 @@ class TestTheTallyNoticesARebase(unittest.TestCase):
         said = self.warnings(extra_boxes=1)
         self.assertEqual(1, len(said))
         self.assertIn("dropped 1 and 2", said[0])
+
+
+class TestSortieTeamTrip(unittest.TestCase):
+    """Sortie taps through to the team once a run, and the new run's roster replaces the old party."""
+
+    def tearDown(self):
+        for name in ("utils", "utils_chaos"):
+            sys.modules.pop(name, None)
+
+    def test_each_run_taps_through_once_and_reads_its_own_party(self):
+        install(ON_THE_TAB)
+        utils = sys.modules["utils"]
+        on_map = [False]
+        utils._get_current_hp_percent = lambda task: 100 if on_map[0] else False
+        utils._move_and_click = lambda task, x, y: task.clicks.append((x, y))
+        task = FakeTask()
+        task.sleep = lambda seconds: None
+        task.info_set = lambda key, value: None
+        task.node_status = {}
+
+        self.assertFalse(navigation.handle_open_team(task), "off the map there is nothing to tap")
+        on_map[0] = True
+        self.assertTrue(navigation.handle_open_team(task))
+        # A page that never opened must not be tapped for again on every frame of the run.
+        self.assertFalse(navigation.handle_open_team(task))
+
+        # Upstream rebuilds `node_status` for the next run, and the last run's party must not outlive it.
+        task.node_status = {}
+        setattr(task, PARTY, frozenset({"Yuki"}))
+        self.assertTrue(navigation.handle_open_team(task))
+        self.assertEqual(frozenset(), getattr(task, PARTY))
+        self.assertEqual([navigation.TEAM_PORTRAITS] * 2, task.clicks)
+
+        rewards.remember_team(task, utils)
+        self.assertEqual({"Arabella", "Veronica", "Mika"}, getattr(task, PARTY))
 
 
 if __name__ == "__main__":
