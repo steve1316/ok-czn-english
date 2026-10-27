@@ -126,6 +126,10 @@ class TestOrdering(unittest.TestCase):
         chosen = cards.plan(hand(JUSTICE_ATTACK, "Aggressive Assault"), cards.Board(action_points=1))
         self.assertEqual(played(chosen), ["Aggressive Assault"])
 
+    def test_a_retain_effect_is_not_counted_on_play(self):
+        # Diallos's Declaration shields only when it is kept in hand, so playing it is worth its draw alone.
+        self.assertEqual(cards.features("Diallos's Declaration"), cards.Features(damage=0, shield=0, draw=1))
+
 
 class TestSpendsEverything(unittest.TestCase):
     """A card with no fixed price takes whatever is left, so it can only ever be played last."""

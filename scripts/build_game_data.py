@@ -98,6 +98,9 @@ LIST_ENTRY = re.compile(r"[^\[\],\s]+")
 # The game's own markup, unwound in this order. A cross-reference resolves to the referenced card's name, so
 # "Create X ^card@c_30097_cre1^" ends up reading "Create X Homing Laser L".
 CARD_REFERENCE = re.compile(r"\^card@([^^]+)\^")
+# The one trigger the picker reads: an effect that fires when the card is kept in hand at the end of the turn, never when played.
+RETAIN_TRIGGER = "^TRIGGER_RETAIN^"
+RETAIN_LABEL = "Retain:"
 OTHER_REFERENCE = re.compile(r"\^[^^]+\^")
 TERM_MARKER = re.compile(r"\$([^$#]+)(?:#\d+)?\$")
 RUNTIME_VALUE = re.compile(r"#[a-zA-Z0-9_]+#")
@@ -288,6 +291,7 @@ def clean_description(text, table):
         The cleaned text, with a newline wherever the original had a line break.
     """
     text = CARD_REFERENCE.sub(lambda match: table.get("card@name@" + match.group(1), "that card"), text)
+    text = text.replace(RETAIN_TRIGGER, RETAIN_LABEL)
     text = OTHER_REFERENCE.sub("", text)
     text = text.replace("<br>", "\n")
     text = TERM_MARKER.sub(r"\1", text)

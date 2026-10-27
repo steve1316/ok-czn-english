@@ -25,8 +25,10 @@ BASE_ACTION_POINTS = 3
 # Ailment is damage waiting to happen, so neither is ever part of a plan.
 DEALT_TO_YOU = frozenset({"ABNORM", "CURSE"})
 # One of those that does its harm only while held - "If in hand, at the end of the turn", "If this card is in hand",
-# "When this card is Retained" - so playing it is how to be rid of it. Others, like Abyssal Erosion, hurt when played.
-HELD_HARM = re.compile(r"\b(?:if|when) (?:this card is )?in hand|if the turn ends when in hand|when this card is retained", re.I)
+# a "Retain:" line - so playing it is how to be rid of it.
+HELD_HARM = re.compile(r"\b(?:if|when) (?:this card is )?in hand|if the turn ends when in hand|when this card is retained|^Retain:", re.I | re.M)
+# A line the generator marks as firing when the card is kept in hand at the end of the turn, which playing it never does.
+RETAIN_LINE = re.compile(r"^Retain:.*\n?", re.M)
 # A card that only makes other cards better, so it wants to land before them.
 SETUP_CATEGORY = "POWER"
 # What a card the data has never heard of is assumed to cost. One is both the commonest price and the
@@ -253,7 +255,7 @@ def parsed(name):
     Returns:
         The `Features` the text states.
     """
-    text = DESCRIPTIONS.get(name) or ""
+    text = on_play(name)
     return Features(
         damage=sum(int(share) * int(hits or 1) for share, hits in DAMAGE.findall(text)),
         shield=sum(int(found) for found in SHIELD.findall(text)),
@@ -311,6 +313,18 @@ def description(name):
         The text, or an empty string for a card the data does not carry.
     """
     return DESCRIPTIONS.get(canonical(name)) or ""
+
+
+def on_play(name):
+    """Give the part of a card's effect text that happens when it is played.
+
+    Args:
+        name: The card name, in any spelling.
+
+    Returns:
+        The text without its "Retain:" lines.
+    """
+    return RETAIN_LINE.sub("", description(name))
 
 
 def worth_clearing(name):
@@ -431,7 +445,7 @@ def generic_phase(name):
     kind = category(name)
     if kind == SETUP_CATEGORY or features(name).draw:
         return PHASE_SETUP
-    if kind not in DEALT_TO_YOU and PRIME.search(description(name)):
+    if kind not in DEALT_TO_YOU and PRIME.search(on_play(name)):
         return PHASE_PRIME
     if kind == ATTACK_CATEGORY:
         return PHASE_ATTACK
