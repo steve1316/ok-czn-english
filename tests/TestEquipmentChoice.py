@@ -24,7 +24,7 @@ import utils as upstream  # noqa: E402
 
 from tests.fakes import FakeBox as Box  # noqa: E402
 
-from src.en.rewards import EQUIPMENT_KEYS  # noqa: E402
+from src.en.rewards import EQUIPMENT_KEYS, SORTIE_CARD_KEY, generated_list  # noqa: E402
 from src.en.screen import combatant_slot_points  # noqa: E402
 from src.en.equipment import (  # noqa: E402
     HANDOVER_X, ROW_PITCH, SLOTS, SPREE_END, SPREE_START, bare_slots, buying_on_spree, has_room_for_mythic,
@@ -648,6 +648,8 @@ class TestBuyingOnSpree(unittest.TestCase):
         task, _ = self.builder(0)
         generated = buying_on_spree(lambda task_, key, farmed="": ["Shock"], lambda: None)
         self.assertEqual(["Shock"], generated(task, "卡牌奖励优先级"))
+        # Wrapping the real builder: a parameter it gained once crashed every free card reward through this wrapper.
+        self.assertEqual([], buying_on_spree(generated_list, lambda: None)(types.SimpleNamespace(all_texts=[]), SORTIE_CARD_KEY, "", True))
         task, offered = self.builder(0, listed=())
         self.assertEqual([], offered(0))
 
