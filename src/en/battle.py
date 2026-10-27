@@ -334,9 +334,8 @@ class Turn:
         self.kept = tuple(kept)
         # Whether end turn has been pressed, by the picker or by upstream, and not called back since.
         self.ended = False
-        # Egos fired this turn, slots whose preview would not read this turn, and whether holding EP has been logged.
+        # Egos fired this turn, and whether holding EP has been logged.
         self.ego_fires = 0
-        self.ego_unread = set()
         self.ego_held = False
         # Whether an enemy shows Absolute Invincibility, from `watch_invulnerable`, so the picker holds its attacks.
         self.invulnerable = False
