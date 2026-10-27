@@ -6,6 +6,8 @@ from functools import lru_cache
 from src.en.game_battle import CARD_OWNER
 from src.en.game_text import DESCRIPTIONS
 
+# A line the generator marks as firing when the card is kept in hand at the end of the turn, captured without its prefix.
+RETAIN_LINE = re.compile(r"^Retain: (.*)$", re.M)
 # The Epiphany a card has been upgraded with, which the client writes as a suffix: "Shard:Light (Cycle)".
 EPIPHANY_SUFFIX = re.compile(r"\s*\([^)]*\)$")
 
@@ -63,6 +65,19 @@ def text(name, board):
     """
     card = base_name(name)
     return board.deck.get(card) or DESCRIPTIONS.get(card) or ""
+
+
+def retain_lines(name, board):
+    """List what the version of a card the deck holds does when kept in hand, which an Epiphany can change or drop.
+
+    Args:
+        name: A canonical card name, maybe upgraded.
+        board: The `cards.Board`, whose `deck` holds the texts the last deck read matched.
+
+    Returns:
+        Each "Retain:" line's effect, empty for a card that does nothing kept.
+    """
+    return RETAIN_LINE.findall(text(name, board))
 
 
 def owned(combatant):
