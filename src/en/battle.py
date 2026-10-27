@@ -100,6 +100,8 @@ PROMPT_HAND = (0.116, 0.697, 0.859, 0.908)
 # The hand prompt as upstream finds it: its caption, rewritten to Chinese by `ocr_text.py`, over a hand counter reading "5/10".
 PROMPT_CAPTION = (0.5, 0.111)
 PROMPT_ASKS = re.compile(r"请选择(?=.*卡牌).*?\d+张")
+# The word `ocr_text.py` keeps for the top of the Draw Pile, where the card picked comes straight back next turn.
+PROMPT_TOP = "抽牌堆顶"
 HAND_COUNTER = (0.505, 0.971)
 HAND_TOTAL = re.compile(r"\d+/10")
 # The prompt's own "0/1" under its caption. The full-screen pass never reads it, and a crop of it read 1/1 at 0.99 on both captures.
@@ -541,41 +543,49 @@ def prompt_progress(task, utils_sortie):
         utils_sortie: Upstream's Sortie module, for its `find_box_at_point`.
 
     Returns:
-        A `(chosen, need)` pair, or None when this is not the prompt or its counter will not read.
+        A `(chosen, need, to_top)` triple, `to_top` True when the cards go to the top of the Draw Pile, or None when this is
+        not the prompt or its counter will not read.
     """
     caption = utils_sortie.find_box_at_point(task, *PROMPT_CAPTION)
     total = utils_sortie.find_box_at_point(task, *HAND_COUNTER)
     if not (caption and PROMPT_ASKS.search(caption.name) and total and HAND_TOTAL.search(total.name)):
         return None
     read = PROGRESS.search("".join(box.name for box in task.ocr(*PROMPT_PROGRESS) or []))
-    return (int(read.group(1)), int(read.group(2))) if read else None
+    return (int(read.group(1)), int(read.group(2)), PROMPT_TOP in caption.name) if read else None
 
 
-def giving_up_order(name, box, kept, board_now):
+def giving_up_order(name, box, kept, board_now, to_top=False):
     """Order the hand cards a prompt could take: dealt-to-you cards first, cards a kit keeps last, the rest by what they do.
+
+    A card sent to the top of the Draw Pile is drawn again next turn, so there the order flips: the best card first, a
+    dealt-to-you card last.
 
     Args:
         name: The card's canonical name.
         box: The OCR box of its name.
         kept: The `id` of every box a kit is keeping, from `kept_boxes`.
         board_now: A `cards.Board` to rate the card against.
+        to_top: Whether the prompt sends the card to the top of the Draw Pile, from `prompt_progress`.
 
     Returns:
-        A sort key, the card best given up being smallest.
+        A sort key, the card best taken being smallest.
     """
-    return id(box) in kept, cards.category(name) not in cards.DEALT_TO_YOU, cards.rated(name, board_now)
+    dealt = cards.category(name) in cards.DEALT_TO_YOU
+    rating = cards.rated(name, board_now)
+    return (id(box) in kept, dealt, -rating) if to_top else (id(box) in kept, not dealt, rating)
 
 
-def answer_prompt(task, utils_sortie, chosen, need):
+def answer_prompt(task, utils_sortie, chosen, need, to_top=False):
     """Tap the card the hand can best spare, or confirm once the prompt's own counter says enough are chosen.
 
-    Every prompt is taken to be giving a card up - to the discard pile, the Draw Pile or Exhaust - which is what the live ones were.
+    A prompt is taken to be giving a card up - to the discard pile, the Draw Pile or Exhaust - unless it sends it to the top of the Draw Pile.
 
     Args:
         task: The running task, which the prompt's progress is parked on.
         utils_sortie: Upstream's Sortie module, for its `_move_and_click`.
         chosen: How many cards the prompt's counter reads as chosen.
         need: How many it asks for.
+        to_top: Whether the cards go to the top of the Draw Pile, which takes the best card rather than the worst.
 
     Returns:
         True when the frame was spent tapping or waiting, False once `PROMPT_TAPS` frames pass with no change, for upstream's random pick to try.
@@ -612,8 +622,8 @@ def answer_prompt(task, utils_sortie, chosen, need):
         return True
     kept = kept_boxes([box for _, box in hand])
     board_now = cards.Board(hand=tuple(name for name, _ in hand))
-    prompt.tapped, box = min(hand, key=lambda card: giving_up_order(*card, kept, board_now))
-    task.log_info(f"hand prompt reads {chosen}/{need}, giving up {prompt.tapped}")
+    prompt.tapped, box = min(hand, key=lambda card: giving_up_order(*card, kept, board_now, to_top))
+    task.log_info(f"hand prompt reads {chosen}/{need}, {'moving to the top' if to_top else 'giving up'} {prompt.tapped}")
     x, y = centre_of(box, task.width, task.height)
     utils_sortie._move_and_click(task, x, y + CARD_BODY)
     task.sleep(1)
