@@ -758,6 +758,10 @@ class TestKits(unittest.TestCase):
             # Generic play plays the better 2-cost card first, which uses the Ejection up before Aquila can take its bonus.
             ("Aquila goes first while the Ejection is in hand", ("Hew Lv. 3", "Greatsword Aquila", "Vulture Ejection"), cards.Board(),
              ["Greatsword Aquila", "Hew Lv. 3"]),
+            # A live run held both: the Ejection waited on a Hew that Nine's kit never played, and on a card the cheap attacks outbid.
+            ("the 3-cost Hew is played to fire the Ejection", ("Vulture Ejection", "Slash", "Experienced Strike", "Hew"), cards.Board(), ["Hew"]),
+            ("the card that fires the Ejection is bought over cheap attacks",
+             ("Vulture Ejection", "Mutation: Forbidden Algorithm", "Slash", "Experienced Strike"), cards.Board(), ["Mutation: Forbidden Algorithm"]),
         ))
 
     def test_nine_levels_hew_before_firing_it(self):
@@ -765,12 +769,14 @@ class TestKits(unittest.TestCase):
         self.plays((
             # Generic play spends all three points on a Hew that has grown nothing.
             ("a low Hew is held", ("Hew Lv. 1", "Fighting Spirit"), cards.Board(), ["Fighting Spirit"]),
+            # A deck with no exhaust card held its Hew all run.
+            ("a low Hew is played with nothing to grow it", ("Hew", "Slash"), cards.Board(), ["Hew"]),
             # Generic play buys Experienced Strike's 140% over a skill worth 100.
             ("Fighting Spirit is bought to level Hew", ("Experienced Strike", "Hew Lv. 1", "Fighting Spirit"),
              cards.Board(action_points=1), ["Fighting Spirit"]),
             # Pins the hold being released at the top level.
             ("a full Hew is played", ("Hew Lv. 3",), cards.Board(), ["Hew Lv. 3"]),
-            ("Extreme is not full at level 4", ("Hew (Extreme) Lv. 4", "Slash"), cards.Board(), ["Slash"]),
+            ("Extreme is not full at level 4", ("Hew (Extreme) Lv. 4", "Fighting Spirit"), cards.Board(), ["Fighting Spirit"]),
             # Generic play takes the one-point attack that would exhaust the full Hew.
             ("Fatal Strike waits while Hew is full", ("Fatal Strike", "Hew Lv. 3"), cards.Board(), ["Hew Lv. 3"]),
             ("Fighting Spirit fires a full Hew", ("Hew Lv. 3", "Fighting Spirit"), cards.Board(), ["Fighting Spirit"]),
@@ -799,17 +805,21 @@ class TestKits(unittest.TestCase):
         ))
 
     def test_orlea_keeps_cards_that_need_creatures(self):
-        """Growing Creature is better kept, Will of Light and Growth Acceleration need creatures in hand, and Softie buffs first."""
+        """Growing Creature is better kept, Swiftie and Softie grow until the hand is crowded, the creature cards wait for creatures, and Softie
+        buffs first."""
         swiftie, softie, sturdie = "Swiftie \u2605\u2605\u2605", "Softie \u2605\u2605\u2605", "Sturdie \u2605"
+        crowded = ("Slash",) * 5
         for description, cards_in_hand, expected in (
             # Generic play spends a point to make a one-star creature that waiting would have made a three-star one.
             ("Growing Creature is never played", ("Growing Creature", "Attack, My Minions"), ["Attack, My Minions"]),
-            ("Will of Light waits for a hand of creatures", ("Will of Light", swiftie, softie), [softie, swiftie]),
+            # Generic play spends every free creature on sight, where Auto ends its turns holding Swiftie and Softie.
+            ("Swiftie and Softie are kept and Sturdie played", (swiftie, softie, sturdie, "Slash"), [sturdie, "Slash"]),
+            ("Will of Light waits for a hand of creatures", ("Will of Light", swiftie, softie), []),
             # Pins the hold being released at three creatures.
-            ("Will of Light plays with three creatures", ("Will of Light", swiftie, softie, sturdie), [softie, swiftie, sturdie, "Will of Light"]),
+            ("Will of Light plays with three creatures", ("Will of Light", swiftie, softie, sturdie), [sturdie, "Will of Light"]),
             ("Growth Acceleration waits for a creature", ("Growth Acceleration", "Healing of Light"), ["Healing of Light"]),
-            # Generic play takes hand order, so the Swiftie attacks before the buff is up.
-            ("Softie goes before Swiftie", (swiftie, softie), [softie, swiftie]),
+            # Pins the hold being released by a crowded hand, and generic play takes hand order, so the Swiftie attacks before the buff is up.
+            ("Softie goes before Swiftie once the hand is crowded", (swiftie, softie, sturdie, *crowded), [softie, swiftie, sturdie, *crowded[:3]]),
         ):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), cards.Board())), expected)

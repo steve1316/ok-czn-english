@@ -18,6 +18,8 @@ EXTREME_TOP_LEVEL = 5
 FIGHTING_SPIRIT = "Fighting Spirit"
 FATAL_STRIKE = "Fatal Strike"
 EXPERIENCED_STRIKE = "Experienced Strike"
+# The cards that exhaust a Hew. Without one in hand a low Hew can only be played, or it sits there all fight.
+EXHAUSTERS = frozenset({FIGHTING_SPIRIT, FATAL_STRIKE})
 
 
 def stage(name):
@@ -54,7 +56,7 @@ class Nine(Kit):
         return bool(HEW.match(name)) or super().claims(name)
 
     def held(self, name, board):
-        """Keep Hew until it is fully grown, and keep the exhaust cards that would only waste it.
+        """Keep Hew until it is fully grown while an exhaust card can grow it, and keep the exhaust cards that would only waste it.
 
         Args:
             name: The card in question.
@@ -65,7 +67,7 @@ class Nine(Kit):
         """
         grown = stage(name)
         if grown == "low":
-            return True
+            return count(board.hand, EXHAUSTERS) > 0
         if grown == "max":
             # Fighting Spirit fires a full Hew for one point instead of two.
             return count(board.hand, {FIGHTING_SPIRIT}) > 0

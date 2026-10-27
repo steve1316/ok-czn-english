@@ -11,6 +11,10 @@ SWIFTIE = "Swiftie"
 SOFTIE = "Softie"
 STURDIE = "Sturdie"
 CREATURES = (SWIFTIE, SOFTIE, STURDIE)
+# The creatures Auto ends its turns holding, so their Retain lines grow them. Sturdie it plays.
+GROWERS = (SWIFTIE, SOFTIE)
+# Hand size at which the growers are let go, two short of the game's 10 so a draw is not lost to a full hand.
+CROWDED = 8
 GROWING_CREATURE = "Growing Creature"
 WILL_OF_LIGHT = "Will of Light"
 GROWTH_ACCELERATION = "Growth Acceleration"
@@ -31,7 +35,8 @@ def retained(names):
 
 
 class Orlea(Kit):
-    """Keeps Growing Creature for good, and Will of Light and Growth Acceleration for a hand of creatures, and buffs with Softie first."""
+    """Keeps Growing Creature for good, Swiftie and Softie until the hand is crowded, and Will of Light and Growth Acceleration for a hand of
+    creatures, and buffs with Softie first."""
 
     name = "Orlea"
     cards = owned("Orlea")
@@ -57,6 +62,8 @@ class Orlea(Kit):
         Returns:
             True to keep the card in hand.
         """
+        if name.startswith(GROWERS):
+            return max(board.hand_size, len(board.hand)) < CROWDED
         card = base_name(name)
         if card == GROWING_CREATURE:
             # Played it makes a one-star creature, and kept it becomes a three-star one at the next turn.
