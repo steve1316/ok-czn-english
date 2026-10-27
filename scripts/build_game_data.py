@@ -70,6 +70,8 @@ JUNK = re.compile(r"^(test|temp|dummy|sample|todo|battle test|#)", re.I)
 CARD_TABLES = ("*card.json", "link_skill_eff_id")
 EFFECT_TABLES = ("*skill_eff.json", "eff_value")
 RELIC_TABLES = ("*relic.json", "s1_cs_value")
+# Pairs a card's id with the id of each Epiphany version it can turn into.
+EPIPHANY_TABLES = ("*card_r_spark.json", "change_link_card_id")
 
 # A card addresses its own linked effects by position, so `#result_ev_0#` is the first linked effect's value
 # and `#result_ecv_1#` the second one's count. The prefix varies with where the text is shown and does not
@@ -650,6 +652,34 @@ def collect_descriptions(table, dump_dir):
     return described
 
 
+def collect_epiphanies(table, dump_dir, described):
+    """Give every card the effect text of each Epiphany version it can take, values filled in.
+
+    A version that only changes the base card's numbers has no text of its own, so it is left out along with any that reads as the base.
+
+    Args:
+        table: The localization table.
+        dump_dir: Path to the dump's `output` directory.
+        described: The base descriptions from `collect_descriptions`, by name.
+
+    Returns:
+        A dict of card name to its distinct Epiphany texts, in the game's own order.
+    """
+    cards = load_data_tables(dump_dir, CARD_TABLES)
+    effects = load_data_tables(dump_dir, EFFECT_TABLES)
+    epiphanies = {}
+    for spark in sorted(load_data_tables(dump_dir, EPIPHANY_TABLES).values(), key=lambda row: row["change_link_card_id"]):
+        name = table.get(cards.get(spark["link_card_id"], {}).get("name") or "")
+        version = cards.get(spark["change_link_card_id"], {})
+        raw = table.get(version.get("desc") or "")
+        if not name or not raw:
+            continue
+        text = clean_description(resolve_card_values(raw, version, effects), table)
+        if text and text != described.get(name) and text not in epiphanies.get(name, ()):
+            epiphanies[name] = epiphanies.get(name, ()) + (text,)
+    return epiphanies
+
+
 def render(groups, dump_dir):
     """Build the source of the generated module.
 
@@ -680,11 +710,12 @@ def render(groups, dump_dir):
     return "\n".join(lines)
 
 
-def render_descriptions(described, dump_dir):
+def render_descriptions(described, epiphanies, dump_dir):
     """Build the source of the generated description module.
 
     Args:
         described: A dict of entity name to cleaned description.
+        epiphanies: A dict of card name to its Epiphany texts, from `collect_epiphanies`.
         dump_dir: The dump the text came from, recorded in the header.
 
     Returns:
@@ -704,6 +735,11 @@ def render_descriptions(described, dump_dir):
         "DESCRIPTIONS = {",
     ]
     lines.extend(f"    {name!r}: {described[name]!r}," for name in sorted(described))
+    lines.append("}")
+    lines.append("")
+    lines.append("# The text of each Epiphany version a card can take, where it reads differently from the base card. Values as above.")
+    lines.append("EPIPHANIES = {")
+    lines.extend(f"    {name!r}: {epiphanies[name]!r}," for name in sorted(epiphanies))
     lines.append("}")
     lines.append("")
     return "\n".join(lines)
@@ -894,12 +930,13 @@ def main():
     table = load_table(args.dump)
     groups = [(name, collector(table, args.dump), comment) for name, comment, collector in GROUPS]
     described = collect_descriptions(table, args.dump)
+    epiphanies = collect_epiphanies(table, args.dump, described)
     quality = collect_quality(table, args.dump)
     battle = collect_battle(table, args.dump)
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUT_PATH.write_text(render(groups, args.dump), encoding="utf-8")
-    OUT_TEXT_PATH.write_text(render_descriptions(described, args.dump), encoding="utf-8")
+    OUT_TEXT_PATH.write_text(render_descriptions(described, epiphanies, args.dump), encoding="utf-8")
     OUT_QUALITY_PATH.write_text(render_quality(quality), encoding="utf-8")
     OUT_BATTLE_PATH.write_text(render_battle(battle), encoding="utf-8")
 
@@ -910,7 +947,7 @@ def main():
         print(f"  {name:12} {len(values):5d}   {with_text:5d} described")
     print(f"wrote {OUT_PATH.relative_to(REPO_ROOT)}")
     print(f"wrote {OUT_TEXT_PATH.relative_to(REPO_ROOT)} with {len(described)} descriptions, "
-          f"{unresolved} of them still holding an unresolved value")
+          f"{unresolved} of them still holding an unresolved value, and {sum(map(len, epiphanies.values()))} Epiphany texts")
     print(f"wrote {OUT_QUALITY_PATH.relative_to(REPO_ROOT)} with "
           + ", ".join(f"{len(values)} {name.lower()}" for name, values in quality.items()))
     print(f"wrote {OUT_BATTLE_PATH.relative_to(REPO_ROOT)} with "

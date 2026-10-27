@@ -397,6 +397,13 @@ class TestRebuiltCardList(unittest.TestCase):
         card_layout.addWidget(card)
         self.assertTrue(card.isVisible(), "the rebuilt card is hidden, so the tab draws nothing")
 
+    def test_the_auto_analysis_switch_still_finds_the_card_list(self):
+        # Renamed, the switch silently never shows and recording can never be turned on.
+        tab = import_ui("tasks.OneTimeTaskTab", "OneTimeTaskTab")
+        for name in ("refresh_ui", "add_task_card", "remove_task_card"):
+            with self.subTest(name):
+                self.assertTrue(callable(getattr(tab, name, None)))
+
     def test_a_card_added_before_the_list_is_up_still_waits_for_it(self):
         """Startup adds its cards to a hidden tab, and Qt's own show cascade is what draws those."""
         from PySide6.QtWidgets import QWidget
