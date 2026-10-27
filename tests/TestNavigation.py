@@ -3,6 +3,7 @@
 import sys
 import types
 import unittest
+from unittest import mock
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -244,35 +245,40 @@ class TestSortieTeamTrip(unittest.TestCase):
         install(ON_THE_TAB)
         utils = sys.modules["utils"]
         on_map = [False]
+        utils._get_current_hp_percent = lambda task: 100 if on_map[0] else False
         utils._move_and_click = lambda task, x, y: task.clicks.append((x, y))
         task = FakeTask()
-        task.find_feature = lambda feature_name, box: [box] if on_map[0] and feature_name == "position" else []
-        task.box_of_screen = lambda *box: box
         task.sleep = lambda seconds: None
         task.info_set = lambda key, value: None
         task.node_status = {}
+        clock = [0.0]
 
-        # The rest screen shows the portraits too, but a pending dialog there swallowed the tap and the run never read its team.
-        self.assertFalse(navigation.handle_open_team(task), "off the map the tap is not trusted")
-        self.assertNotIn(navigation.TEAM_TAPPED, task.node_status, "a frame off the map must not use up a try")
-        on_map[0] = True
-        # A page that never opened is tapped for again, but not on every frame of the run.
-        for _ in range(navigation.TEAM_TRIES):
+        with mock.patch.object(navigation.time, "monotonic", lambda: clock[0]):
+            self.assertFalse(navigation.handle_open_team(task), "off the map there is nothing to tap")
+            on_map[0] = True
             self.assertTrue(navigation.handle_open_team(task))
-        self.assertFalse(navigation.handle_open_team(task))
-        self.assertEqual([navigation.TEAM_PORTRAITS] * navigation.TEAM_TRIES, task.clicks)
-        task.clicks.clear()
+            # A pending dialog swallowed the tap, and its own handler needs the next frames to clear it.
+            self.assertFalse(navigation.handle_open_team(task))
+            # Once it has, the team is tapped for again, but not past `TEAM_TRIES`.
+            for _ in range(navigation.TEAM_TRIES - 1):
+                clock[0] += navigation.TEAM_RETRY_SECONDS
+                self.assertTrue(navigation.handle_open_team(task))
+            clock[0] += navigation.TEAM_RETRY_SECONDS
+            self.assertFalse(navigation.handle_open_team(task))
+            self.assertEqual([navigation.TEAM_PORTRAITS] * navigation.TEAM_TRIES, task.clicks)
+            task.clicks.clear()
 
-        # Upstream rebuilds `node_status` for the next run, and the last run's party must not outlive it.
-        task.node_status = {}
-        setattr(task, PARTY, frozenset({"Yuki"}))
-        self.assertTrue(navigation.handle_open_team(task))
-        self.assertEqual(frozenset(), getattr(task, PARTY))
-        self.assertEqual([navigation.TEAM_PORTRAITS], task.clicks)
+            # Upstream rebuilds `node_status` for the next run, and the last run's party must not outlive it.
+            task.node_status = {}
+            setattr(task, PARTY, frozenset({"Yuki"}))
+            self.assertTrue(navigation.handle_open_team(task))
+            self.assertEqual(frozenset(), getattr(task, PARTY))
+            self.assertEqual([navigation.TEAM_PORTRAITS], task.clicks)
 
-        rewards.remember_team(task, utils)
-        self.assertEqual({"Arabella", "Veronica", "Mika"}, getattr(task, PARTY))
-        self.assertFalse(navigation.handle_open_team(task), "a team read stops the retries")
+            rewards.remember_team(task, utils)
+            self.assertEqual({"Arabella", "Veronica", "Mika"}, getattr(task, PARTY))
+            clock[0] += navigation.TEAM_RETRY_SECONDS
+            self.assertFalse(navigation.handle_open_team(task), "a team read stops the retries")
 
 
 if __name__ == "__main__":
