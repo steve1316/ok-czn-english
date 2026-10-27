@@ -474,6 +474,16 @@ class TestInstalling(unittest.TestCase):
             utils_sortie._try_all_card_keys(task, 2)
             self.assertEqual(getattr(task, battle.TURN).last_turn, (ATTACK,))
 
+    def test_the_next_turn_knows_what_was_kept(self):
+        # The Attack was pressed after the last read, so only the Curse was still in hand when the turn ended.
+        with upstream(hand(ATTACK, CURSE)) as (utils_sortie, task):
+            battle.install()
+            utils_sortie._try_all_card_keys(task, 2)
+            battle.end_of_turn(task)
+            task.hand_cards = hand(CURSE, ATTACK, BIG_ATTACK)
+            utils_sortie._try_all_card_keys(task, 3)
+            self.assertEqual(getattr(task, battle.TURN).kept, (CURSE,))
+
     def test_every_copy_of_a_card_gets_played(self):
         # Caught live: a hand of three Escapism played one, read the other two as the game refusing it, and
         # ended the turn with both still sitting there and still playable.

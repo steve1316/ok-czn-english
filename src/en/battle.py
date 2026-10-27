@@ -259,12 +259,13 @@ class Turn:
     a frame or two - so it is read once and kept, and a turn that never manages to read one keeps trying.
     """
 
-    def __init__(self, hand_count, last_turn=()):
+    def __init__(self, hand_count, last_turn=(), kept=()):
         """Start a turn that has learnt nothing yet.
 
         Args:
             hand_count: The hand size this turn opened with.
             last_turn: The cards the turn before played, oldest first.
+            kept: The cards the turn before ended holding.
         """
         self.hand_count = hand_count
         self.attempted = None
@@ -286,6 +287,9 @@ class Turn:
         # Cards the game took this turn, oldest first, and those the turn before took, for kits that count plays.
         self.played = []
         self.last_turn = tuple(last_turn)
+        # The hand last read this turn, less a card pressed after it, and the one the turn before ended with.
+        self.hand = []
+        self.kept = tuple(kept)
         # Whether end turn has been pressed, by the picker or by upstream, and not called back since.
         self.ended = False
 
@@ -535,7 +539,7 @@ def turn_of(task, hand_count):
     """
     turn = getattr(task, TURN, None)
     if turn is None or new_turn(turn.hand_count, hand_count, turn.ended):
-        turn = Turn(hand_count, turn.played if turn else ())
+        turn = Turn(hand_count, turn.played if turn else (), turn.hand if turn else ())
         setattr(task, TURN, turn)
     turn.hand_count = hand_count
     return turn
@@ -552,6 +556,8 @@ def end_of_turn(task):
         return
     if turn.attempted is not None:
         turn.played.append(turn.attempted)
+        if turn.attempted in turn.hand:
+            turn.hand.remove(turn.attempted)
         turn.attempted = None
     turn.ended = True
 
@@ -665,6 +671,7 @@ def install():
         hand = kits.reading([{**card, "name": cards.canonical(card["name"])} for card in utils_sortie._hand_cards(task) or []], count)
         names = [card["name"] for card in hand]
         turn = turn_of(task, count)
+        turn.hand = list(names)
 
         if turn.attempted is not None and not was_refused(turn.attempted, turn.attempted_copies, names):
             # Settled once, so a frame that returns before picking again cannot count the same play twice.
@@ -688,7 +695,7 @@ def install():
             budget = "Action Points to spend" if points else "no Action Points"
             task.log_info(f"turn opens with {budget}, {against}, hand {names}")
         state = cards.Board(action_points=points, weakness=turn.weakness, hand=tuple(names), played=tuple(turn.played),
-                            last_turn=turn.last_turn, hand_size=count or 0)
+                            last_turn=turn.last_turn, hand_size=count or 0, kept=turn.kept)
         card = choose(hand, state, turn.refused)
         if card is None and turn.objected:
             # The game said a card is still playable, so the best of those passed over for cost is tried as if affordable.

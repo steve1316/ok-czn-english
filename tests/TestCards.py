@@ -615,7 +615,7 @@ class TestKits(unittest.TestCase):
         ))
 
     def test_beryl_lets_charged_shot_grow_in_hand(self):
-        """Charged Shot only takes points nothing else wants, and Heavy Weapons Specialist creates its card before the attacks."""
+        """Charged Shot only takes points nothing else wants, a kept Opening Found takes the points, and the Specialist goes before the attacks."""
         self.plays((
             # Generic play spends two points on the 270% Charged Shot at once, leaving one for a single attack.
             ("cheaper attacks take the points", ("Charged Shot", "Launcher", "Opening Found"), cards.Board(), ["Opening Found", "Launcher"]),
@@ -624,6 +624,9 @@ class TestKits(unittest.TestCase):
             # Generic play files the Specialist with the late skills, after the attack.
             ("the Specialist goes before the attacks", ("Launcher", "Heavy Weapons Specialist"), cards.Board(action_points=2),
              ["Heavy Weapons Specialist", "Launcher"]),
+            # Generic play buys the 210% Armor-Piercing Rounds over a 160% Opening Found that has an extra hit for this turn.
+            ("a kept Opening Found takes the point", ("Armor-Piercing Rounds", "Opening Found"),
+             cards.Board(action_points=1, kept=("Opening Found",)), ["Opening Found"]),
         ))
 
     def test_cassius_keeps_to_his_deck_cards(self):
