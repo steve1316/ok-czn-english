@@ -256,7 +256,7 @@ class TestReadingNames(unittest.TestCase):
 
     def test_a_reading_resolves_to_the_card_it_can_only_be(self):
         """Every reading here is one the OCR pass actually produced, repaired only where it is unambiguous."""
-        for description, reading, expected in (
+        for description, reading, expected, *party in (
             ("case and spacing do not matter", "  anchor ", JUSTICE_ATTACK),
             # The hotkey is printed just above the card, close enough that the reader sometimes returns the
             # two as one box. A real Sortie hand came back with "1=Soul Riff" beside four cleanly read names.
@@ -277,9 +277,12 @@ class TestReadingNames(unittest.TestCase):
             ("the letter the reader cut at may be wrong", "Barrier Der", "Barrier Deployment"),
             ("a name cut at the front is repaired", "lusion of Golden Daffodils", "Illusion of Golden Daffodils"),
             ("a label misread finds no card inside it", "XAttacl", "XAttacl"),
+            # Live, in a crowded Rossweisse hand. It fits her Sword Slash and Yuki's Longsword Slash, and only one of them was in the party.
+            ("the party settles a stub two combatants' cards fit", "ord Slas", "Sword Slash", "Rossweisse"),
+            ("a party that owns neither fit leaves it alone", "ord Slas", "ord Slas", "Haru"),
         ):
             with self.subTest(description):
-                self.assertEqual(cards.canonical(reading), expected)
+                self.assertEqual(cards.canonical(reading, frozenset(party)), expected)
 
     def test_a_card_the_data_never_heard_of_is_still_played(self):
         chosen = cards.plan(hand("Some Card From A Later Patch"), cards.Board())

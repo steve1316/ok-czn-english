@@ -27,6 +27,9 @@ TURN = "_en_turn"
 # `all_texts` list every frame, so identity tells frames apart, and a matching list can only ever produce a
 # matching hand. Upstream reads the hand twice a frame already; this makes all of those one reading.
 HAND_CACHE = "_en_hand_for"
+# The combatants whose cards have been read in hand, parked on the task. Never cleared, since a member from an earlier run only
+# widens what a name cut short may be, which is how every name was read before.
+PARTY = "_en_party"
 
 # Upstream's own timings for playing a card, kept so the two paths feel the same to the game.
 AFTER_KEY = 1
@@ -510,6 +513,21 @@ def kit_waiting(task, utils_sortie, count):
     return True
 
 
+def met(task, read):
+    """Add the owner of every card read in hand to the party parked on the task.
+
+    Args:
+        task: The running task, which the party is parked on.
+        read: The hand cards upstream read this frame, with their names as OCR spelled them.
+
+    Returns:
+        Every combatant whose card has been read so far, as a frozenset so `cards.canonical` can cache on it.
+    """
+    party = getattr(task, PARTY, frozenset()) | {cards.owner(cards.canonical(card["name"])) for card in read} - {None}
+    setattr(task, PARTY, party)
+    return party
+
+
 def turn_of(task, hand_count):
     """Bring the per-turn bookkeeping up to date and hand it back.
 
@@ -615,7 +633,9 @@ def install():
 
         # Canonical, because OCR spells a name differently from frame to frame and a refusal has to match the
         # card it was about across them.
-        hand = kits.reading([{**card, "name": cards.canonical(card["name"])} for card in utils_sortie._hand_cards(task) or []], count)
+        read = utils_sortie._hand_cards(task) or []
+        party = met(task, read)
+        hand = kits.reading([{**card, "name": cards.canonical(card["name"], party)} for card in read], count)
         names = [card["name"] for card in hand]
         turn = turn_of(task, count)
 

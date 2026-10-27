@@ -143,15 +143,30 @@ def looks_like_label(folded):
     return False
 
 
-def stub_card(stub):
+def owner(name):
+    """Name the combatant a card belongs to.
+
+    Args:
+        name: A card name the data knows, in any Epiphany.
+
+    Returns:
+        The combatant, or None for a card no combatant owns.
+    """
+    return CARD_OWNER.get(base_name(name))
+
+
+def stub_card(stub, party=frozenset()):
     """Find the one card a name cut short can be.
 
     The reader cuts from either end - "Knife Tos" and "rrier Der" are both real readings - so a stub is tried as the start
     of a name and then as a piece of one. Two cards that fit means the reading cannot say which, and a shorter stub only fits more.
     A reading that looks like a label only gets the first try, so "Quant" is still Quantum Seed but "XAttacl" finds no card.
+    Since we know who is in the party, a fit owned by any other combatant cannot be in hand, which narrows the lookup to the cards
+    this party can hold - "ord Slas" fits Rossweisse's Sword Slash and Yuki's Longsword Slash, and only one of them is in a party.
 
     Args:
         stub: A folded reading the index has no spelling for.
+        party: The combatants known to be in the party. Empty when none are known yet, which leaves every card in play.
 
     Returns:
         The card, or None when nothing or more than one card fits. A card and its Epiphanies count as one card, the plainest of them.
@@ -163,17 +178,21 @@ def stub_card(stub):
             return None
         # Over the exact spellings only: the fallback spellings in the index rearrange or rewrite letters, so a piece of one means nothing.
         matches = [real for folded, real in CARD_INDEX.exact.items() if fits(folded, piece)]
+        # Kept whole when no fit is the party's, so a member whose cards have not been read yet still gets the old answer.
+        if party:
+            matches = [real for real in matches if owner(real) in (None, *party)] or matches
         if matches:
             return min(matches, key=len) if len({base_name(real) for real in matches}) == 1 else None
     return None
 
 
 @lru_cache(maxsize=CACHED_READINGS)
-def canonical(name):
+def canonical(name, party=frozenset()):
     """Turn a name as read off the screen into the one the data is keyed by.
 
     Args:
         name: The card name the reader produced.
+        party: The combatants known to be in the party, which settles a name cut short that fits cards of several combatants.
 
     Returns:
         The client's spelling, or the name unchanged when nothing matches it.
@@ -189,7 +208,7 @@ def canonical(name):
     # The reader also cuts a name short while the hand animates, so "Knife Tos" arrives for "Knife Toss".
     # Only an unambiguous stub is repaired: two cards start "Attac", and guessing between them would be
     # worse than leaving the reading alone for the label test to deal with.
-    known = stub_card(stub)
+    known = stub_card(stub, party)
     if known:
         return known
     archetype = ARCHETYPE_READ.search(stub)
@@ -290,7 +309,7 @@ def attribute_of(name):
     Returns:
         The attribute name, or None when the card has no known owner.
     """
-    return COMBATANT_ATTRIBUTE.get(CARD_OWNER.get(canonical(name)))
+    return COMBATANT_ATTRIBUTE.get(owner(canonical(name)))
 
 
 def category(name):
