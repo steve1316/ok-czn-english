@@ -29,9 +29,9 @@ QUIT = ("end the event",)
 ATTACK = ("initiate battle",)
 # An option leading into a follow-up event, named in brackets: "Event Encounter: [Interpretation of the Ending]".
 ENCOUNTER = ("event encounter",)
-# An option that only reads out lore. This phrasing was captured from a run rather than read out of the
-# client's tables, so it is one known wording and not the whole set.
-DIALOGUE = ("check information on",)
+# An option that only reads out lore, worded "Check Information [Their Intentions]" or "Check information on Types of
+# Pheromones". Captured from runs rather than read out of the client's tables, so two known wordings and not the whole set.
+DIALOGUE = ("check information",)
 # An event handing out a Desire card says so. The faction is named separately, and both have to be present:
 # "Claim" and "Control" are ordinary English words that turn up in options having nothing to do with Desire.
 DESIRE = ("desire",)
