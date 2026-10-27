@@ -7,7 +7,7 @@ its place in the table and what it says before it has been read.
 
 from ok import Logger
 
-from src.en import quality
+from src.en import cards, quality
 from src.en.battle import PARTY
 from src.en.dashboard import COMBATANTS, UNREAD
 from src.en.handlers import insert_before, loaded, register, replace
@@ -92,6 +92,24 @@ def team_of(task):
     return getattr(task, TEAM, set())
 
 
+def party_cards(names, party):
+    """Pick out the cards on screen that belong to someone on the team.
+
+    Args:
+        names: Candidate names as read off the screen.
+        party: Names of the combatants on the team, from `battle.PARTY`.
+
+    Returns:
+        The canonical names, in screen order, each appearing once.
+    """
+    found = []
+    for name in names:
+        card = quality.CARD_INDEX.look_up(name)
+        if card and cards.owner(card) in party and card not in found:
+            found.append(card)
+    return found
+
+
 def stacked(upper, lower):
     """Say whether two boxes are consecutive lines of one wrapped caption.
 
@@ -145,15 +163,19 @@ def generated_list(task, key, farmed=""):
         The names worth taking, best first, or None when this key is not one we fill in.
     """
     slot = EQUIPMENT_KEYS.get(key)
-    cards = key in (CARD_KEY, SORTIE_CARD_KEY)
-    if slot is None and not cards:
+    card_list = key in (CARD_KEY, SORTIE_CARD_KEY)
+    if slot is None and not card_list:
         return None
     # Only what is on screen. Offering every Legend and Unique name would give upstream's plain-containment
     # matcher 625 chances to pair a short name with a longer one and buy the wrong thing.
     names = on_screen(task)
     classes = team_of(task)
-    if cards:
-        return quality.worth_taking(names, classes)
+    if card_list:
+        taken = quality.worth_taking(names, classes)
+        if key == SORTIE_CARD_KEY:
+            # Sortie's reward is free, so a team member's own card is worth having at any grade.
+            taken += [card for card in party_cards(names, getattr(task, PARTY, frozenset())) if card not in taken]
+        return taken
     # Ordered by who is going to wear it. Rarity still decides, so this only separates pieces that were
     # otherwise going to be picked between on their names.
     return [name for name in quality.worth_taking(names, classes, cards=False, suited_to=farmed)

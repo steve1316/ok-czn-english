@@ -183,6 +183,14 @@ class TestRewardQuality(unittest.TestCase):
         reader = rewards.filling_in(lambda task, key, default: [], "utils")
         self.assertEqual([], reader(FakeTask(["Shock", "Multishot"], {"vanguard"}), rewards.CARD_KEY, []))
 
+    def test_a_free_reward_takes_the_teams_own_card(self):
+        """A run skipping every Common and Rare reward leaves the team's lineup too weak, and the shop must not start buying them."""
+        offered = ["Harmonization: Hidden Bullet", "Harmonization: Moon of Destruction", "Opening Found"]
+        task = FakeTask(offered, {"ranger"})
+        setattr(task, rewards.PARTY, frozenset({"Hugo", "Beryl"}))
+        self.assertEqual(["Opening Found"], rewards.generated_list(task, rewards.SORTIE_CARD_KEY))
+        self.assertEqual([], rewards.generated_list(task, rewards.CARD_KEY))
+
 
 if __name__ == "__main__":
     unittest.main()
