@@ -5,6 +5,7 @@ both the badge-to-card pairing and the spend condition are pinned here. Position
 """
 
 import sys
+import types
 import unittest
 from functools import partial
 from pathlib import Path
@@ -14,7 +15,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from tests.fakes import FakeBox as Box  # noqa: E402
 
-from src.en.draft import ROLES, badges, choose, rank, rerollable, role_for, role_of, wanted  # noqa: E402
+from src.en.draft import DRAFTED, ROLES, badges, choose, confirming_our_pick, rank, rerollable, role_for, role_of, wanted  # noqa: E402
 from src.en.game_quality import COMBATANT_ROLE  # noqa: E402
 
 WIDTH, HEIGHT = 1920, 1080
@@ -116,6 +117,25 @@ class TestDraft(unittest.TestCase):
             with self.subTest(party=party, offers=offers, can_reroll=can_reroll):
                 pick = choose([COMBATANT_ROLE[name] for name in offers], wanted(party), can_reroll)
                 self.assertEqual(expected, None if pick is None else offers[pick])
+
+    def test_confirm_waits_for_the_draft_to_pick(self):
+        """A card still highlighted from before a restart was confirmed without the draft ever seeing the screen."""
+        prompt = [types.SimpleNamespace(name="请选择加入的主战员")]
+        utils = types.SimpleNamespace(find_box_at_point=lambda task, x, y: prompt[0], _get_game_text=lambda task, text: text,
+                                      _get_card_list=lambda task, key: [])
+        utils_sortie = types.SimpleNamespace(_read_member_slots=lambda task: [slot(name, x) for name, x in CARDS])
+        confirmed = []
+        handle_confirm = confirming_our_pick(lambda task: confirmed.append(True) or True, utils, utils_sortie)
+        task = types.SimpleNamespace(node_status={})
+
+        self.assertFalse(handle_confirm(task))
+        task.node_status[DRAFTED] = "Magna"
+        self.assertTrue(handle_confirm(task))
+        # Off the draft screen, Confirm is upstream's as before.
+        prompt[0] = None
+        task.node_status = {}
+        self.assertTrue(handle_confirm(task))
+        self.assertEqual(2, len(confirmed))
 
     def test_every_role_in_the_data_is_one_the_draft_ranks(self):
         """A patch renaming a role would rank that whole role below an unread badge."""

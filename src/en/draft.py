@@ -9,7 +9,7 @@ from ok import Logger
 from src.en import quality
 from src.en.battle import PARTY
 from src.en.game_quality import COMBATANT_ROLE
-from src.en.handlers import insert_before, loaded, register
+from src.en.handlers import insert_before, loaded, register, wrap
 
 logger = Logger.get_logger(__name__)
 
@@ -28,6 +28,8 @@ CARD_REGION = (0.077, 0.100, 0.946, 0.871)
 SAME_CARD = 0.12
 # The reroll counter reads "1/1" while a slot still has its reroll, and "0/1" once it is spent.
 SPENT_REROLL = "0/"
+# Who the draft took on this screen, in `node_status`, which upstream rebuilds when a run or a layer starts.
+DRAFTED = "_en_drafted"
 
 _patched = False
 
@@ -155,6 +157,50 @@ def rerollable(task, slot):
     return True
 
 
+def offers(task, utils, utils_sortie):
+    """Read what a Sortie draft offers, when the pick is ours to make.
+
+    Args:
+        task: The running task.
+        utils: The loaded `utils` module.
+        utils_sortie: The loaded `utils_sortie` module, which reads the slots.
+
+    Returns:
+        `(name, slot)` pairs, the name in the client's own spelling where the reader could place it. Empty off the
+        draft screen, and when a configured priority makes the pick upstream's to honour.
+    """
+    prompt = utils.find_box_at_point(task, 0.500, 0.931)
+    if not (prompt and utils._get_game_text(task, "主战员") in prompt.name):
+        return []
+    if utils._get_card_list(task, "主战员优先级"):
+        return []
+    slots = [slot for slot in utils_sortie._read_member_slots(task) if slot.get("name")]
+    return [(quality.COMBATANT_INDEX.look_up(slot["name"]) or slot["name"], slot) for slot in slots]
+
+
+def confirming_our_pick(confirm, utils, utils_sortie):
+    """Hold upstream's Confirm on a draft screen until the draft has picked one of its offers.
+
+    Upstream's Confirm runs ahead of the draft, so a card still highlighted from before a restart was confirmed
+    without the draft ever seeing it.
+
+    Args:
+        confirm: Upstream's `handle_confirm`.
+        utils: The loaded `utils` module.
+        utils_sortie: The loaded `utils_sortie` module.
+
+    Returns:
+        The wrapped handler.
+    """
+    def handle_confirm(task):
+        offered = offers(task, utils, utils_sortie)
+        if offered and task.node_status.get(DRAFTED) not in [name for name, _ in offered]:
+            return False
+        return confirm(task)
+
+    return handle_confirm
+
+
 def apply():
     """Rank the candidates at a Sortie draft, ahead of upstream's own handler."""
     global _patched
@@ -168,23 +214,16 @@ def apply():
             return
 
         def handle_member_draft(task):
-            prompt = utils.find_box_at_point(task, 0.500, 0.931)
-            if not (prompt and utils._get_game_text(task, "主战员") in prompt.name):
+            offered = offers(task, utils, utils_sortie)
+            if not offered:
                 return False
-            if utils._get_card_list(task, "主战员优先级"):
-                # A configured priority is upstream's to honour, so stand aside entirely.
-                return False
-
-            slots = [slot for slot in utils_sortie._read_member_slots(task) if slot.get("name")]
-            if not slots:
-                return False
+            names, slots = zip(*offered)
             found = badges(task)
-            names = [quality.COMBATANT_INDEX.look_up(slot["name"]) for slot in slots]
             # The data knows every combatant's role, and the badge covers a name the reader could not place.
-            roles = [COMBATANT_ROLE.get(name) or role_for(slot, found) for name, slot in zip(names, slots)]
+            roles = [COMBATANT_ROLE.get(name) or role_for(slot, found) for name, slot in offered]
             party = getattr(task, PARTY, frozenset())
             wants = wanted(party)
-            labels = [f"{name or slot['name']} ({role or 'role unread'})" for name, slot, role in zip(names, slots, roles)]
+            labels = [f"{name} ({role or 'role unread'})" for name, role in zip(names, roles)]
             task.log_info(f"draft offers {', '.join(labels)} to team {sorted(party)}, wanting {'/'.join(wants) or 'nothing'}")
 
             spendable = [slot for slot in slots if rerollable(task, slot)]
@@ -199,10 +238,11 @@ def apply():
             task.log_info(f"draft taking {labels[pick]}")
             utils._move_and_click(task, slots[pick]["x"], slots[pick]["y"])
             task.sleep(1)
-            if names[pick]:
-                setattr(task, PARTY, party | {names[pick]})
+            task.node_status[DRAFTED] = names[pick]
+            setattr(task, PARTY, party | {names[pick]})
             return True
 
+        wrap(utils, "handle_confirm", lambda confirm: confirming_our_pick(confirm, utils, utils_sortie), "confirms a draft only once it has picked")
         insert_before("handle_member_selection", handle_member_draft)
 
     register(install)
