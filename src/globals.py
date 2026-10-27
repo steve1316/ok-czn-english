@@ -37,6 +37,7 @@ class Globals(QObject):
         # These edit the mode handler lists, so they must run after the task modules are importable.
         navigation.apply()
         piles.apply()
+        # Ahead of pins, so the pinned-card wrappers sit outside this one and every page it ranks is already narrowed to the pinned cards.
         epiphany.apply()
         events.apply()
         enter.apply()
