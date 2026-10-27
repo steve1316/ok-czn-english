@@ -637,8 +637,9 @@ def buying_on_spree(generate, utils_of):
     Returns:
         The wrapped builder.
     """
-    def generated(task, key, farmed=""):
-        listed = generate(task, key, farmed)
+    # The rest goes straight through, so a parameter `rewards` adds cannot break this wrapper.
+    def generated(task, key, *args):
+        listed = generate(task, key, *args)
         slot = EQUIPMENT_KEYS.get(key)
         # Read after the list, so a slot nothing is offered for costs no reading at all.
         if slot is None or not listed:
