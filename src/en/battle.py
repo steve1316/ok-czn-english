@@ -107,7 +107,8 @@ PROMPT_PROGRESS = (0.40, 0.14, 0.60, 0.20)
 PROGRESS = re.compile(r"(\d+)\s*/\s*(\d+)")
 # How far below a card's name to tap it, onto its art. Upstream tapped a type label's fragment and the prompt stayed at 0/1.
 CARD_BODY = 0.07
-# Taps a prompt gets without its counter moving before upstream's random pick takes over.
+# Frames a prompt gets without its counter moving before upstream's random pick takes over. A frame with no card read counts,
+# since the prompt can open before the hand's names do.
 PROMPT_TAPS = 3
 PROMPT_CONFIRM = (0.934, 0.883)
 # Parked on the task while a hand prompt is being answered, as a `Prompt`.
@@ -134,7 +135,7 @@ class Prompt:
     def __init__(self):
         # How many cards the prompt's counter read as chosen last frame.
         self.chosen = 0
-        # Taps made since that count last moved.
+        # Frames spent since that count last moved, tapping or waiting for the hand to read.
         self.taps = 0
         # Canonical names of the cards the counter has confirmed taken, so a prompt asking for two does not tap the first again.
         self.picked = []
@@ -560,7 +561,7 @@ def answer_prompt(task, utils_sortie, chosen, need):
         need: How many it asks for.
 
     Returns:
-        True when the frame was spent tapping, False when no card reads or taps keep missing, for upstream's random pick to try.
+        True when the frame was spent tapping or waiting, False once `PROMPT_TAPS` frames pass with no change, for upstream's random pick to try.
     """
     prompt = getattr(task, PROMPT, None)
     if prompt is None:
@@ -582,14 +583,19 @@ def answer_prompt(task, utils_sortie, chosen, need):
         taken = next((card for card in hand if card[0] == picked), None)
         if taken is not None:
             hand.remove(taken)
-    if not hand or prompt.taps >= PROMPT_TAPS:
-        task.log_info(f"hand prompt reads {chosen}/{need} after {prompt.taps} taps, leaving it to upstream's random pick")
+    if prompt.taps >= PROMPT_TAPS:
+        task.log_info(f"hand prompt reads {chosen}/{need} after {prompt.taps} tries, leaving it to upstream's random pick")
         setattr(task, PROMPT, None)
         return False
+    prompt.taps += 1
+    if not hand:
+        prompt.tapped = None
+        task.log_info(f"hand prompt reads {chosen}/{need} but no card in hand reads yet, waiting")
+        task.sleep(1)
+        return True
     kept = kept_boxes([box for _, box in hand])
     board_now = cards.Board(hand=tuple(name for name, _ in hand))
     prompt.tapped, box = min(hand, key=lambda card: giving_up_order(*card, kept, board_now))
-    prompt.taps += 1
     task.log_info(f"hand prompt reads {chosen}/{need}, giving up {prompt.tapped}")
     x, y = centre_of(box, task.width, task.height)
     utils_sortie._move_and_click(task, x, y + CARD_BODY)

@@ -733,19 +733,20 @@ class TestHandPrompt(unittest.TestCase):
     SCREEN = (FakeBox("请选择1张要移动至抽牌堆的卡牌", 0.5, 0.111, width=600), FakeBox("05/10", 0.505, 0.971), FakeBox("Launcher", 0.273, 0.721),
               FakeBox("Basi", 0.27, 0.80), FakeBox("Opening Found", 0.349, 0.765), FakeBox("Hunting Instincts", 0.603, 0.757), FakeBox(CURSE, 0.73, 0.776))
 
-    def frames(self, *counters):
+    def frames(self, *counters, screens=()):
         """Answer the prompt once per counter reading.
 
         Args:
             counters: What a cropped read of the prompt's counter gives each frame, empty for nothing read.
+            screens: What the full-screen pass reads on the first frames, `SCREEN` for every frame after them.
 
         Returns:
             The task, with every tap it made.
         """
         with upstream(hand(ATTACK)) as (utils_sortie, task):
             battle.install()
-            for counter in counters:
-                task.all_texts = list(self.SCREEN)
+            for index, counter in enumerate(counters):
+                task.all_texts = list(screens[index] if index < len(screens) else self.SCREEN)
                 task.progress = [FakeBox(counter, 0.5, 0.17)] if counter else []
                 handlers_of(utils_sortie)["handle_battle_hand_select"](task)
         return task
@@ -753,6 +754,12 @@ class TestHandPrompt(unittest.TestCase):
     def test_it_gives_up_the_curse_and_confirms_only_once_the_counter_moves(self):
         task = self.frames("0/1", "1/1")
         self.assertEqual([(0.73, round(0.776 + battle.CARD_BODY, 3)), battle.PROMPT_CONFIRM], task.taps)
+        self.assertEqual([], task.clicked, "upstream's random pick never ran")
+
+    def test_a_hand_not_read_yet_is_waited_for(self):
+        # Live, the prompt opened on a frame with no card name read, and upstream's random pick gave up an Impulse over the curse.
+        task = self.frames("0/1", "0/1", screens=(self.SCREEN[:2],))
+        self.assertEqual([(0.73, round(0.776 + battle.CARD_BODY, 3))], task.taps)
         self.assertEqual([], task.clicked, "upstream's random pick never ran")
 
     def test_upstream_takes_over_from_a_counter_that_never_moves_or_never_reads(self):
