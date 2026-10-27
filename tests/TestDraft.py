@@ -1,4 +1,4 @@
-"""Check which combatant the bot drafts, and when it spends a reroll.
+"""Check which combatant the bot drafts for the team it has, and when it spends a reroll.
 
 A reroll cannot be taken back, and a badge matched to the wrong card would rank every candidate wrongly, so
 both the badge-to-card pairing and the spend condition are pinned here. Positions are the draft screen's.
@@ -14,7 +14,8 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from tests.fakes import FakeBox as Box  # noqa: E402
 
-from src.en.draft import GOOD_ENOUGH, ROLES, badges, rank, rerollable, role_for, role_of  # noqa: E402
+from src.en.draft import ROLES, badges, choose, rank, rerollable, role_for, role_of, wanted  # noqa: E402
+from src.en.game_quality import COMBATANT_ROLE  # noqa: E402
 
 WIDTH, HEIGHT = 1920, 1080
 # Where the three cards sit, measured off the screen the run captured.
@@ -89,12 +90,6 @@ class TestDraft(unittest.TestCase):
         paired = {name: role_for(slot(name, x), found) for name, x in CARDS}
         self.assertEqual({"Rin": "Core", "Beryl": "Attack", "Magna": "Protection"}, paired)
 
-    def test_the_ranking_runs_core_first_and_protection_last(self):
-        self.assertEqual(["Core", "Attack", "Support", "Healing", "Protection"], list(ROLES))
-        self.assertLess(rank("Core"), rank("Attack"))
-        self.assertLess(rank("Attack"), rank("Support"))
-        self.assertLess(rank("Healing"), rank("Protection"))
-
     def test_an_unread_badge_ranks_last(self):
         """A card whose badge did not read must never outrank one that did."""
         self.assertGreater(rank(None), rank("Protection"))
@@ -105,12 +100,26 @@ class TestDraft(unittest.TestCase):
         best = min(CARDS, key=lambda card: rank(role_for(slot(*card), found)))
         self.assertEqual("Rin", best[0])
 
-    def test_a_damage_role_is_good_enough_to_stop_rerolling(self):
-        self.assertIn("Core", GOOD_ENOUGH)
-        self.assertIn("Attack", GOOD_ENOUGH)
-        for role in ("Support", "Healing", "Protection"):
-            with self.subTest(role=role):
-                self.assertNotIn(role, GOOD_ENOUGH)
+    def test_the_team_drafts_the_role_it_lacks(self):
+        """A second damage dealer is only a fallback once the rerolls are spent."""
+        cases = [
+            # (team, offers, can reroll, expected pick or None for a reroll)
+            ({"Hugo"}, ("Beryl", "Hilde", "Khalipe"), True, "Khalipe"),
+            ({"Hugo"}, ("Khalipe", "Mika", "Cassius"), True, "Mika"),
+            ({"Hugo", "Mika"}, ("Cassius", "Khalipe", "Rin"), True, "Khalipe"),
+            ({"Hugo"}, ("Beryl", "Rin", "Hilde"), True, None),
+            ({"Hugo"}, ("Beryl", "Rin", "Hilde"), False, "Rin"),
+            ({"Mika"}, ("Khalipe", "Beryl", "Cassius"), True, "Beryl"),
+            (set(), ("Khalipe", "Beryl", "Rin"), True, "Rin"),
+        ]
+        for party, offers, can_reroll, expected in cases:
+            with self.subTest(party=party, offers=offers, can_reroll=can_reroll):
+                pick = choose([COMBATANT_ROLE[name] for name in offers], wanted(party), can_reroll)
+                self.assertEqual(expected, None if pick is None else offers[pick])
+
+    def test_every_role_in_the_data_is_one_the_draft_ranks(self):
+        """A patch renaming a role would rank that whole role below an unread badge."""
+        self.assertLessEqual(set(COMBATANT_ROLE.values()), set(ROLES))
 
     def test_an_unspent_slot_can_be_rerolled(self):
         task = draft_screen()

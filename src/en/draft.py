@@ -1,4 +1,4 @@
-"""Pick the best combatant offered at a Sortie draft, and reroll when none of them will do.
+"""Draft the role a Sortie team lacks, and reroll when none of the offers fill it.
 
 Upstream refreshes all three slots whenever no configured name matches, then picks at random - so with no
 priority list it spends both rerolls and still takes whatever it lands on.
@@ -6,17 +6,22 @@ priority list it spends both rerolls and still takes whatever it lands on.
 
 from ok import Logger
 
+from src.en import quality
+from src.en.battle import PARTY
+from src.en.game_quality import COMBATANT_ROLE
 from src.en.handlers import insert_before, loaded, register
 
 logger = Logger.get_logger(__name__)
 
-# The five roles a draft card can carry, best first. `Attack` reaches us as 攻击力, because the catalog
-# rewrites that word for the card type label and the equipment stat row, which share it.
-ROLES = ("Core", "Attack", "Support", "Healing", "Protection")
+# The two damage roles, then the supporting roles in the order a team wants them.
+DAMAGE = ("Core", "Attack")
+SUPPORTING = ("Healing", "Protection", "Support")
+# What to settle for once the rerolls are spent and nothing the team lacks is on offer.
+ROLES = DAMAGE + SUPPORTING
+# The badge readings for each role. `Attack` reaches us as 攻击力, because the catalog rewrites that word for the
+# card type label and the equipment stat row, which share it.
 ROLE_READINGS = {"Core": ("core",), "Attack": ("attack", "攻击力"), "Support": ("support",),
                  "Healing": ("healing",), "Protection": ("protection",)}
-# Rerolling is only worth a slot when nothing on offer does damage.
-GOOD_ENOUGH = ("Core", "Attack")
 
 # The band the three cards occupy, and how far a badge may sit from a slot to belong to it.
 CARD_REGION = (0.077, 0.100, 0.946, 0.871)
@@ -43,16 +48,53 @@ def role_of(text):
     return None
 
 
-def rank(role):
+def wanted(party):
+    """Name the roles a team still lacks, best first.
+
+    A team with no damage dealer wants one before anything else. Otherwise it wants the supporting roles it has
+    not got yet, so a second damage dealer is only ever a fallback.
+
+    Args:
+        party: Names of the combatants on the team, from `battle.PARTY`.
+
+    Returns:
+        A tuple of roles, empty when the team has every role.
+    """
+    have = {COMBATANT_ROLE.get(name) for name in party}
+    if not have & set(DAMAGE):
+        return DAMAGE
+    return tuple(role for role in SUPPORTING if role not in have)
+
+
+def rank(role, wants=()):
     """Score a role, lowest first.
 
     Args:
-        role: A role name, or None when the card's badge was not read.
+        role: A role name, or None when the card's role was not read.
+        wants: The roles the team lacks, as `wanted` returns them.
 
     Returns:
-        The role's position in `ROLES`, or one past the end when unknown.
+        The wanted roles first in their own order, then the rest of `ROLES`, then an unread role.
     """
-    return ROLES.index(role) if role in ROLES else len(ROLES)
+    order = wants + tuple(other for other in ROLES if other not in wants)
+    return order.index(role) if role in order else len(order)
+
+
+def choose(roles, wants, can_reroll):
+    """Pick the offer to take, or decide to reroll.
+
+    Args:
+        roles: The role of each offer, left to right, None where it was not read.
+        wants: The roles the team lacks, as `wanted` returns them.
+        can_reroll: True while any slot still has its reroll.
+
+    Returns:
+        The index of the offer to take, or None when a reroll should be spent first.
+    """
+    best = min(range(len(roles)), key=lambda index: rank(roles[index], wants))
+    if wants and roles[best] not in wants and can_reroll:
+        return None
+    return best
 
 
 def badges(task):
@@ -137,22 +179,28 @@ def apply():
             if not slots:
                 return False
             found = badges(task)
-            ranked = sorted(((rank(role_for(slot, found)), slot) for slot in slots), key=lambda pair: pair[0])
-            best_rank, best = ranked[0]
-            best_role = ROLES[best_rank] if best_rank < len(ROLES) else None
+            names = [quality.COMBATANT_INDEX.look_up(slot["name"]) for slot in slots]
+            # The data knows every combatant's role, and the badge covers a name the reader could not place.
+            roles = [COMBATANT_ROLE.get(name) or role_for(slot, found) for name, slot in zip(names, slots)]
+            party = getattr(task, PARTY, frozenset())
+            wants = wanted(party)
+            labels = [f"{name or slot['name']} ({role or 'role unread'})" for name, slot, role in zip(names, slots, roles)]
+            task.log_info(f"draft offers {', '.join(labels)} to team {sorted(party)}, wanting {'/'.join(wants) or 'nothing'}")
 
-            if best_role not in GOOD_ENOUGH:
-                spendable = [slot for slot in slots if rerollable(task, slot)]
-                if spendable:
-                    task.log_info(f"draft offers no {' or '.join(GOOD_ENOUGH)}, rerolling {len(spendable)} slot(s)")
-                    for slot in spendable:
-                        utils._move_and_click(task, slot["x"], slot["refresh_y"])
-                        task.sleep(1)
-                    return True
+            spendable = [slot for slot in slots if rerollable(task, slot)]
+            pick = choose(roles, wants, bool(spendable))
+            if pick is None:
+                task.log_info(f"draft offers no {' or '.join(wants)}, rerolling {len(spendable)} slot(s)")
+                for slot in spendable:
+                    utils._move_and_click(task, slot["x"], slot["refresh_y"])
+                    task.sleep(1)
+                return True
 
-            task.log_info(f"draft taking {best['name']} ({best_role or 'role unread'})")
-            utils._move_and_click(task, best["x"], best["y"])
+            task.log_info(f"draft taking {labels[pick]}")
+            utils._move_and_click(task, slots[pick]["x"], slots[pick]["y"])
             task.sleep(1)
+            if names[pick]:
+                setattr(task, PARTY, party | {names[pick]})
             return True
 
         insert_before("handle_member_selection", handle_member_draft)

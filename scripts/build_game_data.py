@@ -337,6 +337,9 @@ UNWEIGHTED_TAG = "public"
 # that preference matched nothing at all. Corrected on the way in rather than left for every
 # reader to trip over. `TestHandTags` fails if a future patch introduces another one.
 TAG_TYPOS = {"bulllet": "bullet", "initate": "initiate"}
+# The role badge each combatant wears on a Sortie draft card: a role id per combatant id, and a label per role id.
+ROLE_TABLES = ("chaos_assault@combatant_type.json", "name")
+ROLE_DEFINE_TABLES = ("chaos_assault@combatant_type_define.json", "combatant_type")
 
 # What the client calls each card category, and the short name used here. These are the same five kinds the
 # reader already sees printed under a card in hand, so a category answers "may this be played at all".
@@ -465,6 +468,14 @@ def collect_quality(table, dump_dir):
         if name and weights:
             combatant_tag_weights[name] = weights
 
+    labels = {role: table.get(row.get("name")) for role, row in load_data_tables(dump_dir, ROLE_TABLES).items()}
+    combatant_role = {}
+    for row in load_data_tables(dump_dir, ROLE_DEFINE_TABLES).values():
+        name = (table.get(COMBATANT_NAME_ID.format(id=row.get("group"))) or "").strip()
+        role = labels.get(row.get("combatant_type"))
+        if name and role:
+            combatant_role[name] = role
+
     return {
         "CARD_RARITY": card_rarity,
         "CARD_CLASSES": card_classes,
@@ -473,6 +484,7 @@ def collect_quality(table, dump_dir):
         "EQUIPMENT_TAGS": collect_equipment_tags(table, relic_rows),
         "COMBATANT_CLASS": combatant_class,
         "COMBATANT_TAG_WEIGHTS": combatant_tag_weights,
+        "COMBATANT_ROLE": combatant_role,
     }
 
 
@@ -529,6 +541,7 @@ def render_quality(quality):
         "COMBATANT_CLASS": "Each combatant's class, so a team read off the Combatants screen becomes a set of classes.",
         "COMBATANT_TAG_WEIGHTS": "How much each combatant wants each kind of equipment, on the game's own scale."
                                  " Weighed against `EQUIPMENT_TAGS` to say who a piece of equipment suits.",
+        "COMBATANT_ROLE": "The role badge each combatant wears on a Sortie draft card, so a team can be drafted for what it lacks.",
     }
     notes = [
         "Only what the dump actually carries is here. Neither a card nor a piece of equipment names its owner:",
