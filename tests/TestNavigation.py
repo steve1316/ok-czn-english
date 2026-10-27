@@ -244,28 +244,35 @@ class TestSortieTeamTrip(unittest.TestCase):
         install(ON_THE_TAB)
         utils = sys.modules["utils"]
         on_map = [False]
-        utils._get_current_hp_percent = lambda task: 100 if on_map[0] else False
         utils._move_and_click = lambda task, x, y: task.clicks.append((x, y))
         task = FakeTask()
+        task.find_feature = lambda feature_name, box: [box] if on_map[0] and feature_name == "position" else []
+        task.box_of_screen = lambda *box: box
         task.sleep = lambda seconds: None
         task.info_set = lambda key, value: None
         task.node_status = {}
 
-        self.assertFalse(navigation.handle_open_team(task), "off the map there is nothing to tap")
+        # The rest screen shows the portraits too, but a pending dialog there swallowed the tap and the run never read its team.
+        self.assertFalse(navigation.handle_open_team(task), "off the map the tap is not trusted")
+        self.assertNotIn(navigation.TEAM_TAPPED, task.node_status, "a frame off the map must not use up a try")
         on_map[0] = True
-        self.assertTrue(navigation.handle_open_team(task))
-        # A page that never opened must not be tapped for again on every frame of the run.
+        # A page that never opened is tapped for again, but not on every frame of the run.
+        for _ in range(navigation.TEAM_TRIES):
+            self.assertTrue(navigation.handle_open_team(task))
         self.assertFalse(navigation.handle_open_team(task))
+        self.assertEqual([navigation.TEAM_PORTRAITS] * navigation.TEAM_TRIES, task.clicks)
+        task.clicks.clear()
 
         # Upstream rebuilds `node_status` for the next run, and the last run's party must not outlive it.
         task.node_status = {}
         setattr(task, PARTY, frozenset({"Yuki"}))
         self.assertTrue(navigation.handle_open_team(task))
         self.assertEqual(frozenset(), getattr(task, PARTY))
-        self.assertEqual([navigation.TEAM_PORTRAITS] * 2, task.clicks)
+        self.assertEqual([navigation.TEAM_PORTRAITS], task.clicks)
 
         rewards.remember_team(task, utils)
         self.assertEqual({"Arabella", "Veronica", "Mika"}, getattr(task, PARTY))
+        self.assertFalse(navigation.handle_open_team(task), "a team read stops the retries")
 
 
 if __name__ == "__main__":
