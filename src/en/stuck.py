@@ -28,7 +28,7 @@ def forget(task):
     """Drop what the stuck detector remembers, so it seeds itself again on the next frame.
 
     Args:
-        task: The mode about to start a run.
+        task: The running mode, about to start a run or just back from a long read.
     """
     for name in CACHE:
         # Removed rather than blanked, because absence is what upstream tests for when it decides to re-seed.
