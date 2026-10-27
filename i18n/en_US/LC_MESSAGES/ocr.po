@@ -70,6 +70,10 @@ msgstr "营救"
 msgid "Ark City"
 msgstr "方舟城市"
 
+# From handle_rational_supply: "补充理性" in the title band (0.438, 0.101)-(0.561, 0.250) of the dialog that spends Aether on Reason
+msgid "Charge Reason"
+msgstr "补充理性"
+
 # From handle_cancel: "取消" in box.name
 msgid "Cancel"
 msgstr "取消"
