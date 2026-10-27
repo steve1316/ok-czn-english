@@ -1,5 +1,5 @@
 """Check that a run starting on the Combatants tab reads it instead of tapping its way back to it, that Sortie goes there once a run, and
-that the deck read off All Piles on the way values each card by its Epiphany."""
+that the deck read off All Piles on the way values each card by its Epiphany, and that a Sortie Epiphany goes on the card that read found without one."""
 
 import sys
 import types
@@ -10,7 +10,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.en import cards, navigation, piles, rewards  # noqa: E402
+from src.en import cards, epiphany, navigation, piles, rewards  # noqa: E402
 from src.en.battle import PARTY  # noqa: E402
 from src.en.game_text import DESCRIPTIONS, EPIPHANIES  # noqa: E402
 from tests.fakes import HEIGHT, WIDTH, FakeBox  # noqa: E402
@@ -330,6 +330,39 @@ class TestDeckRead(unittest.TestCase):
         # A second read replaces the first, which a stale cache of the figures would hide.
         cards.use_deck({"Experienced Strike": {SHIELD_GAIN, DESCRIPTIONS["Experienced Strike"]}})
         self.assertEqual(base, cards.features("Experienced Strike"))
+
+
+
+class TestEpiphanyChoice(unittest.TestCase):
+    """A Sortie Epiphany goes on a card even when the user listed none, and every other choice is left to the pins and the user's lists."""
+
+    def tearDown(self):
+        cards.use_deck({})
+
+    def test_the_card_without_an_epiphany_goes_first(self):
+        # The three cards a Sortie run offered, where the deck read had found Epiphanies on the first two.
+        offered = [{"name": "Sacred Censer"}, {"name": "Growing Creature"}, {"name": "Annoying"}]
+        cards.use_deck({name: {next(iter(EPIPHANIES[name]))} for name in ("Sacred Censer", "Growing Creature")} | {"Annoying": {DESCRIPTIONS["Annoying"]}})
+        for description, pinned, expected in (
+            ("a card without an Epiphany goes first", None, "Annoying"),
+            ("a pinned card outranks it", "Growing Creature", "Growing Creature"),
+        ):
+            with self.subTest(description):
+                self.assertEqual(expected, epiphany.ranked([dict(card, pinned=card["name"] == pinned) for card in offered])[0])
+
+    def test_only_a_sortie_epiphany_is_chosen(self):
+        utils = types.SimpleNamespace(_simplify_texts=list, recognize_cards_in_deck=lambda task, page="": [{"name": "Annoying"}])
+        passed = []
+        choose = epiphany.choosing(lambda task, names, count=1, action="": passed.append(names), utils)
+        for mode, action, expected in (
+            (epiphany.SORTIE_MODE, epiphany.ACTIONS[0], ["Slash", "Annoying"]),
+            ("ChaosMode", epiphany.ACTIONS[0], ["Slash"]),
+            (epiphany.SORTIE_MODE, "", ["Slash"]),
+        ):
+            with self.subTest(mode=mode, action=action):
+                passed.clear()
+                choose(type(mode, (), {"ocr": lambda self: []})(), ["Slash"], action=action)
+                self.assertEqual([expected], passed)
 
 
 if __name__ == "__main__":
