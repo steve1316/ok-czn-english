@@ -5,12 +5,18 @@ Specialist creates a cheap Opening Found or Charged Shot. The generic picker spe
 and plays Heavy Weapons Specialist after the attacks.
 """
 
-from src.en.kits.kit import PHASE_SETUP, Kit, base_name, owned
+import re
+
+from src.en.kits.kit import PHASE_SETUP, Kit, base_name, owned, text
 
 CHARGED_SHOT = "Charged Shot"
+# The line that grows a kept Charged Shot, which one of its Epiphanies drops.
+GROWS = re.compile(r"^Retain:", re.M)
 # Its Retain line adds hits for one turn, so a copy kept from last turn is worth a second hit. That also buys it first among the attacks.
 OPENING_FOUND = "Opening Found"
 KEPT_HITS = 2
+# The Retain line that adds the hit. Its Epiphanies cut the cost, add damage or drop the line instead.
+ADDS_HITS = re.compile(r"^Retain: Add .*Hit", re.M)
 # Creates the card the attacks then use, so it goes before them.
 SPECIALIST = "Heavy Weapons Specialist"
 
@@ -36,8 +42,8 @@ class Beryl(Kit):
         """
         card = base_name(name)
         if card == CHARGED_SHOT:
-            return 0
-        if card == OPENING_FOUND and OPENING_FOUND in map(base_name, board.kept):
+            return 0 if GROWS.search(text(name, board)) else base
+        if card == OPENING_FOUND and OPENING_FOUND in map(base_name, board.kept) and ADDS_HITS.search(text(name, board)):
             return base * KEPT_HITS
         return base
 

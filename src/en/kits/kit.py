@@ -4,6 +4,7 @@ import re
 from functools import lru_cache
 
 from src.en.game_battle import CARD_OWNER
+from src.en.game_text import DESCRIPTIONS
 
 # The Epiphany a card has been upgraded with, which the client writes as a suffix: "Shard:Light (Cycle)".
 EPIPHANY_SUFFIX = re.compile(r"\s*\([^)]*\)$")
@@ -48,6 +49,20 @@ def count(names, group):
         How many are in `group`, in any Epiphany.
     """
     return sum(base_name(name) in group for name in names)
+
+
+def text(name, board):
+    """Give the effect text of the version of a card the deck holds.
+
+    Args:
+        name: A canonical card name, maybe upgraded.
+        board: The `cards.Board`, whose `deck` holds the texts the last deck read matched.
+
+    Returns:
+        The deck's text, else the base text, or an empty string for a card the data does not carry.
+    """
+    card = base_name(name)
+    return board.deck.get(card) or DESCRIPTIONS.get(card) or ""
 
 
 def owned(combatant):

@@ -14,6 +14,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from src.en import cards, kits  # noqa: E402
+from src.en.game_text import EPIPHANIES  # noqa: E402
 
 JUSTICE_ATTACK = "Anchor"
 VOID_ATTACK = "Annihilation Shot"
@@ -27,6 +28,9 @@ FREE_DRAW = "Adagio"
 BUFF = "Arcane Rush"
 # Free, and an Attack, so it separates "free first" from "setup first".
 FREE_ATTACK = "Magnum Shot"
+# Epiphanies that drop the Retain line Beryl's kit plays around: a Charged Shot that does not grow, and an Opening Found kept for its cost.
+FLAT_CHARGED_SHOT = next(text for text in EPIPHANIES["Charged Shot"] if "Retain:" not in text)
+FREE_OPENING_FOUND = next(text for text in EPIPHANIES["Opening Found"] if "Cost to 0" in text)
 # Two Action Points for 220% damage, which is better value per point than 100% for one.
 BIG_ATTACK = "Charge Launcher"
 # Spends every Action Point left rather than a fixed number.
@@ -630,6 +634,10 @@ class TestKits(unittest.TestCase):
             # Generic play buys the 210% Armor-Piercing Rounds over a 160% Opening Found that has an extra hit for this turn.
             ("a kept Opening Found takes the point", ("Armor-Piercing Rounds", "Opening Found"),
              cards.Board(action_points=1, kept=("Opening Found",)), ["Opening Found"]),
+            ("a Charged Shot that does not grow is spent", ("Charged Shot", "Launcher", "Opening Found"), cards.Board(deck={"Charged Shot": FLAT_CHARGED_SHOT}),
+             ["Opening Found", "Charged Shot"]),
+            ("a kept Opening Found without the extra hit is not doubled", ("Armor-Piercing Rounds", "Opening Found"),
+             cards.Board(action_points=1, kept=("Opening Found",), deck={"Opening Found": FREE_OPENING_FOUND}), ["Armor-Piercing Rounds"]),
         ))
 
     def test_cassius_keeps_to_his_deck_cards(self):

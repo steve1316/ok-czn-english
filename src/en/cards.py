@@ -67,6 +67,10 @@ DRAW = re.compile(r"\bDraw (\d+)")
 PRIME = re.compile(r"(?:Damage Amount|Hit\(s\)|Proc)[^|\n]*?\bnext\b[^|\n]*?\b(?:Attack|Bullet|Bind) Card"
                    r"|(?:\b\d+ Vulnerable|Vulnerable \d+)(?! to (?:allies|self))|Damage Amount taken by the target", re.I)
 
+# The effect text of every card in the deck `piles` last read, by canonical name: the Epiphany it carries, the weakest where copies differ.
+# Mutated in place, never rebound, and empty until a read, so every card falls back to its base text and every `Board` sees the latest read.
+DECK = {}
+
 # What a card does, in the terms the ordering cares about.
 Features = namedtuple("Features", ["damage", "shield", "draw"])
 # What the picker knows about the moment it is choosing in.
@@ -87,7 +91,9 @@ Board = namedtuple("Board", [
     "hand_size",
     # Canonical names of the cards still in hand when the turn before ended, so their Retain effects have fired.
     "kept",
-], defaults=[BASE_ACTION_POINTS, None, None, (), (), (), 0, ()])
+    # Canonical card name to the text of the version the deck holds, for kits whose rule rests on one Epiphany. The last deck read.
+    "deck",
+], defaults=[BASE_ACTION_POINTS, None, None, (), (), (), 0, (), DECK])
 
 # How many distinct readings to remember the folding of. OCR invents new misspellings all session, so this
 # is bounded rather than unlimited, and it is far larger than the ten names one frame ever asks about.
@@ -315,7 +321,19 @@ def description(name):
     Returns:
         The text, or an empty string for a card the data does not carry.
     """
-    return DESCRIPTIONS.get(canonical(name)) or ""
+    return text_of(canonical(name))
+
+
+def text_of(name):
+    """Give a card's effect text, as the version of it the deck holds when the deck has been read.
+
+    Args:
+        name: The canonical card name.
+
+    Returns:
+        The deck's text, else the base text, or an empty string for a card the data does not carry.
+    """
+    return DECK.get(name) or DESCRIPTIONS.get(name) or ""
 
 
 def on_play(name):
