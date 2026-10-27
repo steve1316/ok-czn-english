@@ -49,6 +49,19 @@ ANCHOR = "handle_archive_target_member"
 _patched = False
 
 
+def raw_ocr(task, box=None):
+    """Read the screen in the English the client draws.
+
+    `ocr.po` would rewrite a lone "Damage" or "Shield" line into the Chinese a handler looks for.
+
+    Args:
+        task: The running task.
+        box: The part of the screen to read, or None for all of it.
+    """
+    with standing_in(task.executor, ocr_po_translation=None):
+        task.all_texts = task.ocr(box=box)
+
+
 def signature(text):
     """Strip an effect text down to the letters of its wording.
 
@@ -119,9 +132,7 @@ def read_piles(task, utils):
     copies = {}
     last_page = None
     for _ in range(MAX_PAGES):
-        # Raw English, since `ocr.po` would rewrite a lone "Damage" or "Shield" line into the Chinese a handler looks for.
-        with standing_in(task.executor, ocr_po_translation=None):
-            task.all_texts = task.ocr()
+        raw_ocr(task)
         page = cards_on_page(task)
         # The same names at the same heights means the scroll did not move, so this is the bottom.
         where = [(name, y) for name, _, y in page]
@@ -149,8 +160,7 @@ def handle_read_piles(task):
     task.node_status[READ] = True
     utils._move_and_click(task, *PILES_TAB)
     task.sleep(1)
-    with standing_in(task.executor, ocr_po_translation=None):
-        task.all_texts = task.ocr(box=task.box_of_screen(*TITLE_REGION))
+    raw_ocr(task, task.box_of_screen(*TITLE_REGION))
     if text_in_region(task, TITLE, TITLE_REGION) is None:
         logger.warning("tapped the deck icon but All Piles did not open, keeping the last deck read")
         return False
