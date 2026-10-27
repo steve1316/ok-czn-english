@@ -30,7 +30,8 @@ TRAILING_PUNCTUATION = ".,;:!?。，；：！？"
 # ships more than fifty "Select {0} card(s) to X." strings, and the count varies per screen. These rewrite the
 # whole family at once. The action is spelled out only where a handler keys on it. Every other card caption gets
 # a neutral literal with no action word, so no handler can mistake it for a screen it acts on.
-SELECT_CARDS = r"^select (?:up to )?(\d+) cards? ?\(?s?\)? to "
+# OCR sometimes glues the count to "Select", as in "Select1 card(s) to Discard.".
+SELECT_CARDS = r"^select ?(?:up to )?(\d+) ?cards? ?\(?s?\)? to "
 PATTERNS = (
     (re.compile(SELECT_CARDS + r"remove.*$", re.I), "请选择{0}张要移除的卡牌"),
     (re.compile(SELECT_CARDS + r"convert.*$", re.I), "请选择{0}张转换的卡牌"),
