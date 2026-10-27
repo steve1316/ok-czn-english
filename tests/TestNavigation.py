@@ -1,4 +1,5 @@
-"""Check that a run starting on the Combatants tab reads it instead of tapping its way back to it, and that Sortie goes there once a run."""
+"""Check that a run starting on the Combatants tab reads it instead of tapping its way back to it, that Sortie goes there once a run, and
+that the deck read off All Piles on the way values each card by its Epiphany."""
 
 import sys
 import types
@@ -9,8 +10,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.en import navigation, rewards  # noqa: E402
+from src.en import cards, navigation, piles, rewards  # noqa: E402
 from src.en.battle import PARTY  # noqa: E402
+from src.en.game_text import DESCRIPTIONS, EPIPHANIES  # noqa: E402
+from tests.fakes import HEIGHT, WIDTH, FakeBox  # noqa: E402
 
 TARGET = "Arabella"
 # What the log shows on the Combatants tab, at the three points upstream reads names from.
@@ -19,6 +22,27 @@ ON_THE_TAB = {(0.159, 0.368): "Arabella", (0.432, 0.368): "Veronica", (0.705, 0.
 ANOTHER_TAB = {(0.159, 0.368): "Whisper", (0.432, 0.368): "Ember", (0.705, 0.369): "Tallow"}
 # The taps upstream's capture makes: the 3-person icon, the Combatants tab, then the one that closes the page.
 CLOSE_PAGE = (0.960, 0.054)
+# Columns one and four of an All Piles page as the reader returned them, as (text, centre x, centre y, width, height) in pixels. The two
+# Experienced Strikes carry different versions, Hew's text names a card, and the last row runs off the bottom.
+PILES_PAGE = (
+    ("Slash", 707, 159, 70, 28), ("XBasic Attack", 756, 184, 164, 26), ("143% Defense-Based", 749, 364, 214, 26), ("Damage", 749, 392, 96, 30),
+    ("Increase Damage", 747, 417, 178, 28), ("Amount of Exhaust", 749, 443, 186, 20), ("cards by 15% for1 turn", 751, 468, 234, 30),
+    ("(max2 stacks)", 748, 494, 148, 28),
+    ("Experienced Strike", 773, 612, 218, 31), ("XAttack", 723, 640, 110, 33), ("168% Defense-Based", 750, 817, 216, 26), ("Damage", 751, 846, 88, 29),
+    ("20% DMG-Based Shield", 756, 869, 248, 30), ("Increase Damage", 748, 895, 176, 24), ("Amount of Exhaust", 749, 920, 190, 26),
+    ("cards by 20% for 1 turn", 752, 948, 232, 26),
+    ("QVulture Ejection", 748, 1060, 240, 37),
+    ("Hew", 1647, 158, 62, 30), ("Attack", 1690, 187, 68, 20), ("[Unique/lnitiation/", 1706, 364, 212, 26), ("Exhaust / Ephemeral]", 1701, 391, 222, 32),
+    ("420% Defense-Based", 1701, 416, 222, 26), ("Damage", 1701, 444, 90, 27), ("Incinerate: Create", 1702, 468, 176, 19), ("1HewLv.1", 1704, 495, 112, 26),
+    ("Experienced Strike", 1727, 612, 210, 25), ("Attack", 1676, 640, 108, 33), ("252%Defense-Based", 1699, 818, 214, 20), ("Damage", 1702, 846, 90, 29),
+    ("20% DMG-Based Shield", 1707, 869, 250, 30), ("Increase Shield Gain", 1701, 895, 202, 20), ("Amount of Skill Cards", 1700, 921, 212, 20),
+    ("by 30%for1turn", 1704, 947, 172, 20),
+    ("Absolute Protection", 1725, 1062, 214, 32),
+    # A card named inside another card's text, with a text line as close below it as a type label would be. From the next page.
+    ("Contaminated Spore", 1282, 433, 210, 30), ("Retain:Create", 1316, 465, 146, 19),
+)
+# The Experienced Strike Epiphany the second copy above carries.
+SHIELD_GAIN = next(text for text in EPIPHANIES["Experienced Strike"] if "Shield Gain" in text)
 
 
 class FakeTask:
@@ -279,6 +303,33 @@ class TestSortieTeamTrip(unittest.TestCase):
             self.assertEqual({"Arabella", "Veronica", "Mika"}, getattr(task, PARTY))
             clock[0] += navigation.TEAM_RETRY_SECONDS
             self.assertFalse(navigation.handle_open_team(task), "a team read stops the retries")
+
+
+class TestDeckRead(unittest.TestCase):
+    """All Piles is read card by card, each card is taken for the version its text matches, and a card is valued by its weakest copy."""
+
+    def tearDown(self):
+        cards.use_deck({})
+
+    def test_each_whole_card_is_taken_for_its_version(self):
+        task = types.SimpleNamespace(width=WIDTH, height=HEIGHT, all_texts=[FakeBox(text, x, y, width=w, height=h, units="pixels")
+                                                                           for text, x, y, w, h in PILES_PAGE])
+        # A named card inside a text, or a card cut off at the bottom, would add a fifth. A broken match would land a copy on the base.
+        self.assertEqual({
+            ("Slash", next(iter(EPIPHANIES["Slash"]))),
+            ("Experienced Strike", DESCRIPTIONS["Experienced Strike"]),
+            ("Experienced Strike", SHIELD_GAIN),
+            ("Hew", DESCRIPTIONS["Hew"]),
+        }, {(name, piles.version_of(name, text)) for name, text, _ in piles.cards_on_page(task)})
+
+    def test_a_card_is_valued_by_its_weakest_copy(self):
+        base, stronger = cards.figures(DESCRIPTIONS["Experienced Strike"]), cards.figures(SHIELD_GAIN)
+        self.assertLess(base.damage, stronger.damage)
+        cards.use_deck({"Experienced Strike": {SHIELD_GAIN}})
+        self.assertEqual(stronger, cards.features("Experienced Strike"))
+        # A second read replaces the first, which a stale cache of the figures would hide.
+        cards.use_deck({"Experienced Strike": {SHIELD_GAIN, DESCRIPTIONS["Experienced Strike"]}})
+        self.assertEqual(base, cards.features("Experienced Strike"))
 
 
 if __name__ == "__main__":

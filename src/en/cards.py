@@ -68,7 +68,7 @@ PRIME = re.compile(r"(?:Damage Amount|Hit\(s\)|Proc)[^|\n]*?\bnext\b[^|\n]*?\b(?
                    r"|(?:\b\d+ Vulnerable|Vulnerable \d+)(?! to (?:allies|self))|Damage Amount taken by the target", re.I)
 
 # The effect text of every card in the deck `piles` last read, by canonical name: the Epiphany it carries, the weakest where copies differ.
-# Mutated in place, never rebound, and empty until a read, so every card falls back to its base text and every `Board` sees the latest read.
+# Mutated in place, never rebound, and empty until a read, so every card falls back to its base text.
 DECK = {}
 
 # What a card does, in the terms the ordering cares about.
@@ -91,7 +91,7 @@ Board = namedtuple("Board", [
     "hand_size",
     # Canonical names of the cards still in hand when the turn before ended, so their Retain effects have fired.
     "kept",
-    # Canonical card name to the text of the version the deck holds, for kits whose rule rests on one Epiphany. The last deck read.
+    # Canonical card name to the text of the version the deck holds, for kits whose rule rests on one Epiphany. `DECK` itself, so it sees every read.
     "deck",
 ], defaults=[BASE_ACTION_POINTS, None, None, (), (), (), 0, (), DECK])
 
@@ -283,7 +283,19 @@ def parsed(name):
     Returns:
         The `Features` the text states.
     """
-    text = on_play(name)
+    return figures(text_of(name))
+
+
+def figures(text):
+    """Pull the damage, shield and draw figures out of what an effect text does when played.
+
+    Args:
+        text: The effect text, as the generated data writes it.
+
+    Returns:
+        The `Features` the text states, leaving out its "Retain:" lines.
+    """
+    text = RETAIN_LINE.sub("", text)
     return Features(
         damage=sum(int(share) * int(before or after or 1) for share, before, after in DAMAGE.findall(text)),
         shield=sum(int(found) for found in SHIELD.findall(text)),
@@ -367,6 +379,17 @@ def on_play(name):
     return RETAIN_LINE.sub("", description(name))
 
 
+def use_deck(copies):
+    """Value every card by the version of it the deck holds, the weakest where its copies differ.
+
+    Args:
+        copies: Canonical card name to the effect texts its copies were matched to, from `piles`.
+    """
+    DECK.clear()
+    DECK.update({name: min(texts, key=lambda text: strength(figures(text))) for name, texts in copies.items()})
+    parsed.cache_clear()
+
+
 def worth_clearing(name):
     """Say whether a card dealt to you is better played than held, once nothing better is left to play.
 
@@ -429,13 +452,24 @@ def rated(name, board):
     """
     doing = features(name)
     matched = board.weakness is not None and attribute_of(name) == board.weakness
-    damage = doing.damage * (WEAKNESS_BONUS if matched else 1)
-    worth = damage + SHIELD_WEIGHT * doing.shield + DRAW_VALUE * doing.draw
+    worth = strength(doing._replace(damage=doing.damage * (WEAKNESS_BONUS if matched else 1)))
     if not worth:
         worth = UNREAD_VALUE * max(cost(name), 1)
     if lit_up(name, board):
         worth += EPIPHANY_BONUS
     return worth
+
+
+def strength(doing):
+    """Say what a card's figures are worth together, in damage terms.
+
+    Args:
+        doing: The card's `Features`.
+
+    Returns:
+        The damage, plus the shield and draw at their exchange rates.
+    """
+    return doing.damage + SHIELD_WEIGHT * doing.shield + DRAW_VALUE * doing.draw
 
 
 def lit_up(name, board):
