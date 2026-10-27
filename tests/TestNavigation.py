@@ -208,6 +208,18 @@ class TestTheTallyNoticesARebase(unittest.TestCase):
     def test_the_shape_upstream_has_today_says_nothing(self):
         self.assertEqual([], self.warnings())
 
+    def test_a_frame_upstream_declines_says_nothing(self):
+        """Off the page upstream returns before tapping, and a live run logged the warning on every such frame."""
+        install(ANOTHER_TAB)
+        said = []
+        original_warning = navigation.logger.warning
+        navigation.logger.warning = lambda message, *args, **kwargs: said.append(message)
+        try:
+            navigation.reading_in_place(lambda task: False)(FakeTask())
+        finally:
+            navigation.logger.warning = original_warning
+        self.assertEqual([], said)
+
     def test_a_moved_tab_tap_is_reported(self):
         """The skip would quietly stop saving anything, which is the failure nobody would notice."""
         said = self.warnings(tab=(0.250, 0.056))

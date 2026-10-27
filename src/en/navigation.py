@@ -153,7 +153,8 @@ def reading_in_place(original):
         icon_tap = standing_in(task, click_box=without_the_icon_tap(dropped)) if in_place else contextlib.nullcontext()
         with standing_in(utils_chaos, _move_and_click=tab_tap), icon_tap:
             handled = original(task)
-        if (dropped.tab, dropped.icon) != (1, int(in_place)):
+        # Only a frame upstream handled has made its taps - on any other it declined before tapping anything.
+        if handled and (dropped.tab, dropped.icon) != (1, int(in_place)):
             # Loud on purpose. Both taps are recognised by shape rather than by name, so upstream changing
             # either is invisible until someone reads the log - either a tap it still needed was swallowed,
             # or the skip quietly stopped saving anything.
