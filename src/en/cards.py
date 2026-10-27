@@ -80,7 +80,9 @@ Board = namedtuple("Board", [
     "played",
     # The same for the turn before, which is empty on a battle's first turn.
     "last_turn",
-], defaults=[BASE_ACTION_POINTS, None, None, (), (), ()])
+    # The hand size the hand counter reads, which is more than `hand` when OCR missed a card. 0 when not known.
+    "hand_size",
+], defaults=[BASE_ACTION_POINTS, None, None, (), (), (), 0])
 
 # How many distinct readings to remember the folding of. OCR invents new misspellings all session, so this
 # is bounded rather than unlimited, and it is far larger than the ten names one frame ever asks about.

@@ -321,6 +321,14 @@ class TestKits(unittest.TestCase):
         ):
             with self.subTest(description):
                 self.assertCountEqual(played(cards.plan(hand(*cards_in_hand), cards.Board())), expected)
+        with self.subTest("a Shard is kept while the counter says OCR missed the cards beside it"):
+            # Live, a hand of 6 read as Shard:Light alone, and the Shard was played with four cards still between.
+            self.assertEqual(played(cards.plan(hand("Shard:Light"), cards.Board(hand_size=6))), [])
+
+    def test_a_shard_ocr_missed_is_never_pressed_blind(self):
+        # Unread, the far end is a key the picker tries blind for a card it could not read, and it holds Shard:Dark.
+        read = kits.reading([{"name": "Shard:Light", "key": "1"}, {"name": "Sword Slash", "key": "3"}], 6)
+        self.assertEqual([(card["name"], card["key"]) for card in read], [("Shard:Light", "1"), ("Sword Slash", "3"), ("Shard:Dark", "6")])
 
     def test_luke_fires_his_bullets_before_cashing_them_in(self):
         """Finisher Round unlocks after five Handgun Bullets this turn, and Dance of the Demon gains a hit per Bullet fired."""

@@ -688,7 +688,7 @@ def install():
             budget = "Action Points to spend" if points else "no Action Points"
             task.log_info(f"turn opens with {budget}, {against}, hand {names}")
         state = cards.Board(action_points=points, weakness=turn.weakness, hand=tuple(names), played=tuple(turn.played),
-                            last_turn=turn.last_turn)
+                            last_turn=turn.last_turn, hand_size=count or 0)
         card = choose(hand, state, turn.refused)
         if card is None and turn.objected:
             # The game said a card is still playable, so the best of those passed over for cost is tried as if affordable.

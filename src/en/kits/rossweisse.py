@@ -78,14 +78,14 @@ class Rossweisse(Kit):
         return is_waiting_card(name)
 
     def reading(self, hand, count):
-        """Take an end card OCR could not name to be a Shard, when the Shard at the other end did read.
+        """Take an end card OCR could not name, or did not read at all, to be a Shard when the Shard at the other end did read.
 
         Args:
             hand: Hand cards as `_hand_cards` reads them, with canonical names.
             count: The hand size the hand counter reads.
 
         Returns:
-            The hand, with an unreadable end card named as the Shard that sits there.
+            The hand, with an unreadable or missing end card named as the Shard that sits there.
         """
         if not count or count < len(SHARDS):
             return hand
@@ -98,10 +98,15 @@ class Rossweisse(Kit):
             if shard and shards == [other] and card["name"] not in CARD_COST:
                 card = {**card, "name": shard}
             read.append(card)
+        keys = {card.get("key") for card in read}
+        for end, (shard, other) in ends.items():
+            # OCR missed the other end outright. It still holds a Shard, so a key pressed blind for an unread card never lands on it.
+            if shards == [other] and end not in keys:
+                read.insert(0 if end == "1" else len(read), {"name": shard, "key": end})
         return read
 
     def held(self, name, board):
-        """Keep every Sword Tassel, and a Shard while anything but Shards and Tassels is still in hand.
+        """Keep every Sword Tassel, and a Shard while anything but Shards and Tassels is still in hand, read or not.
 
         Args:
             name: The card in question.
@@ -110,7 +115,10 @@ class Rossweisse(Kit):
         Returns:
             True for a Tassel, or a Shard with middle cards beside it.
         """
-        return base_name(name) == TASSEL or (is_shard(name) and not all(map(is_waiting_card, board.hand)))
+        if base_name(name) == TASSEL:
+            return True
+        # Live, a hand of 6 read as Shard:Light alone, and the Shard was played with four cards still between.
+        return is_shard(name) and (board.hand_size > len(board.hand) or not all(map(is_waiting_card, board.hand)))
 
     def worth(self, name, board, base, rate):
         """Price each card between the Shards as a step toward the fusion.
