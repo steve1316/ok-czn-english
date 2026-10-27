@@ -1,11 +1,30 @@
 """The shape every kit takes, and the name a card has before its Epiphany."""
 
 import re
+from functools import lru_cache
+
+from src.en.game_battle import CARD_OWNER
 
 # The Epiphany a card has been upgraded with, which the client writes as a suffix: "Shard:Light (Cycle)".
 EPIPHANY_SUFFIX = re.compile(r"\s*\([^)]*\)$")
 
+# Where a card sits in a turn, lowest first. Here rather than in cards.py so a kit can place a card between two of them.
+PHASE_ESCAPE = 0
+PHASE_EPIPHANY = 1
+PHASE_FREE = 2
+PHASE_SETUP = 3
+PHASE_PRIME = 4
+PHASE_ATTACK = 5
+PHASE_OTHER = 6
+PHASE_SPENDS_EVERYTHING = 7
 
+# The data's categories for attack and skill cards.
+ATTACK_CATEGORY = "ATK"
+SKILL_CATEGORY = "SKILL"
+
+
+# Every hook strips the same few names many times a frame.
+@lru_cache(maxsize=1024)
 def base_name(name):
     """Drop the Epiphany from a card name.
 
@@ -18,16 +37,43 @@ def base_name(name):
     return EPIPHANY_SUFFIX.sub("", name)
 
 
+def count(names, group):
+    """Count the cards from one group among some cards.
+
+    Args:
+        names: Canonical card names, from the hand or from what a turn has played.
+        group: Base names of the cards to count.
+
+    Returns:
+        How many are in `group`, in any Epiphany.
+    """
+    return sum(base_name(name) in group for name in names)
+
+
+def owned(combatant):
+    """Find the cards a combatant brings to a deck.
+
+    Args:
+        combatant: The combatant's name, as `CARD_OWNER` spells it.
+
+    Returns:
+        The base names of every card the data says is theirs.
+    """
+    return frozenset(base_name(name) for name, owner in CARD_OWNER.items() if owner == combatant)
+
+
 class Kit:
     """One playstyle. Every hook does nothing unless a subclass overrides it, so a kit only says what it changes.
 
-    Hooks get the hand as canonical names, left to right. A kit never imports `cards.py`, which imports this.
+    Hooks get the `cards.Board`, whose `hand` holds canonical names left to right. A kit never imports `cards.py`, which imports this.
     """
 
     # Who the kit plays, for the log.
     name = ""
     # Base names of the cards that switch the kit on while one is in hand.
     cards = frozenset()
+    # Base names of the cards the kit moves in the turn, and the phase each goes to, for the default `phase`.
+    places = {}
 
     def claims(self, name):
         """Say whether a card switches this kit on.
@@ -52,24 +98,24 @@ class Kit:
         """
         return hand
 
-    def held(self, name, names):
+    def held(self, name, board):
         """Say whether a card must stay in hand, neither played nor given up to a prompt.
 
         Args:
             name: The card in question.
-            names: Every card in hand.
+            board: The `cards.Board` it would be played into.
 
         Returns:
             True to keep it.
         """
         return False
 
-    def worth(self, name, names, base, rate):
+    def worth(self, name, board, base, rate):
         """Adjust what a card is worth to the turn.
 
         Args:
             name: The card being valued.
-            names: Every card in hand.
+            board: The `cards.Board` it would be played into.
             base: What the generic picker made of it.
             rate: Gives the generic value of any card by name, for a kit that prices one card against another.
 
@@ -77,6 +123,19 @@ class Kit:
             The value to plan with.
         """
         return base
+
+    def phase(self, name, board, base):
+        """Place a card in the turn where the generic order puts it wrong.
+
+        Args:
+            name: The card being placed.
+            board: The `cards.Board` it would be played into.
+            base: Where the generic order puts it.
+
+        Returns:
+            A `PHASE_` value or a number between two of them, the card's `places` entry by default, else `base`.
+        """
+        return self.places.get(base_name(name), base)
 
     def waiting(self, names, count):
         """Say whether the turn should sit for a frame rather than play or end.

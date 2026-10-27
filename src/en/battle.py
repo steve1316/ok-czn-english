@@ -170,7 +170,8 @@ def kept_boxes(boxes):
         if name in cards.CARD_COST or kits.active([name]):
             named.append((box, name))
     names = [name for _, name in named]
-    return {id(box) for box, name in named if kits.held(name, names)}
+    hand = cards.Board(hand=tuple(names))
+    return {id(box) for box, name in named if kits.held(name, hand)}
 
 
 class KeepHeld(StandIn):
@@ -236,17 +237,21 @@ def was_refused(attempted, copies, hand_names):
     return attempted is not None and hand_names.count(attempted) >= copies
 
 
-def new_turn(before, after):
+def new_turn(before, after, ended):
     """Say whether the hand has been dealt again since the last frame.
+
+    A hand also grows mid-turn, when a card draws or creates cards - Luke's Stealth Reload adds bullets - so a bigger
+    hand only means a new deal once the turn has been ended.
 
     Args:
         before: The hand size last frame, or None on the first frame of a battle.
         after: The hand size now.
+        ended: Whether end turn has been pressed since the turn began.
 
     Returns:
         True when a fresh turn has started, so what the last turn refused no longer applies.
     """
-    return before is None or after > before
+    return before is None or (ended and after > before)
 
 
 class Turn:
@@ -257,11 +262,12 @@ class Turn:
     a frame or two - so it is read once and kept, and a turn that never manages to read one keeps trying.
     """
 
-    def __init__(self, hand_count):
+    def __init__(self, hand_count, last_turn=()):
         """Start a turn that has learnt nothing yet.
 
         Args:
             hand_count: The hand size this turn opened with.
+            last_turn: The cards the turn before played, oldest first.
         """
         self.hand_count = hand_count
         self.attempted = None
@@ -280,6 +286,11 @@ class Turn:
         # Frames spent waiting on a kit this turn, and whether the last frame was one.
         self.kit_waits = 0
         self.kit_waited = False
+        # Cards the game took this turn, oldest first, and those the turn before took, for kits that count plays.
+        self.played = []
+        self.last_turn = tuple(last_turn)
+        # Whether end turn has been pressed, by the picker or by upstream, and not called back since.
+        self.ended = False
 
 
 def play_key(task, key):
@@ -427,6 +438,8 @@ def handle_cards_left(task):
     else:
         task.log_info(f"the game says a card can still be played, so one of {turn.priced_out} must cost less than the data says")
         turn.objected = True
+    if turn is not None:
+        turn.ended = False
     task.click_box(cancel)
     task.sleep(AFTER_KEY)
     return True
@@ -539,11 +552,45 @@ def turn_of(task, hand_count):
         The `Turn` in progress, fresh when the hand has just been dealt again.
     """
     turn = getattr(task, TURN, None)
-    if turn is None or new_turn(turn.hand_count, hand_count):
-        turn = Turn(hand_count)
+    if turn is None or new_turn(turn.hand_count, hand_count, turn.ended):
+        turn = Turn(hand_count, turn.played if turn else ())
         setattr(task, TURN, turn)
     turn.hand_count = hand_count
     return turn
+
+
+def end_of_turn(task):
+    """Note that end turn was pressed, which settles the card tried last as played since upstream only ends an empty hand.
+
+    Args:
+        task: The running task, which the turn is parked on.
+    """
+    turn = getattr(task, TURN, None)
+    if turn is None:
+        return
+    if turn.attempted is not None:
+        turn.played.append(turn.attempted)
+        turn.attempted = None
+    turn.ended = True
+
+
+def noting_end_of_turn(task):
+    """Wrap a task's `send_key` so an end turn upstream presses closes the picker's turn too.
+
+    Args:
+        task: The running task.
+
+    Returns:
+        A stand-in for `task.send_key` that notes an end turn, then presses the key as the task would.
+    """
+    send_key = task.send_key
+
+    def send(key, *args, **kwargs):
+        if key == END_TURN_KEY:
+            end_of_turn(task)
+        return send_key(key, *args, **kwargs)
+
+    return send
 
 
 def install():
@@ -639,7 +686,11 @@ def install():
         names = [card["name"] for card in hand]
         turn = turn_of(task, count)
 
-        if was_refused(turn.attempted, turn.attempted_copies, names):
+        if turn.attempted is not None and not was_refused(turn.attempted, turn.attempted_copies, names):
+            # Settled once, so a frame that returns before picking again cannot count the same play twice.
+            turn.played.append(turn.attempted)
+            turn.attempted = None
+        elif turn.attempted is not None:
             turn.misses[turn.attempted] += 1
             # Live, Magnetic Field stayed in hand once with all three points to spend, and was given up on for the turn.
             # Once the game has said a card plays, each one tried is a guess, so a single miss is enough to move on.
@@ -656,7 +707,8 @@ def install():
             against = f"enemies weak to {turn.weakness}" if turn.weakness else "no shared enemy weakness"
             budget = "Action Points to spend" if points else "no Action Points"
             task.log_info(f"turn opens with {budget}, {against}, hand {names}")
-        state = cards.Board(action_points=points, weakness=turn.weakness, hand=tuple(names))
+        state = cards.Board(action_points=points, weakness=turn.weakness, hand=tuple(names), played=tuple(turn.played),
+                            last_turn=turn.last_turn, hand_size=count or 0)
         card = choose(hand, state, turn.refused)
         if card is None and turn.objected:
             # The game said a card is still playable, so the best of those passed over for cost is tried as if affordable.
@@ -680,6 +732,7 @@ def install():
                 turn.priced_out = [name for name in names if cards.cost(name) > 0 and name not in turn.refused]
             spent = "" if points else ", no Action Points left"
             task.log_info(f"nothing left worth playing in {names}{spent}, ending the turn")
+            end_of_turn(task)
             task.send_key(END_TURN_KEY)
             task.sleep(AFTER_KEY)
             return
@@ -707,7 +760,11 @@ def install():
         count = note_hand_read(task, utils_sortie)
         if kit_waiting(task, utils_sortie, count) or press_unread(task, count):
             return True
-        with standing_in(utils_sortie, random=EgoChoice(task, utils_sortie.random)):
+        turn = getattr(task, TURN, None)
+        if count is None and turn is not None:
+            # Off the battle screen, which is also how a fight won by a card ends without anyone pressing end turn.
+            turn.ended = True
+        with standing_in(utils_sortie, random=EgoChoice(task, utils_sortie.random)), standing_in(task, send_key=noting_end_of_turn(task)):
             return original_page(task)
 
     replace("handle_battle_page", handle_battle_page)
