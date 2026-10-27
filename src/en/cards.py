@@ -68,7 +68,7 @@ PRIME = re.compile(r"(?:Damage Amount|Hit\(s\)|Proc)[^|\n]*?\bnext\b[^|\n]*?\b(?
                    r"|(?:\b\d+ Vulnerable|Vulnerable \d+)(?! to (?:allies|self))|Damage Amount taken by the target", re.I)
 
 # The effect text of every card in the deck `piles` last read, by canonical name: the Epiphany it carries, the weakest where copies differ.
-# Mutated in place, never rebound, and empty until a read, so every card falls back to its base text and every `Board` sees the latest read.
+# Mutated in place, never rebound, and empty until a read, so every card falls back to its base text.
 DECK = {}
 
 # What a card does, in the terms the ordering cares about.
@@ -91,7 +91,7 @@ Board = namedtuple("Board", [
     "hand_size",
     # Canonical names of the cards still in hand when the turn before ended, so their Retain effects have fired.
     "kept",
-    # Canonical card name to the text of the version the deck holds, for kits whose rule rests on one Epiphany. The last deck read.
+    # Canonical card name to the text of the version the deck holds, for kits whose rule rests on one Epiphany. `DECK` itself, so it sees every read.
     "deck",
 ], defaults=[BASE_ACTION_POINTS, None, None, (), (), (), 0, (), DECK])
 
