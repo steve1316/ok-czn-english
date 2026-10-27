@@ -14,7 +14,7 @@ from ok import Logger
 
 from src.en import desire
 from src.en.handlers import StandIn, loaded, register, standing_in, wrap
-from src.en.screen import frame_of, hsv_of, patch_of
+from src.en.screen import frame_of, patch_of, white_mask
 
 logger = Logger.get_logger(__name__)
 
@@ -98,8 +98,6 @@ TREASURE_REGION = (0.477, 0.336, 0.841, 0.540)
 # pixels drops the background: the two arrows in `tests/images/treasure_band.png` score 0.731 and 0.795, while
 # the best hit in the same region across 703 other captured frames is 0.550.
 ARROW_MIN_SCORE = 0.65
-ARROW_MAX_SATURATION = 60
-ARROW_MIN_VALUE = 200
 # Pixels between two hits for them to count as separate arrows. The chests sit ~530px apart, the arrow is 63px.
 ARROW_SEPARATION = 60
 # Chests are only opened on the event screen, which always offers "End the event" while any are left.
@@ -259,18 +257,6 @@ def order(options, priority_keywords, is_subsequence, target=None):
         return (1, rank(description, target), index)
 
     return [option for _, option in sorted(enumerate(options), key=key)]
-
-
-def white_mask(patch):
-    """Keep only the near-white pixels of a patch, so an icon matches whatever it is drawn over.
-
-    Args:
-        patch: The pixels to reduce, in BGR.
-
-    Returns:
-        A single-channel image, 255 where the pixel is near white and 0 elsewhere.
-    """
-    return cv2.inRange(hsv_of(patch), (0, 0, ARROW_MIN_VALUE), (180, ARROW_MAX_SATURATION, 255))
 
 
 @lru_cache(maxsize=1)

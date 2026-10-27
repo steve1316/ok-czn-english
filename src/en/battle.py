@@ -14,7 +14,7 @@ import re
 import numpy as np
 from ok import Logger
 
-from src.en import board, cards, kits
+from src.en import board, cards, ego, kits
 from src.en.handlers import StandIn, insert_before, loaded, register, replace, standing_in
 from src.en.overrides import SMART_CARD_PLAY
 from src.en.screen import centre_of, colour_share, frame_of, in_region, patch_of, text_in_region
@@ -334,6 +334,12 @@ class Turn:
         self.kept = tuple(kept)
         # Whether end turn has been pressed, by the picker or by upstream, and not called back since.
         self.ended = False
+        # Egos fired this turn, slots whose preview would not read this turn, and whether holding EP has been logged.
+        self.ego_fires = 0
+        self.ego_unread = set()
+        self.ego_held = False
+        # Whether an enemy shows Absolute Invincibility, from `watch_invulnerable`, so the picker holds its attacks.
+        self.invulnerable = False
 
 
 def play_key(task, key):
@@ -452,6 +458,22 @@ def note_hand_read(task, utils_sortie):
     elif getattr(task, UNREAD_HAND, None) is None:
         setattr(task, UNREAD_HAND, 0)
     return count
+
+
+def watch_invulnerable(task, turn):
+    """Read whether an enemy is invulnerable, logging each change.
+
+    It runs every battle frame, since a boss can turn invulnerable partway through a turn on crossing a health threshold.
+
+    Args:
+        task: The running task, on a battle screen.
+        turn: The battle's `Turn`, which keeps the reading for the Ego planner and the picker.
+    """
+    invulnerable = board.enemy_invulnerable(frame_of(task))
+    if invulnerable != turn.invulnerable:
+        turn.invulnerable = invulnerable
+        task.log_info("an enemy is invulnerable this turn, holding attacks that only deal damage" if invulnerable
+                      else "no enemy is invulnerable any more, attacking again")
 
 
 def handle_cards_left(task):
@@ -892,7 +914,7 @@ def install():
             budget = "Action Points to spend" if points else "no Action Points"
             task.log_info(f"turn opens with {budget}, {against}, hand {names}")
         state = cards.Board(action_points=points, weakness=turn.weakness, hand=tuple(names), played=tuple(turn.played),
-                            last_turn=turn.last_turn, hand_size=count or 0, kept=turn.kept)
+                            last_turn=turn.last_turn, hand_size=count or 0, kept=turn.kept, invulnerable=turn.invulnerable)
         card = choose(hand, state, turn.refused)
         if card is None and turn.objected:
             # The game said a card is still playable, so the best of those passed over for cost is tried as if affordable.
@@ -948,6 +970,11 @@ def install():
         if count is None and turn is not None:
             # Off the battle screen, which is also how a fight won by a card ends without anyone pressing end turn.
             turn.ended = True
+        if count:
+            turn = turn_of(task, count)
+            watch_invulnerable(task, turn)
+            if ego.take_turn(task, utils_sortie, turn):
+                return True
         with standing_in(utils_sortie, random=EgoChoice(task, utils_sortie.random)), standing_in(task, send_key=noting_end_of_turn(task)):
             return original_page(task)
 

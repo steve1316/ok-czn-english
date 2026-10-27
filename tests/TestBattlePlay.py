@@ -21,7 +21,7 @@ sys.path.insert(0, str(REPO_ROOT / "ok_tasks"))
 # The real module, for a prompt the fork runs unchanged over a different reading of the screen.
 import utils_sortie as real_sortie  # noqa: E402
 
-from src.en import battle, board, cards, overrides  # noqa: E402
+from src.en import battle, board, cards, ego, overrides  # noqa: E402
 from src.en.handlers import standing_in  # noqa: E402
 from tests.TestBoard import FakeTask, flat, paint, paint_enemy, pasted  # noqa: E402
 from tests.fakes import FakeBox  # noqa: E402
@@ -32,6 +32,12 @@ ATTACK = "Anchor"
 VOID_ATTACK = "Annihilation Shot"
 BIG_ATTACK = "Charge Launcher"
 CURSE = "Anemia"
+# A neutral 1-point Skill that only shields.
+SHIELD = "Barrier Utilization"
+# One Ego of each kind, as the planner would have read them off their previews.
+GUARD_EGO = ego.Ego("Legato of Faith", frozenset({ego.GUARD}), "")
+STRIKE_EGO = ego.Ego("Execution", frozenset({ego.STRIKE}), "")
+SETUP_EGO = ego.Ego("Tactical Command", frozenset({ego.SETUP}), "")
 
 # Where the painted enemy stands. Anywhere inside the band the counters are looked for in will do.
 ENEMY_AT = (0.50, 0.25)
@@ -129,6 +135,48 @@ class TestChoosing(unittest.TestCase):
     def test_an_empty_hand_ends_the_turn(self):
         self.assertIsNone(battle.choose([], cards.Board(), set()))
 
+    def test_an_invulnerable_enemy_is_not_attacked(self):
+        # Damage is wasted while it cannot lose Health, so attacks stay in hand and the turn ends once the shields are played.
+        invulnerable = cards.Board(invulnerable=True)
+        for held, played in (((ATTACK, BIG_ATTACK), None), ((ATTACK, SHIELD), SHIELD)):
+            with self.subTest(held=held):
+                chosen = battle.choose(hand(*held), invulnerable, set())
+                self.assertEqual(played, chosen and chosen["name"])
+
+
+class TestEgoPlanner(unittest.TestCase):
+    """Which Ego a turn fires, from what the screen says about the fight."""
+
+    def test_roles_come_from_the_preview_text(self):
+        # Morale's "Damage Amount" is a buff, not damage, which is the misreading that would fire a buff as a strike.
+        for text, roles in (("Heal 140% Activate the Retain effect of all of Orlea's cards in hand", {ego.GUARD}),
+                            ("Gain 2 Morale and 1 Fortitude for 1 turn", {ego.SETUP}),
+                            ("Morale +100% Damage Amount", {ego.SETUP}),
+                            ("Deal 300% Damage to all enemies", {ego.STRIKE}),
+                            ("Gain 120% Shield. Draw 1 card", {ego.GUARD, ego.SETUP})):
+            with self.subTest(text=text):
+                self.assertEqual(ego.roles_of(text), roles)
+
+    def test_the_first_rule_that_applies_wins(self):
+        every = [("F1", GUARD_EGO, True), ("F2", STRIKE_EGO, True), ("F3", SETUP_EGO, True)]
+        cases = (
+            # (name, slots, banked, after_hit, invulnerable, attacking, boss, fired)
+            ("a hit the team cannot take", every, 3, 0.2, False, True, False, "F1"),
+            ("a full bar on a healthy team", every, 7, 0.9, False, True, False, "F2"),
+            ("a full bar on a hurt team", every, 7, 0.4, False, True, False, "F1"),
+            ("a full bar into invulnerability", every[1:], 7, 0.9, True, True, False, "F3"),
+            ("invulnerable short of a full bar", every[1:], 3, 0.9, True, True, False, None),
+            ("a set-up ahead of the attacks", every, 3, 0.9, False, True, False, "F3"),
+            ("no attacks to set up", every, 3, 0.9, False, False, False, None),
+            ("a boss saving for its strike", [("F2", STRIKE_EGO, False), ("F3", SETUP_EGO, True)], 3, 0.9, False, True, True, None),
+            ("an unaffordable guard", [("F1", GUARD_EGO, False), ("F3", SETUP_EGO, True)], 3, 0.2, False, True, False, "F3"),
+            ("an Ego never read", [("F1", None, True)], 7, 0.2, False, True, False, None),
+        )
+        for name, slots, banked, after_hit, invulnerable, attacking, boss, fired in cases:
+            with self.subTest(name):
+                choice = ego.decide(slots, banked, after_hit, invulnerable, attacking, boss)
+                self.assertEqual(fired, choice and choice[0])
+
 
 class TestTurnTracking(unittest.TestCase):
     """Telling a card the game would not play apart from one it did, and both apart from a fresh turn."""
@@ -203,6 +251,10 @@ class Pressed:
 
     def find_one(self, feature_name=None, box=None):
         return self.attack_button if feature_name == battle.START_ATTACK else None
+
+    def find_feature(self, feature_name=None, box=None):
+        # The end-turn button is never up, so the Ego planner leaves these frames to the picker and upstream.
+        return []
 
     def click_box(self, box):
         self.clicked.append(box)
