@@ -6,6 +6,7 @@ this yet" flag, and `handle_archive_target_member` then taps the 3-person icon a
 reading anything, which on a run started there shuts the page and reopens it. Sortie never makes the trip at all.
 """
 
+import contextlib
 import dataclasses
 import re
 
@@ -24,6 +25,7 @@ MEMBER_INFO_REGION = (0.005, 0.018, 0.080, 0.343)
 MEMBER_INFO_FEATURES = ["memberinfo", "memberinfo2"]
 
 # Where upstream taps to select the Combatants tab, read off the capture. Check this if a rebase moves it.
+# The 3-person icon already lands on this tab, so the tap is dropped on every read.
 COMBATANTS_TAB = (0.201, 0.056)
 # Any combatant on the roster, as a whole word, so a read with a level stuck on still counts and a short name
 # like "Nia" cannot match inside a longer one. The sibling tabs list Partners, who are not on this roster.
@@ -139,21 +141,23 @@ def reading_in_place(original):
     """
     def handle_archive_target_member(task):
         utils_chaos = loaded("utils_chaos")
-        if utils_chaos is None or not on_combatants_tab(task):
+        if utils_chaos is None:
             return original(task)
-        logger.info("already on the Combatants tab, reading the three names without tapping back to it")
+        in_place = on_combatants_tab(task)
+        if in_place:
+            logger.info("already on the Combatants tab, reading the three names without tapping back to it")
         dropped = Dropped()
         # Stood in for rather than reimplemented: everything the capture does after the two taps - the OCR,
         # the name match and the six portrait crops - is upstream's, and none of it changes.
         tab_tap = without_the_tab_tap(utils_chaos._move_and_click, dropped)
-        with standing_in(utils_chaos, _move_and_click=tab_tap), \
-                standing_in(task, click_box=without_the_icon_tap(dropped)):
+        icon_tap = standing_in(task, click_box=without_the_icon_tap(dropped)) if in_place else contextlib.nullcontext()
+        with standing_in(utils_chaos, _move_and_click=tab_tap), icon_tap:
             handled = original(task)
-        if (dropped.tab, dropped.icon) != (1, 1):
+        if (dropped.tab, dropped.icon) != (1, int(in_place)):
             # Loud on purpose. Both taps are recognised by shape rather than by name, so upstream changing
             # either is invisible until someone reads the log - either a tap it still needed was swallowed,
             # or the skip quietly stopped saving anything.
-            logger.warning(f"expected to drop one tab tap and one icon tap, dropped {dropped.tab} and "
+            logger.warning(f"expected to drop one tab tap and {int(in_place)} icon tap, dropped {dropped.tab} and "
                            f"{dropped.icon}: upstream's capture has changed shape, so this skip needs a look")
         return handled
 

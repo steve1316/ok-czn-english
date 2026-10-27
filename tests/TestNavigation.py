@@ -145,10 +145,11 @@ class TestReadingInPlace(unittest.TestCase):
         self.assertEqual([CLOSE_PAGE], task.clicks)
         self.assertTrue(handled)
 
-    def test_a_run_starting_elsewhere_navigates_as_upstream_does(self):
+    def test_a_run_starting_elsewhere_taps_only_the_icon(self):
+        """The 3-person icon already lands on the Combatants tab, so the tab tap after it would do nothing."""
         task, handled = self.capture(ANOTHER_TAB)
         self.assertEqual(["memberinfo"], task.boxes)
-        self.assertEqual([navigation.COMBATANTS_TAB, CLOSE_PAGE], task.clicks)
+        self.assertEqual([CLOSE_PAGE], task.clicks)
         self.assertTrue(handled)
 
     def test_a_capture_that_throws_still_puts_them_back(self):
