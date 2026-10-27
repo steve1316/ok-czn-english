@@ -74,6 +74,10 @@ DRAW = re.compile(r"\bDraw (\d+)")
 PRIME = re.compile(r"(?:Damage Amount|Hit\(s\)|Proc)[^|\n]*?\bnext\b[^|\n]*?\b(?:Attack|Bullet|Bind) Card"
                    r"|(?:\b\d+ Vulnerable|Vulnerable \d+)(?! to (?:allies|self))|Damage Amount taken by the target", re.I)
 
+# The effect text of every card in the deck `piles` last read, by canonical name: the Epiphany it carries, the weakest where copies differ.
+# Mutated in place, never rebound, and empty until a read, so every card falls back to its base text.
+DECK = {}
+
 # What a card does, in the terms the ordering cares about.
 Features = namedtuple("Features", ["damage", "shield", "draw"])
 # What the picker knows about the moment it is choosing in.
@@ -93,10 +97,6 @@ Board = namedtuple("Board", [
 CACHED_READINGS = 1024
 # Folded card name to the client's own spelling, so a reading run together or in the wrong case still lands.
 CARD_INDEX = index(CARD_COST)
-
-# The effect text of every card in the deck `piles` last read, by canonical name: the Epiphany it carries, the weakest where copies differ.
-# Mutated in place, never rebound, and empty until a read, so every card falls back to its base text.
-DECK = {}
 
 # The type label the game prints under every card, in both the English the Global client draws and the
 # Chinese `ocr.po` rewrites some of them into. Upstream's own filter lists only Chinese, so every English
