@@ -14,16 +14,33 @@ AQUILA = "Greatsword Aquila"
 TRIGGER_COST = 2
 
 
-def triggers(names):
-    """Find a card in hand that fires Vulture Ejection when played.
+def fires(name):
+    """Say whether playing a card fires a Vulture Ejection held in hand.
 
     Args:
-        names: Canonical names of the cards in hand.
+        name: A canonical card name.
 
     Returns:
-        True when one costs 2 or more, not counting an Ejection, and an X-cost card is -1 so it never counts.
+        True for Aquila and for any other card costing 2 or more but an Ejection. An X-cost card is -1 so it never counts.
     """
-    return any(base_name(name) != EJECTION and TRIGGER_COST <= CARD_COST.get(base_name(name), 0) for name in names)
+    card = base_name(name)
+    return card == AQUILA or (card != EJECTION and TRIGGER_COST <= CARD_COST.get(card, 0))
+
+
+def triggers(board):
+    """Find a card in hand that fires Vulture Ejection and can be played this turn.
+
+    A card some kit holds, like a low Hew, or one dearer than the points left never comes, so it must not keep the Ejection waiting.
+
+    Args:
+        board: The `cards.Board` being planned.
+
+    Returns:
+        True when such a card is in hand.
+    """
+    # Imported here since the registry imports this module.
+    from src.en import kits
+    return any(fires(name) and CARD_COST.get(base_name(name), 0) <= board.action_points and not kits.held(name, board) for name in board.hand)
 
 
 class Khalipe(Kit):
@@ -40,9 +57,25 @@ class Khalipe(Kit):
             board: The `cards.Board` it would be played into.
 
         Returns:
-            True for an Ejection that a 2-cost card, or Aquila, would fire for free.
+            True for an Ejection that a 2-cost card, or Aquila, would fire for free this turn.
         """
-        return base_name(name) == EJECTION and (triggers(board.hand) or count(board.hand, {AQUILA}) > 0)
+        return base_name(name) == EJECTION and triggers(board)
+
+    def worth(self, name, board, base, rate):
+        """Add the Ejection a card fires to its own value, so the card that fires it is bought rather than outbid.
+
+        Args:
+            name: The card being valued.
+            board: The `cards.Board` it would be played into.
+            base: What the generic picker made of it.
+            rate: Gives the generic value of any card by name, here the Ejection's.
+
+        Returns:
+            The value to plan with.
+        """
+        if fires(name) and count(board.hand, {EJECTION}):
+            return base + rate(EJECTION)
+        return base
 
     def phase(self, name, board, base):
         """Play Aquila ahead of the other attacks while an Ejection is in hand, so the Ejection is still there for its bonus.
