@@ -19,9 +19,6 @@ from src.en.screen import centre_of, frame_of, in_region, lines_in, patch_of, ra
 
 logger = Logger.get_logger(__name__)
 
-# The `(signature, Ego)` pairs from `EGO_FILE`, loaded on first use.
-_known = None
-
 # Every Ego read so far, kept across runs so each is previewed only once. `data/` is in `.gitignore`, and deleting the file only costs
 # the previews. The panel moves Egos between slots as they are used, so an Ego is known by its portrait rather than its key.
 EGO_FILE = "data/egos.json"
@@ -38,10 +35,16 @@ FLAT_PORTRAIT = 4.0
 # How closely two signatures have to correlate to be the same Ego. One portrait measured 0.99-1.00 against itself, or 0.71 against
 # its greyed-out look while the bar could not pay for it, and two different portraits at most 0.45.
 SAME_EGO = 0.6
-# How long a preview card takes to open, and where it puts the Ego's name, the label under it and the effect text.
+# How long a preview card takes to open, and where on screen its label is looked for. A partner's card says "Partners" under the
+# name and a combatant's says "Ego Skill", which OCR often cuts to "Ego Skil". The card moves with the length of its text.
 PREVIEW_WAIT = 1
-PREVIEW_CARD = (0.37, 0.45, 0.63, 0.70)
-PREVIEW_LABEL = "Partners"
+PREVIEW_AREA = (0.15, 0.25, 0.95, 0.82)
+PREVIEW_LABELS = ("Partners", "Ego Ski")
+# Where the name and effect text sit from the label's centre. On Legato of Faith the name is 0.04 above it and the text runs from 0.06
+# to 0.13 below it, within 0.05 either side.
+CARD_HALF_WIDTH = 0.15
+NAME_ABOVE = 0.06
+TEXT_BELOW = 0.30
 # The Cancel button the selected slot turns into, and where it sits from that slot's badge when OCR misses it.
 CANCEL = "Cancel"
 EGO_PANEL = (0.0, 0.62, 0.20, 0.98)
@@ -71,6 +74,11 @@ FINISH_TURN = "finishturn"
 FINISH_TURN_REGION = (0.844, 0.782, 0.998, 0.990)
 # Set by upstream once the run reaches its last boss.
 BOSS = "final_boss_battle"
+
+# The `(signature, Ego)` pairs from `EGO_FILE`, loaded on first use.
+_known = None
+# Signatures of portraits whose preview did not read this session, so a slot is not previewed again every turn.
+_unread = []
 
 Ego = collections.namedtuple("Ego", [
     # The name on the preview card, or None when its label did not read.
@@ -225,14 +233,14 @@ def identify(task, utils, key):
     task.send_key(key)
     task.sleep(PREVIEW_WAIT)
     raw_ocr(task)
-    label = text_in_region(task, PREVIEW_LABEL, PREVIEW_CARD)
-    if label is None:
-        name, text = None, lines_in(task, PREVIEW_CARD)
-    else:
-        left, top, right, bottom = PREVIEW_CARD
-        label_y = centre_of(label, task.width, task.height)[1]
-        name = lines_in(task, (left, top, right, label_y - 0.01)) or None
-        text = lines_in(task, (left, label_y + 0.01, right, bottom))
+    logger.debug(f"Ego preview on {key}: {[(box.name, *(round(at, 3) for at in centre_of(box, task.width, task.height))) for box in task.all_texts or []]}")
+    label = next(filter(None, (text_in_region(task, word, PREVIEW_AREA) for word in PREVIEW_LABELS)), None)
+    name, text = None, ""
+    if label is not None:
+        label_x, label_y = centre_of(label, task.width, task.height)
+        left, right = label_x - CARD_HALF_WIDTH, label_x + CARD_HALF_WIDTH
+        name = lines_in(task, (left, label_y - NAME_ABOVE, right, label_y - 0.01)) or None
+        text = lines_in(task, (left, label_y + 0.01, right, min(label_y + TEXT_BELOW, PREVIEW_AREA[3])))
     if text or text_in_region(task, CANCEL, EGO_PANEL) is not None:
         cancel_preview(task, utils, key)
     return Ego(name, roles_of(text), text) if text else None
@@ -292,11 +300,11 @@ def take_turn(task, utils, turn):
     for key in board.EGO_KEYS:
         mark = signature(frame, key)
         ego = recall(seen, mark)
-        if ego is None and mark is not None and key not in turn.ego_unread:
+        if ego is None and mark is not None and not any(float(mark @ failed) >= SAME_EGO for failed in _unread):
             ego = identify(task, utils, key)
             if ego is None:
-                task.log_info(f"the Ego on {key} did not preview, leaving it to upstream this turn")
-                turn.ego_unread.add(key)
+                task.log_info(f"the Ego on {key} did not preview, leaving it to upstream until the app restarts")
+                _unread.append(mark)
             else:
                 task.log_info(f"the Ego on {key} is {ego.name or 'unnamed'} ({', '.join(sorted(ego.roles))}): {ego.text}")
                 learn(mark, ego)

@@ -145,6 +145,29 @@ class TestChoosing(unittest.TestCase):
                 self.assertEqual(played, chosen and chosen["name"])
 
 
+class Previewed:
+    """A task whose screen shows an Ego's preview card once its key is pressed."""
+
+    def __init__(self, boxes):
+        self.boxes = boxes
+        self.all_texts = []
+        self.width, self.height = 1920, 1080
+        self.executor = types.SimpleNamespace(ocr_po_translation=None)
+        self.clicked = []
+
+    def send_key(self, key):
+        pass
+
+    def sleep(self, seconds):
+        pass
+
+    def ocr(self, box=None):
+        return self.boxes
+
+    def click_box(self, box):
+        self.clicked.append(box)
+
+
 class TestEgoPlanner(unittest.TestCase):
     """Which Ego a turn fires, from what the screen says about the fight."""
 
@@ -167,6 +190,16 @@ class TestEgoPlanner(unittest.TestCase):
             ego.learn(mark, ego.Ego("Legato of Faith", ego.roles_of("Heal 140%"), "Heal 140%"))
             ego._known = None
             self.assertEqual(ego.recall(ego.known(), mark), GUARD_EGO._replace(text="Heal 140%"))
+
+    def test_both_kinds_of_preview_card_read(self):
+        # Combatant Egos label their card "Ego Skill" where partners say "Partners". Laid out as Legato of Faith's card measured.
+        for label, name in (("Partners", "Legato of Faith"), ("Ego Skil", "Reflection: Zero")):
+            with self.subTest(label=label):
+                task = Previewed([FakeBox(name, 0.480, 0.479, width=300), FakeBox(label, 0.466, 0.517, width=150),
+                                  FakeBox("Heal140%", 0.453, 0.574, width=150), FakeBox("all of Orlea's cards in hand", 0.509, 0.644, width=450),
+                                  FakeBox("Wound", 0.587, 0.857), FakeBox("Cancel", 0.105, 0.728)])
+                read = ego.identify(task, types.SimpleNamespace(), "F1")
+                self.assertEqual((read.name, read.text, read.roles), (name, "Heal140% all of Orlea's cards in hand", {ego.GUARD}))
 
     def test_the_first_rule_that_applies_wins(self):
         every = [("F1", GUARD_EGO, True), ("F2", STRIKE_EGO, True), ("F3", SETUP_EGO, True)]
