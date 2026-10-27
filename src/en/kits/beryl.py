@@ -1,25 +1,29 @@
-"""Beryl: let Charged Shot grow in hand, and make Heavy Weapons Specialist's new card before attacking.
+"""Beryl: let Charged Shot grow in hand, spend a kept Opening Found, and make Heavy Weapons Specialist's new card before attacking.
 
-Charged Shot is Retain and gains damage for every turn it is held, and Heavy Weapons Specialist creates a cheap Opening Found or Charged Shot.
-The generic picker spends two points on Charged Shot at once as her top attack, and plays Heavy Weapons Specialist after the attacks.
+Charged Shot gains damage each turn it is kept, an Opening Found kept from last turn has an extra hit for this turn only, and Heavy Weapons
+Specialist creates a cheap Opening Found or Charged Shot. The generic picker spends two points on Charged Shot at once, sees no extra hit,
+and plays Heavy Weapons Specialist after the attacks.
 """
 
 from src.en.kits.kit import PHASE_SETUP, Kit, base_name, owned
 
 CHARGED_SHOT = "Charged Shot"
+# Its Retain line adds hits for one turn, so a copy kept from last turn is worth a second hit. That also buys it first among the attacks.
+OPENING_FOUND = "Opening Found"
+KEPT_HITS = 2
 # Creates the card the attacks then use, so it goes before them.
 SPECIALIST = "Heavy Weapons Specialist"
 
 
 class Beryl(Kit):
-    """Ranks Charged Shot last so cheaper cards take the points, and sets up with Heavy Weapons Specialist."""
+    """Ranks Charged Shot last so cheaper cards take the points, spends a kept Opening Found, and sets up with Heavy Weapons Specialist."""
 
     name = "Beryl"
     cards = owned("Beryl")
     places = {SPECIALIST: PHASE_SETUP}
 
     def worth(self, name, board, base, rate):
-        """Spend Charged Shot only on points no other card wants.
+        """Spend Charged Shot only on points no other card wants, and count a kept Opening Found's extra hit.
 
         Args:
             name: The card being valued.
@@ -30,7 +34,12 @@ class Beryl(Kit):
         Returns:
             The value to plan with.
         """
-        return 0 if base_name(name) == CHARGED_SHOT else base
+        card = base_name(name)
+        if card == CHARGED_SHOT:
+            return 0
+        if card == OPENING_FOUND and OPENING_FOUND in map(base_name, board.kept):
+            return base * KEPT_HITS
+        return base
 
 
 KIT = Beryl()

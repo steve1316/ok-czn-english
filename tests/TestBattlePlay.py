@@ -119,10 +119,11 @@ class TestChoosing(unittest.TestCase):
 
     def test_spare_points_clear_a_card_that_hurts_while_held(self):
         # Live: three Bleeds sat out turn after turn with all three points unspent. Bleed deals damage, so it goes
-        # ahead of Parasitic Spores, while Abyssal Erosion does its harm when played and is left alone.
-        for held, cleared in ((("Parasitic Spores", "Bleed"), "Bleed"), (("Abyssal Erosion",), None)):
-            with self.subTest(held=held):
-                chosen = battle.choose(hand(*held), cards.Board(), set())
+        # ahead of Parasitic Spores. Abyssal Erosion hurts through its Retain line, but costs 4.
+        for held, points, cleared in ((("Parasitic Spores", "Bleed"), 3, "Bleed"), (("Abyssal Erosion",), 3, None),
+                                      (("Abyssal Erosion",), 4, "Abyssal Erosion")):
+            with self.subTest(held=held, points=points):
+                chosen = battle.choose(hand(*held), cards.Board(action_points=points), set())
                 self.assertEqual(cleared, chosen and chosen["name"])
 
     def test_an_empty_hand_ends_the_turn(self):
@@ -480,6 +481,16 @@ class TestInstalling(unittest.TestCase):
             task.hand_cards = hand(ATTACK, BIG_ATTACK)
             utils_sortie._try_all_card_keys(task, 2)
             self.assertEqual(getattr(task, battle.TURN).last_turn, (ATTACK,))
+
+    def test_the_next_turn_knows_what_was_kept(self):
+        # The Attack was pressed after the last read, so only the Curse was still in hand when the turn ended.
+        with upstream(hand(ATTACK, CURSE)) as (utils_sortie, task):
+            battle.install()
+            utils_sortie._try_all_card_keys(task, 2)
+            battle.end_of_turn(task)
+            task.hand_cards = hand(CURSE, ATTACK, BIG_ATTACK)
+            utils_sortie._try_all_card_keys(task, 3)
+            self.assertEqual(getattr(task, battle.TURN).kept, (CURSE,))
 
     def test_every_copy_of_a_card_gets_played(self):
         # Caught live: a hand of three Escapism played one, read the other two as the game refusing it, and
