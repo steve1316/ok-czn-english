@@ -710,6 +710,9 @@ class TestKits(unittest.TestCase):
             # Generic play fires the free nuke first, before the chain has put Blades in the graveyard.
             ("Release goes after the chain", ("Effulgent Release", "Sword Flash"), cards.Board(action_points=1),
              ["Sword Flash", "Effulgent Release"]),
+            # Live: a hand of Blades and no card of her own deck left the kit off, and the Blade went ahead of Sword Slash.
+            ("a hand holding only made cards still runs the kit", ("Effulgent Blade", "Sword Slash"), cards.Board(),
+             ["Sword Slash", "Effulgent Blade"]),
         ))
 
     def test_hilde_fills_the_draw_pile_before_drawing(self):

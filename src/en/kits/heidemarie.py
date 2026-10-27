@@ -20,7 +20,8 @@ class Heidemarie(Kit):
     """Holds back Compression and the Linked cards the chain has discarded, and puts the starter after the other cards."""
 
     name = "Heidemarie"
-    cards = owned("Heidemarie")
+    # Blades, Compression and Release are made mid-fight, so the data never names them hers, and a hand of only those still needs the kit.
+    cards = owned("Heidemarie") | {"Effulgent Blade", COMPRESSION, RELEASE}
     # The Linked starter after the other attacks, and Release after the starter.
     places = {**dict.fromkeys(LINKED, PHASE_ATTACK + 0.5), RELEASE: PHASE_SPENDS_EVERYTHING - 0.5}
 
