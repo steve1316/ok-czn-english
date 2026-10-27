@@ -57,8 +57,9 @@ EPIPHANY_BONUS = 1000
 # A damage figure is a percentage followed shortly by the word Damage. "Damage Amount" is excluded on purpose:
 # that phrasing is always a modifier on some other card's damage, as in "Increases Damage Amount by 20%", and
 # counting it would rate a card that does nothing by itself as though it hit hard. A hit count after it, as in
-# "40% Damage x 3", multiplies the figure. The client mostly writes a multiplication sign, and a few cards a plain x.
-DAMAGE = re.compile(r"(\d+)%[^\n]{0,24}?Damage(?!\s+Amount)(?:\s*[×x]\s*(\d+))?")
+# "40% Damage x 3", or right after the percentage, as in "60% x 3 Damage", multiplies the figure. The client mostly
+# writes a multiplication sign, and a few cards a plain x.
+DAMAGE = re.compile(r"(\d+)%(?:\s*[×x]\s*(\d+))?[^\n]{0,24}?Damage(?!\s+Amount)(?:\s*[×x]\s*(\d+))?")
 SHIELD = re.compile(r"(\d+)%[^\n]{0,20}?Shield")
 DRAW = re.compile(r"\bDraw (\d+)")
 # A card that makes the next attack hit harder, or the target take more - "Add 1 Hit(s) to the next Attack Card", "+X% Damage
@@ -278,7 +279,7 @@ def parsed(name):
     """
     text = on_play(name)
     return Features(
-        damage=sum(int(share) * int(hits or 1) for share, hits in DAMAGE.findall(text)),
+        damage=sum(int(share) * int(before or after or 1) for share, before, after in DAMAGE.findall(text)),
         shield=sum(int(found) for found in SHIELD.findall(text)),
         draw=sum(int(found) for found in DRAW.findall(text)),
     )
