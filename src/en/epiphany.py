@@ -69,7 +69,7 @@ def choosing(select_card, utils):
         def listing(*args, **kwargs):
             offered = original(*args, **kwargs)
             names[configured:] = ranked(offered)
-            logger.debug(f"Epiphany goes on the first of {names[configured:]} unless a listed card is offered")
+            logger.info(f"Epiphany goes on the first of {names[configured:]} unless a listed card is offered")
             return offered
 
         with standing_in(utils, recognize_cards_in_deck=listing):
