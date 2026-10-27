@@ -12,6 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from src.en.memory_limit import STATE, handle_divine_epiphany, handle_memory_limit  # noqa: E402
+from src.en.summary import handle_run_summary  # noqa: E402
 from tests.fakes import HEIGHT, WIDTH, FakeBox  # noqa: E402
 
 SKIP_BUTTON = FakeBox("跳过", 0.951, 0.930, units="fraction")
@@ -38,6 +39,13 @@ WARNING_DIALOG = [
     CANCEL_BUTTON,
     FakeBox("确认", 0.666, 0.632, units="fraction"),
 ]
+# The run summary as OCR read it at 08:29:25 on 2026-10-27, its deck drawn before its Confirm button.
+RUN_SUMMARY = [
+    FakeBox("Completion Time", 0.300, 0.300, width=200, units="fraction"),
+    FakeBox("Score", 0.300, 0.400, units="fraction"),
+    FakeBox("Knife Toss", 0.239, 0.750, width=180, units="fraction"),
+]
+DECK_VIEW = [FakeBox("Cards Owned", 0.500, 0.054, width=260, units="fraction"), FakeBox("Knife Toss", 0.130, 0.165, width=180, units="fraction")]
 DIVINE_CONFIRM_BUTTON = FakeBox("确认", 0.666, 0.690, units="fraction")
 # The Divine Epiphany notice, as OCR read it on the Global client. It shares the warning's Faint Memory row and buttons.
 DIVINE_NOTICE = [
@@ -68,6 +76,12 @@ class FakeTask:
 
     def sleep(self, seconds):
         pass
+
+    def box_of_screen(self, *box):
+        return box
+
+    def find_one(self, feature_name, box):
+        return f"{feature_name} in {box}"
 
 
 class TestMemoryLimit(unittest.TestCase):
@@ -106,6 +120,19 @@ class TestMemoryLimit(unittest.TestCase):
         self.assertFalse(handle_memory_limit(task))
         self.assertTrue(handle_divine_epiphany(task))
         self.assertEqual([DIVINE_CONFIRM_BUTTON], task.clicked)
+
+
+
+class TestRunSummary(unittest.TestCase):
+    """The summary's deck must not be tapped as an event option, and a deck view opened anyway is closed."""
+
+    def test_each_screen(self):
+        for name, screen, claimed, clicked in (("summary", RUN_SUMMARY, True, []), ("deck view", DECK_VIEW, True, ["close_page"]),
+                                               ("anything else", REWARD_SCREEN, False, [])):
+            with self.subTest(screen=name):
+                task = FakeTask(screen)
+                self.assertEqual(claimed, handle_run_summary(task))
+                self.assertEqual(clicked, [box.split(" ")[0] for box in task.clicked])
 
 
 if __name__ == "__main__":

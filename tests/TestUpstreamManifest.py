@@ -100,6 +100,13 @@ class TestUpstreamManifest(unittest.TestCase):
                     registered = [handler.__name__ for handler in MODULES[module_name].PAGE_HANDLERS]
                     self.assertIn(anchor, registered, f"{module_name} no longer registers {anchor}")
 
+    def test_confirm_still_runs_ahead_of_the_event_handler(self):
+        # summary.py holds the run summary ahead of `handle_event_task` until Confirm draws, and leaves the press to `handle_confirm`.
+        for module_name in ANCHORS_IN_LISTS["handle_event_task"]:
+            with self.subTest(mode=module_name):
+                registered = [handler.__name__ for handler in MODULES[module_name].PAGE_HANDLERS]
+                self.assertLess(registered.index("handle_confirm"), registered.index("handle_event_task"))
+
     def test_the_framework_still_offers_the_hooks_every_install_rides(self):
         # `handlers.register` applies every list edit from `after_init`, and `load_config` carries the run-start
         # resets in stuck.py and notify.py. Lose either and the fork degrades to stock upstream in silence.
