@@ -122,9 +122,12 @@ class TestOrdering(unittest.TestCase):
         self.assertEqual(played(chosen), [BIG_ATTACK])
 
     def test_every_hit_of_a_multi_hit_attack_counts(self):
-        # 40% three times is 120%, which beats 100% once. Read as its first hit alone it lost to it.
-        chosen = cards.plan(hand(JUSTICE_ATTACK, "Aggressive Assault"), cards.Board(action_points=1))
-        self.assertEqual(played(chosen), ["Aggressive Assault"])
+        # 40% three times is 120%, which beats 100% once. Read as its first hit alone it lost to it. Fan of Daggers writes
+        # its count before the word, "60% x 3 Damage", and was given up to a discard prompt as a 60% card.
+        for attack in ("Aggressive Assault", "Fan of Daggers"):
+            with self.subTest(attack=attack):
+                chosen = cards.plan(hand(JUSTICE_ATTACK, attack), cards.Board(action_points=1))
+                self.assertEqual(played(chosen), [attack])
 
     def test_a_retain_effect_is_not_counted_on_play(self):
         # Diallos's Declaration shields only when it is kept in hand, so playing it is worth its draw alone.
