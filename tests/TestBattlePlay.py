@@ -756,6 +756,12 @@ class TestHandPrompt(unittest.TestCase):
         self.assertEqual([(0.73, round(0.776 + battle.CARD_BODY, 3)), battle.PROMPT_CONFIRM], task.taps)
         self.assertEqual([], task.clicked, "upstream's random pick never ran")
 
+    def test_the_top_of_the_draw_pile_takes_the_best_card_over_the_curse(self):
+        # The card comes straight back next turn, so a curse put there is drawn again.
+        top = (FakeBox("请选择1张要移动至抽牌堆顶的卡牌", 0.5, 0.111, width=600), *self.SCREEN[1:])
+        task = self.frames("0/1", screens=(top,))
+        self.assertEqual([(0.349, round(0.765 + battle.CARD_BODY, 3))], task.taps, "Opening Found, the best card in hand")
+
     def test_a_hand_not_read_yet_is_waited_for(self):
         # Live, the prompt opened on a frame with no card name read, and upstream's random pick gave up an Impulse over the curse.
         task = self.frames("0/1", "0/1", screens=(self.SCREEN[:2],))

@@ -37,6 +37,8 @@ PATTERNS = (
     (re.compile(SELECT_CARDS + r"convert.*$", re.I), "请选择{0}张转换的卡牌"),
     (re.compile(SELECT_CARDS + r"duplicate.*$", re.I), "请选择{0}张复制的卡牌"),
     (re.compile(SELECT_CARDS + r"(?:spark|trigger).*epiphany.*$", re.I), "请选择{0}张闪光的卡牌"),
+    # The top of the Draw Pile keeps its own word, since the card picked there is drawn again next turn rather than given up.
+    (re.compile(SELECT_CARDS + r"move.*top of draw pile.*$", re.I), "请选择{0}张要移动至抽牌堆顶的卡牌"),
     (re.compile(SELECT_CARDS + r"move.*draw pile.*$", re.I), "请选择{0}张要移动至抽牌堆的卡牌"),
     # Must stay below every rule above, or it swallows them. Upstream's in-battle hand picker reads only the count,
     # and freezes the turn on any caption left in English.
