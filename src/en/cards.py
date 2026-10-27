@@ -94,6 +94,10 @@ CACHED_READINGS = 1024
 # Folded card name to the client's own spelling, so a reading run together or in the wrong case still lands.
 CARD_INDEX = index(CARD_COST)
 
+# The effect text of every card in the deck `piles` last read, by canonical name: the Epiphany it carries, the weakest where copies differ.
+# Mutated in place, never rebound, and empty until a read, so every card falls back to its base text.
+DECK = {}
+
 # The type label the game prints under every card, in both the English the Global client draws and the
 # Chinese `ocr.po` rewrites some of them into. Upstream's own filter lists only Chinese, so every English
 # label reached the hand as a card name - `Basic Atta` was the commonest junk reading in a Chaos recording.
@@ -276,7 +280,18 @@ def parsed(name):
     Returns:
         The `Features` the text states.
     """
-    text = DESCRIPTIONS.get(name) or ""
+    return figures(text_of(name))
+
+
+def figures(text):
+    """Pull the damage, shield and draw figures out of an effect text.
+
+    Args:
+        text: The effect text, as the generated data writes it.
+
+    Returns:
+        The `Features` the text states.
+    """
     return Features(
         damage=sum(int(share) * int(hits or 1) for share, hits in DAMAGE.findall(text)),
         shield=sum(int(found) for found in SHIELD.findall(text)),
@@ -333,7 +348,30 @@ def description(name):
     Returns:
         The text, or an empty string for a card the data does not carry.
     """
-    return DESCRIPTIONS.get(canonical(name)) or ""
+    return text_of(canonical(name))
+
+
+def text_of(name):
+    """Give a card's effect text, as the version of it the deck holds when the deck has been read.
+
+    Args:
+        name: The canonical card name.
+
+    Returns:
+        The deck's text, else the base text, or an empty string for a card the data does not carry.
+    """
+    return DECK.get(name) or DESCRIPTIONS.get(name) or ""
+
+
+def use_deck(copies):
+    """Value every card by the version of it the deck holds, the weakest where its copies differ.
+
+    Args:
+        copies: Canonical card name to the effect texts its copies were matched to, from `piles`.
+    """
+    DECK.clear()
+    DECK.update({name: min(texts, key=lambda text: strength(figures(text))) for name, texts in copies.items()})
+    parsed.cache_clear()
 
 
 def worth_clearing(name):
@@ -398,13 +436,24 @@ def rated(name, board):
     """
     doing = features(name)
     matched = board.weakness is not None and attribute_of(name) == board.weakness
-    damage = doing.damage * (WEAKNESS_BONUS if matched else 1)
-    worth = damage + SHIELD_WEIGHT * doing.shield + DRAW_VALUE * doing.draw
+    worth = strength(doing._replace(damage=doing.damage * (WEAKNESS_BONUS if matched else 1)))
     if not worth:
         worth = UNREAD_VALUE * max(cost(name), 1)
     if lit_up(name, board):
         worth += EPIPHANY_BONUS
     return worth
+
+
+def strength(doing):
+    """Say what a card's figures are worth together, in damage terms.
+
+    Args:
+        doing: The card's `Features`.
+
+    Returns:
+        The damage, plus the shield and draw at their exchange rates.
+    """
+    return doing.damage + SHIELD_WEIGHT * doing.shield + DRAW_VALUE * doing.draw
 
 
 def lit_up(name, board):
