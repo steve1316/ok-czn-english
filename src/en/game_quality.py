@@ -13,7 +13,7 @@ row that shares its id. That reaches most of the pool but not all of it, and a r
 missing entry as 'no opinion' rather than as 'unsuitable'.
 
 Source: the Global client's own asset dump.
-Generated: 2026-10-25
+Generated: 2026-10-27
 """
 
 
