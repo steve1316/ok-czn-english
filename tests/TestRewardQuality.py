@@ -1,14 +1,19 @@
 """Check what the bot decides is worth buying and keeping."""
 
 import sys
+import types
 import unittest
 from collections import Counter
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(REPO_ROOT / "ok_tasks"))
 
-from src.en import dashboard, rewards  # noqa: E402
+# The real module, so the Settlement check fails if upstream stops reading the claim setting the way the fork stands in for it.
+import utils_sortie  # noqa: E402
+
+from src.en import dashboard, reason, rewards  # noqa: E402
 from src.en.dashboard import COMBATANTS as COMBATANTS_ROW  # noqa: E402
 from src.en.game_data import COMBATANTS  # noqa: E402
 from src.en.overrides import FARMED_COMBATANT  # noqa: E402
@@ -17,7 +22,8 @@ from src.en.game_quality import (  # noqa: E402
 )
 from src.en.game_quality import COMBATANT_TAG_WEIGHTS, EQUIPMENT_TAGS  # noqa: E402
 from src.en.hand_tags import HAND_TAGS  # noqa: E402
-from tests.fakes import FakeBox  # noqa: E402
+from src.en.handlers import standing_in  # noqa: E402
+from tests.fakes import HEIGHT, WIDTH, FakeBox  # noqa: E402
 from src.en.quality import (  # noqa: E402
     CLASS_NAMES, TAGS, WORTH_TAKING, fold, index, named, one_edit_apart, slot_of, sorted_letters, suits,
     team_classes, unconfused, usable_by, worth_taking,
@@ -540,3 +546,23 @@ class TestCombatantsRowHoldsItsPlace(unittest.TestCase):
         task.info.clear()  # What upstream's info_clear does at the start of every run.
         rewards.hold_the_combatants_row(task)
         self.assertEqual({COMBATANTS_ROW: dashboard.UNREAD}, task.info)
+
+
+class TestObtainNeedsReason(unittest.TestCase):
+    """Obtain spends 1 Reason, so with none left it only opens a Charge Reason dialog there is nothing to charge from."""
+
+    def test_obtain_is_pressed_only_with_reason_left(self):
+        for counter, obtains in (("0/9", False), ("3/9", True)):
+            with self.subTest(counter=counter):
+                pressed = []
+                # The Settlement page, placed the way the run's capture read it.
+                task = types.SimpleNamespace(
+                    all_texts=[FakeBox("结算", 0.590, 0.065, width=259, height=54, units="fraction"), FakeBox(counter, 0.880, 0.051, units="fraction"),
+                               FakeBox("获得", 0.857, 0.386, width=108, height=36, units="fraction")],
+                    width=WIDTH, height=HEIGHT, config={"领取奖励": True}, node_status={},
+                    click_box=lambda box: pressed.append(box.name), log_info=lambda message: None, sleep=lambda seconds: None,
+                )
+                with standing_in(utils_sortie, _finish_only_first_layer=lambda task: True):
+                    reason.skipping_obtain(utils_sortie.handle_sortie_reward_settlement, utils_sortie)(task)
+                self.assertEqual(["获得"] if obtains else [], pressed)
+                self.assertTrue(task.config["领取奖励"])
