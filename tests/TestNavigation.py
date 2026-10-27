@@ -341,19 +341,19 @@ class TestEpiphanyChoice(unittest.TestCase):
 
     def test_the_card_without_an_epiphany_goes_first(self):
         # The three cards a Sortie run offered, where the deck read had found Epiphanies on the first two.
-        offered = [{"name": "Sacred Censer"}, {"name": "Growing Creature"}, {"name": "Annoying"}]
         cards.use_deck({name: {next(iter(EPIPHANIES[name]))} for name in ("Sacred Censer", "Growing Creature")} | {"Annoying": {DESCRIPTIONS["Annoying"]}})
-        for description, pinned, expected in (
-            ("a card without an Epiphany goes first", None, "Annoying"),
-            ("a pinned card outranks it", "Growing Creature", "Growing Creature"),
-        ):
-            with self.subTest(description):
-                self.assertEqual(expected, epiphany.ranked([dict(card, pinned=card["name"] == pinned) for card in offered])[0])
+        self.assertEqual("Annoying", epiphany.ranked([{"name": "Sacred Censer"}, {"name": "Growing Creature"}, {"name": "Annoying"}])[0])
 
     def test_only_a_sortie_epiphany_is_chosen(self):
-        utils = types.SimpleNamespace(_simplify_texts=list, recognize_cards_in_deck=lambda task, page="": [{"name": "Annoying"}])
+        utils = types.SimpleNamespace(recognize_cards_in_deck=lambda task, page="": [{"name": "Annoying"}])
         passed = []
-        choose = epiphany.choosing(lambda task, names, count=1, action="": passed.append(names), utils)
+
+        def select_card(task, names, count=1, action=""):
+            # Upstream reads the page before matching the names, so the names are taken after the read.
+            utils.recognize_cards_in_deck(task)
+            passed.append(list(names))
+
+        choose = epiphany.choosing(select_card, utils)
         for mode, action, expected in (
             (epiphany.SORTIE_MODE, epiphany.ACTIONS[0], ["Slash", "Annoying"]),
             ("ChaosMode", epiphany.ACTIONS[0], ["Slash"]),
@@ -361,7 +361,7 @@ class TestEpiphanyChoice(unittest.TestCase):
         ):
             with self.subTest(mode=mode, action=action):
                 passed.clear()
-                choose(type(mode, (), {"ocr": lambda self: []})(), ["Slash"], action=action)
+                choose(type(mode, (), {})(), ["Slash"], action=action)
                 self.assertEqual([expected], passed)
 
 

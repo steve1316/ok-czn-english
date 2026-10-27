@@ -1,15 +1,14 @@
 """Choose the card an Epiphany goes on in Sortie when none of the cards offered is on the user's list.
 
 Upstream sparks only the cards on the user's Epiphany list and presses Skip when none is offered, which Sortie's empty default does at every
-Epiphany. This lists the offered cards after the user's own: a pinned card first, then one the deck read found without an Epiphany, then
-the strongest.
+Epiphany. This lists each page's cards after the user's own: one the deck read found without an Epiphany first, then the strongest.
 """
 
 from ok import Logger
 
 from src.en import cards
 from src.en.game_text import DESCRIPTIONS
-from src.en.handlers import loaded, register, wrap
+from src.en.handlers import loaded, register, standing_in, wrap
 
 logger = Logger.get_logger(__name__)
 
@@ -39,18 +38,15 @@ def sparked(name):
 
 
 def ranked(offered):
-    """Order the offered cards by which an Epiphany should go on first.
+    """Order the cards on one page by which an Epiphany should go on first.
 
     Args:
-        offered: The cards `recognize_cards_in_deck` found, which `pins` marks `pinned`.
+        offered: The cards `recognize_cards_in_deck` found, which `pins` has already narrowed to the pinned ones when there are any.
 
     Returns:
         Their names as read, best first, in the order offered where nothing tells them apart.
     """
-    def order(card):
-        return not card.get("pinned"), sparked(card["name"]), -cards.strength(cards.features(card["name"]))
-
-    return [card["name"] for card in sorted(offered, key=order)]
+    return [card["name"] for card in sorted(offered, key=lambda card: (sparked(card["name"]), -cards.strength(cards.features(card["name"]))))]
 
 
 def choosing(select_card, utils):
@@ -58,7 +54,7 @@ def choosing(select_card, utils):
 
     Args:
         select_card: The function to wrap, upstream's or another patch's.
-        utils: The module holding the card recognizer.
+        utils: The module holding `recognize_cards_in_deck`.
 
     Returns:
         The wrapped function.
@@ -66,11 +62,18 @@ def choosing(select_card, utils):
     def wrapped(task, card_names, count=1, action=""):
         if action not in ACTIONS or type(task).__name__ != SORTIE_MODE:
             return select_card(task, card_names, count=count, action=action)
-        task.all_texts = utils._simplify_texts(task.ocr())
-        picks = ranked(utils.recognize_cards_in_deck(task, page=f"select_card-{action}"))
-        if picks:
-            logger.info(f"Epiphany goes on the first of {picks} unless a listed card is offered")
-        return select_card(task, [*(card_names or []), *picks], count=count, action=action)
+        names = list(card_names or [])
+        configured = len(names)
+        original = utils.recognize_cards_in_deck
+
+        def listing(*args, **kwargs):
+            offered = original(*args, **kwargs)
+            names[configured:] = ranked(offered)
+            logger.debug(f"Epiphany goes on the first of {names[configured:]} unless a listed card is offered")
+            return offered
+
+        with standing_in(utils, recognize_cards_in_deck=listing):
+            return select_card(task, names, count=count, action=action)
 
     return wrapped
 
