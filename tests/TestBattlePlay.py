@@ -766,18 +766,23 @@ class TestHandPrompt(unittest.TestCase):
     SCREEN = (FakeBox("请选择1张要移动至抽牌堆的卡牌", 0.5, 0.111, width=600), FakeBox("05/10", 0.505, 0.971), FakeBox("Launcher", 0.273, 0.721),
               FakeBox("Basi", 0.27, 0.80), FakeBox("Opening Found", 0.349, 0.765), FakeBox("Hunting Instincts", 0.603, 0.757), FakeBox(CURSE, 0.73, 0.776))
 
-    def frames(self, *counters, screens=()):
+    def frames(self, *counters, screens=(), played=None):
         """Answer the prompt once per counter reading.
 
         Args:
             counters: What a cropped read of the prompt's counter gives each frame, empty for nothing read.
             screens: What the full-screen pass reads on the first frames, `SCREEN` for every frame after them.
+            played: The card whose key opened the prompt, or None for a turn not tracked.
 
         Returns:
             The task, with every tap it made.
         """
         with upstream(hand(ATTACK)) as (utils_sortie, task):
             battle.install()
+            if played:
+                turn = battle.Turn(5)
+                turn.attempted = played
+                setattr(task, battle.TURN, turn)
             for index, counter in enumerate(counters):
                 task.all_texts = list(screens[index] if index < len(screens) else self.SCREEN)
                 task.progress = [FakeBox(counter, 0.5, 0.17)] if counter else []
@@ -796,6 +801,15 @@ class TestHandPrompt(unittest.TestCase):
         self.assertEqual([(0.349, round(0.765 + battle.CARD_BODY, 3))], task.taps, "Opening Found, the best of the 1-cost cards")
         task = self.frames("0/1", screens=((*top, FakeBox("Android", 0.45, 0.765)),))
         self.assertEqual([(0.45, round(0.765 + battle.CARD_BODY, 3))], task.taps, "Android, the one 2-cost card, though Opening Found rates higher")
+
+    def test_a_boost_goes_to_the_best_card_it_fits(self):
+        # Opening Found rates highest, but Growth Acceleration can only pick Orlea's own cards, and the curse is no boost at all.
+        cases = (("Growth Acceleration", (*self.SCREEN, FakeBox("Growing Creature", 0.45, 0.765)), 0.45),
+                 ("Dark Condensation", self.SCREEN, 0.349))
+        for played, screen, x in cases:
+            with self.subTest(played=played):
+                task = self.frames("0/1", screens=(screen,), played=played)
+                self.assertEqual([(x, round(0.765 + battle.CARD_BODY, 3))], task.taps)
 
     def test_a_hand_not_read_yet_is_waited_for(self):
         # Live, the prompt opened on a frame with no card name read, and upstream's random pick gave up an Impulse over the curse.

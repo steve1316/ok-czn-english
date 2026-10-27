@@ -108,6 +108,11 @@ HAND_TOTAL = re.compile(r"\d+/10")
 # The prompt's own "0/1" under its caption. The full-screen pass never reads it, and a crop of it read 1/1 at 0.99 on both captures.
 PROMPT_PROGRESS = (0.40, 0.14, 0.60, 0.20)
 PROGRESS = re.compile(r"(\d+)\s*/\s*(\d+)")
+# Card text whose prompt picks a hand card to boost rather than give up, as Growth Acceleration, Dark Condensation and Sir Kowalski do.
+# `kind` narrows the pick to Attack cards or cards so named, and `own` to the played card's combatant.
+BOOST = re.compile(r"select (?:up to )?\d+ (?P<kind>[a-z ]*?) ?cards?(?:\(s\))?(?P<own> of this unit)? in hand,? (?:then|and) (?!move)", re.I)
+# How a card's text marks the line its Retain effect runs, which a boost that activates Retain needs to be worth anything.
+RETAIN_LINE = "Retain:"
 # How far below a card's name to tap it, onto its art. Upstream tapped a type label's fragment and the prompt stayed at 0/1.
 CARD_BODY = 0.07
 # Frames a prompt gets without its counter moving before upstream's random pick takes over. A frame with no card read counts,
@@ -580,10 +585,42 @@ def giving_up_order(name, box, kept, board_now, to_top=False):
     return id(box) in kept, not dealt, rating
 
 
+def boost_order(played):
+    """Rank the hand for a prompt that boosts a card, if the card that opened it is one that does.
+
+    Args:
+        played: The card whose key was pressed last, from `Turn.attempted`, or None.
+
+    Returns:
+        A sort key over `(name, board)`, the card best boosted being smallest, or None when the prompt gives a card up.
+    """
+    text = cards.description(played) if played else ""
+    read = BOOST.search(text)
+    if read is None:
+        return None
+    kind = read["kind"].strip().lower()
+    owner = cards.owner(played)
+    retain = "Retain effect" in text
+
+    def order(name, board_now):
+        if read["own"]:
+            # Creations such as Orlea's Swiftie carry no owner in the data, so an unowned card may be the unit's own.
+            fits = cards.owner(name) in (owner, None)
+        elif kind == "attack":
+            fits = cards.category(name) == cards.ATTACK_CATEGORY
+        else:
+            fits = kind in name.lower()
+        return (not fits, retain and RETAIN_LINE not in cards.description(name), cards.category(name) in cards.DEALT_TO_YOU,
+                -cards.rated(name, board_now))
+
+    return order
+
+
 def answer_prompt(task, utils_sortie, chosen, need, to_top=False):
     """Tap the card the hand can best spare, or confirm once the prompt's own counter says enough are chosen.
 
-    A prompt is taken to be giving a card up - to the discard pile, the Draw Pile or Exhaust - unless it sends it to the top of the Draw Pile.
+    A prompt is taken to be giving a card up - to the discard pile, the Draw Pile or Exhaust - unless it sends it to the top of the Draw Pile,
+    or the card just played boosts the one picked.
 
     Args:
         task: The running task, which the prompt's progress is parked on.
@@ -625,10 +662,17 @@ def answer_prompt(task, utils_sortie, chosen, need, to_top=False):
         task.log_info(f"hand prompt reads {chosen}/{need} but no card in hand reads yet, waiting")
         task.sleep(1)
         return True
-    kept = kept_boxes([box for _, box in hand])
     board_now = cards.Board(hand=tuple(name for name, _ in hand))
-    prompt.tapped, box = min(hand, key=lambda card: giving_up_order(*card, kept, board_now, to_top))
-    task.log_info(f"hand prompt reads {chosen}/{need}, {'moving to the top' if to_top else 'giving up'} {prompt.tapped}")
+    turn = getattr(task, TURN, None)
+    boost = boost_order(turn.attempted if turn else None)
+    if boost:
+        prompt.tapped, box = min(hand, key=lambda card: boost(card[0], board_now))
+        doing = "boosting"
+    else:
+        kept = kept_boxes([box for _, box in hand])
+        prompt.tapped, box = min(hand, key=lambda card: giving_up_order(*card, kept, board_now, to_top))
+        doing = "moving to the top" if to_top else "giving up"
+    task.log_info(f"hand prompt reads {chosen}/{need}, {doing} {prompt.tapped}")
     x, y = centre_of(box, task.width, task.height)
     utils_sortie._move_and_click(task, x, y + CARD_BODY)
     task.sleep(1)
