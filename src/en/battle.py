@@ -8,6 +8,7 @@ keeps the frame around it, and a card the Play Priority list names is still play
 """
 
 import collections
+import math
 import re
 
 import numpy as np
@@ -557,8 +558,8 @@ def prompt_progress(task, utils_sortie):
 def giving_up_order(name, box, kept, board_now, to_top=False):
     """Order the hand cards a prompt could take: dealt-to-you cards first, cards a kit keeps last, the rest by what they do.
 
-    A card sent to the top of the Draw Pile is drawn again next turn, so there the order flips: the best card first, a
-    dealt-to-you card last.
+    A card sent to the top of the Draw Pile is drawn again next turn, so there the order flips: the most expensive card first, since it
+    is the one this turn's Action Points are least likely to cover, then the best of those, and a dealt-to-you card last.
 
     Args:
         name: The card's canonical name.
@@ -572,7 +573,11 @@ def giving_up_order(name, box, kept, board_now, to_top=False):
     """
     dealt = cards.category(name) in cards.DEALT_TO_YOU
     rating = cards.rated(name, board_now)
-    return (id(box) in kept, dealt, -rating) if to_top else (id(box) in kept, not dealt, rating)
+    if to_top:
+        # A card that spends every Action Point left costs the most of all.
+        price = cards.cost(name)
+        return id(box) in kept, dealt, -(math.inf if price == cards.X_COST else price), -rating
+    return id(box) in kept, not dealt, rating
 
 
 def answer_prompt(task, utils_sortie, chosen, need, to_top=False):
