@@ -8,7 +8,7 @@ card to the combatant who owns it does not exist on the card row, and is rebuilt
 by inverting the cards each combatant starts and sparks.
 
 Source: the Global client's own asset dump.
-Generated: 2026-10-25
+Generated: 2026-10-27
 """
 
 
