@@ -15,6 +15,7 @@ from src.en.handlers import insert_before, loaded, register, standing_in
 from src.en.navigation import MEMBER_INFO_FEATURES, MEMBER_INFO_REGION, on_member_info_page
 from src.en.quality import fold
 from src.en.screen import centre_of, lines_in, text_in_region
+from src.en.stuck import forget
 
 logger = Logger.get_logger(__name__)
 
@@ -31,11 +32,12 @@ LABEL_GAP = (0.01, 0.045)
 TEXT_BAND = (0.05, 0.35)
 # Names above this are under the title bar.
 TITLE_BAR = 0.1
-# Where and how far to scroll the grid per page, the amount upstream scrolls its own card lists by.
+# Where and how far to scroll the grid per page. Upstream's -3 took 7 pages to cross a 16-card deck's 4 rows, and a card stays whole
+# for about 0.55 of the screen, so twice that still reads every card at least once.
 SCROLL_POINT = (0.63, 0.55)
-SCROLL_AMOUNT = -3
-# Pages read before giving up on reaching the bottom. Three combatants and a curse row took three in a 16-card deck.
-MAX_PAGES = 8
+SCROLL_AMOUNT = -6
+# Pages read before giving up on reaching the bottom, enough for about 9 rows at that scroll.
+MAX_PAGES = 15
 # How closely a card's text has to match a version of it to be taken for that version, letters only.
 MATCH_FLOOR = 0.5
 # A keyword tag like "[Unique / Initiation]", which the data keeps out of a card's text.
@@ -168,10 +170,13 @@ def handle_read_piles(task):
     cards.use_deck(copies)
     epiphanies = sorted(name for name, texts in copies.items() if texts - {DESCRIPTIONS.get(name)})
     logger.info(f"read {len(copies)} distinct cards off All Piles, {len(epiphanies)} with an Epiphany: {epiphanies}")
+    logger.debug(f"deck read: {sorted(copies)}")
     back = task.find_one(feature_name=MEMBER_INFO_FEATURES, box=task.box_of_screen(*MEMBER_INFO_REGION))
     if back is not None:
         task.click_box(back)
         task.sleep(0.5)
+    # The read held one frame for seconds, which upstream's stuck detector would take for a frozen screen and close the page over.
+    forget(task)
     return True
 
 
