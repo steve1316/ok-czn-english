@@ -187,9 +187,15 @@ class Pressed:
         paint(self.frame, egos)
         self.keys = []
         self.logged = []
+        # Where `_move_and_click` tapped, as screen fractions, and what a cropped read of the hand prompt's counter gives.
+        self.taps = []
+        self.progress = []
 
     def send_key(self, key):
         self.keys.append(key)
+
+    def ocr(self, *region):
+        return self.progress
 
     def box_of_screen(self, *region):
         return region
@@ -228,6 +234,8 @@ def upstream(hand_cards, smart=True, action_points=True, egos=(), weakness=None)
     # The counter, which a test reading the hand short of it sets on the task.
     utils_sortie._read_hand_count = lambda task: getattr(task, "counter", None) or len(task.hand_cards)
     utils_sortie._is_card_name = lambda name: True
+    utils_sortie.find_box_at_point = real_sortie.find_box_at_point
+    utils_sortie._move_and_click = lambda task, x, y: task.taps.append((round(x, 3), round(y, 3)))
     utils_sortie.name_reads = []
     utils_sortie._hand_card_names = lambda task: utils_sortie.name_reads.append(task.all_texts) or []
     utils_sortie.blind_calls = []
@@ -738,6 +746,44 @@ class TestKits(unittest.TestCase):
                 with standing_in(task, all_texts=battle.unheld_texts(task)):
                     self.assertTrue(real_sortie.handle_return_to_draw_pile(task))
                 self.assertEqual([box.name for box in task.clicked], [expected])
+
+
+class TestHandPrompt(unittest.TestCase):
+    """The prompt that takes cards out of the hand mid-fight, answered against its own counter."""
+
+    # Precision Aim's prompt as it stuck live: upstream tapped "Basi", "Fixer's Approach" and "XAttac" while the counter stayed at 0/1.
+    SCREEN = (FakeBox("请选择1张要移动至抽牌堆的卡牌", 0.5, 0.111, width=600), FakeBox("05/10", 0.505, 0.971), FakeBox("Launcher", 0.273, 0.721),
+              FakeBox("Basi", 0.27, 0.80), FakeBox("Opening Found", 0.349, 0.765), FakeBox("Hunting Instincts", 0.603, 0.757), FakeBox(CURSE, 0.73, 0.776))
+
+    def frames(self, *counters):
+        """Answer the prompt once per counter reading.
+
+        Args:
+            counters: What a cropped read of the prompt's counter gives each frame, empty for nothing read.
+
+        Returns:
+            The task, with every tap it made.
+        """
+        with upstream(hand(ATTACK)) as (utils_sortie, task):
+            battle.install()
+            for counter in counters:
+                task.all_texts = list(self.SCREEN)
+                task.progress = [FakeBox(counter, 0.5, 0.17)] if counter else []
+                handlers_of(utils_sortie)["handle_battle_hand_select"](task)
+        return task
+
+    def test_it_gives_up_the_curse_and_confirms_only_once_the_counter_moves(self):
+        task = self.frames("0/1", "1/1")
+        self.assertEqual([(0.73, round(0.776 + battle.CARD_BODY, 3)), battle.PROMPT_CONFIRM], task.taps)
+        self.assertEqual([], task.clicked, "upstream's random pick never ran")
+
+    def test_upstream_takes_over_from_a_counter_that_never_moves_or_never_reads(self):
+        # A prompt that ignores every tap must not hold the fight for good.
+        for counters, taps in ((("0/1",) * (battle.PROMPT_TAPS + 1), battle.PROMPT_TAPS), (("",), 0)):
+            with self.subTest(counters=counters):
+                task = self.frames(*counters)
+                self.assertEqual(taps, len(task.taps))
+                self.assertEqual(1, len(task.clicked))
 
 
 if __name__ == "__main__":

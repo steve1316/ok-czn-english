@@ -8,6 +8,7 @@ keeps the frame around it, and a card the Play Priority list names is still play
 """
 
 import collections
+import re
 
 import numpy as np
 from ok import Logger
@@ -15,7 +16,7 @@ from ok import Logger
 from src.en import board, cards, kits
 from src.en.handlers import StandIn, insert_before, loaded, register, replace, standing_in
 from src.en.overrides import SMART_CARD_PLAY
-from src.en.screen import colour_share, frame_of, in_region, patch_of, text_in_region
+from src.en.screen import centre_of, colour_share, frame_of, in_region, patch_of, text_in_region
 
 logger = Logger.get_logger(__name__)
 
@@ -96,6 +97,21 @@ KIT_WAIT = 5
 KIT_PAUSE = 0.5
 # Where upstream's hand prompts read the hand cards they choose between.
 PROMPT_HAND = (0.116, 0.697, 0.859, 0.908)
+# The hand prompt as upstream finds it: its caption, rewritten to Chinese by `ocr_text.py`, over a hand counter reading "5/10".
+PROMPT_CAPTION = (0.5, 0.111)
+PROMPT_ASKS = re.compile(r"请选择(?=.*卡牌).*?\d+张")
+HAND_COUNTER = (0.505, 0.971)
+HAND_TOTAL = re.compile(r"\d+/10")
+# The prompt's own "0/1" under its caption. The full-screen pass never reads it, and a crop of it read 1/1 at 0.99 on both captures.
+PROMPT_PROGRESS = (0.40, 0.14, 0.60, 0.20)
+PROGRESS = re.compile(r"(\d+)\s*/\s*(\d+)")
+# How far below a card's name to tap it, onto its art. Upstream tapped a type label's fragment and the prompt stayed at 0/1.
+CARD_BODY = 0.07
+# Taps a prompt gets without its counter moving before upstream's random pick takes over.
+PROMPT_TAPS = 3
+PROMPT_CONFIRM = (0.934, 0.883)
+# Parked on the task while a hand prompt is being answered, as a `Prompt`.
+PROMPT = "_en_prompt"
 
 _patched = False
 
@@ -110,6 +126,20 @@ Blind = collections.namedtuple("Blind", [
     # Whether Enter has followed the last key. Held back a frame, since the game refuses a card at its key.
     "confirmed",
 ])
+
+
+class Prompt:
+    """What answering one hand prompt has done so far, kept between frames."""
+
+    def __init__(self):
+        # How many cards the prompt's counter read as chosen last frame.
+        self.chosen = 0
+        # Taps made since that count last moved.
+        self.taps = 0
+        # Canonical names of the cards the counter has confirmed taken, so a prompt asking for two does not tap the first again.
+        self.picked = []
+        # The card tapped last, which joins `picked` once the counter moves.
+        self.tapped = None
 
 
 class EgoChoice(StandIn):
@@ -498,6 +528,88 @@ def unheld_texts(task):
     return [box for box in task.all_texts if id(box) not in kept]
 
 
+def prompt_progress(task, utils_sortie):
+    """Read upstream's hand prompt off the screen: how many cards it has and how many it asks for.
+
+    Args:
+        task: The running task, whose `all_texts` is the current screen.
+        utils_sortie: Upstream's Sortie module, for its `find_box_at_point`.
+
+    Returns:
+        A `(chosen, need)` pair, or None when this is not the prompt or its counter will not read.
+    """
+    caption = utils_sortie.find_box_at_point(task, *PROMPT_CAPTION)
+    total = utils_sortie.find_box_at_point(task, *HAND_COUNTER)
+    if not (caption and PROMPT_ASKS.search(caption.name) and total and HAND_TOTAL.search(total.name)):
+        return None
+    read = PROGRESS.search("".join(box.name for box in task.ocr(*PROMPT_PROGRESS) or []))
+    return (int(read.group(1)), int(read.group(2))) if read else None
+
+
+def giving_up_order(name, box, kept, board_now):
+    """Order the hand cards a prompt could take: dealt-to-you cards first, cards a kit keeps last, the rest by what they do.
+
+    Args:
+        name: The card's canonical name.
+        box: The OCR box of its name.
+        kept: The `id` of every box a kit is keeping, from `kept_boxes`.
+        board_now: A `cards.Board` to rate the card against.
+
+    Returns:
+        A sort key, the card best given up being smallest.
+    """
+    return id(box) in kept, cards.category(name) not in cards.DEALT_TO_YOU, cards.rated(name, board_now)
+
+
+def answer_prompt(task, utils_sortie, chosen, need):
+    """Tap the card the hand can best spare, or confirm once the prompt's own counter says enough are chosen.
+
+    Every prompt is taken to be giving a card up - to the discard pile, the Draw Pile or Exhaust - which is what the live ones were.
+
+    Args:
+        task: The running task, which the prompt's progress is parked on.
+        utils_sortie: Upstream's Sortie module, for its `_move_and_click`.
+        chosen: How many cards the prompt's counter reads as chosen.
+        need: How many it asks for.
+
+    Returns:
+        True when the frame was spent tapping, False when no card reads or taps keep missing, for upstream's random pick to try.
+    """
+    prompt = getattr(task, PROMPT, None)
+    if prompt is None:
+        prompt = Prompt()
+        setattr(task, PROMPT, prompt)
+    if chosen > prompt.chosen and prompt.tapped is not None:
+        prompt.picked.append(prompt.tapped)
+        prompt.taps = 0
+    prompt.chosen = chosen
+    if chosen >= need:
+        task.log_info(f"hand prompt reads {chosen}/{need}, confirming")
+        setattr(task, PROMPT, None)
+        utils_sortie._move_and_click(task, *PROMPT_CONFIRM)
+        task.sleep(1)
+        return True
+    named = [(cards.canonical(box.name), box) for box in task.all_texts if in_region(box, PROMPT_HAND, task.width, task.height)]
+    hand = [(name, box) for name, box in named if name in cards.CARD_COST]
+    for picked in prompt.picked:
+        taken = next((card for card in hand if card[0] == picked), None)
+        if taken is not None:
+            hand.remove(taken)
+    if not hand or prompt.taps >= PROMPT_TAPS:
+        task.log_info(f"hand prompt reads {chosen}/{need} after {prompt.taps} taps, leaving it to upstream's random pick")
+        setattr(task, PROMPT, None)
+        return False
+    kept = kept_boxes([box for _, box in hand])
+    board_now = cards.Board(hand=tuple(name for name, _ in hand))
+    prompt.tapped, box = min(hand, key=lambda card: giving_up_order(*card, kept, board_now))
+    prompt.taps += 1
+    task.log_info(f"hand prompt reads {chosen}/{need}, giving up {prompt.tapped}")
+    x, y = centre_of(box, task.width, task.height)
+    utils_sortie._move_and_click(task, x, y + CARD_BODY)
+    task.sleep(1)
+    return True
+
+
 def kit_waiting(task, utils_sortie, count):
     """Let a kit hold the turn while the game is about to change the hand by itself.
 
@@ -772,14 +884,17 @@ def install():
     original_return = utils_sortie.handle_return_to_draw_pile
 
     def handle_battle_hand_select(task):
-        """Run upstream's hand prompt, choosing among the cards no kit is keeping.
+        """Answer the hand prompt card by card against its own counter, or run upstream's random pick among the cards no kit is keeping.
 
         Args:
             task: The running task.
 
         Returns:
-            Whatever upstream's own handler returns.
+            True when this frame answered the prompt, otherwise whatever upstream's own handler returns.
         """
+        progress = prompt_progress(task, utils_sortie)
+        if progress is not None and answer_prompt(task, utils_sortie, *progress):
+            return True
         with standing_in(utils_sortie, random=KeepHeld(utils_sortie.random)):
             return original_hand_select(task)
 
