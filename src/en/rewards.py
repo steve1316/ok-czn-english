@@ -27,6 +27,9 @@ EQUIPMENT_KEYS = {"装备1号位优先级": 0, "装备2号位优先级": 1, "装
 # shop's own handler already decided on: without the same list, the shop buys and the purchase screen
 # cancels, forever.
 FILLED_IN = ("handle_shop", "handle_card_reward", "handle_card_assign")
+# The reward screens, Chaos's and Sortie's, where a card costs nothing. The shop shares Chaos's list, so the
+# handler reading it is what tells them apart.
+FREE = ("handle_card_reward", "handle_get_card")
 
 TEAM = "_en_team"
 
@@ -150,7 +153,7 @@ def on_screen(task):
     return list(names.values())
 
 
-def generated_list(task, key, farmed=""):
+def generated_list(task, key, farmed="", free=False):
     """Build the priority list for a setting the user left empty.
 
     Args:
@@ -158,6 +161,7 @@ def generated_list(task, key, farmed=""):
         key: The config key being read.
         farmed: The combatant whose save data the run is farming, who is the one equipment is bought for.
             Empty leaves equipment in the order rarity alone puts it.
+        free: True on a reward screen, where a team member's own card is worth having at any grade.
 
     Returns:
         The names worth taking, best first, or None when this key is not one we fill in.
@@ -172,8 +176,7 @@ def generated_list(task, key, farmed=""):
     classes = team_of(task)
     if card_list:
         taken = quality.worth_taking(names, classes)
-        if key == SORTIE_CARD_KEY:
-            # Sortie's reward is free, so a team member's own card is worth having at any grade.
+        if free:
             taken += [card for card in party_cards(names, getattr(task, PARTY, frozenset())) if card not in taken]
         return taken
     # Ordered by who is going to wear it. Rarity still decides, so this only separates pieces that were
@@ -182,12 +185,13 @@ def generated_list(task, key, farmed=""):
             if quality.slot_of(name) == slot]
 
 
-def filling_in(original, task_module):
+def filling_in(original, task_module, free=False):
     """Wrap a config reader so an empty priority list is filled in from what is on screen.
 
     Args:
         original: The module's own `_get_config_value`.
         task_module: The module whose copy of it is being replaced, named for the log.
+        free: True when the handler reading it is a reward screen, from `FREE`.
 
     Returns:
         The replacement reader.
@@ -198,7 +202,7 @@ def filling_in(original, task_module):
             return configured
         # Through `original` rather than the module attribute, which is this function for the length of the
         # call - asking through that would come straight back here.
-        generated = generated_list(task, key, original(task, FARMED_COMBATANT, ""))
+        generated = generated_list(task, key, original(task, FARMED_COMBATANT, ""), free)
         if not generated:
             return configured
         logger.info(f"{task_module}: {key} is empty, offering {generated}")
@@ -220,10 +224,12 @@ def with_generated_lists(handler, modules):
     Returns:
         The wrapped handler.
     """
+    free = handler.__name__ in FREE
+
     def wrapped(task):
         originals = [(module, module._get_config_value) for module in modules]
         for module, original in originals:
-            module._get_config_value = filling_in(original, module.__name__)
+            module._get_config_value = filling_in(original, module.__name__, free)
         try:
             return handler(task)
         finally:

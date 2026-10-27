@@ -185,11 +185,20 @@ class TestRewardQuality(unittest.TestCase):
 
     def test_a_free_reward_takes_the_teams_own_card(self):
         """A run skipping every Common and Rare reward leaves the team's lineup too weak, and the shop must not start buying them."""
-        offered = ["Harmonization: Hidden Bullet", "Harmonization: Moon of Destruction", "Opening Found"]
-        task = FakeTask(offered, {"ranger"})
+        task = FakeTask(["Harmonization: Hidden Bullet", "Harmonization: Moon of Destruction", "Opening Found"], {"ranger"})
         setattr(task, rewards.PARTY, frozenset({"Hugo", "Beryl"}))
-        self.assertEqual(["Opening Found"], rewards.generated_list(task, rewards.SORTIE_CARD_KEY))
-        self.assertEqual([], rewards.generated_list(task, rewards.CARD_KEY))
+        module = types.ModuleType("utils")
+        module._get_config_value = lambda task, key, default: default
+        cases = [("handle_get_card", rewards.SORTIE_CARD_KEY, ["Opening Found"]), ("handle_card_reward", rewards.CARD_KEY, ["Opening Found"]),
+                 ("handle_shop", rewards.CARD_KEY, []), ("handle_card_assign", rewards.CARD_KEY, [])]
+        for name, key, expected in cases:
+            with self.subTest(handler=name):
+                def handler(task, key=key):
+                    return module._get_config_value(task, key, [])
+
+                # The handler's name is what marks a reward screen, so the stand-in borrows upstream's.
+                handler.__name__ = name
+                self.assertEqual(expected, rewards.with_generated_lists(handler, [module])(task))
 
 
 if __name__ == "__main__":
