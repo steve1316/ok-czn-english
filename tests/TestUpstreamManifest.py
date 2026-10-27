@@ -38,7 +38,7 @@ UPSTREAM_NAMES = {
         "handle_save_target_member",
     ),
     "utils_sortie": (
-        "_get_config_value", "_hand_card_names", "_hand_cards", "_is_card_name", "_read_hand_count", "_read_member_slots",
+        "_get_config_value", "_hand_card_names", "_hand_cards", "_is_card_name", "_move_and_click", "_read_hand_count", "_read_member_slots",
         "_try_all_card_keys", "handle_battle_hand_select", "handle_battle_page", "handle_get_card", "handle_rational_supply", "handle_return_to_draw_pile",
         "handle_sortie_reward_settlement", "random",
     ),

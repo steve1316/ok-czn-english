@@ -11,10 +11,10 @@ from ok import Logger
 
 from src.en import cards
 from src.en.game_text import DESCRIPTIONS, EPIPHANIES
-from src.en.handlers import insert_before, loaded, register, standing_in
+from src.en.handlers import insert_before, loaded, register
 from src.en.navigation import MEMBER_INFO_FEATURES, MEMBER_INFO_REGION, on_member_info_page
 from src.en.quality import fold
-from src.en.screen import centre_of, lines_in, text_in_region
+from src.en.screen import centre_of, lines_in, raw_ocr, text_in_region
 from src.en.stuck import forget
 
 logger = Logger.get_logger(__name__)
@@ -49,19 +49,6 @@ READ = "_en_piles_read"
 ANCHOR = "handle_archive_target_member"
 
 _patched = False
-
-
-def raw_ocr(task, box=None):
-    """Read the screen in the English the client draws.
-
-    `ocr.po` would rewrite a lone "Damage" or "Shield" line into the Chinese a handler looks for.
-
-    Args:
-        task: The running task.
-        box: The part of the screen to read, or None for all of it.
-    """
-    with standing_in(task.executor, ocr_po_translation=None):
-        task.all_texts = task.ocr(box=box)
 
 
 def signature(text):

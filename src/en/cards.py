@@ -90,7 +90,9 @@ Board = namedtuple("Board", [
     "epiphany",
     # Every card in hand as canonical names, for the kits. Empty means `plan` fills it from the hand it is given.
     "hand",
-], defaults=[BASE_ACTION_POINTS, None, None, ()])
+    # Whether an enemy shows Absolute Invincibility, from `board.enemy_invulnerable`, so damage is worth nothing this turn.
+    "invulnerable",
+], defaults=[BASE_ACTION_POINTS, None, None, (), False])
 
 # How many distinct readings to remember the folding of. OCR invents new misspellings all session, so this
 # is bounded rather than unlimited, and it is far larger than the ten names one frame ever asks about.
@@ -436,12 +438,28 @@ def rated(name, board):
     """
     doing = features(name)
     matched = board.weakness is not None and attribute_of(name) == board.weakness
-    worth = strength(doing._replace(damage=doing.damage * (WEAKNESS_BONUS if matched else 1)))
+    if wasted(name, board):
+        return 0
+    worth = strength(doing._replace(damage=0 if board.invulnerable else doing.damage * (WEAKNESS_BONUS if matched else 1)))
     if not worth:
         worth = UNREAD_VALUE * max(cost(name), 1)
     if lit_up(name, board):
         worth += EPIPHANY_BONUS
     return worth
+
+
+def wasted(name, board):
+    """Say whether a card would do nothing, being all damage while an enemy cannot lose Health.
+
+    Args:
+        name: The card name, in any spelling.
+        board: The `Board` it would be played into.
+
+    Returns:
+        True for a card with damage and nothing else on an invulnerable turn.
+    """
+    doing = features(name)
+    return board.invulnerable and doing.damage > 0 and not strength(doing._replace(damage=0))
 
 
 def strength(doing):
@@ -533,7 +551,8 @@ def plan(hand, board):
     """
     if not board.hand:
         board = board._replace(hand=tuple(canonical(card["name"]) for card in hand))
-    playable = (card for card in hand if worth_playing(card["name"]) and not kits.held(canonical(card["name"]), board.hand))
+    playable = (card for card in hand if worth_playing(card["name"]) and not kits.held(canonical(card["name"]), board.hand)
+                and not wasted(card["name"], board))
     budget = board.action_points
     chosen = []
     for card in sorted(playable, key=lambda held: buying_order(held["name"], board)):

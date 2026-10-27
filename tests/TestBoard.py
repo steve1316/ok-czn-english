@@ -29,6 +29,11 @@ WIDTH, HEIGHT = 1920, 1080
 # by a hit landing in `battle_003`, which is square enough and large enough to pass everything but the height.
 ENEMY_AT = (1238, 203)
 FLASH_AT = (1000, 454)
+# The Sortie battle panels, cut from the user's 1080p captures: the EP bar holding 6 of 7, the team HP bar with the next hit
+# taking it to about 36%, and the band of enemy statuses with and without the Absolute Invincibility badge.
+EP_BAR_AT = (30, 830)
+TEAM_BAR_AT = (40, 30)
+STATUSES_AT = (1270, 190)
 
 
 def fixture(name):
@@ -265,6 +270,22 @@ class TestRealEnemies(unittest.TestCase):
         # It is the right colour, well over the minimum area and within the squareness band, so the height is
         # the only thing keeping a hit landing from being counted as another enemy.
         self.assertEqual(board.enemy_counters(pasted("attack_flash", *FLASH_AT)), [])
+
+
+class TestFightState(unittest.TestCase):
+    """The reads the Ego planner judges a turn on, against the game's own rendering."""
+
+    def test_the_ep_bar_counts_its_lit_segments(self):
+        # The seventh segment is still filling, so this also holds the line between lit and filling.
+        self.assertEqual(board.banked_points(pasted("ep_bar_six", *EP_BAR_AT)), 6)
+
+    def test_the_team_bar_says_where_the_next_hit_leaves_it(self):
+        self.assertAlmostEqual(board.team_after_hit(pasted("team_bar_hit", *TEAM_BAR_AT)), 0.36, delta=0.02)
+
+    def test_the_invulnerability_badge_is_told_from_other_statuses(self):
+        for name, invulnerable in (("enemy_invulnerable", True), ("enemy_statuses", False)):
+            with self.subTest(name=name):
+                self.assertEqual(board.enemy_invulnerable(pasted(name, *STATUSES_AT)), invulnerable)
 
 
 if __name__ == "__main__":

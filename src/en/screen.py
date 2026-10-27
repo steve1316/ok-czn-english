@@ -8,6 +8,8 @@ convert, and doing it inline is how the same four lines of arithmetic ended up c
 import cv2
 import numpy as np
 
+from src.en.handlers import standing_in
+
 # Where the Combatants tab writes each team member's name. Upstream's own numbers, from the read inside
 # `handle_archive_target_member`. `combatant_names` is the read every caller wanted, so they share it.
 COMBATANT_NAME_POINTS = ((0.159, 0.368), (0.432, 0.368), (0.705, 0.369))
@@ -16,6 +18,9 @@ COMBATANT_NAME_POINTS = ((0.159, 0.368), (0.432, 0.368), (0.705, 0.369))
 # sampled is the 20px of plain frame colour above the item art, between the tile's top edge and the icon.
 COMBATANT_SLOT_OFFSETS = (0.0316, 0.1129, 0.1941)
 COMBATANT_SLOT_Y = 0.856
+# What `white_mask` counts as the white strokes of an icon.
+WHITE_MAX_SATURATION = 60
+WHITE_MIN_VALUE = 200
 
 
 def combatant_names(task, utils):
@@ -140,6 +145,19 @@ def lines_in(task, region):
     return " ".join(box.name.strip() for line in lines for box in sorted(line, key=lambda box: box.x))
 
 
+def raw_ocr(task, box=None):
+    """Read the screen in the English the client draws.
+
+    `ocr.po` would rewrite a lone "Damage" or "Shield" line into the Chinese a handler looks for.
+
+    Args:
+        task: The running task.
+        box: The part of the screen to read, or None for all of it.
+    """
+    with standing_in(task.executor, ocr_po_translation=None):
+        task.all_texts = task.ocr(box=box)
+
+
 def frame_of(task):
     """Take the frame to read, once, for the whole of one answer.
 
@@ -188,6 +206,18 @@ def hsv_of(patch):
     if patch is None or patch.size == 0:
         return None
     return cv2.cvtColor(patch, cv2.COLOR_BGR2HSV)
+
+
+def white_mask(patch):
+    """Keep only the near-white pixels of a patch, so an icon matches whatever it is drawn over.
+
+    Args:
+        patch: The pixels to reduce, in BGR.
+
+    Returns:
+        A single-channel image, 255 where the pixel is near white and 0 elsewhere.
+    """
+    return cv2.inRange(hsv_of(patch), (0, 0, WHITE_MIN_VALUE), (180, WHITE_MAX_SATURATION, 255))
 
 
 def colour_share(patch, low, high):

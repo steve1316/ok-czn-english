@@ -4,11 +4,17 @@
 everything here comes out of that pass or out of raw pixels. Nothing in this module runs OCR.
 """
 
+from functools import lru_cache
+from pathlib import Path
+
 import cv2
 import numpy as np
+from ok import Logger
 
 from src.en.game_battle import ATTRIBUTES
-from src.en.screen import frame_of, hsv_of, patch_of
+from src.en.screen import frame_of, hsv_of, patch_of, white_mask
+
+logger = Logger.get_logger(__name__)
 
 # The Action Point readout, as a relative box. Read from colour because OCR returns no box for the digit at
 # all - not in a full frame and not on a tight upscaled crop, both checked. The game draws it bright blue with
@@ -40,6 +46,30 @@ TINT_SATURATION = 30
 # How much of a badge's lit pixels have to be tinted before the Ego behind it is treated as one that can be fired. Measured: 1.0 on a
 # blue badge, 0.995 on a reduced one and under 0.01 on a grey one.
 EGO_READY = 0.5
+# The EP bar left of the Ego panel: seven segments down from the top, lit pale blue for each point banked and pale yellow for the
+# points a previewed Ego would spend. Upstream's full-bar pixel at 0.947 is the seventh. A segment still filling is lit to about 203.
+EP_SEGMENT_X = (0.020, 0.044)
+EP_SEGMENT_TOP = 0.7806
+EP_SEGMENT_PITCH = 0.0278
+EP_SEGMENT_HALF = 0.0050
+EP_MAX = 7
+EP_LIT = 230
+EP_LIT_ENOUGH = 0.6
+
+# The team HP bar along the top, row 36 to 46 at 1080p. Its green stops where the enemy's next hit would leave the team, and the
+# stretch from there to the HP the readout states flashes red. The readout's digits are drawn over the middle of the bar, so a
+# column counts as green when `GREEN_ROWS` of its rows are.
+TEAM_BAR = (0.0234, 0.0333, 0.4000, 0.0426)
+GREEN_HUE = (40, 85)
+GREEN_SATURATION = 100
+GREEN_VALUE = 120
+GREEN_ROWS = 2
+
+# The Absolute Invincibility badge drawn among an enemy's statuses, cut from a 1080p frame and matched on its white strokes.
+INVULNERABLE_IMAGE = Path(__file__).with_name("images") / "absolute_invincibility.png"
+TEMPLATE_HEIGHT = 1080
+# It scores 1.0 on the capture it was cut from and at most 0.49 on 846 others.
+INVULNERABLE_MATCH = 0.7
 
 # Where the enemies' counters and badges are drawn: below the top HUD, above the cards and the combatants.
 ENEMY_BAND = (0.30, 0.12, 1.00, 0.60)
@@ -157,6 +187,83 @@ def affordable_egos(task):
         if tinted_fraction(patch_of(frame, box)) > EGO_READY:
             ready.append(key)
     return ready
+
+
+def banked_points(frame):
+    """Count the EP the bar has banked.
+
+    Args:
+        frame: The frame to read, or None when there is none.
+
+    Returns:
+        How many segments are lit from the top, 0 to `EP_MAX`, and 0 when there is no frame.
+    """
+    banked = 0
+    for index in range(EP_MAX):
+        middle = EP_SEGMENT_TOP + index * EP_SEGMENT_PITCH
+        patch = patch_of(frame, (EP_SEGMENT_X[0], middle - EP_SEGMENT_HALF, EP_SEGMENT_X[1], middle + EP_SEGMENT_HALF))
+        if patch is None or patch.size == 0 or np.count_nonzero(patch.max(axis=2) > EP_LIT) < EP_LIT_ENOUGH * patch.shape[0] * patch.shape[1]:
+            break
+        banked += 1
+    return banked
+
+
+def team_after_hit(frame):
+    """Say how much of the team's HP will be left once the enemy's next hit lands.
+
+    Args:
+        frame: The frame to read, or None when there is none.
+
+    Returns:
+        The share of the team's maximum HP the bar's green reaches, or None when no green is on the bar or there is no frame.
+    """
+    hsv = hsv_of(patch_of(frame, TEAM_BAR))
+    if hsv is None:
+        return None
+    hue, saturation, value = cv2.split(hsv)
+    green = (hue > GREEN_HUE[0]) & (hue < GREEN_HUE[1]) & (saturation > GREEN_SATURATION) & (value > GREEN_VALUE)
+    columns = np.flatnonzero(np.count_nonzero(green, axis=0) >= GREEN_ROWS)
+    if not columns.size:
+        return None
+    return float(columns[-1] + 1) / green.shape[1]
+
+
+@lru_cache(maxsize=4)
+def invulnerable_template(height):
+    """Load the Absolute Invincibility badge, scaled to a frame's size.
+
+    Args:
+        height: The frame height in pixels.
+
+    Returns:
+        The badge's white mask, or None when the image cannot be read.
+    """
+    image = cv2.imread(str(INVULNERABLE_IMAGE))
+    if image is None:
+        logger.warning(f"could not read the invulnerability badge from {INVULNERABLE_IMAGE}")
+        return None
+    scale = height / TEMPLATE_HEIGHT
+    if scale != 1:
+        image = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+    return white_mask(image)
+
+
+def enemy_invulnerable(frame):
+    """Say whether an enemy is showing Absolute Invincibility, which stops it losing Health for the turn.
+
+    Args:
+        frame: The frame to read, or None when there is none.
+
+    Returns:
+        True when the badge is among the enemy statuses. False when it is not, or there is no frame.
+    """
+    patch = patch_of(frame, ENEMY_BAND)
+    if patch is None or patch.size == 0:
+        return False
+    template = invulnerable_template(frame.shape[0])
+    if template is None or patch.shape[0] < template.shape[0] or patch.shape[1] < template.shape[1]:
+        return False
+    return float(cv2.matchTemplate(white_mask(patch), template, cv2.TM_CCOEFF_NORMED).max()) >= INVULNERABLE_MATCH
 
 
 def hue_distance(one, other):
