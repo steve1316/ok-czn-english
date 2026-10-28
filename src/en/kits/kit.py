@@ -14,12 +14,14 @@ EPIPHANY_SUFFIX = re.compile(r"\s*\([^)]*\)$")
 # Where a card sits in a turn, lowest first. Here rather than in cards.py so a kit can place a card between two of them.
 PHASE_ESCAPE = 0
 PHASE_EPIPHANY = 1
-PHASE_FREE = 2
-PHASE_SETUP = 3
-PHASE_PRIME = 4
-PHASE_ATTACK = 5
-PHASE_OTHER = 6
-PHASE_SPENDS_EVERYTHING = 7
+# Upgrade cards buff the rest of the battle, so even a free card is better played after one.
+PHASE_UPGRADE = 2
+PHASE_FREE = 3
+PHASE_SETUP = 4
+PHASE_PRIME = 5
+PHASE_ATTACK = 6
+PHASE_OTHER = 7
+PHASE_SPENDS_EVERYTHING = 8
 
 # The data's categories for attack and skill cards.
 ATTACK_CATEGORY = "ATK"

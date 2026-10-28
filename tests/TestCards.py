@@ -108,10 +108,10 @@ class TestOrdering(unittest.TestCase):
         self.assertEqual(played(chosen)[0], FREE_ATTACK)
 
     def test_a_buff_goes_before_an_attack(self):
-        # Both cost one, so only the rule that a Power card should land before the attack it improves can
-        # decide this.
-        chosen = cards.plan(hand(JUSTICE_ATTACK, BUFF), cards.Board())
-        self.assertEqual(played(chosen), [BUFF, JUSTICE_ATTACK])
+        # An Upgrade buffs the rest of the battle, so it lands before the attack it improves and even before a free card.
+        for other in (JUSTICE_ATTACK, FREE_ATTACK):
+            with self.subTest(other=other):
+                self.assertEqual(played(cards.plan(hand(other, BUFF), cards.Board())), [BUFF, other])
 
     def test_a_card_that_primes_the_next_attack_goes_before_it(self):
         # Both are Skills, which sorted them after the attack Wind Charge adds a hit to and Frost Charge's Vulnerable would have raised.
@@ -481,13 +481,13 @@ class TestKits(unittest.TestCase):
     def test_magna_plays_her_lead_cards_first(self):
         """Ice Fragment and Storm of Bitter Cold lose their Lead discount once another card has been played."""
         self.plays((
-            # Generic play spends the free card first.
-            ("Ice Fragment goes before a free card", ("Adagio", "Ice Fragment"), cards.Board(action_points=1), ["Ice Fragment", "Adagio"]),
-            ("Storm of Bitter Cold goes before a free card", ("Adagio", "Storm of Bitter Cold"), cards.Board(action_points=1),
-             ["Storm of Bitter Cold", "Adagio"]),
-            # Pins the release: the discount is gone once a card is played, so the free card keeps its usual place.
-            ("Ice Fragment keeps its place once a card is played", ("Ice Fragment", "Adagio"),
-             cards.Board(action_points=1, played=(JUSTICE_ATTACK,)), ["Adagio", "Ice Fragment"]),
+            # Generic play spends a Mental Breakdown card first, the only card it puts ahead of an Upgrade.
+            ("Ice Fragment goes before a breakdown card", ("Charm", "Ice Fragment"), cards.Board(action_points=1), ["Ice Fragment", "Charm"]),
+            ("Storm of Bitter Cold goes before a breakdown card", ("Charm", "Storm of Bitter Cold"), cards.Board(action_points=1),
+             ["Storm of Bitter Cold", "Charm"]),
+            # Pins the release: the discount is gone once a card is played, so the breakdown card keeps its usual place.
+            ("Ice Fragment keeps its place once a card is played", ("Ice Fragment", "Charm"),
+             cards.Board(action_points=1, played=(JUSTICE_ATTACK,)), ["Charm", "Ice Fragment"]),
         ))
 
     def test_tenebria_plays_rhythms_before_the_cards_that_feed_on_them(self):
@@ -717,7 +717,7 @@ class TestKits(unittest.TestCase):
         """Wild Card, Cards and Mana Field are filler, Triple 0 follows the attacks it counts, and Shuffle is a rescue."""
         self.plays((
             # Generic play buys the 220% Wild Card for two points and has none left for Pop Eyed Popper.
-            ("filler yields to Joker and the Popper", ("Wild Card", "Joker", "Pop Eyed Popper"), cards.Board(), ["Joker", "Pop Eyed Popper"]),
+            ("filler yields to Joker and the Popper", ("Wild Card", "Joker", "Pop Eyed Popper"), cards.Board(), ["Pop Eyed Popper", "Joker"]),
             # Generic play plays the free Quest card first, before any attack has been counted.
             ("Triple 0 follows the attacks", ("Triple 0", "Dice Trick"), cards.Board(action_points=2), ["Dice Trick", "Triple 0"]),
             # Generic play shuffles the hand away after the draw.

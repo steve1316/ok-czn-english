@@ -17,7 +17,7 @@ from src.en.game_quality import COMBATANT_ROLE
 from src.en import kits
 from src.en.game_text import DESCRIPTIONS
 from src.en.kits.kit import (ATTACK_CATEGORY, PHASE_ATTACK, PHASE_EPIPHANY, PHASE_ESCAPE, PHASE_FREE, PHASE_OTHER, PHASE_PRIME, PHASE_SETUP,
-                             PHASE_SPENDS_EVERYTHING, base_name)
+                             PHASE_SPENDS_EVERYTHING, PHASE_UPGRADE, base_name)
 from src.en.quality import fold, in_order, index, one_edit_apart, unconfused
 
 # Action Points a turn starts with, before anything in a run changes the figure.
@@ -670,15 +670,17 @@ def generic_phase(name):
         name: The card name, in any spelling.
 
     Returns:
-        One of the `PHASE_` values from `PHASE_FREE` on.
+        One of the `PHASE_` values from `PHASE_UPGRADE` on.
     """
     price = cost(name)
     if price == X_COST:
         return PHASE_SPENDS_EVERYTHING
+    kind = category(name)
+    if kind == SETUP_CATEGORY:
+        return PHASE_UPGRADE
     if price == 0:
         return PHASE_FREE
-    kind = category(name)
-    if kind == SETUP_CATEGORY or features(name).draw:
+    if features(name).draw:
         return PHASE_SETUP
     if kind not in DEALT_TO_YOU and PRIME.search(on_play(name)):
         return PHASE_PRIME

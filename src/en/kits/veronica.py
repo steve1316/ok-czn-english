@@ -4,7 +4,7 @@ Firing Preparation makes a Ballista every turn, Bombardment Prep and Pendant of 
 Ballista is unplayable. The generic picker lists the Ballistas as free Attacks and plays them first, ahead of the setup cards.
 """
 
-from src.en.kits.kit import PHASE_SETUP, Kit, base_name, owned
+from src.en.kits.kit import PHASE_UPGRADE, Kit, base_name, owned
 
 # Every Ballista a card can create. They fire on their own at the end of the turn.
 BALLISTAS = frozenset({"Ballista", "Piercing Ballista", "Enhanced Ballista", "Giant Ballista", "Shelling Ballista", "Micro Ballista"})
@@ -17,7 +17,7 @@ class Veronica(Kit):
     # The Ballistas too, so the kit is still on when they are the only cards left in hand.
     cards = owned("Veronica") | BALLISTAS
     # Firing Preparation is the engine, then Bombardment Prep before Reload comes in, then Pendant before the skills that trigger it.
-    places = {"Firing Preparation": PHASE_SETUP - 0.5, "Bombardment Prep": PHASE_SETUP - 0.25, "Pendant of Resolution": PHASE_SETUP - 0.1}
+    places = {"Firing Preparation": PHASE_UPGRADE, "Bombardment Prep": PHASE_UPGRADE + 0.25, "Pendant of Resolution": PHASE_UPGRADE + 0.5}
 
     def held(self, name, board):
         """Keep every Ballista in hand.
