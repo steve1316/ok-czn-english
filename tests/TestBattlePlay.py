@@ -641,6 +641,21 @@ class TestInstalling(unittest.TestCase):
             utils_sortie._try_all_card_keys(task, 1)
             self.assertEqual(task.keys, ["1", battle.CONFIRM_KEY, "1", battle.CONFIRM_KEY])
 
+    def test_a_read_that_lost_cards_since_the_last_play_waits_a_frame(self):
+        # Live, Rhythm's hit still played over the hand after its key. The read caught Call & Response alone, which was played, and the
+        # Encore that would have procced the Rhythm was passed by.
+        with upstream(hand("Rhythm", "Encore", "Call & Response", "Rhythm")) as (utils_sortie, task):
+            battle.install()
+            utils_sortie._try_all_card_keys(task, 4)
+            pressed = list(task.keys)
+            task.hand_cards = hand("Call & Response", at=[0.5])
+            for _ in range(battle.SETTLE_WAIT):
+                utils_sortie._try_all_card_keys(task, 3)
+            self.assertEqual(pressed, task.keys)
+            # A read that never fills back in is played on regardless.
+            utils_sortie._try_all_card_keys(task, 3)
+            self.assertEqual(len(pressed) + 2, len(task.keys))
+
     def test_a_card_still_in_hand_is_not_tried_again(self):
         with upstream(hand(ATTACK, BIG_ATTACK)) as (utils_sortie, task):
             battle.install()

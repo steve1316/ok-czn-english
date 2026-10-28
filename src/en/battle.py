@@ -96,6 +96,9 @@ AUTO_LOCKED = "_en_auto_locked"
 # alone for 1-2s before they fuse, so five half-second frames cover it however fast the loop runs.
 KIT_WAIT = 5
 KIT_PAUSE = 0.5
+# Frames a read that lost cards the last one held is waited on, a hand size at a time. Live, a Rhythm's hit still played over the hand
+# 2s after its key, and the read caught 1 of 6 cards.
+SETTLE_WAIT = 2
 # Where upstream's hand prompts read the hand cards they choose between.
 PROMPT_HAND = (0.116, 0.697, 0.859, 0.908)
 # The hand prompt as upstream finds it: its caption, rewritten to Chinese by `ocr_text.py`, over a hand counter reading "5/10".
@@ -295,6 +298,29 @@ def new_turn(before, after, ended):
     return before is None or (ended and after > before)
 
 
+def unsettled(turn, names, count):
+    """Find the cards a short read lost since the last one, counting the frame it is about to wait.
+
+    Args:
+        turn: The `Turn` in progress, holding the hand last read and the card pressed since.
+        names: The canonical names read this frame.
+        count: The hand size the counter read.
+
+    Returns:
+        The cards missing besides the one pressed, empty when the read is whole or this hand size has been waited on enough.
+    """
+    expected = collections.Counter(turn.hand)
+    if turn.attempted:
+        expected[turn.attempted] -= 1
+    lost = expected - collections.Counter(names)
+    size, waits = turn.settling
+    waits = waits if size == count else 0
+    if not count or len(names) >= count or not lost or waits >= SETTLE_WAIT:
+        return []
+    turn.settling = (count, waits + 1)
+    return sorted(lost.elements())
+
+
 class Turn:
     """What one turn has learnt: the hand it last saw, the card it tried, and what the game would not play.
 
@@ -328,6 +354,8 @@ class Turn:
         # Frames spent waiting on a kit this turn, and whether the last frame was one.
         self.kit_waits = 0
         self.kit_waited = False
+        # The hand size last waited on for a read that lost cards, and how many frames it has waited.
+        self.settling = (None, 0)
         # Cards the game took this turn, oldest first, and those the turn before took, for kits that count plays.
         self.played = []
         self.last_turn = tuple(last_turn)
@@ -908,6 +936,11 @@ def install():
         hand = kits.reading([{**card, "name": cards.canonical(card["name"], party, frozenset(cards.DECK))} for card in read], count)
         names = [card["name"] for card in hand]
         turn = turn_of(task, count)
+        lost = unsettled(turn, names, count)
+        if lost:
+            task.log_info(f"read {names} without {lost} from the last frame, so the hand gets a frame to settle")
+            task.sleep(KIT_PAUSE)
+            return
         turn.hand = list(names)
 
         if turn.attempted is not None and not was_refused(turn.attempted, turn.attempted_copies, names):
