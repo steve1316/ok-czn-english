@@ -389,6 +389,8 @@ class Turn:
         # Whether the game has already said a card can still be played after the picker ended the turn this turn.
         self.objected = False
         self.weakness = None
+        # Whether a frame of this turn has said what it opened holding.
+        self.opened = False
         # Frames spent waiting on a kit this turn, and whether the last frame was one.
         self.kit_waits = 0
         self.kit_waited = False
@@ -1177,8 +1179,12 @@ def install():
         if seen:
             turn.enemies = min(turn.enemies or seen, seen)
         if turn.weakness is None:
-            # Read once a turn, so this is also the one frame a turn to say what it opened holding.
+            # Read again until a frame shows one. Live, a turn's first frame showed none and its second showed Order.
             turn.weakness = board.weakness(task)
+            if turn.weakness and turn.opened:
+                task.log_info(f"enemies turn out weak to {turn.weakness}")
+        if not turn.opened:
+            turn.opened = True
             against = f"enemies weak to {turn.weakness}" if turn.weakness else "no shared enemy weakness"
             budget = f"{points} Action Points to spend" if points else "no Action Points"
             task.log_info(f"turn opens with {budget}, {turn.enemies} enemy counter(s), {against}, hand {names}")

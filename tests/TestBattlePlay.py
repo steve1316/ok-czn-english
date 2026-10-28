@@ -657,6 +657,14 @@ class TestInstalling(unittest.TestCase):
                 utils_sortie._try_all_card_keys(task, 2)
             self.assertEqual(len(reads), 1)
 
+    def test_a_turn_that_reads_no_weakness_says_it_opened_once(self):
+        # Live, a turn with no weakness on show logged "turn opens" on every frame, which split one turn into many.
+        with upstream(hand(ATTACK, BIG_ATTACK)) as (utils_sortie, task):
+            battle.install()
+            utils_sortie._try_all_card_keys(task, 2)
+            utils_sortie._try_all_card_keys(task, 2)
+            self.assertEqual(sum(message.startswith("turn opens") for message in task.logged), 1)
+
     def test_a_fresh_hand_reads_the_weakness_again(self):
         # A new turn can be a new fight, so what the last one saw no longer counts.
         with upstream(hand(ATTACK, BIG_ATTACK), weakness="PURPLE") as (utils_sortie, task):
