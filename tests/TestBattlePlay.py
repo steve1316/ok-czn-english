@@ -1007,15 +1007,22 @@ class TestCallingBackTheTurn(unittest.TestCase):
             page(task)
             task.all_texts = list(CARDS_LEFT_PROMPT)
             self.assertTrue(cards_left(task))
-            # Key 2 plays and a card is drawn after it. Live, the draw started the keys over from 1, retrying cards the game had
-            # already refused, while the card right of the one played slid onto its key. A key the game turns down at once
-            # is not confirmed, which saves the 2s wait on Enter.
+            # A key the game turns down at once is not confirmed, which saves the 2s wait on Enter. Key 2 plays, which answers
+            # the warning: live, the keys after it went on into a hand at 0 AP, 4s each, for 35s.
             toast = [FakeBox("Not enough AP.", 0.5, 0.52)]
-            for counter, texts in ((3, []), (3, toast), (3, []), (2, []), (2, []), (3, []), (3, toast)):
+            for counter, texts in ((3, []), (3, toast), (3, []), (2, []), (2, [])):
                 task.counter = counter
                 task.all_texts = list(texts)
                 page(task)
-            self.assertEqual(task.keys, ["1", "2", battle.CONFIRM_KEY, "2", battle.CONFIRM_KEY, "3"])
+            self.assertEqual(task.keys, ["1", "2", battle.CONFIRM_KEY])
+            # The next warning picks up where it stopped. Live, a restart from key 1 retried cards the game had already refused,
+            # while the card right of the one played slid onto its key.
+            task.all_texts = list(CARDS_LEFT_PROMPT)
+            self.assertTrue(cards_left(task))
+            for texts in ([], toast):
+                task.all_texts = list(texts)
+                page(task)
+            self.assertEqual(task.keys, ["1", "2", battle.CONFIRM_KEY, "2"])
             # Every key tried, so the game's next check is the end of the turn.
             task.all_texts = list(CARDS_LEFT_PROMPT)
             self.assertFalse(cards_left(task))
