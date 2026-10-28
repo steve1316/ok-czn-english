@@ -33,8 +33,8 @@ from tests.fakes import FakeBox  # noqa: E402
 ATTACK = "Anchor"
 VOID_ATTACK = "Annihilation Shot"
 BIG_ATTACK = "Charge Launcher"
-# A Curse that buffs the enemies when played, so the picker neither plays it nor clears it.
-CURSE = "Overflow"
+# A Status Ailment that buffs the enemies when played, so the picker neither plays it nor clears it.
+AILMENT = "Horrifying Memory"
 # A neutral 1-point Skill that only shields.
 SHIELD = "Barrier Utilization"
 # One Ego of each kind, as the planner would have read them off their previews.
@@ -125,14 +125,14 @@ class TestChoosing(unittest.TestCase):
         self.assertIsNone(battle.choose(hand(ATTACK), cards.Board(), {ATTACK}))
 
     def test_a_hand_of_curses_ends_the_turn(self):
-        self.assertIsNone(battle.choose(hand(CURSE), cards.Board(), set()))
+        self.assertIsNone(battle.choose(hand(AILMENT), cards.Board(), set()))
 
     def test_spare_points_clear_a_card_that_hurts_while_held(self):
         # Live: three Bleeds sat out turn after turn with all three points unspent. Bleed deals damage, so it goes
         # ahead of Parasitic Spores. Abyssal Erosion hurts through its Retain line, but costs 4.
-        # Stickiness does nothing at all, and live two sat out a turn the game said they could be played in.
+        # Every Curse goes once points are spare, so two Stickiness no longer sit out a turn the game said they could be played in.
         for held, points, cleared in ((("Parasitic Spores", "Bleed"), 3, "Bleed"), (("Abyssal Erosion",), 3, None),
-                                      (("Abyssal Erosion",), 4, "Abyssal Erosion"), (("Stickiness", CURSE), 3, "Stickiness")):
+                                      (("Abyssal Erosion",), 4, "Abyssal Erosion"), (("Stickiness", AILMENT), 3, "Stickiness"), (("Overflow",), 2, "Overflow")):
             with self.subTest(held=held, points=points):
                 chosen = battle.choose(hand(*held), cards.Board(action_points=points), set())
                 self.assertEqual(cleared, chosen and chosen["name"])
@@ -275,7 +275,7 @@ class TestTurnTracking(unittest.TestCase):
         self.assertFalse(battle.was_refused(ATTACK, 1, [BIG_ATTACK]))
 
     def test_a_card_that_drew_another_is_not_a_refusal(self):
-        self.assertFalse(battle.was_refused(ATTACK, 1, [BIG_ATTACK, CURSE]))
+        self.assertFalse(battle.was_refused(ATTACK, 1, [BIG_ATTACK, AILMENT]))
 
     def test_another_copy_of_the_same_card_is_not_a_refusal(self):
         # A deck holds several copies of a card, so a hand can too. One of three going down to two is the
@@ -488,7 +488,7 @@ class TestInstalling(unittest.TestCase):
             self.assertEqual(task.keys, ["2", battle.CONFIRM_KEY])
 
     def test_a_hand_of_curses_ends_the_turn(self):
-        with upstream(hand(CURSE)) as (utils_sortie, task):
+        with upstream(hand(AILMENT)) as (utils_sortie, task):
             battle.install()
             utils_sortie._try_all_card_keys(task, 1)
             self.assertEqual(task.keys, [battle.END_TURN_KEY])
@@ -595,7 +595,7 @@ class TestInstalling(unittest.TestCase):
             with counting(board, "weakness") as reads:
                 utils_sortie._try_all_card_keys(task, 2)
                 battle.end_of_turn(task)
-                task.hand_cards = hand(ATTACK, BIG_ATTACK, CURSE)
+                task.hand_cards = hand(ATTACK, BIG_ATTACK, AILMENT)
                 utils_sortie._try_all_card_keys(task, 3)
             self.assertEqual(len(reads), 2)
 
@@ -621,13 +621,13 @@ class TestInstalling(unittest.TestCase):
 
     def test_the_next_turn_knows_what_was_kept(self):
         # The Attack was pressed after the last read, so only the Curse was still in hand when the turn ended.
-        with upstream(hand(ATTACK, CURSE)) as (utils_sortie, task):
+        with upstream(hand(ATTACK, AILMENT)) as (utils_sortie, task):
             battle.install()
             utils_sortie._try_all_card_keys(task, 2)
             battle.end_of_turn(task)
-            task.hand_cards = hand(CURSE, ATTACK, BIG_ATTACK)
+            task.hand_cards = hand(AILMENT, ATTACK, BIG_ATTACK)
             utils_sortie._try_all_card_keys(task, 3)
-            self.assertEqual(getattr(task, battle.TURN).kept, (CURSE,))
+            self.assertEqual(getattr(task, battle.TURN).kept, (AILMENT,))
 
     def test_every_copy_of_a_card_gets_played(self):
         # Caught live: a hand of three Escapism played one, read the other two as the game refusing it, and
@@ -656,9 +656,9 @@ class TestInstalling(unittest.TestCase):
             task.counter = 2
             battle.install()
             utils_sortie._try_all_card_keys(task, 2)
-            task.hand_cards = hand(CURSE, "loming Laser L", at=[0.393, 0.541])
+            task.hand_cards = hand(AILMENT, "loming Laser L", at=[0.393, 0.541])
             utils_sortie._try_all_card_keys(task, 2)
-            task.hand_cards = hand(CURSE, "oming Laser L", at=[0.393, 0.541])
+            task.hand_cards = hand(AILMENT, "oming Laser L", at=[0.393, 0.541])
             utils_sortie._try_all_card_keys(task, 2)
             self.assertEqual(task.keys, ["2", battle.CONFIRM_KEY, "2", battle.CONFIRM_KEY, battle.END_TURN_KEY])
 
@@ -685,7 +685,7 @@ class TestInstalling(unittest.TestCase):
     def test_a_card_ocr_missed_is_tried_before_the_turn_ends(self):
         # Live: the counter read three, OCR read only two status cards at keys 2 and 3, and the turn was ended
         # with Cobalt Light, the unread first card, still in hand and points to spend.
-        with upstream(hand(CURSE, CURSE, at=[0.468, 0.605])) as (utils_sortie, task):
+        with upstream(hand(AILMENT, AILMENT, at=[0.468, 0.605])) as (utils_sortie, task):
             task.counter = 3
             battle.install()
             utils_sortie._try_all_card_keys(task, 3)
@@ -901,7 +901,7 @@ class TestHandPrompt(unittest.TestCase):
 
     # Precision Aim's prompt as it stuck live: upstream tapped "Basi", "Fixer's Approach" and "XAttac" while the counter stayed at 0/1.
     SCREEN = (FakeBox("请选择1张要移动至抽牌堆的卡牌", 0.5, 0.111, width=600), FakeBox("05/10", 0.505, 0.971), FakeBox("Launcher", 0.273, 0.721),
-              FakeBox("Basi", 0.27, 0.80), FakeBox("Opening Found", 0.349, 0.765), FakeBox("Hunting Instincts", 0.603, 0.757), FakeBox(CURSE, 0.73, 0.776))
+              FakeBox("Basi", 0.27, 0.80), FakeBox("Opening Found", 0.349, 0.765), FakeBox("Hunting Instincts", 0.603, 0.757), FakeBox(AILMENT, 0.73, 0.776))
 
     def frames(self, *counters, screens=(), played=None):
         """Answer the prompt once per counter reading.

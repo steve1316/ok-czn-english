@@ -432,11 +432,11 @@ def worth_clearing(name):
         name: The card name, in any spelling.
 
     Returns:
-        True for a Curse or Status Ailment with a fixed cost that only hurts while it sits in hand, or whose text does nothing
-        when played - Stickiness reads only "It's horribly sticky." and the game still offers it.
+        True for any Curse with a fixed cost, since a Curse left in hand only clogs it. A Status Ailment counts when it only hurts
+        while it sits in hand, or when its text does nothing on play.
     """
-    text = description(name)
-    return category(name) in DEALT_TO_YOU and cost(name) != X_COST and (bool(HELD_HARM.search(text)) or not INERT_EFFECT.search(text))
+    kind, text = category(name), description(name)
+    return kind in DEALT_TO_YOU and cost(name) != X_COST and (kind == "CURSE" or bool(HELD_HARM.search(text)) or not INERT_EFFECT.search(text))
 
 
 def clearing_order(name):
