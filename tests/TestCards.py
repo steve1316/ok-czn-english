@@ -525,6 +525,8 @@ class TestKits(unittest.TestCase):
             # The Archetypes a Seed makes stay in the deck all battle, so one played two turns back still releases the hold.
             ("Form Convergence plays once this battle's Seed made Archetypes", ("Form Convergence",),
              cards.Board(battle=("Quantum Seed", "Strike")), ["Form Convergence"]),
+            # Live, Tiphera's 100% Matter Disintegration took the last point, tied with Nine's 100% Slash on hand order.
+            ("a Healer's attack leaves the point to a Core's", ("Matter Disintegration", "Slash"), cards.Board(action_points=1), ["Slash"]),
         ))
 
     def test_mei_lin_buffs_first_and_ends_on_the_spire(self):

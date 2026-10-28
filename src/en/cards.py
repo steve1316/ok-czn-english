@@ -12,6 +12,7 @@ from functools import lru_cache
 from itertools import combinations
 
 from src.en.game_battle import CARD_CATEGORY, CARD_COST, CARD_OWNER, COMBATANT_ATTRIBUTE, X_COST
+from src.en.game_quality import COMBATANT_ROLE
 from src.en import kits
 from src.en.game_text import DESCRIPTIONS
 from src.en.kits.kit import (ATTACK_CATEGORY, PHASE_ATTACK, PHASE_EPIPHANY, PHASE_ESCAPE, PHASE_FREE, PHASE_OTHER, PHASE_PRIME, PHASE_SETUP,
@@ -53,6 +54,9 @@ SHIELD_WEIGHT = 0.6
 # What matching the attribute an enemy is weak to is worth. The game pays a match in extra damage and in
 # extra Tenacity damage both, so a matching card is worth more than the figure printed on it.
 WEAKNESS_BONUS = 1.5
+# What a Healer's damage is worth against the figure printed on it. A Healer's stats are low, so the same 100% hits for less than a Core's or
+# an Attacker's, and a Healer's attack should not take their points.
+HEALER_DAMAGE = 0.5
 # What a card is worth when its effect text says nothing measurable - an Immunity, a Morale, a status with no
 # figure on it. Rating those zero would mean a buff never got played at all, which is worse than the guess.
 # The ordinary card costing one point does 100% damage, so an unreadable effect is priced at the same rate.
@@ -559,7 +563,7 @@ def rated(name, board):
     matched = board.weakness is not None and attribute_of(name) == board.weakness
     if wasted(name, board):
         return 0
-    hit = doing.damage + doing.spread * (board.enemies - 1)
+    hit = (doing.damage + doing.spread * (board.enemies - 1)) * (HEALER_DAMAGE if COMBATANT_ROLE.get(owner(name)) == "Healing" else 1)
     worth = strength(doing._replace(damage=0 if board.invulnerable else hit * (WEAKNESS_BONUS if matched else 1)))
     if not worth:
         worth = UNREAD_VALUE * max(cost(name), 1)
