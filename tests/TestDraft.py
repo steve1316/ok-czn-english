@@ -146,7 +146,8 @@ class TestDraft(unittest.TestCase):
 
     def test_a_card_played_counts_toward_its_owner_across_runs(self):
         """A tally that stops counting would draft the same untested-looking combatant every run."""
-        with tempfile.TemporaryDirectory() as folder, mock.patch.object(tested, "FILE", os.path.join(folder, "plays.json")),                 mock.patch.object(tested, "debug_run", lambda: True), mock.patch.object(tested, "_plays", None):
+        with (tempfile.TemporaryDirectory() as folder, mock.patch.object(tested, "FILE", os.path.join(folder, "plays.json")),
+              mock.patch.object(tested, "debug_run", lambda: True), mock.patch.object(tested, "_plays", None)):
             tested.played("Flash Slash")
             tested.played("Impulse")
             tested._plays = None
