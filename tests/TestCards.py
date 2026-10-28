@@ -116,10 +116,16 @@ class TestOrdering(unittest.TestCase):
         self.assertEqual(played(chosen), [BIG_ATTACK, JUSTICE_ATTACK])
 
     def test_a_cheap_card_does_not_crowd_out_a_better_one(self):
-        # Spending a point on the buff would leave nothing for the two-point attack. Which cards get played
+        # Spending a point on the cheap card would leave too little for the dear one. Which cards get played
         # has to be settled on what they are worth, and only then put in the order they are played in.
-        chosen = cards.plan(hand(BUFF, BIG_ATTACK), cards.Board(action_points=2))
-        self.assertEqual(played(chosen), [BIG_ATTACK])
+        cases = [
+            (hand(BUFF, BIG_ATTACK), 2, [BIG_ATTACK]),
+            # Live, Khalipe's Basic Lashing was bought first for its 100% per point, stranding the 2 points left after it.
+            (hand("Lashing", "Vulture Ejection"), 3, ["Vulture Ejection"]),
+        ]
+        for cards_in_hand, points, expected in cases:
+            with self.subTest(hand=played(cards_in_hand)):
+                self.assertEqual(expected, played(cards.plan(cards_in_hand, cards.Board(action_points=points))))
 
     def test_a_tight_budget_buys_the_better_attack(self):
         chosen = cards.plan(hand(JUSTICE_ATTACK, BIG_ATTACK), cards.Board(action_points=2))
