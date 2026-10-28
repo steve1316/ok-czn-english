@@ -131,6 +131,13 @@ class TestOrdering(unittest.TestCase):
         chosen = cards.plan(hand(JUSTICE_ATTACK, BIG_ATTACK), cards.Board(action_points=2))
         self.assertEqual(played(chosen), [BIG_ATTACK])
 
+    def test_damage_to_all_enemies_counts_once_per_enemy(self):
+        # Live, Vulture Ejection's 120% to all enemies was valued as if it hit one.
+        for enemies, expected in ((1, [JUSTICE_ATTACK]), (3, ["Diagonal Slash"])):
+            with self.subTest(enemies=enemies):
+                chosen = cards.plan(hand(JUSTICE_ATTACK, "Diagonal Slash"), cards.Board(action_points=1, enemies=enemies))
+                self.assertEqual(expected, played(chosen))
+
     def test_every_hit_of_a_multi_hit_attack_counts(self):
         # 40% three times is 120%, which beats 100% once. Read as its first hit alone it lost to it. Fan of Daggers writes
         # its count before the word, "60% x 3 Damage", and was given up to a discard prompt as a 60% card.

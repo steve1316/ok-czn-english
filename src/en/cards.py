@@ -63,6 +63,9 @@ EPIPHANY_BONUS = 1000
 DAMAGE = re.compile(r"(\d+)%(?:\s*[×x]\s*(\d+))?[^\n]{0,24}?Damage(?!\s+Amount)(?:\s*[×x]\s*(\d+))?")
 SHIELD = re.compile(r"(\d+)%[^\n]{0,20}?Shield")
 DRAW = re.compile(r"\bDraw (\d+)")
+# A line of damage that lands on every enemy, as in Vulture Ejection's "120% Defense-Based Damage to all enemies". The data's own target
+# misses some, Diagonal Slash among them. "To random enemies" spreads its hits instead, so that stays one target's worth.
+ALL_ENEMIES = re.compile(r"\bto all enemies\b")
 # A card that makes the next attack hit harder, or the target take more - "Add 1 Hit(s) to the next Attack Card", "+X% Damage
 # Amount to the next Bullet card", "2 Vulnerable". Played after the attacks, as its category alone left it, it lands on nothing.
 PRIME = re.compile(r"(?:Damage Amount|Hit\(s\)|Proc)[^|\n]*?\bnext\b[^|\n]*?\b(?:Attack|Bullet|Bind) Card"
@@ -73,7 +76,16 @@ PRIME = re.compile(r"(?:Damage Amount|Hit\(s\)|Proc)[^|\n]*?\bnext\b[^|\n]*?\b(?
 DECK = {}
 
 # What a card does, in the terms the ordering cares about.
-Features = namedtuple("Features", ["damage", "shield", "draw"])
+Features = namedtuple("Features", [
+    # Damage to one enemy, as a percentage with every hit added up.
+    "damage",
+    # Shield, as a percentage.
+    "shield",
+    # Cards drawn.
+    "draw",
+    # The part of `damage` that lands on every enemy rather than one.
+    "spread",
+], defaults=[0])
 # What the picker knows about the moment it is choosing in.
 Board = namedtuple("Board", [
     # Action Points to plan against.
@@ -96,7 +108,9 @@ Board = namedtuple("Board", [
     "deck",
     # Whether an enemy shows Absolute Invincibility, from `board.enemy_invulnerable`, so damage is worth nothing this turn.
     "invulnerable",
-], defaults=[BASE_ACTION_POINTS, None, None, (), (), (), 0, (), DECK, False])
+    # How many enemies are on screen, from `board.enemy_counters`, so damage to all enemies counts once for each. 1 when not known.
+    "enemies",
+], defaults=[BASE_ACTION_POINTS, None, None, (), (), (), 0, (), DECK, False, 1])
 
 # How many distinct readings to remember the folding of. OCR invents new misspellings all session, so this
 # is bounded rather than unlimited, and it is far larger than the ten names one frame ever asks about.
@@ -289,6 +303,18 @@ def parsed(name):
     return figures(text_of(name))
 
 
+def damage_in(text):
+    """Add up the damage figures in an effect text, every hit counted.
+
+    Args:
+        text: The effect text, or one line of it.
+
+    Returns:
+        The total, as a percentage.
+    """
+    return sum(int(share) * int(before or after or 1) for share, before, after in DAMAGE.findall(text))
+
+
 def figures(text):
     """Pull the damage, shield and draw figures out of what an effect text does when played.
 
@@ -300,9 +326,10 @@ def figures(text):
     """
     text = RETAIN_LINE.sub("", text)
     return Features(
-        damage=sum(int(share) * int(before or after or 1) for share, before, after in DAMAGE.findall(text)),
+        damage=damage_in(text),
         shield=sum(int(found) for found in SHIELD.findall(text)),
         draw=sum(int(found) for found in DRAW.findall(text)),
+        spread=sum(damage_in(line) for line in text.splitlines() if ALL_ENEMIES.search(line)),
     )
 
 
@@ -457,7 +484,8 @@ def rated(name, board):
     matched = board.weakness is not None and attribute_of(name) == board.weakness
     if wasted(name, board):
         return 0
-    worth = strength(doing._replace(damage=0 if board.invulnerable else doing.damage * (WEAKNESS_BONUS if matched else 1)))
+    hit = doing.damage + doing.spread * (board.enemies - 1)
+    worth = strength(doing._replace(damage=0 if board.invulnerable else hit * (WEAKNESS_BONUS if matched else 1)))
     if not worth:
         worth = UNREAD_VALUE * max(cost(name), 1)
     if lit_up(name, board):

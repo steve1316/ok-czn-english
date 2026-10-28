@@ -339,6 +339,8 @@ class Turn:
         self.ego_held = False
         # Whether an enemy shows Absolute Invincibility, from `watch_invulnerable`, so the picker holds its attacks.
         self.invulnerable = False
+        # The fewest enemies a frame of this turn has shown, from `board.enemy_counters`. 0 until a frame shows one.
+        self.enemies = 0
 
 
 def play_key(task, key):
@@ -906,14 +908,18 @@ def install():
         # The readout says whether anything is left to spend, not how much, so a turn with points left is
         # planned against a full three and corrected by what the game will actually accept.
         points = cards.BASE_ACTION_POINTS if board.has_action_points(task) and not out_of_points(task) else 0
+        # An attack's flash can pass for extra counters, and an enemy that dies stays gone. Too few only values all-enemy damage as before.
+        seen = len(board.enemy_counters(frame_of(task)))
+        if seen:
+            turn.enemies = min(turn.enemies or seen, seen)
         if turn.weakness is None:
             # Read once a turn, so this is also the one frame a turn to say what it opened holding.
             turn.weakness = board.weakness(task)
             against = f"enemies weak to {turn.weakness}" if turn.weakness else "no shared enemy weakness"
             budget = "Action Points to spend" if points else "no Action Points"
-            task.log_info(f"turn opens with {budget}, {against}, hand {names}")
+            task.log_info(f"turn opens with {budget}, {turn.enemies} enemy counter(s), {against}, hand {names}")
         state = cards.Board(action_points=points, weakness=turn.weakness, hand=tuple(names), played=tuple(turn.played),
-                            last_turn=turn.last_turn, hand_size=count or 0, kept=turn.kept, invulnerable=turn.invulnerable)
+                            last_turn=turn.last_turn, hand_size=count or 0, kept=turn.kept, invulnerable=turn.invulnerable, enemies=turn.enemies or 1)
         card = choose(hand, state, turn.refused)
         if card is None and turn.objected:
             # The game said a card is still playable, so the best of those passed over for cost is tried as if affordable.
