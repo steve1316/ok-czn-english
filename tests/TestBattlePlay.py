@@ -234,12 +234,24 @@ class TestEgoPlanner(unittest.TestCase):
             ("a boss saving for its strike", [("F2", STRIKE_EGO, False), ("F3", SETUP_EGO, True)], 3, 0.9, False, True, True, None),
             ("an unaffordable guard", [("F1", GUARD_EGO, False), ("F3", SETUP_EGO, True)], 3, 0.2, False, True, False, "F3"),
             ("an Ego never read", [("F1", None, True)], 7, 0.2, False, True, False, None),
-            ("an empty bar under lit badges", every, 0, 0.2, False, True, False, None),
         )
         for name, slots, banked, after_hit, invulnerable, attacking, boss, fired in cases:
             with self.subTest(name):
                 choice = ego.decide(slots, banked, after_hit, invulnerable, attacking, boss, False)
                 self.assertEqual(fired, choice and choice[0])
+
+    def test_a_tinted_badge_fires_only_on_a_bar_that_pays_its_cost(self):
+        # Live, Hugo's 5 and Tiphera's 4 were both tinted the green of a reduced cost on 0 EP, and Last Resort was pressed.
+        badges = {"F2": "5", "F3": "4"}
+
+        def ocr(left, top, right, bottom, frame=None, frame_processor=None):
+            key = next(key for key, at in board.EGO_BADGE_Y.items() if top < at < bottom)
+            return [FakeBox(badges[key], board.EGO_BADGE_X, board.EGO_BADGE_Y[key])] if key in badges else []
+
+        # F1's badge does not read, so it is taken at its tint.
+        for banked, fired in ((0, set()), (4, {"F1", "F3"}), (5, {"F1", "F2", "F3"})):
+            with self.subTest(banked=banked):
+                self.assertEqual(fired, ego.payable(types.SimpleNamespace(ocr=ocr), None, board.EGO_KEYS, banked))
 
     def test_an_exhaust_ego_waits_for_a_card_to_exhaust(self):
         # Live, Activate Defense Module fired ahead of the attacks with no Exhaust card in hand, so its Weaken never landed.

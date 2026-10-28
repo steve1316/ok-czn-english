@@ -75,6 +75,9 @@ FIRES_PER_TURN = 2
 # Upstream's end-turn button, which says the turn is the player's to act in.
 FINISH_TURN = "finishturn"
 FINISH_TURN_REGION = (0.844, 0.782, 0.998, 0.990)
+# The full-frame pass misses a cost badge's digit, so a badge is read on its own, enlarged this much. Offline, both of two captures read.
+BADGE_ZOOM = 3
+DIGITS = re.compile(r"\d+")
 # Set by upstream once the run reaches its last boss.
 BOSS = "final_boss_battle"
 
@@ -269,9 +272,6 @@ def decide(slots, banked, after_hit, invulnerable, attacking, boss, exhausting):
     Returns:
         A `(key, ego, reason)` triple, or None to fire nothing.
     """
-    # A reduced cost tints the badge whether or not the bar can pay, and live an Ego was fired on 0 EP that way.
-    if not banked:
-        return None
     ready = [(key, ego) for key, ego, affordable in slots if affordable and ego is not None and (exhausting or not ON_EXHAUST.search(ego.text))]
     first = {role: next(((key, ego) for key, ego in ready if role in ego.roles), None) for role in (GUARD, STRIKE, SETUP)}
     hurt = after_hit is not None and after_hit < HURT_BELOW
@@ -289,6 +289,44 @@ def decide(slots, banked, after_hit, invulnerable, attacking, boss, exhausting):
     return (*first[SETUP], "ahead of the attacks")
 
 
+def enlarged(image):
+    """Enlarge a cost badge for OCR.
+
+    Args:
+        image: The badge, cut from the frame by `task.ocr`.
+
+    Returns:
+        The badge `BADGE_ZOOM` times the size.
+    """
+    return cv2.resize(image, None, fx=BADGE_ZOOM, fy=BADGE_ZOOM)
+
+
+def payable(task, frame, tinted, banked):
+    """Narrow the slots with a tinted badge to those the bar can pay for.
+
+    A reduced cost tints its badge whether or not the bar can pay, so each badge's cost is read and held against the bar. A badge that
+    does not read is taken at its tint.
+
+    Args:
+        task: The running task, on a battle screen.
+        frame: The frame to read the badges off, from `frame_of`.
+        tinted: The slots `board.affordable_egos` found tinted.
+        banked: The EP the bar holds, from `board.banked_points`.
+
+    Returns:
+        The keys of the slots that can be fired.
+    """
+    keys = set()
+    if not banked:
+        return keys
+    for key in tinted:
+        box = board.box_around(board.EGO_BADGE_X, board.EGO_BADGE_Y[key], board.EGO_BADGE_HALF)
+        cost = DIGITS.search("".join(read.name for read in task.ocr(*box, frame=frame, frame_processor=enlarged) or []))
+        if cost is None or int(cost.group()) <= banked:
+            keys.add(key)
+    return keys
+
+
 def take_turn(task, utils, turn):
     """Fire an Ego when one helps right now, reading any Ego not yet seen first.
 
@@ -303,7 +341,8 @@ def take_turn(task, utils, turn):
     if turn.ego_fires >= FIRES_PER_TURN or not task.find_feature(feature_name=FINISH_TURN, box=task.box_of_screen(*FINISH_TURN_REGION)):
         return False
     frame = frame_of(task)
-    affordable = set(board.affordable_egos(task))
+    banked = board.banked_points(frame)
+    affordable = payable(task, frame, board.affordable_egos(task), banked)
     seen = known()
     slots = []
     for key in board.EGO_KEYS:
@@ -319,7 +358,6 @@ def take_turn(task, utils, turn):
                 learn(mark, ego)
             return True
         slots.append((key, ego, key in affordable))
-    banked = board.banked_points(frame)
     after_hit = board.team_after_hit(frame)
     invulnerable = turn.invulnerable
     hand = utils._hand_cards(task) or []
