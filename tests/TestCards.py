@@ -486,11 +486,14 @@ class TestKits(unittest.TestCase):
             ("Call & Response stays in hand beside a Rhythm", ("Call & Response", "Rhythm"), cards.Board(), ["Rhythm"]),
             # Generic play spends Spotlight before the Rhythm it is meant to return.
             ("Spotlight waits for a Rhythm to be played", ("Spotlight", "Rhythm"), cards.Board(), ["Rhythm"]),
-            # Generic play plays Encore cold, where it has no Rhythm to proc.
-            ("Encore waits for a Rhythm", ("Encore", "Sound Check"), cards.Board(), ["Sound Check"]),
+            # Generic play plays Encore cold, ahead of the Rhythm it would proc.
+            ("Encore waits for a Rhythm", ("Encore", "Rhythm"), cards.Board(), ["Rhythm"]),
             ("Encore follows the Rhythm at once", ("Spotlight", "Encore"), cards.Board(played=("Rhythm",)), ["Encore", "Spotlight"]),
-            ("Encore waits when a Rhythm was not the last card", ("Encore", "Sound Check"), cards.Board(played=("Rhythm", "Sound Check")),
-             ["Sound Check"]),
+            ("Encore waits when a Rhythm was not the last card", ("Encore", "Rhythm"), cards.Board(played=("Rhythm", "Sound Check")),
+             ["Rhythm"]),
+            ("Encore waits for the Rhythm Spotlight fetches", ("Encore", "Spotlight"), cards.Board(), ["Spotlight"]),
+            # Live, Encore sat in hand with points to spend after Fear, with no Rhythm left to wait for.
+            ("Encore plays once no Rhythm can come", ("Encore",), cards.Board(played=("Rhythm", "Fear")), ["Encore"]),
             # Pins the hold being released, which generic play passes too.
             ("Spotlight plays once a Rhythm has been", ("Spotlight", "Rhythm"), cards.Board(played=("Rhythm: Arpeggio",)),
              ["Spotlight", "Rhythm"]),

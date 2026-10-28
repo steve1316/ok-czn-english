@@ -11,6 +11,8 @@ ENCORE = "Encore"
 SPOTLIGHT = "Spotlight"
 # Every Rhythm card, base or from Music, Start!, begins its name with this.
 RHYTHM = "Rhythm"
+# Cards that bring a Rhythm into hand, so Encore still has one to wait for.
+FETCHERS = (CALL, SPOTLIGHT)
 
 
 def rhythms(names):
@@ -26,7 +28,7 @@ def rhythms(names):
 
 
 class Tenebria(Kit):
-    """Holds Call & Response and Spotlight while Rhythms are in hand, and Encore until a Rhythm was the last card played."""
+    """Holds Call & Response and Spotlight while Rhythms are in hand, and Encore until a Rhythm was the last card played or none can come."""
 
     name = "Tenebria"
     cards = owned("Tenebria")
@@ -35,6 +37,8 @@ class Tenebria(Kit):
 
     def held(self, name, board):
         """Keep Call & Response while a Rhythm is in hand, Spotlight until one is played, and Encore until one is the last card played.
+
+        Encore is let go once no Rhythm is in hand and nothing in hand fetches one, since it is still a 120% Attack.
 
         Args:
             name: The card in question.
@@ -50,7 +54,8 @@ class Tenebria(Kit):
             # With no Rhythm in hand there is nothing to wait for, and Spotlight fetches one.
             return bool(rhythms(board.hand)) and not rhythms(board.played)
         if card == ENCORE:
-            return not rhythms(board.played[-1:])
+            coming = rhythms(board.hand) or any(base_name(other) in FETCHERS for other in board.hand)
+            return bool(coming) and not rhythms(board.played[-1:])
         return False
 
 
