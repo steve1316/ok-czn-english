@@ -18,7 +18,8 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.en import board  # noqa: E402
+from src.en import board, boss  # noqa: E402
+from src.en.battle import PARTY  # noqa: E402
 
 IMAGES = REPO_ROOT / "tests" / "images"
 WIDTH, HEIGHT = 1920, 1080
@@ -35,6 +36,10 @@ EP_BAR_AT = (30, 830)
 EGO_SLOTS_AT = (100, 740)
 TEAM_BAR_AT = (40, 30)
 STATUSES_AT = (1270, 190)
+# The two Weakness badges on the Sortie boss select screen, Shadow Collector's Passion and Cold, Sweet Dream's Void.
+BOSS_BADGES_AT = (820, 785)
+# Upstream's boss entries for that screen, at the points it reads each name from.
+BOSSES = [{"name": "Shadow Collector", "x": 0.358, "y": 0.706}, {"name": "Cold, Sweet Dream", "x": 0.641, "y": 0.706}]
 
 
 def fixture(name):
@@ -271,6 +276,28 @@ class TestRealEnemies(unittest.TestCase):
         # It is the right colour, well over the minimum area and within the squareness band, so the height is
         # the only thing keeping a hit landing from being counted as another enemy.
         self.assertEqual(board.enemy_counters(pasted("attack_flash", *FLASH_AT)), [])
+
+
+class TestBossWeakness(unittest.TestCase):
+    """The Sortie boss pick, against the boss select screen's own badges."""
+
+    def test_each_boss_reads_its_weakness(self):
+        # The Passion badge is drawn inside the battle counter's magenta band, so a read that keeps that check loses it.
+        frame = pasted("boss_weakness", *BOSS_BADGES_AT)
+        self.assertEqual([boss.weakness(frame, entry) for entry in BOSSES], ["Passion", "Void"])
+
+    def test_the_pick_follows_the_damage_dealers(self):
+        frame = pasted("boss_weakness", *BOSS_BADGES_AT)
+        # Rei is a Void healer, so does not pull the pick towards the Void boss.
+        cases = {("Owen", "Khalipe", "Chizuru"): ["Shadow Collector", "Cold, Sweet Dream"], ("Khalipe", "Chizuru"): ["Cold, Sweet Dream"],
+                 ("Owen", "Rei"): ["Shadow Collector"], ("Khalipe",): ["Shadow Collector", "Cold, Sweet Dream"]}
+        for party, expected in cases.items():
+            with self.subTest(party=party):
+                task = FakeTask(frame)
+                setattr(task, PARTY, frozenset(party))
+                # Handing the candidates straight back shows which bosses the random pick is left choosing between.
+                chosen = boss.WeakBoss(type("Candidates", (), {"choice": staticmethod(list)}), task).choice(BOSSES)
+                self.assertEqual([entry["name"] for entry in chosen], expected)
 
 
 class TestFightState(unittest.TestCase):
