@@ -144,6 +144,7 @@ class TestOcrNormalisation(unittest.TestCase):
             ("Select 1 card(s) to move to top of Draw Pile.", "请选择1张要移动至抽牌堆顶的卡牌"),
             ("Select 1 card(s) to move to top of Dra8", "请选择1张要移动至抽牌堆顶的卡牌"),
             ("Select1 card(s) to Discard.", "请选择1张卡牌"),
+            ("Select 1 card(s) to place in hand.", "请选择1张放入手牌的卡牌"),
             ("Select second Combatant to join.", "请选择加入的主战员"),
             ("Select fourth Combatant to join.", "请选择加入的主战员"),
             # The ordinal is drawn in another colour, and OCR usually reads it glued to the word before.

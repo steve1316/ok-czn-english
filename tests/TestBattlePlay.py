@@ -1154,6 +1154,19 @@ class TestHandPrompt(unittest.TestCase):
         task = self.frames("0/1", screens=((*top, FakeBox("Android", 0.45, 0.765)),))
         self.assertEqual([(0.45, round(0.765 + battle.CARD_BODY, 3))], task.taps, "Android, the one 2-cost card, though Opening Found rates higher")
 
+    def test_a_pick_to_place_in_hand_takes_the_best_card(self):
+        # Live, Nia's Curiosity offered two Amp Therapy and an Inferno Rhapsody, and sat 11s for the stuck-screen fallback's random click.
+        offered = [{"name": name, "description": "", "x": x, "y": 0.33} for name, x in (("Amp Therapy", 0.26), ("Amp Therapy", 0.51), ("Inferno Rhapsody", 0.76))]
+        for caption in ("请选择1张放入手牌的卡牌", "→ Select 1 card(s) to place in hand."):
+            with self.subTest(caption=caption):
+                taps = []
+                utils = types.SimpleNamespace(recognize_cards=lambda task, page: offered, _move_and_click=lambda task, x, y: taps.append((x, y)))
+                task = types.SimpleNamespace(width=1920, height=1080, all_texts=[FakeBox(caption, 0.50, 0.13, width=600)],
+                                             log_info=lambda message: None, sleep=lambda seconds: None)
+                with mock.patch.object(battle, "frame_of", lambda task: None), mock.patch.object(battle.board, "team_after_hit", lambda frame: 1.0):
+                    self.assertTrue(battle.attribute_handler(utils)(task))
+                self.assertEqual([(0.76, 0.33)], taps)
+
     def test_a_pile_prompt_takes_the_best_card_and_confirms_on_its_own_button(self):
         # Live, Joker's grid of the Draw Pile and Discard Pile has no hand counter, so nothing answered it and the fight froze for 80s.
         pile = (FakeBox("请选择1张卡牌", 0.5, 0.111, width=600), FakeBox("Draw Pile or Discard Pile", 0.15, 0.14), FakeBox("Cards", 0.103, 0.27),

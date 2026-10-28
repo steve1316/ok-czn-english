@@ -74,6 +74,9 @@ CANCEL_REGION = (0.15, 0.45, 0.55, 0.80)
 # The title of the pick between created cards that an Ego such as Archetype Resonance raises. Upstream has no handler for it, so it sat 11s
 # for the stuck-screen fallback's random click. Its title reads above the cards' names, which sit at y ~0.29.
 ATTRIBUTE_CHOICE = "Select an attribute"
+# Nia's Curiosity raises the same kind of pick among cards checked in the Draw Pile, and sat 11s the same way. Its caption is rewritten,
+# unless OCR reads the arrow in front of it, as in "→ Select 1 card(s) to place in hand.".
+PLACE_IN_HAND = ("放入手牌", "place in hand")
 ATTRIBUTE_CHOICE_REGION = (0.20, 0.00, 0.80, 0.26)
 # Parked on the task while the hand reads empty under a counter that says it is not: how many times the end of the turn
 # has been called back since, or None once the hand reads again.
@@ -632,7 +635,7 @@ def draws_shown(task):
 
 
 def attribute_handler(utils):
-    """Build the handler that answers the pick between created cards with the one the card picker rates highest.
+    """Build the handler that answers a pick among offered cards, created or checked in the Draw Pile, with the one the card picker rates highest.
 
     Args:
         utils: The loaded `utils` module, for its card reader and click.
@@ -642,7 +645,7 @@ def attribute_handler(utils):
     """
 
     def handle_attribute_choice(task):
-        """Take the best of the created cards on offer.
+        """Take the best of the cards on offer.
 
         Args:
             task: The running task, whose `all_texts` is the current screen.
@@ -650,7 +653,7 @@ def attribute_handler(utils):
         Returns:
             True when a card was taken.
         """
-        if not text_in_region(task, ATTRIBUTE_CHOICE, ATTRIBUTE_CHOICE_REGION):
+        if not any(text_in_region(task, caption, ATTRIBUTE_CHOICE_REGION) for caption in (ATTRIBUTE_CHOICE, *PLACE_IN_HAND)):
             return False
         offered = utils.recognize_cards(task, page="attribute choice")
         if not offered:
