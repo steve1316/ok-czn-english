@@ -368,6 +368,8 @@ class Pressed:
         # points remaining and black as none. The badges are painted on by the same helpers `TestBoard` uses.
         self.frame = flat(255 if action_points else 0)
         self.height, self.width = self.frame.shape[:2]
+        # What the Action Point digit reads as when a test gives a count, and nothing otherwise.
+        self.points = [FakeBox(str(action_points), 0.508, 0.923)] if type(action_points) is int else []
         if weakness:
             paint_enemy(self.frame, ENEMY_AT[0], ENEMY_AT[1], board.ATTRIBUTE_HUES[weakness])
         paint(self.frame, egos)
@@ -381,7 +383,9 @@ class Pressed:
     def send_key(self, key):
         self.keys.append(key)
 
-    def ocr(self, *region):
+    def ocr(self, *region, **kwargs):
+        if region == battle.POINTS_DIGIT:
+            return self.points
         return self.prompt_hand if region == battle.PROMPT_HAND else self.progress
 
     def box_of_screen(self, *region):
@@ -411,7 +415,7 @@ def upstream(hand_cards, smart=True, action_points=True, egos=(), weakness=None)
     Args:
         hand_cards: What `_hand_cards` should report.
         smart: What the Smart Card Play setting reads as.
-        action_points: Whether the Action Point readout should look lit.
+        action_points: Whether the Action Point readout should look lit, or the count its digit reads.
         egos: Slot keys whose cost badge should look affordable.
         weakness: An attribute colour to draw on an enemy's badge, or None for no enemies at all.
 
@@ -617,6 +621,14 @@ class TestInstalling(unittest.TestCase):
             battle.install()
             utils_sortie._try_all_card_keys(task, 2)
             self.assertEqual(task.keys, ["2", battle.CONFIRM_KEY])
+
+    def test_the_turn_is_planned_against_the_points_the_digit_shows(self):
+        # Live, 2 AP was planned as 3: Voluntary Control went first and left 1 for a Mealtime lowered to 2.
+        for points, key in ((True, "1"), (2, "2")):
+            with self.subTest(points=points), upstream(hand("Distortion: Gear Bag", BIG_ATTACK), action_points=points) as (utils_sortie, task):
+                battle.install()
+                utils_sortie._try_all_card_keys(task, 2)
+                self.assertEqual(task.keys, [key, battle.CONFIRM_KEY])
 
     def test_the_attribute_the_enemies_are_weak_to_is_preferred(self):
         with upstream(hand(ATTACK, VOID_ATTACK), weakness="PURPLE") as (utils_sortie, task):

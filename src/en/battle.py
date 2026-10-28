@@ -11,6 +11,7 @@ import collections
 import math
 import re
 
+import cv2
 import numpy as np
 from ok import Logger
 
@@ -50,6 +51,12 @@ START_ATTACK_REGION = (0.394, 0.779, 0.600, 0.858)
 NO_POINTS = "Not enough AP"
 # Where that toast sits, across the middle of the screen. Measured at (0.502, 0.501).
 NO_POINTS_REGION = (0.30, 0.42, 0.70, 0.58)
+# The Action Point digit, a little wider than `board.ACTION_POINTS`. OCR finds it only once the crop is enlarged and padded with black,
+# and then reads every count but most 1s and digits under a skill's flash: 51 of 76 lit frames, from 1 to 6, all of them right.
+POINTS_DIGIT = (0.478, 0.888, 0.538, 0.958)
+POINTS_ZOOMS = (3, 2)
+POINTS_MARGIN = 20
+POINTS_SURE = 0.9
 # The game's own check when a turn is ended with a card it would still play, so it is the one reading that knows the
 # Action Points: it followed 2 of 18 empty-read turn ends in the logs, exactly the 2 that had cards left to play.
 CARDS_LEFT = "can still be used"
@@ -246,9 +253,8 @@ class KeepHeld(StandIn):
 def choose(hand, board, refused):
     """Pick the card to play next, or nothing when the turn is done.
 
-    A turn with points left is planned against the full three, since `board.py` can tell a spent turn from one
-    with points but not how many. The game refuses a card there is no room for, so the turn corrects itself
-    against the game rather than against a number this module believes in.
+    A turn is planned against the points the readout shows, or a full three when it does not read. The game refuses
+    a card there is no room for, so a wrong guess corrects itself against the game.
 
     Args:
         hand: Hand cards as `_hand_cards` reads them.
@@ -479,6 +485,37 @@ def key_at(left_x, count):
     first, last = HAND_SPAN.get(count, WIDEST_SPAN)
     slot = min(max(round((left_x - first) / (last - first) * (count - 1)), 0), count - 1)
     return str(slot + 1) if slot < MAX_KEY else None
+
+
+def padded(image, zoom):
+    """Enlarge the Action Point digit and pad it out with black, without which OCR does not find it.
+
+    Args:
+        image: The digit, cut from the frame by `task.ocr`.
+        zoom: How many times to enlarge it, from `POINTS_ZOOMS`.
+
+    Returns:
+        The enlarged digit inside a black border.
+    """
+    margin = POINTS_MARGIN * zoom
+    return cv2.copyMakeBorder(cv2.resize(image, None, fx=zoom, fy=zoom), margin, margin, 2 * margin, 2 * margin, cv2.BORDER_CONSTANT, value=(0, 0, 0))
+
+
+def points_left(task, frame):
+    """Read how many Action Points the turn has left.
+
+    Args:
+        task: The running task, for its OCR.
+        frame: The frame to read, from `frame_of`.
+
+    Returns:
+        The points, or None when no read is sure.
+    """
+    for zoom in POINTS_ZOOMS:
+        read = [box.name.strip() for box in task.ocr(*POINTS_DIGIT, frame=frame, threshold=POINTS_SURE, frame_processor=lambda image: padded(image, zoom)) or []]
+        if len(read) == 1 and len(read[0]) == 1 and read[0].isdigit():
+            return int(read[0])
+    return None
 
 
 def out_of_points(task):
@@ -1070,9 +1107,11 @@ def install():
                 turn.refused.add(turn.attempted)
                 task.log_info(f"the game would not play {turn.attempted}, leaving it for the rest of this turn")
 
-        # The readout says whether anything is left to spend, not how much, so a turn with points left is
-        # planned against a full three and corrected by what the game will actually accept.
-        points = cards.BASE_ACTION_POINTS if board.has_action_points(task) and not out_of_points(task) else 0
+        # A turn whose count does not read is planned against a full three and corrected by what the game will actually accept.
+        points = 0
+        if board.has_action_points(task) and not out_of_points(task):
+            read = points_left(task, frame_of(task))
+            points = cards.BASE_ACTION_POINTS if read is None else read
         # An attack's flash can pass for extra counters, and an enemy that dies stays gone. Too few only values all-enemy damage as before.
         seen = len(board.enemy_counters(frame_of(task)))
         if seen:
@@ -1081,7 +1120,7 @@ def install():
             # Read once a turn, so this is also the one frame a turn to say what it opened holding.
             turn.weakness = board.weakness(task)
             against = f"enemies weak to {turn.weakness}" if turn.weakness else "no shared enemy weakness"
-            budget = "Action Points to spend" if points else "no Action Points"
+            budget = f"{points} Action Points to spend" if points else "no Action Points"
             task.log_info(f"turn opens with {budget}, {turn.enemies} enemy counter(s), {against}, hand {names}")
         state = cards.Board(action_points=points, weakness=turn.weakness, hand=tuple(names), played=tuple(turn.played),
                             last_turn=turn.last_turn, battle=(*turn.earlier, *turn.played), hand_size=count or 0, kept=turn.kept, invulnerable=turn.invulnerable, enemies=turn.enemies or 1,

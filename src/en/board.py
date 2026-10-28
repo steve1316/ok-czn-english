@@ -16,11 +16,10 @@ from src.en.screen import colour_share, frame_of, hsv_of, patch_of, white_mask
 
 logger = Logger.get_logger(__name__)
 
-# The Action Point readout, as a relative box. Read from colour because OCR returns no box for the digit at
-# all - not in a full frame and not on a tight upscaled crop, both checked. The game draws it bright blue with
-# a glow while there are points to spend and a thin grey outline once there are none. Deliberately tight on
-# the digit: the hand counter below it and the decorative line through its middle both sit outside, so neither
-# can be counted as a lit reading.
+# The Action Point readout, as a relative box. Read from colour because OCR finds the digit only on a padded crop, and seldom a 1
+# (`battle.points_left` reads the rest). The game draws it bright blue with a glow while there are points to spend and a thin grey
+# outline once there are none. Deliberately tight on the digit: the hand counter below it and the decorative line through its middle
+# both sit outside, so neither can be counted as a lit reading.
 ACTION_POINTS = (0.488, 0.898, 0.528, 0.948)
 # How bright a pixel has to be to count as part of the digit rather than the scene behind it. 200 rather than
 # the obvious 170 because one frame's background sits at exactly 170 across a large flat area, which would
