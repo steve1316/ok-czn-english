@@ -892,6 +892,9 @@ class TestKits(unittest.TestCase):
             ("Dark Condensation goes before the attack", ("Dark Blade", "Dark Condensation"), ["Dark Condensation", "Dark Blade"]),
             ("the buffs keep their order", ("Predator's Blade", "Dark Condensation", "Strike of Darkness"),
              ["Strike of Darkness", "Dark Condensation", "Predator's Blade"]),
+            # Live, Dark Condensation tied with the other 1-cost skills and lost the buy, though it boosts the attack beside it.
+            ("Dark Condensation is bought for the attack it boosts", ("Photo Time", "Material Regeneration", "Predator's Blade", "Dark Condensation"),
+             ["Dark Condensation", "Predator's Blade", "Photo Time"]),
         ):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), cards.Board())), expected)
