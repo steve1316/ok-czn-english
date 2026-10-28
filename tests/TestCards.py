@@ -40,6 +40,8 @@ BIG_ATTACK = "Charge Launcher"
 SPENDS_EVERYTHING = "Absolute Protection"
 # Costs nothing and, now and then, ends the fight outright.
 ESCAPE = "Fear"
+# A free card the generic scoring rates above a Mental Breakdown card.
+STURDIE = "Sturdie \u2605\u2605\u2605"
 
 
 def hand(*names_in_order):
@@ -210,6 +212,13 @@ class TestEpiphany(unittest.TestCase):
         chosen = cards.plan(hand(FREE_ATTACK, JUSTICE_ATTACK, ESCAPE), cards.Board(epiphany=JUSTICE_ATTACK))
         self.assertEqual(played(chosen)[0], ESCAPE)
 
+    def test_a_mental_breakdown_card_goes_first(self):
+        # Live, Sturdie went twice and Drawing Slash once before an Impulse, though playing it is how the combatant recovers.
+        for card in cards.BREAKDOWN_CARDS:
+            with self.subTest(card=card):
+                self.assertIn(card, cards.CARD_COST)
+                self.assertEqual(played(cards.plan(hand(STURDIE, card), cards.Board()))[0], card)
+
     def test_a_glowing_curse_is_still_never_played(self):
         chosen = cards.plan(hand(CURSE, JUSTICE_ATTACK), cards.Board(epiphany=CURSE))
         self.assertNotIn(CURSE, played(chosen))
@@ -238,6 +247,12 @@ class TestTellingCardsFromLabels(unittest.TestCase):
             with self.subTest(stub=stub):
                 self.assertFalse(cards.is_card_name(stub))
 
+    def test_the_mental_breakdown_label_is_not_a_card(self):
+        # Live readings of the label under a Mental Breakdown card. Each was keyed as a card of its own and shifted the keys after it.
+        for reading in ("Mental Breakdown", "276Mental Breakdown", "ental Brea", "Mental Breal", "ntal Bre", "sreakdown"):
+            with self.subTest(reading=reading):
+                self.assertFalse(cards.is_card_name(reading))
+
     def test_the_chinese_label_the_catalog_rewrites_to_is_not_a_card(self):
         # `ocr.po` turns "Defense" into this, and upstream's own exclude list has no defense keyword, so it
         # reached the hand as a card name 22 times in one recording.
@@ -255,8 +270,9 @@ class TestTellingCardsFromLabels(unittest.TestCase):
                 self.assertFalse(cards.is_card_name(tag))
 
     def test_a_card_cut_short_to_something_label_like_is_still_a_card(self):
-        # "Quant" is "Quantum Seed", and only one letter from the start of "Attack" once the type icon is trimmed off.
-        for stub in ("Quant", "NA:Defens"):
+        # "Quant" is "Quantum Seed", and only one letter from the start of "Attack" once the type icon is trimmed off. "Accent" is
+        # Mute Accent and one letter from the start of "Mental Breakdown" once two letters are trimmed off.
+        for stub in ("Quant", "NA:Defens", "Accent"):
             with self.subTest(stub=stub):
                 self.assertTrue(cards.is_card_name(stub))
 

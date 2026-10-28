@@ -41,8 +41,9 @@ SETUP_CATEGORY = "POWER"
 # forgiving guess: too low only risks a card that will not play, while too high would refuse it outright.
 ASSUMED_COST = 1
 
-# Cards whose "unexpected result" can end the fight outright, so they are tried before anything else is spent.
-ESCAPE_CARDS = frozenset({"Fear"})
+# What a combatant's cards turn into on a Mental Breakdown at max Stress. They are free, playing them is how the combatant recovers, and
+# Fear's unexpected result can end the fight outright, so they are tried before anything else is spent.
+BREAKDOWN_CARDS = frozenset({"Confusion", "Impulse", "Guilt", "Daze", "Escapism", "Gloom", "Charm", "Trance", "Fear", "Despair"})
 
 # Roughly what one drawn card is worth, said in damage. A card drawn is about one more card played, and the
 # ordinary card costing one point does 100% damage, so that is the exchange rate the data itself suggests.
@@ -133,6 +134,9 @@ CARD_INDEX = index(CARD_COST)
 TYPE_LABELS = ("basic attack", "basic skill", "status ailment", "attack", "skill", "curse", "power",
                "upgrade", "defense", "攻击力", "防御力", "状态异常", "lv", "等级")
 FOLDED_LABELS = tuple(fold(label) for label in TYPE_LABELS)
+# The label under every Mental Breakdown card, matched only on a run of 7 of its letters. The rules for the short labels would eat real
+# cards cut short: "Accent" is Mute Accent and one edit from "Ment", and "Down" is Downward Cut. No card name holds any of these runs.
+BREAKDOWN_PIECES = frozenset(fold("Mental Breakdown")[start:start + 7] for start in range(len(fold("Mental Breakdown")) - 6))
 # The type icon shares the label's OCR box and is read as a stray letter or two in front of it, which is why
 # `XBasic A` occurs. `src/en/ocr_text.py` trims the same way for the same reason.
 LABEL_PREFIX = 2
@@ -167,6 +171,8 @@ def looks_like_label(folded):
     Returns:
         True when it is a label, the start of one or a piece from inside one, give or take one letter.
     """
+    if any(piece in folded for piece in BREAKDOWN_PIECES):
+        return True
     for trimmed in (folded[cut:] for cut in range(LABEL_PREFIX + 1)):
         if not trimmed:
             continue
@@ -609,7 +615,7 @@ def phase(name, board):
     Returns:
         One of the `PHASE_` values, or a kit's place between two of them, lowest being earliest in the turn.
     """
-    if canonical(name) in ESCAPE_CARDS:
+    if canonical(name) in BREAKDOWN_CARDS:
         return PHASE_ESCAPE
     if lit_up(name, board):
         return PHASE_EPIPHANY
