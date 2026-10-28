@@ -1381,8 +1381,9 @@ def install():
         if kit_waiting(task, utils_sortie, count) or press_unread(task, count):
             return True
         turn = getattr(task, TURN, None)
-        if count is None and turn is not None:
-            # Off the battle screen, which is also how a fight won by a card ends without anyone pressing end turn.
+        if count is None and turn is not None and task.all_texts:
+            # Off the battle screen, which is also how a fight won by a card ends without anyone pressing end turn. An Ego's cut-in
+            # blanks the whole screen instead, and live, the bullets Black Thorn added then grew the hand into a false new turn.
             turn.ended = True
         elif count == 0 and turn is not None and turn.ended:
             # The hand is discarded at end turn, so the next deal is a new turn even when it is no bigger than what was left.

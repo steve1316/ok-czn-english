@@ -729,6 +729,24 @@ class TestInstalling(unittest.TestCase):
             page(task)
             self.assertIsNot(getattr(task, battle.TURN), ended)
 
+    def test_only_a_screen_with_text_on_it_ends_the_turn_when_the_counter_is_gone(self):
+        for description, screen, ends in (
+                ("an Ego's cut-in, which blanks the screen", [], False),
+                ("a fight won by a card", [FakeBox("Victory", 0.5, 0.3)], True),
+        ):
+            with self.subTest(description), upstream(hand(ATTACK, ATTACK)) as (utils_sortie, task):
+                battle.install()
+                page = handlers_of(utils_sortie)["handle_battle_page"]
+                page(task)
+                before = getattr(task, battle.TURN)
+                counter, task.all_texts = utils_sortie._read_hand_count, screen
+                utils_sortie._read_hand_count = lambda task: None
+                page(task)
+                utils_sortie._read_hand_count, task.all_texts = counter, []
+                task.hand_cards = hand(ATTACK, ATTACK, ATTACK)
+                page(task)
+                self.assertEqual(getattr(task, battle.TURN) is not before, ends)
+
     def test_a_battle_keeps_every_play_until_the_next_node(self):
         # Two turns back is still this fight, but upstream counts the next node on leaving the route screen, before its fight opens.
         with upstream(hand(ATTACK)) as (utils_sortie, task):
