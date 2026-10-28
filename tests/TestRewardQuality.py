@@ -13,7 +13,8 @@ sys.path.insert(0, str(REPO_ROOT / "ok_tasks"))
 # The real module, so the Settlement check fails if upstream stops reading the claim setting the way the fork stands in for it.
 import utils_sortie  # noqa: E402
 
-from src.en import dashboard, reason, rewards  # noqa: E402
+from src.en import dashboard, navigation, reason, rewards  # noqa: E402
+from src.en.battle import PARTY  # noqa: E402
 from src.en.dashboard import COMBATANTS as COMBATANTS_ROW  # noqa: E402
 from src.en.game_data import COMBATANTS  # noqa: E402
 from src.en.overrides import FARMED_COMBATANT  # noqa: E402
@@ -150,6 +151,21 @@ class TestRewardQuality(unittest.TestCase):
         for free, expected in ((True, ["Mutation: Iron Wall"]), (False, [])):
             with self.subTest(free=free):
                 self.assertEqual(expected, rewards.generated_list(FakeTask(offer, set()), rewards.SORTIE_CARD_KEY, free=free))
+
+    def test_obtain_card_waits_for_the_first_team_read(self):
+        # Live, a run started on Obtain Card lost its first team tap and picked before the retry, knowing neither the team nor the deck.
+        title = types.SimpleNamespace(name=rewards.OBTAIN_TITLE)
+        picked = []
+        handler = rewards.after_the_team(lambda task: picked.append(task) or True, utils_sortie)
+        cases = {"tapped, unread": (1, frozenset(), False), "tapped, read": (1, frozenset({"Owen"}), True),
+                 "tries spent": (navigation.TEAM_TRIES, frozenset(), True)}
+        with standing_in(utils_sortie, find_box_at_point=lambda task, x, y: title):
+            for case, (tries, party, picks) in cases.items():
+                with self.subTest(case):
+                    picked.clear()
+                    task = types.SimpleNamespace(node_status={navigation.TEAM_TAPPED: (tries, 0.0)}, sleep=lambda seconds: None, **{PARTY: party})
+                    self.assertTrue(handler(task))
+                    self.assertEqual(picks, bool(picked))
 
     def test_equipment_is_offered_to_its_own_slot_only(self):
         task = FakeTask(SHOP_EQUIPMENT, {"vanguard", "controller"})
