@@ -31,6 +31,9 @@ FREE_ATTACK = "Magnum Shot"
 # Epiphanies that drop the Retain line Beryl's kit plays around: a Charged Shot that does not grow, and an Opening Found kept for its cost.
 FLAT_CHARGED_SHOT = next(text for text in EPIPHANIES["Charged Shot"] if "Retain:" not in text)
 FREE_OPENING_FOUND = next(text for text in EPIPHANIES["Opening Found"] if "Cost to 0" in text)
+# Rin's deck from the live run: a First Form that takes Dark Mist Stance, and an Annihilation that cuts her other cards' cost in it.
+RIN_DECK = {"Dark Mist Sword: First Form": next(text for text in EPIPHANIES["Dark Mist Sword: First Form"] if "Stance" in text),
+            "Dark Mist Secret Art: Annihilation": next(text for text in EPIPHANIES["Dark Mist Secret Art: Annihilation"] if "Decrease Cost" in text)}
 # Two Action Points for 220% damage, which is better value per point than 100% for one.
 BIG_ATTACK = "Charge Launcher"
 # Spends every Action Point left rather than a fixed number.
@@ -892,9 +895,18 @@ class TestKits(unittest.TestCase):
             # Generic play files the buff skill after the attacks.
             ("Inner Art goes before the attack", ("Dark Mist Sword: First Form", "Dark Mist Inner Art"), cards.Board(),
              ["Dark Mist Inner Art", "Dark Mist Sword: First Form"]),
-            # Generic play spends the shield, which is one Skill card fewer for Black Dance to count.
-            ("Protection stays in hand for Black Dance", ("Dark Mist Secret Art: Black Dance", "Protection"), cards.Board(action_points=2),
-             ["Dark Mist Secret Art: Black Dance"]),
+            # Generic play buys Black Dance and the Skill cards it counts, and never the First Form that would take the stance for them.
+            ("First Form takes the stance for Black Dance",
+             ("Sacred Censer", "Growth Acceleration", "Frozen Fist", "Dark Mist Sword: First Form", "Dark Mist Secret Art: Black Dance"),
+             cards.Board(action_points=3, deck=RIN_DECK),
+             ["Dark Mist Sword: First Form", "Dark Mist Secret Art: Black Dance", "Sacred Censer"]),
+            # Without the Epiphany, First Form takes no stance and Black Dance gets no bonus to chase.
+            ("a plain First Form is not bought for the stance", ("Sacred Censer", "Growth Acceleration", "Frozen Fist", "Dark Mist Sword: First Form",
+             "Dark Mist Secret Art: Black Dance"), cards.Board(action_points=3), ["Dark Mist Secret Art: Black Dance", "Frozen Fist", "Sacred Censer"]),
+            ("the cost cut goes before the cards it cheapens",
+             ("Dark Mist Secret Art: Black Dance", "Dark Mist Secret Art: Annihilation", "Dark Mist Sword: First Form"),
+             cards.Board(action_points=3, deck=RIN_DECK),
+             ["Dark Mist Sword: First Form", "Dark Mist Secret Art: Annihilation", "Dark Mist Secret Art: Black Dance"]),
             # Generic play takes hand order, so the ally's attack ends the stance before Rin's.
             ("an ally's attack goes after Rin's", ("Annihilation Shot", "Dark Mist Sword: First Form"), cards.Board(action_points=2),
              ["Dark Mist Sword: First Form", "Annihilation Shot"]),
