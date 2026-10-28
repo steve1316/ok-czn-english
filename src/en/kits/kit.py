@@ -176,12 +176,13 @@ class Kit:
         """
         return self.places.get(base_name(name), base)
 
-    def fodder(self, opener, name):
+    def fodder(self, opener, name, board):
         """Say whether a prompt should give up a card ahead of the rest, even one the kit holds.
 
         Args:
             opener: The card whose play raised the prompt.
             name: A hand card the prompt could take.
+            board: The `cards.Board` of the hand on offer.
 
         Returns:
             True to give it up first.

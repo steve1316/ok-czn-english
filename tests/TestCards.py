@@ -982,6 +982,9 @@ class TestKits(unittest.TestCase):
             # Live, it opened every turn for free, and its discard took the cards the points went on to want.
             ("Flower of Devoured Fate goes last", ("Annihilation Shot", "Echo of Sorrow", "Flower of Devoured Fate"), cards.Board(),
              ["Echo of Sorrow", "Annihilation Shot", "Flower of Devoured Fate"]),
+            # Unless Last-Ditch Assault is in hand, which gains from every bullet it makes.
+            ("Flower goes early for Last-Ditch", ("Annihilation Shot", "Flower of Devoured Fate", "Last-Ditch Assault"), cards.Board(),
+             ["Flower of Devoured Fate", "Annihilation Shot"]),
             # Generic play buys the 300% card on sight, with two bullets for it to count.
             ("Last-Ditch Assault waits for bullets", ("Last-Ditch Assault", "Dirge Bullet", "Dirge Bullet", "Annihilation Shot"), cards.Board(),
              ["Annihilation Shot"]),

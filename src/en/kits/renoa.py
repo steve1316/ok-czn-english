@@ -4,7 +4,7 @@ Every Dirge Bullet left in hand at turn end fires for free, and the payoff attac
 The generic picker plays the bullets like attacks and the payoffs on sight, so there is nothing left in hand for them to count.
 """
 
-from src.en.kits.kit import PHASE_ATTACK, PHASE_PRIME, PHASE_SPENDS_EVERYTHING, Kit, base_name, owned
+from src.en.kits.kit import PHASE_ATTACK, PHASE_PRIME, PHASE_SPENDS_EVERYTHING, Kit, base_name, count, owned
 
 BULLET = "Dirge Bullet"
 # The data gives no owner to the Finale bullet an Epiphany makes. Kept, it fires 160% x 2 at turn end, against 200% for a point on play.
@@ -14,6 +14,18 @@ FLOWER = "Flower of Devoured Fate"
 LAST_DITCH = "Last-Ditch Assault"
 # Bullets in hand before Last-Ditch Assault is worth its card, per im_Tsu ("5+ or even 9 bullets"). It has Retain, so waiting is free.
 LAST_DITCH_BULLETS = 5
+
+
+def saving(board):
+    """Say whether Last-Ditch Assault is in hand, so every extra bullet adds to it.
+
+    Args:
+        board: The `cards.Board` of the hand.
+
+    Returns:
+        True with Last-Ditch Assault in hand.
+    """
+    return count(board.hand, {LAST_DITCH}) > 0
 
 
 class Renoa(Kit):
@@ -31,6 +43,21 @@ class Renoa(Kit):
         FLOWER: PHASE_SPENDS_EVERYTHING + 1,
     }
 
+    def phase(self, name, board, base):
+        """Play Flower of Devoured Fate early while Last-Ditch Assault is in hand, for the bullets it makes to count.
+
+        Args:
+            name: The card being placed.
+            board: The `cards.Board` it would be played into.
+            base: Where the generic order puts it.
+
+        Returns:
+            The phase to sort by.
+        """
+        if base_name(name) == FLOWER and saving(board):
+            return PHASE_PRIME
+        return super().phase(name, board, base)
+
     def held(self, name, board):
         """Keep every bullet in hand to fire at turn end, and Last-Ditch Assault until enough of them are there.
 
@@ -46,17 +73,18 @@ class Renoa(Kit):
             return True
         return card == LAST_DITCH and sum(base_name(other) in BULLETS for other in board.hand) < LAST_DITCH_BULLETS
 
-    def fodder(self, opener, name):
-        """Feed Flower of Devoured Fate's discard the bullets first, which fire on the way and come back.
+    def fodder(self, opener, name, board):
+        """Feed Flower of Devoured Fate's discard the bullets first, which fire on the way and come back, unless Last-Ditch Assault wants more.
 
         Args:
             opener: The card whose play raised the prompt.
             name: A hand card the prompt could take.
+            board: The `cards.Board` of the hand on offer.
 
         Returns:
-            True for a bullet under Flower of Devoured Fate's discard.
+            True for a bullet under Flower of Devoured Fate's discard, while Last-Ditch Assault is not in hand.
         """
-        return base_name(opener) == FLOWER and base_name(name) in BULLETS
+        return base_name(opener) == FLOWER and base_name(name) in BULLETS and not saving(board)
 
 
 KIT = Renoa()

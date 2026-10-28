@@ -120,7 +120,7 @@ def fodder(opener, name, board):
     Returns:
         True to give it up first.
     """
-    return opener is not None and any(kit.fodder(opener, name) for kit in active(board.hand))
+    return opener is not None and any(kit.fodder(opener, name, board) for kit in active(board.hand))
 
 
 def waiting(names, count):
