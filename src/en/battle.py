@@ -18,7 +18,7 @@ from ok import Logger
 from src.en import board, cards, ego, kits, tested
 from src.en.handlers import StandIn, insert_before, loaded, register, replace, standing_in
 from src.en.overrides import SMART_CARD_PLAY
-from src.en.quality import fold
+from src.en.quality import fold, one_edit_apart
 from src.en.screen import centre_of, colour_share, frame_of, in_region, patch_of, text_in_region
 
 logger = Logger.get_logger(__name__)
@@ -122,6 +122,9 @@ KIT_PAUSE = 0.5
 # Frames a read that lost cards the last one held is waited on, a hand size at a time. Live, a Rhythm's hit still played over the hand
 # 2s after its key, and the read caught 1 of 6 cards.
 SETTLE_WAIT = 2
+# The shortest reading taken for a card the turn last read whole, give or take one letter. Live, a crowded hand read Void Fragment as
+# "Void" and "foid", too short for the roster's `cards.MIN_STUB`, and the free card was never played.
+REMEMBERED_STUB = 4
 # The toast a draw puts down the left while its cards are still on their way to the hand, as "Draw 2 card(s)", measured at
 # (0.104, 0.416) and (0.104, 0.471). Live, a key pressed under it landed after the draw had shifted the hand, and played Multishot for
 # Quiver Reload. Waited on for up to `SETTLE_WAIT` frames in a row.
@@ -702,6 +705,23 @@ def shown_cost(task, frame, box, printed):
     return int(read.group()) if printed is None or int(read.group()) < printed else None
 
 
+def remembered(name, hand):
+    """Take a reading the data cannot place for the one card of the last hand read that it starts like.
+
+    Args:
+        name: The reading, after `cards.canonical` has left it as read.
+        hand: The canonical names the turn last read, from `Turn.hand`.
+
+    Returns:
+        That card, or `name` when the data knows it, it is too short or a label, or it fits no card or several.
+    """
+    stub = fold(name)
+    if name in cards.CARD_COST or len(stub) < REMEMBERED_STUB or cards.looks_like_label(stub):
+        return name
+    fits = {real for real in hand if real in cards.CARD_COST and (fold(real).startswith(stub) or one_edit_apart(stub, fold(real)[:len(stub)]))}
+    return fits.pop() if len(fits) == 1 else name
+
+
 def priced(task, utils_sortie, hand):
     """Give each hand card an effect has lowered the cost it shows, since the data only knows the printed one.
 
@@ -1268,9 +1288,10 @@ def install():
         # card it was about across them.
         read = utils_sortie._hand_cards(task) or []
         party = met(task, read)
-        hand = priced(task, utils_sortie, kits.reading([{**card, "name": cards.canonical(card["name"], party, frozenset(cards.DECK))} for card in read], count))
-        names = [card["name"] for card in hand]
         turn = turn_of(task, count)
+        named = [{**card, "name": remembered(cards.canonical(card["name"], party, frozenset(cards.DECK)), turn.hand)} for card in read]
+        hand = priced(task, utils_sortie, kits.reading(named, count))
+        names = [card["name"] for card in hand]
         if drawing(task) and turn.drawing < SETTLE_WAIT:
             turn.drawing += 1
             task.log_info("a draw is still on its way to the hand, so the hand gets a frame to settle")

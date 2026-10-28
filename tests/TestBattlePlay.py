@@ -856,6 +856,19 @@ class TestInstalling(unittest.TestCase):
             battle.priced(task, reader, [{"name": "Forbidden: Disposable Ego", "key": "1", "left_x": box.x / task.width}])
         self.assertAlmostEqual((box.x - 100 * 5 / 10) / task.width, digit.call_args.args[0])
 
+    def test_a_reading_too_short_for_the_data_is_the_card_the_turn_last_read(self):
+        # Live, a crowded hand read Void Fragment as "Void" and "foid", and the free card was never played.
+        for name, hand, expected in (
+                ("Void", ["Void Fragment", "Strike"], "Void Fragment"),
+                ("foid", ["Void Fragment", "Strike"], "Void Fragment"),
+                ("Voi", ["Void Fragment"], "Voi"),
+                ("Shar", ["Shard:Light", "Shard:Dark"], "Shar"),
+                ("Void", ["Strike"], "Void"),
+                ("Strike", ["Strike (Cycle)"], "Strike"),
+        ):
+            with self.subTest(name=name):
+                self.assertEqual(expected, battle.remembered(name, hand))
+
     def test_a_card_still_in_hand_is_not_tried_again(self):
         # The game kept it twice running, so the next frame should reach for the other card instead. A Retrieve the deck read showed
         # sends the card back to hand once, which is one stay more before that.
