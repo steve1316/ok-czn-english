@@ -358,6 +358,9 @@ CARD_CATEGORY_COLUMN = "card_category"
 CARD_TARGET_COLUMN = "target_for_ui"
 CARD_SPARK_COLUMN = "battle_r_spark_enable_flag"
 CARD_SORT_COLUMN = "sort"
+CARD_TALENT_COLUMN = "talent"
+# The talent that sends a card to the Exhaust pile the first time it is played. `TALENT_EXHAUST_2` waits for a second play.
+EXHAUST_TALENT = "TALENT_EXHAUST"
 # Kinds of card that share the deck's tables but never reach a hand. A Persona sits in a slot of its own and
 # an Ego skill is fired from the combatant bar, so neither one's `cost` is an Action Point cost. Leaving them
 # in would put an Ego skill's EP price of 5 beside a card that really does cost 5 Action Points.
@@ -825,6 +828,7 @@ def collect_battle(table, dump_dir):
     card_category = {}
     card_target = {}
     card_sparkable = set()
+    card_exhausts = set()
     for name, row in named.items():
         cost = cost_of(row.get(CARD_COST_COLUMN))
         if cost is not None:
@@ -837,6 +841,8 @@ def collect_battle(table, dump_dir):
             card_target[name] = target
         if row.get(CARD_SPARK_COLUMN) == "YES":
             card_sparkable.add(name)
+        if EXHAUST_TALENT in id_list(row.get(CARD_TALENT_COLUMN)):
+            card_exhausts.add(name)
 
     attributes = collect_attributes(table, dump_dir)
     roster = set(PLAYABLE_COMBATANTS)
@@ -875,6 +881,7 @@ def collect_battle(table, dump_dir):
         "CARD_CATEGORY": card_category,
         "CARD_TARGET": card_target,
         "CARD_SPARKABLE": card_sparkable,
+        "CARD_EXHAUSTS": card_exhausts,
         "CARD_OWNER": card_owner,
         "COMBATANT_ATTRIBUTE": combatant_attribute,
         "COMBATANT_SPARK_CARDS": combatant_spark_cards,
@@ -904,6 +911,8 @@ def render_battle(battle):
                        " all.",
         "CARD_SPARKABLE": "The cards that can take an Epiphany, so a glow read off the screen can be checked"
                           " against the card it appears on.",
+        "CARD_EXHAUSTS": "The cards that go to the Exhaust pile when played, so an Ego that fires on an Exhaust"
+                         " knows whether the hand can set it off.",
         "CARD_OWNER": "The combatant a card belongs to, recovered from the cards each of them starts and sparks."
                       " A card's attribute is its owner's, so this is how a card comes to have one.",
         "COMBATANT_ATTRIBUTE": "Each combatant's attribute, for matching a card against the weakness an enemy"

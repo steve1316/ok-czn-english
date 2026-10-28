@@ -12,7 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from src.en.game_battle import (  # noqa: E402
-    ATTRIBUTES, CARD_CATEGORY, CARD_COST, CARD_OWNER, CARD_SPARKABLE, CARD_TARGET,
+    ATTRIBUTES, CARD_CATEGORY, CARD_COST, CARD_EXHAUSTS, CARD_OWNER, CARD_SPARKABLE, CARD_TARGET,
     COMBATANT_ATTRIBUTE, COMBATANT_EGO_CARD, COMBATANT_EGO_COST, COMBATANT_SPARK_CARDS, X_COST,
 )
 from src.en.game_data import COMBATANTS  # noqa: E402
@@ -65,6 +65,11 @@ class TestCards(unittest.TestCase):
 
     def test_categories_are_known(self):
         self.assertEqual(set(CARD_CATEGORY.values()), EXPECTED_CATEGORIES)
+
+    def test_exhausting_cards_are_cards(self):
+        # Contaminated Spore, from a live hand, so a rebuild that loses the talent column cannot pass on an empty set.
+        self.assertIn("Contaminated Spore", CARD_EXHAUSTS)
+        self.assertLessEqual(CARD_EXHAUSTS, set(CARD_COST))
 
     def test_sparkable_cards_are_cards(self):
         self.assertLessEqual(CARD_SPARKABLE, set(CARD_COST))
