@@ -140,6 +140,7 @@ class TestOcrNormalisation(unittest.TestCase):
             ("Select up to 2 card(s) to Remove.", "请选择2张要移除的卡牌"),
             ("Select up to 2 card(s) to Discard (min 0).", "请选择2张卡牌"),
             ("Select 2 card(s) to Exhaust.", "请选择2张卡牌"),
+            ("Select up to 2 card(s) to Exhaqst.", "请选择至多2张卡牌"),
             ("Select 1 card(s) to move to Draw Pile.", "请选择1张要移动至抽牌堆的卡牌"),
             ("Select 1 card(s) to move to top of Draw Pile.", "请选择1张要移动至抽牌堆顶的卡牌"),
             ("Select 1 card(s) to move to top of Dra8", "请选择1张要移动至抽牌堆顶的卡牌"),
@@ -165,7 +166,7 @@ class TestOcrNormalisation(unittest.TestCase):
 
     def test_upstream_answers_every_in_battle_hand_picker(self):
         """An English caption here left upstream waiting on a prompt it could not read, and the turn froze."""
-        for caption in ("Select up to 2 card(s) to Discard (min 0).", "Select 2 card(s) to Exhaust.",
+        for caption in ("Select up to 2 card(s) to Discard (min 0).", "Select 2 card(s) to Exhaust.", "Select up to 2 card(s) to Exhaust.",
                         "Select 1 card(s) to move to Draw Pile.", "Select 1 card(s) to Upgrade."):
             with self.subTest(caption=caption):
                 clicks = []

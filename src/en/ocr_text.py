@@ -43,6 +43,9 @@ PATTERNS = (
     (re.compile(SELECT_CARDS + r"move.*draw pile.*$", re.I), "请选择{0}张要移动至抽牌堆的卡牌"),
     # Nia's Curiosity's pick among cards checked in the Draw Pile, which upstream's hand picker cannot answer without a hand counter.
     (re.compile(SELECT_CARDS + r"place in hand.*$", re.I), "请选择{0}张放入手牌的卡牌"),
+    # An Exhaust that asks for "up to" keeps saying so, since a card it takes is gone for the fight and it can take none.
+    # Matched on "exha", since OCR has read it "Exhaqst".
+    (re.compile(r"^select ?up to (\d+) ?cards? ?\(?s?\)? to exha.*$", re.I), "请选择至多{0}张卡牌"),
     # Must stay below every rule above, or it swallows them. Upstream's in-battle hand picker reads only the count,
     # and freezes the turn on any caption left in English.
     (re.compile(SELECT_CARDS + r".*$", re.I), "请选择{0}张卡牌"),

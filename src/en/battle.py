@@ -136,6 +136,8 @@ PROMPT_CAPTION = (0.5, 0.111)
 PROMPT_ASKS = re.compile(r"请选择(?=.*卡牌).*?\d+张")
 # The word `ocr_text.py` keeps for the top of the Draw Pile, where the card picked comes straight back next turn.
 PROMPT_TOP = "抽牌堆顶"
+# The "at most" `ocr_text.py` keeps for an Exhaust that may take no card at all.
+PROMPT_OPTIONAL = "至多"
 HAND_COUNTER = (0.505, 0.971)
 HAND_TOTAL = re.compile(r"\d+/10")
 # The prompt's own "0/1" under its caption. The full-screen pass never reads it, and a crop of it read 1/1 at 0.99 on both captures.
@@ -855,8 +857,9 @@ def prompt_progress(task, utils_sortie):
         utils_sortie: Upstream's Sortie module, for its `find_box_at_point`.
 
     Returns:
-        A `(chosen, need, to_top, from_pile)` tuple, `to_top` True when the cards go to the top of the Draw Pile and `from_pile` True
-        when they are picked from a pile into the hand, or None when this is not the prompt or its counter will not read.
+        A `(chosen, need, to_top, from_pile, optional)` tuple, `to_top` True when the cards go to the top of the Draw Pile, `from_pile` True
+        when they are picked from a pile into the hand and `optional` True when it may take fewer, or None when this is not the prompt
+        or its counter will not read.
     """
     caption = utils_sortie.find_box_at_point(task, *PROMPT_CAPTION)
     total = utils_sortie.find_box_at_point(task, *HAND_COUNTER)
@@ -866,7 +869,7 @@ def prompt_progress(task, utils_sortie):
         return None
     # Spaced, since a stray glyph beside the counter is read as its own box: live, "0/3" and "1" ran together into "0/31".
     read = PROGRESS.search(" ".join(box.name for box in task.ocr(*PROMPT_PROGRESS) or []))
-    return (int(read.group(1)), int(read.group(2)), PROMPT_TOP in caption.name, from_pile) if read else None
+    return (int(read.group(1)), int(read.group(2)), PROMPT_TOP in caption.name, from_pile, PROMPT_OPTIONAL in caption.name) if read else None
 
 
 def giving_up_order(name, box, kept, board_now, to_top=False):
@@ -943,7 +946,7 @@ def prompt_cards(task, texts, region=PROMPT_HAND):
     return [(name, box) for name, box in named if name in cards.CARD_COST]
 
 
-def answer_prompt(task, utils_sortie, chosen, need, to_top=False, from_pile=False):
+def answer_prompt(task, utils_sortie, chosen, need, to_top=False, from_pile=False, optional=False):
     """Tap the card the hand can best spare, or confirm once the prompt's own counter says enough are chosen.
 
     A prompt is taken to be giving a card up - to the discard pile, the Draw Pile or Exhaust - unless it sends it to the top of the Draw Pile,
@@ -956,6 +959,7 @@ def answer_prompt(task, utils_sortie, chosen, need, to_top=False, from_pile=Fals
         need: How many it asks for.
         to_top: Whether the cards go to the top of the Draw Pile, which takes the best card rather than the worst.
         from_pile: Whether the cards are picked from a pile into the hand, which takes the best card and confirms on `PILE_CONFIRM`.
+        optional: Whether the prompt may Exhaust fewer than `need`, which takes only cards dealt to the team and then confirms.
 
     Returns:
         True when the frame was spent tapping or waiting, False once `PROMPT_TAPS` frames pass with no change, for upstream's random pick to try.
@@ -986,6 +990,16 @@ def answer_prompt(task, utils_sortie, chosen, need, to_top=False, from_pile=Fals
         setattr(task, PROMPT, None)
         return False
     prompt.taps += 1
+    if optional:
+        # Live, Unity of Attack and Defense's Epiphany Exhausted two Strikes a play for a turn of Morale, until the Draw Pile was empty.
+        hand = [card for card in hand if cards.category(card[0]) in cards.DEALT_TO_YOU]
+        if not hand:
+            # The prompt stays parked, so a confirm the game refuses still falls to upstream's pick after `PROMPT_TAPS` frames.
+            prompt.tapped = None
+            task.log_info(f"hand prompt reads {chosen}/{need} with nothing worth Exhausting, confirming")
+            utils_sortie._move_and_click(task, *PROMPT_CONFIRM)
+            task.sleep(1)
+            return True
     if not hand:
         prompt.tapped = None
         task.log_info(f"hand prompt reads {chosen}/{need} but no card in hand reads yet, waiting")

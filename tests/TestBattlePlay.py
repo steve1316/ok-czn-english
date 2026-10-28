@@ -1191,6 +1191,13 @@ class TestHandPrompt(unittest.TestCase):
         task = self.frames("0/1", "1/1", screens=(pile, pile))
         self.assertEqual([(0.84, round(0.27 + battle.CARD_BODY, 3)), battle.PILE_CONFIRM], task.taps)
 
+    def test_an_up_to_exhaust_takes_only_dealt_cards(self):
+        # Live, Unity of Attack and Defense's Epiphany Exhausted two Strikes a play, until the Draw Pile was empty.
+        caption = FakeBox("请选择至多2张卡牌", 0.5, 0.111, width=600)
+        for screen, taps in (((caption, *self.SCREEN[1:]), [(0.73, round(0.776 + battle.CARD_BODY, 3))]), ((caption, *self.SCREEN[1:-1]), [battle.PROMPT_CONFIRM])):
+            with self.subTest(taps=taps):
+                self.assertEqual(taps, self.frames("0/2", screens=(screen,)).taps)
+
     def test_a_mental_breakdown_card_is_kept_over_any_other(self):
         # Live, an "up to 3" discard gave up two Impulses, the free cards that end a combatant's Mental Breakdown when played.
         screen = (FakeBox("请选择1张卡牌", 0.5, 0.111, width=600), self.SCREEN[1], FakeBox("Impulse", 0.38, 0.765), FakeBox("Dice Trick", 0.50, 0.765))
