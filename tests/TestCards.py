@@ -357,6 +357,10 @@ class TestReadingNames(unittest.TestCase):
             ("too little of the name left leaves it alone", "DarkMistS", frozenset({"Dark Mist Secret Art: Annihilation"}), "DarkMistS"),
             ("the deck card a cut reading sits inside", "sidual Herb", frozenset({"Harmonization: Residual Herb"}), "Harmonization: Residual Herb"),
             ("a whole name keeps its own card", "Residual Herb", frozenset({"Harmonization: Residual Herb"}), "Residual Herb"),
+            # Live, Joker read as all three, too short for the roster to guess at.
+            ("a short name one letter off its deck card", "lokel", frozenset({"Joker", "Cards"}), "Joker"),
+            ("a short name with its J read as l", "loker", frozenset(), "Joker"),
+            ("a short name one letter off no deck card", "lokel", frozenset({"Cards"}), "lokel"),
         ):
             with self.subTest(description):
                 self.assertEqual(cards.canonical(reading, deck=held), expected)

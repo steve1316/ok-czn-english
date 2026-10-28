@@ -38,13 +38,12 @@ CLASS_NAMES = {
 # the same nothing and matches it.
 INSIGNIFICANT = re.compile(r"[^0-9a-z一-鿿■-◿]+")
 
-# Characters the reader hands back for one another, grouped by what they look like on screen. The first of
-# each group is the spelling the rest fold into. Only what the logs actually show being swapped is here, and
-# a capital I read as a lowercase l is far the commonest of them - `Magic-lnfused Sapphire`, `Instinct
-# lgnition`, `Mutation: lron Wall` are all real readings. Letters that would turn one real word into another
-# are deliberately absent: reading v as m or r as f would quietly match the wrong name, and a wrong match is
-# worse than any number of missed ones.
-CONFUSABLE = {letter: group[0] for group in ("il1", "o0", "s5", "gq9", "b6", "z2") for letter in group}
+# Characters the reader hands back for one another, grouped by what they look like on screen. The first of each group is the spelling the
+# rest fold into. Only what the logs actually show being swapped is here, and a capital I read as a lowercase l is far the commonest of them -
+# `Magic-lnfused Sapphire`, `Instinct lgnition`, `Mutation: lron Wall` are all real readings, and a capital J goes the same way, as `loker`
+# for Joker. Letters that would turn one real word into another are deliberately absent: reading v as m or r as f would quietly match the
+# wrong name, and a wrong match is worse than any number of missed ones.
+CONFUSABLE = {letter: group[0] for group in ("il1j", "o0", "s5", "gq9", "b6", "z2") for letter in group}
 # Below this many characters a single edit is most of the name, and the screen is full of stray glyphs and
 # fragments that would each find something to be one edit from. `Dice`, `Quick` and `+60` are all real
 # readings that stop here.

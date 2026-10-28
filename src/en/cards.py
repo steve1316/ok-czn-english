@@ -312,8 +312,11 @@ def deck_card(stub, deck):
     """
     if len(stub) < MIN_STUB or looks_like_label(stub):
         return None
-    # Lookalikes folded on both sides, since "Mutation:Forbidden AIgorthm" keeps every letter in order but one capital I.
-    matches = [real for real in deck if len(stub) >= len(fold(real)) * DECK_SHARE and in_order(unconfused(stub), unconfused(fold(real)))]
+    # Lookalikes folded on both sides, since "Mutation:Forbidden AIgorthm" keeps every letter in order but one capital I. One wrong letter
+    # is let through too, which the roster refuses a name this short: live, Joker came back as "Jokel" and "lokel" 14 times in 116.
+    reading = unconfused(stub)
+    matches = [real for real in deck if len(stub) >= len(fold(real)) * DECK_SHARE
+               and (in_order(reading, unconfused(fold(real))) or one_edit_apart(reading, unconfused(fold(real))))]
     return min(matches, key=len) if matches and len({base_name(real) for real in matches}) == 1 else None
 
 
