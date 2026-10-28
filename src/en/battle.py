@@ -1155,12 +1155,15 @@ def install():
         """
         hand = read_hand(task)
         count = utils_sortie._read_hand_count(task)
-        if count and any(str(card.get("key") or "").isdigit() and int(card["key"]) > count for card in hand):
+        stray = count and any(str(card.get("key") or "").isdigit() and int(card["key"]) > count for card in hand)
+        if stray:
             # A key past the hand size cannot exist, so text that is not a card got into the read. Live, a Bleed tooltip
             # was read as "Damage on" and "Combatants" in a hand of 4, pushing the real Bleed to key 9. The data names
             # every real card, so only what it knows is kept and keyed by position below.
             hand = [card for card in hand if cards.canonical(card["name"]) in cards.CARD_COST]
-        if hand and count and len(hand) != count:
+        # Even once the count comes out right: live, Unity of Attack and Defense wrapped onto two lines, read as two cards that halved
+        # the spacing upstream keys by, and keyed 1, 3, 5, 5, 7 in a hand of 5.
+        if hand and count and (stray or len(hand) != count):
             hand = [{**card, "key": key_at(name_start(card), count)} for card in hand]
             task.log_info(f"read {len(hand)} of {count} cards, so keys come from where each sits: "
                           f"{[(card['name'], card['key']) for card in hand]}")

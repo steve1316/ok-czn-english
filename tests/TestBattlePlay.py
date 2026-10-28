@@ -858,6 +858,16 @@ class TestInstalling(unittest.TestCase):
             self.assertEqual([("Magnetic Field", "1"), ("Bleed", "4")],
                              [(card["name"], card["key"]) for card in utils_sortie._hand_cards(task)])
 
+    def test_a_name_on_two_lines_does_not_double_the_keys(self):
+        # Live, as upstream keyed it in a hand of 5: key 5 was pressed for Unity, which sat third.
+        read = [{"name": "Strike", "key": "1", "left_x": 0.2422}, {"name": "Flame Dragon Guardian", "key": "3", "left_x": 0.3542},
+                {"name": "Unity", "key": "5", "left_x": 0.4688}, {"name": "Attack and Defense", "key": "5", "left_x": 0.4948},
+                {"name": "Rapid Fire", "key": "7", "left_x": 0.5786}]
+        with upstream(read) as (utils_sortie, task):
+            task.counter = 5
+            battle.install()
+            self.assertEqual("3", next(card["key"] for card in utils_sortie._hand_cards(task) if card["name"] == "Unity"))
+
     def test_a_name_cut_at_the_front_is_keyed_from_where_the_whole_name_starts(self):
         # Live, "sidual Herb" was read 0.268 into a hand of 8 and keyed 2, though Harmonization: Residual Herb sat first.
         read = [{"name": "sidual Herb", "key": "1", "x": 0.2849, "left_x": 0.2682}, {"name": "hidden:Guid", "key": "7", "x": 0.6771, "left_x": 0.662}]
