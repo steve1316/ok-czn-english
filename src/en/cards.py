@@ -7,7 +7,7 @@ hoping. This module replaces the hoping.
 """
 
 import re
-from collections import namedtuple
+from collections import Counter, namedtuple
 from functools import lru_cache
 from itertools import combinations
 
@@ -76,7 +76,9 @@ ALL_ENEMIES = re.compile(r"\bto all enemies\b")
 PRIME = re.compile(r"(?:Damage Amount|Hit\(s\)|Proc)[^|\n]*?\bnext\b[^|\n]*?\b(?:Attack|Bullet|Bind) Card"
                    r"|(?:\b\d+ Vulnerable|Vulnerable \d+)(?! to (?:allies|self))|Damage Amount taken by the target", re.I)
 
-# The effect text of every card in the deck `piles` last read, by canonical name: the Epiphany it carries, the weakest where copies differ.
+# How many copies of each version of a card the deck holds, by canonical name: the last `piles` read, and every change `piles` saw since.
+COPIES = {}
+# The effect text of every card in `COPIES`, by canonical name: the Epiphany it carries, the weakest where copies differ.
 # Mutated in place, never rebound, and empty until a read, so every card falls back to its base text.
 DECK = {}
 
@@ -414,15 +416,40 @@ def on_play(name):
     return RETAIN_LINE.sub("", description(name))
 
 
+def settle_deck():
+    """Value every card by the version of it `COPIES` holds, the weakest where its copies differ."""
+    DECK.clear()
+    DECK.update({name: min(texts, key=lambda text: strength(figures(text))) for name, texts in COPIES.items()})
+    parsed.cache_clear()
+
+
 def use_deck(copies):
-    """Value every card by the version of it the deck holds, the weakest where its copies differ.
+    """Take a fresh read of the deck in place of everything known about it.
 
     Args:
-        copies: Canonical card name to the effect texts its copies were matched to, from `piles`.
+        copies: Canonical card name to the effect texts its copies were matched to, from `piles`. A `Counter` of copies per text, or
+            any collection of texts, each then counted once.
     """
-    DECK.clear()
-    DECK.update({name: min(texts, key=lambda text: strength(figures(text))) for name, texts in copies.items()})
-    parsed.cache_clear()
+    COPIES.clear()
+    COPIES.update({name: Counter(texts) for name, texts in copies.items()})
+    settle_deck()
+
+
+def change_deck(name, text, by):
+    """Add or take away one copy of a card, in one version.
+
+    Args:
+        name: The canonical card name.
+        text: The version's effect text, from `piles.version_of`.
+        by: 1 for a copy gained, -1 for one removed.
+    """
+    held = COPIES.setdefault(name, Counter())
+    held[text] += by
+    if held[text] <= 0:
+        del held[text]
+    if not held:
+        del COPIES[name]
+    settle_deck()
 
 
 def worth_clearing(name):

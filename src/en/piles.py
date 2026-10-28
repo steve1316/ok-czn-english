@@ -1,4 +1,4 @@
-"""Read the deck off the All Piles view once a Sortie layer, so every card is valued by the Epiphany it really carries.
+"""Read the deck off the All Piles view once a Sortie layer, and follow every card gained, removed, copied or sparked after it.
 
 A card in hand shows only its name, and the data holds a card's base text beside every Epiphany it could take, so the picker valued an
 Epiphany card by its base text. Upstream never opens the view. This reads it on the information page trip that reads the team.
@@ -6,10 +6,11 @@ Epiphany card by its base text. Upstream never opens the view. This reads it on 
 
 import difflib
 import re
+from collections import Counter
 
 from ok import Logger
 
-from src.en import cards
+from src.en import cards, quality
 from src.en.game_text import DESCRIPTIONS, EPIPHANIES
 from src.en.handlers import loaded, register, standing_in, wrap
 from src.en.quality import fold
@@ -47,8 +48,18 @@ READ = "_en_piles_read"
 # Only Sortie reads the deck, though Chaos runs the same capture.
 SORTIE_MODE = "SortieMode"
 TAG = "reads the deck before closing"
+# What tapping a card does to the deck on each screen upstream picks cards on: the module holding the function, which it also reads the
+# cards through, the function, and the change. `select_card` serves several screens, so its action decides.
+GAINED, REMOVED, SPARKED, EPIPHANY = "gained", "removed", "chosen for an Epiphany", "took an Epiphany"
+FOLLOWED = (("utils_sortie", "handle_get_card", GAINED), ("utils", "handle_card_reward", GAINED), ("utils", "handle_copy_card_choice", GAINED),
+            ("utils", "handle_view_original", EPIPHANY), ("utils", "select_card", None))
+SELECT_ACTIONS = {"移除": REMOVED, "复制": GAINED, "闪光": SPARKED, "灵光": SPARKED}
+READERS = ("recognize_cards", "recognize_cards_in_deck")
+FOLLOW_TAG = "follows the deck"
 
 _patched = False
+# The version each card chosen for an Epiphany had, by canonical name, until the next screen picks the one it takes instead.
+_sparking = {}
 
 
 def signature(text):
@@ -116,7 +127,8 @@ def read_piles(task, utils):
         utils: The loaded `utils` module, for upstream's scroll.
 
     Returns:
-        Canonical card name to the set of version texts its copies matched.
+        Canonical card name to a `Counter` of the version texts its copies matched. Pages overlap, so a version counts the most copies
+        of it any one page showed, which can miss a copy two rows away.
     """
     copies = {}
     last_page = None
@@ -127,8 +139,9 @@ def read_piles(task, utils):
         where = [(name, y) for name, _, y in page]
         if where == last_page:
             break
-        for name, text, _ in page:
-            copies.setdefault(name, set()).add(version_of(name, text))
+        for (name, version), number in Counter((name, version_of(name, text)) for name, text, _ in page).items():
+            held = copies.setdefault(name, Counter())
+            held[version] = max(held[version], number)
         last_page = where
         utils._scroll_card_page(task, *SCROLL_POINT, SCROLL_AMOUNT, "All Piles")
     return copies
@@ -149,7 +162,7 @@ def read_deck(task, utils):
         return
     copies = read_piles(task, utils)
     cards.use_deck(copies)
-    epiphanies = sorted(name for name, texts in copies.items() if texts - {DESCRIPTIONS.get(name)})
+    epiphanies = sorted(name for name, texts in copies.items() if set(texts) - {DESCRIPTIONS.get(name)})
     logger.info(f"read {len(copies)} distinct cards off All Piles, {len(epiphanies)} with an Epiphany: {epiphanies}")
     logger.debug(f"deck read: {sorted(copies)}")
     # The read held one frame for seconds, which upstream's stuck detector would take for a frozen screen and close the page over.
@@ -189,8 +202,71 @@ def reading_the_deck(handler, utils_chaos):
     return wrapped
 
 
+def follow(change, card):
+    """Change the deck by one card tapped on a screen that changes it.
+
+    Args:
+        change: What the tap does, one of `GAINED`, `REMOVED`, `SPARKED` and `EPIPHANY`.
+        card: The card tapped, as upstream's reader returned it, with its `name` and `description`.
+    """
+    name = quality.CARD_INDEX.look_up(card.get("name") or "")
+    if name not in cards.CARD_COST:
+        logger.debug(f"tapped {card.get('name')!r} but it names no card, so the deck is left as it was")
+        return
+    version = version_of(name, card.get("description") or "")
+    if change == SPARKED:
+        _sparking[name] = version
+        return
+    if change == EPIPHANY:
+        cards.change_deck(name, _sparking.pop(name, DESCRIPTIONS.get(name) or ""), -1)
+    cards.change_deck(name, version, -1 if change == REMOVED else 1)
+    logger.info(f"{name} {change}, {'its base' if version == DESCRIPTIONS.get(name) else 'an Epiphany'}: {version!r}")
+
+
+def following(handler, module, change):
+    """Wrap a function that taps cards on a screen, so each card it taps changes the deck.
+
+    Args:
+        handler: The function to wrap, upstream's or another patch's.
+        module: The module the function reads the cards through.
+        change: What a tap does, or None to take it from the `action` upstream passes `select_card`.
+
+    Returns:
+        The wrapped function.
+    """
+    def wrapped(task, *args, **kwargs):
+        kind = change or SELECT_ACTIONS.get(kwargs.get("action", ""))
+        if kind is None or type(task).__name__ != SORTIE_MODE:
+            return handler(task, *args, **kwargs)
+        shown = []
+
+        def reading(recognise):
+            def recognised(*args_, **kwargs_):
+                found = recognise(*args_, **kwargs_)
+                shown[:] = found or []
+                return found
+            return recognised
+
+        click = task.click
+
+        # Upstream taps a card at the very point its reader returned, so matching the point finds the card.
+        def clicked(x=-1, y=-1, *args_, **kwargs_):
+            result = click(x, y, *args_, **kwargs_)
+            card = next((card for card in shown if (card.get("x"), card.get("y")) == (x, y)), None)
+            if card is not None:
+                shown.remove(card)
+                follow(kind, card)
+            return result
+
+        readers = {name: reading(getattr(module, name)) for name in READERS if name in vars(module)}
+        with standing_in(module, **readers), standing_in(task, click=clicked):
+            return handler(task, *args, **kwargs)
+
+    return wrapped
+
+
 def apply():
-    """Read the deck on Sortie's information page trip, just before the page closes."""
+    """Read the deck on Sortie's information page trip, just before the page closes, and follow each change to it after."""
     global _patched
     if _patched:
         return
@@ -199,6 +275,10 @@ def apply():
         utils_chaos = loaded("utils_chaos")
         if utils_chaos is not None:
             wrap(utils_chaos, "handle_archive_target_member", lambda handler: reading_the_deck(handler, utils_chaos), TAG)
+        for module_name, name, change in FOLLOWED:
+            module = loaded(module_name)
+            if module is not None:
+                wrap(module, name, lambda handler, module=module, change=change: following(handler, module, change), FOLLOW_TAG)
 
     register(install)
     _patched = True

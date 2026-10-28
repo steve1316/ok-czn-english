@@ -12,11 +12,14 @@ sys.path.insert(0, str(REPO_ROOT / "ok_tasks"))
 
 # The real module, so the Settlement check fails if upstream stops reading the claim setting the way the fork stands in for it.
 import utils_sortie  # noqa: E402
+# Held here rather than looked up by name, since other modules in the same run stand stubs in for it.
+import utils  # noqa: E402
 
-from src.en import cards, dashboard, navigation, reason, rewards  # noqa: E402
+from src.en import cards, dashboard, navigation, piles, reason, rewards  # noqa: E402
 from src.en.battle import PARTY  # noqa: E402
 from src.en.dashboard import COMBATANTS as COMBATANTS_ROW  # noqa: E402
 from src.en.game_data import COMBATANTS  # noqa: E402
+from src.en.game_text import DESCRIPTIONS, EPIPHANIES  # noqa: E402
 from src.en.overrides import FARMED_COMBATANT  # noqa: E402
 from src.en.game_quality import (  # noqa: E402
     CARD_CLASSES, CARD_RARITY, COMBATANT_CLASS, EQUIPMENT_RARITY, EQUIPMENT_SLOT,
@@ -163,7 +166,7 @@ class TestRewardQuality(unittest.TestCase):
         # Live, a second Gale Strike was taken over Unknown: Mutant Sample because its rarity ranked it first.
         offer = ["Unknown: Mutant Sample", "Gale Strike", "Distortion: Hand-to-Hand Combat"]
         cards.use_deck({"Gale Strike": {""}})
-        self.addCleanup(cards.DECK.clear)
+        self.addCleanup(cards.use_deck, {})
         self.assertEqual(["Unknown: Mutant Sample", "Gale Strike"], rewards.generated_list(FakeTask(offer, set()), rewards.SORTIE_CARD_KEY, free=True))
 
     def test_obtain_card_waits_for_the_first_team_read(self):
@@ -192,6 +195,45 @@ class TestRewardQuality(unittest.TestCase):
                          _get_config_value=lambda task, key, default: ["Dark Mist Secret Art: Black Dance"]):
             rewards.with_generated_lists(utils_sortie.handle_get_card, [utils_sortie])(task)
         self.assertEqual((0.7375, 0.3472), clicks[0])
+
+    def test_a_picked_reward_joins_the_deck(self):
+        # Live, an Annoying taken mid-layer was valued by its base text until the next layer's read, though the screen showed its Epiphany.
+        sparked = EPIPHANIES["Annoying"][-1]
+        offer = [{"name": "Annoying", "description": sparked, "x": 0.7375, "y": 0.3472}, {"name": "Ice Fragment", "description": "", "x": 0.5, "y": 0.3472}]
+        boxes = {rewards.OBTAIN_TITLE_AT: rewards.OBTAIN_TITLE, (0.883, 0.131): "请选择1张要获得的卡牌"}
+        task = type("SortieMode", (), {"sleep": lambda self, seconds: None, "log_info": lambda self, *args, **kwargs: None,
+                                       "move_relative": lambda self, x, y: None, "click": lambda self, x, y: None})()
+        self.addCleanup(cards.use_deck, {})
+        # The real `_move_and_click`, so the deck still follows if upstream stops tapping a card at the point its reader returned.
+        with standing_in(utils_sortie, find_box_at_point=lambda task, x, y: types.SimpleNamespace(name=boxes.get((x, y), "")),
+                         recognize_cards=lambda task, page: offer, _get_config_value=lambda task, key, default: ["Annoying"]):
+            piles.following(utils_sortie.handle_get_card, utils_sortie, piles.GAINED)(task)
+        self.assertEqual({"Annoying": sparked}, cards.DECK)
+
+    def test_every_screen_that_changes_the_deck_is_still_there(self):
+        for module_name, name, _ in piles.FOLLOWED:
+            with self.subTest(name):
+                module = {"utils": utils, "utils_sortie": utils_sortie}[module_name]
+                self.assertTrue(callable(getattr(module, name, None)))
+                self.assertTrue(any(reader in vars(module) for reader in piles.READERS))
+
+    def test_each_change_lands_on_its_own_copy(self):
+        base, shield = DESCRIPTIONS["Experienced Strike"], EPIPHANIES["Experienced Strike"][0]
+        annoying = EPIPHANIES["Annoying"][-1]
+        for description, deck, taps, expected in (
+            # The deck shows the weaker base copy, so taking the wrong copy away would leave the base on show.
+            ("a removal takes the copy tapped", {"Experienced Strike": {base, shield}}, [(piles.REMOVED, "Experienced Strike", base)],
+             {"Experienced Strike": shield}),
+            # Keeping the base copy beside the Epiphany would leave the deck showing the base.
+            ("an Epiphany replaces the version it was chosen in", {"Annoying": {DESCRIPTIONS["Annoying"]}},
+             [(piles.SPARKED, "Annoying", DESCRIPTIONS["Annoying"]), (piles.EPIPHANY, "Annoying", annoying)], {"Annoying": annoying}),
+        ):
+            with self.subTest(description):
+                cards.use_deck(deck)
+                self.addCleanup(cards.use_deck, {})
+                for change, name, text in taps:
+                    piles.follow(change, {"name": name, "description": text})
+                self.assertEqual(expected, cards.DECK)
 
     def test_equipment_is_offered_to_its_own_slot_only(self):
         task = FakeTask(SHOP_EQUIPMENT, {"vanguard", "controller"})
