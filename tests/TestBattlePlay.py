@@ -746,6 +746,17 @@ class TestInstalling(unittest.TestCase):
             utils_sortie._try_all_card_keys(task, 3)
             self.assertEqual(len(pressed) + 2, len(task.keys))
 
+    def test_a_lowered_card_the_data_cannot_place_costs_what_its_digit_reads(self):
+        # Live, "rbidenEctasyofVolence" took the assumed cost of 1, and so read as lowered to 0 for a card at 8.
+        task = Pressed([])
+        box = FakeBox("rbidenEctasyofVolence", 0.7, 0.75)
+        reader = types.SimpleNamespace(_hand_card_names=lambda task: [box])
+        for digits, expected in (([FakeBox("8", 0.5, 0.5)], 8), ([], cards.ASSUMED_COST)):
+            with self.subTest(expected), mock.patch.object(board, "cost_lowered", return_value=True):
+                task.progress = digits
+                [card] = battle.priced(task, reader, [{"name": box.name, "key": "1", "left_x": box.x / task.width}])
+                self.assertEqual(expected, cards.price(card))
+
     def test_a_card_still_in_hand_is_not_tried_again(self):
         # The game kept it twice running, so the next frame should reach for the other card instead. A Retrieve the deck read showed
         # sends the card back to hand once, which is one stay more before that.

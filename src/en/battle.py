@@ -593,7 +593,7 @@ def shown_cost(task, frame, box, printed):
         task: The running task, for its OCR.
         frame: The frame to read, from `frame_of`.
         box: The card's cost digit, from `board.cost_digit`.
-        printed: What the data says the card costs, from `cards.cost`.
+        printed: What the data says the card costs, from `cards.CARD_COST`. None for a name it does not know, whose digit is all there is.
 
     Returns:
         The lowered cost, or None when the digit is not drawn lowered or reads no lower than the data.
@@ -605,8 +605,8 @@ def shown_cost(task, frame, box, printed):
         return 0
     read = ego.DIGITS.search("".join(text.name for text in task.ocr(*box, frame=frame, frame_processor=ego.enlarged) or []))
     if read is None:
-        return printed - 1
-    return int(read.group()) if int(read.group()) < printed else None
+        return None if printed is None else printed - 1
+    return int(read.group()) if printed is None or int(read.group()) < printed else None
 
 
 def priced(task, utils_sortie, hand):
@@ -625,7 +625,8 @@ def priced(task, utils_sortie, hand):
     shown_hand = []
     for card in hand:
         box = names.get(card.get("left_x"))
-        printed = cards.cost(card["name"])
+        # Live, "rbidenEctasyofVolence" took the assumed cost of 1 and so read as lowered to 0, for a card at 8.
+        printed = cards.CARD_COST.get(cards.canonical(card["name"]))
         shown = None if box is None else shown_cost(task, frame, board.cost_digit(card["left_x"], (box.y + box.height / 2) / task.height), printed)
         if shown is not None:
             logger.debug(f"{card['name']} shows {shown} AP, lowered from {printed}")
