@@ -169,6 +169,19 @@ def reading_in_place(original):
     return handle_archive_target_member
 
 
+def team_pending(task):
+    """Say whether Sortie has started tapping towards the team, has tries left, and has not read it yet.
+
+    Args:
+        task: The running Sortie task.
+
+    Returns:
+        True while a retry of `handle_open_team` is still due.
+    """
+    tries, _ = task.node_status.get(TEAM_TAPPED, (0, 0.0))
+    return 0 < tries < TEAM_TRIES and not getattr(task, PARTY, None)
+
+
 def handle_open_team(task):
     """Open the information page as a Sortie run or layer starts, so the team is read off its Combatants tab before a battle.
 

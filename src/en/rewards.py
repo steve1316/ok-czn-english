@@ -11,6 +11,7 @@ from src.en import cards, quality
 from src.en.battle import PARTY
 from src.en.dashboard import COMBATANTS, UNREAD
 from src.en.handlers import insert_before, loaded, register, replace
+from src.en.navigation import team_pending
 from src.en.overrides import FARMED_COMBATANT
 from src.en.screen import combatant_names, same_line
 
@@ -30,6 +31,10 @@ FILLED_IN = ("handle_shop", "handle_card_reward", "handle_card_assign")
 # The reward screens, Chaos's and Sortie's, where a card costs nothing. The shop shares Chaos's list, so the
 # handler reading it is what tells them apart.
 FREE = ("handle_card_reward", "handle_get_card")
+
+# Upstream's own check for Sortie's Obtain Card screen: its title, and the point it reads it at.
+OBTAIN_TITLE = "获得卡牌"
+OBTAIN_TITLE_AT = (0.502, 0.128)
 
 TEAM = "_en_team"
 
@@ -262,6 +267,31 @@ def filling_in(original, task_module, free=False):
     return patched
 
 
+def after_the_team(handler, utils_sortie):
+    """Hold Sortie's Obtain Card pick while the run's first team read still has tries left, so the pick knows the team and the deck.
+
+    A run started on this screen taps for the team as the game window comes to the front, which loses the tap, and upstream picked in the
+    wait before the retry.
+
+    Args:
+        handler: Upstream's `handle_get_card`.
+        utils_sortie: The Sortie module, whose `find_box_at_point` reads the screen title.
+
+    Returns:
+        The wrapped handler, under the original's name.
+    """
+    def handle_get_card(task):
+        title = utils_sortie.find_box_at_point(task, *OBTAIN_TITLE_AT)
+        if title and title.name == OBTAIN_TITLE and team_pending(task):
+            logger.debug("Obtain Card waits for the team and the deck to be read")
+            task.sleep(1)
+            return True
+        return handler(task)
+
+    handle_get_card.__name__ = handler.__name__
+    return handle_get_card
+
+
 def with_generated_lists(handler, modules):
     """Run a handler with the empty priority lists filled in for the length of the call.
 
@@ -318,7 +348,7 @@ def apply():
         if utils_sortie is not None and hasattr(utils_sortie, "handle_get_card"):
             # Sortie imported its own reference to the reader, so that copy is the one it resolves through.
             replace("handle_get_card",
-                    with_generated_lists(utils_sortie.handle_get_card, [utils_sortie, utils]))
+                    with_generated_lists(after_the_team(utils_sortie.handle_get_card, utils_sortie), [utils_sortie, utils]))
 
         if utils_chaos is not None and hasattr(utils_chaos, "handle_archive_target_member"):
             original_archive = utils_chaos.handle_archive_target_member
