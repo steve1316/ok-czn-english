@@ -141,6 +141,12 @@ CARD_BODY = 0.07
 # since the prompt can open before the hand's names do.
 PROMPT_TAPS = 3
 PROMPT_CONFIRM = (0.934, 0.883)
+# A prompt that picks from the Draw Pile or Discard Pile instead, as Joker's does: no hand counter, a label top left, the cards laid out in a
+# grid and its Select button lower down. Its caption and counter sit where the hand prompt's do.
+PILE = "Pile"
+PILE_LABEL = (0.0, 0.08, 0.40, 0.20)
+PILE_GRID = (0.03, 0.22, 0.93, 0.88)
+PILE_CONFIRM = (0.94, 0.93)
 # Parked on the task while a hand prompt is being answered, as a `Prompt`.
 PROMPT = "_en_prompt"
 
@@ -797,22 +803,24 @@ def unheld_texts(task):
 
 
 def prompt_progress(task, utils_sortie):
-    """Read upstream's hand prompt off the screen: how many cards it has and how many it asks for.
+    """Read upstream's hand prompt, or the pile prompt that shares its caption, off the screen: how many cards it has and how many it asks for.
 
     Args:
         task: The running task, whose `all_texts` is the current screen.
         utils_sortie: Upstream's Sortie module, for its `find_box_at_point`.
 
     Returns:
-        A `(chosen, need, to_top)` triple, `to_top` True when the cards go to the top of the Draw Pile, or None when this is
-        not the prompt or its counter will not read.
+        A `(chosen, need, to_top, from_pile)` tuple, `to_top` True when the cards go to the top of the Draw Pile and `from_pile` True
+        when they are picked from a pile into the hand, or None when this is not the prompt or its counter will not read.
     """
     caption = utils_sortie.find_box_at_point(task, *PROMPT_CAPTION)
     total = utils_sortie.find_box_at_point(task, *HAND_COUNTER)
-    if not (caption and PROMPT_ASKS.search(caption.name) and total and HAND_TOTAL.search(total.name)):
+    in_hand = bool(total and HAND_TOTAL.search(total.name))
+    from_pile = not in_hand and text_in_region(task, PILE, PILE_LABEL) is not None
+    if not (caption and PROMPT_ASKS.search(caption.name) and (in_hand or from_pile)):
         return None
     read = PROGRESS.search("".join(box.name for box in task.ocr(*PROMPT_PROGRESS) or []))
-    return (int(read.group(1)), int(read.group(2)), PROMPT_TOP in caption.name) if read else None
+    return (int(read.group(1)), int(read.group(2)), PROMPT_TOP in caption.name, from_pile) if read else None
 
 
 def giving_up_order(name, box, kept, board_now, to_top=False):
@@ -871,25 +879,26 @@ def boost_order(played):
     return order
 
 
-def prompt_cards(task, texts):
-    """Pick out the hand cards a hand prompt shows.
+def prompt_cards(task, texts, region=PROMPT_HAND):
+    """Pick out the cards a prompt shows.
 
     Args:
         task: The running task, for the frame size.
-        texts: OCR boxes, from the full-screen pass or a read of `PROMPT_HAND`.
+        texts: OCR boxes, from the full-screen pass or a read of `region`.
+        region: Where the prompt lays its cards out, `PROMPT_HAND` or `PILE_GRID`.
 
     Returns:
-        `(name, box)` for every box inside `PROMPT_HAND` that names a known card.
+        `(name, box)` for every box inside `region` that names a known card.
     """
-    named = [(cards.canonical(box.name), box) for box in texts if in_region(box, PROMPT_HAND, task.width, task.height)]
+    named = [(cards.canonical(box.name), box) for box in texts if in_region(box, region, task.width, task.height)]
     return [(name, box) for name, box in named if name in cards.CARD_COST]
 
 
-def answer_prompt(task, utils_sortie, chosen, need, to_top=False):
+def answer_prompt(task, utils_sortie, chosen, need, to_top=False, from_pile=False):
     """Tap the card the hand can best spare, or confirm once the prompt's own counter says enough are chosen.
 
     A prompt is taken to be giving a card up - to the discard pile, the Draw Pile or Exhaust - unless it sends it to the top of the Draw Pile,
-    or the card just played boosts the one picked.
+    or the card just played boosts the one picked, or it picks from a pile into the hand.
 
     Args:
         task: The running task, which the prompt's progress is parked on.
@@ -897,6 +906,7 @@ def answer_prompt(task, utils_sortie, chosen, need, to_top=False):
         chosen: How many cards the prompt's counter reads as chosen.
         need: How many it asks for.
         to_top: Whether the cards go to the top of the Draw Pile, which takes the best card rather than the worst.
+        from_pile: Whether the cards are picked from a pile into the hand, which takes the best card and confirms on `PILE_CONFIRM`.
 
     Returns:
         True when the frame was spent tapping or waiting, False once `PROMPT_TAPS` frames pass with no change, for upstream's random pick to try.
@@ -912,11 +922,12 @@ def answer_prompt(task, utils_sortie, chosen, need, to_top=False):
     if chosen >= need:
         task.log_info(f"hand prompt reads {chosen}/{need}, confirming")
         setattr(task, PROMPT, None)
-        utils_sortie._move_and_click(task, *PROMPT_CONFIRM)
+        utils_sortie._move_and_click(task, *(PILE_CONFIRM if from_pile else PROMPT_CONFIRM))
         task.sleep(1)
         return True
     # Under a prompt's glow the full-screen pass can miss every name in the hand, which a read of the hand alone still finds.
-    hand = prompt_cards(task, task.all_texts) or prompt_cards(task, task.ocr(*PROMPT_HAND) or [])
+    region = PILE_GRID if from_pile else PROMPT_HAND
+    hand = prompt_cards(task, task.all_texts, region) or prompt_cards(task, task.ocr(*region) or [], region)
     for picked in prompt.picked:
         taken = next((card for card in hand if card[0] == picked), None)
         if taken is not None:
@@ -934,7 +945,11 @@ def answer_prompt(task, utils_sortie, chosen, need, to_top=False):
     board_now = cards.Board(hand=tuple(name for name, _ in hand))
     turn = getattr(task, TURN, None)
     boost = boost_order(turn.attempted if turn else None)
-    if boost:
+    if from_pile:
+        # The card goes to hand to be played, so the best one, and a dealt-to-you card only when nothing else is there.
+        prompt.tapped, box = min(hand, key=lambda card: (cards.category(card[0]) in cards.DEALT_TO_YOU, -cards.rated(card[0], board_now)))
+        doing = "taking"
+    elif boost:
         prompt.tapped, box = min(hand, key=lambda card: boost(card[0], board_now))
         doing = "boosting"
     else:

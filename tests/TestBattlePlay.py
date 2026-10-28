@@ -1120,6 +1120,13 @@ class TestHandPrompt(unittest.TestCase):
         task = self.frames("0/1", screens=((*top, FakeBox("Android", 0.45, 0.765)),))
         self.assertEqual([(0.45, round(0.765 + battle.CARD_BODY, 3))], task.taps, "Android, the one 2-cost card, though Opening Found rates higher")
 
+    def test_a_pile_prompt_takes_the_best_card_and_confirms_on_its_own_button(self):
+        # Live, Joker's grid of the Draw Pile and Discard Pile has no hand counter, so nothing answered it and the fight froze for 80s.
+        pile = (FakeBox("请选择1张卡牌", 0.5, 0.111, width=600), FakeBox("Draw Pile or Discard Pile", 0.15, 0.14), FakeBox("Cards", 0.103, 0.27),
+                FakeBox("Wild Card", 0.29, 0.27), FakeBox("Iceberg Cleave", 0.66, 0.27), FakeBox("Dice Trick", 0.84, 0.27), FakeBox(AILMENT, 0.11, 0.73))
+        task = self.frames("0/1", "1/1", screens=(pile, pile))
+        self.assertEqual([(0.84, round(0.27 + battle.CARD_BODY, 3)), battle.PILE_CONFIRM], task.taps)
+
     def test_a_boost_goes_to_the_best_card_it_fits(self):
         # Opening Found rates highest, but Growth Acceleration can only pick Orlea's own cards, and the curse is no boost at all.
         choose = next(text for text in EPIPHANIES["Dark Condensation"] if text.startswith("Choose"))
