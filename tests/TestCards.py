@@ -72,6 +72,10 @@ class TestNeverPlayed(unittest.TestCase):
     def test_a_status_ailment_is_left_in_hand(self):
         self.assertNotIn(AILMENT, played(cards.plan(hand(AILMENT, JUSTICE_ATTACK), cards.Board())))
 
+    def test_a_card_that_helps_while_held_stays_in_hand(self):
+        # Unknown: Mutant Sample shows no cost, so the picker took it for a free card and would have pressed its key first.
+        self.assertNotIn("Unknown: Mutant Sample", played(cards.plan(hand("Unknown: Mutant Sample", JUSTICE_ATTACK), cards.Board())))
+
     def test_a_hand_of_nothing_but_junk_plays_nothing(self):
         self.assertEqual(cards.plan(hand(CURSE, AILMENT), cards.Board()), [])
 

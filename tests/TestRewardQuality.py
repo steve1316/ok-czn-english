@@ -151,6 +151,13 @@ class TestRewardQuality(unittest.TestCase):
             with self.subTest(free=free):
                 self.assertEqual(expected, rewards.generated_list(FakeTask(offer, set()), rewards.SORTIE_CARD_KEY, free=free))
 
+    def test_a_reward_that_helps_while_held_is_taken_at_any_grade(self):
+        # Live, a Rare Unknown: Mutant Sample was left out of the list, so a reward screen could never pick it.
+        offer = ["Unknown: Mutant Sample", "Gale Strike", "Distortion: Hand-to-Hand Combat"]
+        for free, expected in ((True, ["Gale Strike", "Unknown: Mutant Sample"]), (False, ["Gale Strike"])):
+            with self.subTest(free=free):
+                self.assertEqual(expected, rewards.generated_list(FakeTask(offer, set()), rewards.SORTIE_CARD_KEY, free=free))
+
     def test_equipment_is_offered_to_its_own_slot_only(self):
         task = FakeTask(SHOP_EQUIPMENT, {"vanguard", "controller"})
         by_slot = {slot: rewards.generated_list(task, key) for key, slot in rewards.EQUIPMENT_KEYS.items()}

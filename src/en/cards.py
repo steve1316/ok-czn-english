@@ -28,6 +28,9 @@ DEALT_TO_YOU = frozenset({"ABNORM", "CURSE"})
 # One of those that does its harm only while held - "If in hand, at the end of the turn", "If this card is in hand",
 # a "Retain:" line - so playing it is how to be rid of it.
 HELD_HARM = re.compile(r"\b(?:if|when) (?:this card is )?in hand|if the turn ends when in hand|when this card is retained|^Retain:", re.I | re.M)
+# A card of your own that works just by being held, as Unknown: Mutant Sample's "If in hand, +40% Damage Amount".
+# It shows no cost and cannot be played.
+HELD_HELP = re.compile(r"^If (?:this card is )?in hand,", re.I)
 # A line the generator marks as firing when the card is kept in hand at the end of the turn, which playing it never does.
 RETAIN_LINE = re.compile(r"^Retain:.*\n?", re.M)
 # A card that only makes other cards better, so it wants to land before them.
@@ -451,9 +454,21 @@ def worth_playing(name):
         name: The card name, in any spelling.
 
     Returns:
-        False for a Curse or a Status Ailment, True for anything else, including a card not in the data.
+        False for a Curse, a Status Ailment or a card that helps by being held, True for anything else, including a card not in the data.
     """
-    return category(name) not in DEALT_TO_YOU
+    return category(name) not in DEALT_TO_YOU and not helps_held(name)
+
+
+def helps_held(name):
+    """Say whether a card does its good while it sits in hand, and so is worth keeping rather than playing.
+
+    Args:
+        name: The card name, in any spelling.
+
+    Returns:
+        True for a card of your own whose text opens with "If in hand".
+    """
+    return category(name) not in DEALT_TO_YOU and bool(HELD_HELP.match(description(name)))
 
 
 def value(name, board):
