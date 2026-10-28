@@ -964,6 +964,9 @@ class TestKits(unittest.TestCase):
             # Material Regeneration is a Healer's heal, so it is bought over Photo Time's guessed worth.
             ("Dark Condensation is bought for the attack it boosts", ("Photo Time", "Material Regeneration", "Predator's Blade", "Dark Condensation"),
              ["Dark Condensation", "Predator's Blade", "Material Regeneration"]),
+            # Live, Strike of Darkness tied with Dark Blade, and two unboosted Dark Blades took the turn's points.
+            ("Strike of Darkness is bought for the basic attack it boosts", ("Dark Blade", "Dark Blade", "Dark Blade", "Strike of Darkness"),
+             ["Strike of Darkness", "Dark Blade", "Dark Blade"]),
         ):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), cards.Board())), expected)
