@@ -555,21 +555,22 @@ def key_at(left_x, count):
     return str(slot + 1) if slot < MAX_KEY else None
 
 
-def name_start(card):
+def name_start(box, width):
     """Say where a hand card's name begins, reaching back over the letters OCR cut off its front.
 
     Args:
-        card: A hand card from upstream's `_hand_cards`, its `x` the centre of the name as read and `left_x` its left edge.
+        box: The card's name box, from `_hand_card_names`.
+        width: The frame width in pixels, from `task.width`.
 
     Returns:
         The left edge of the whole name, as a screen fraction.
     """
-    read = fold(card["name"])
-    cut = fold(cards.canonical(card["name"], deck=frozenset(cards.DECK))).find(read) if read and "x" in card else -1
+    read = fold(box.name)
+    cut = fold(cards.canonical(box.name, deck=frozenset(cards.DECK))).find(read) if read else -1
     if cut <= 0:
-        return card["left_x"]
-    # Each letter cut off is taken to be as wide as the letters read.
-    return card["left_x"] - 2 * (card["x"] - card["left_x"]) * cut / len(read)
+        return box.x / width
+    # Each letter cut off is taken to be as wide as the letters read. Upstream's `x` is the left edge too, so it cannot give the width.
+    return (box.x - box.width * cut / len(read)) / width
 
 
 def padded(image, zoom):
@@ -719,7 +720,10 @@ def priced(task, utils_sortie, hand):
         box = names.get(card.get("left_x"))
         # Live, "rbidenEctasyofVolence" took the assumed cost of 1 and so read as lowered to 0, for a card at 8.
         printed = cards.CARD_COST.get(cards.canonical(card["name"]))
-        shown = None if box is None else shown_cost(task, frame, board.cost_digit(card["left_x"], (box.y + box.height / 2) / task.height), printed)
+        # From the name as read, not the canonical one. Live, "dden: Dispos" put the box 5 letters right of the digit, and a free
+        # Forbidden: Disposable Ego was taken for 1 AP.
+        digit = None if box is None else board.cost_digit(name_start(box, task.width), (box.y + box.height / 2) / task.height)
+        shown = None if box is None else shown_cost(task, frame, digit, printed)
         if shown is not None:
             logger.debug(f"{card['name']} shows {shown} AP, lowered from {printed}")
             card = {**card, "cost": shown}
@@ -1219,7 +1223,8 @@ def install():
         # Even once the count comes out right: live, Unity of Attack and Defense wrapped onto two lines, read as two cards that halved
         # the spacing upstream keys by, and keyed 1, 3, 5, 5, 7 in a hand of 5.
         if hand and count and (stray or len(hand) != count):
-            hand = [{**card, "key": key_at(name_start(card), count)} for card in hand]
+            boxes = {box.x / task.width: box for box in utils_sortie._hand_card_names(task) or []}
+            hand = [{**card, "key": key_at(name_start(boxes[card["left_x"]], task.width) if card["left_x"] in boxes else card["left_x"], count)} for card in hand]
             task.log_info(f"read {len(hand)} of {count} cards, so keys come from where each sits: "
                           f"{[(card['name'], card['key']) for card in hand]}")
         return hand

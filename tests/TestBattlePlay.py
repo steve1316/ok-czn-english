@@ -27,7 +27,7 @@ from src.en import battle, board, cards, ego, overrides  # noqa: E402
 from src.en.game_text import EPIPHANIES  # noqa: E402
 from src.en.handlers import standing_in  # noqa: E402
 from tests.TestBoard import EGO_SLOTS_AT, FakeTask, flat, paint, paint_enemy, pasted  # noqa: E402
-from tests.fakes import FakeBox  # noqa: E402
+from tests.fakes import WIDTH, FakeBox  # noqa: E402
 
 # Haru is Justice and Renoa is Void, and these two cards are otherwise identical: one Action Point, an
 # Attack, exactly "100% Damage". So only a weakness read off the screen can order them.
@@ -847,6 +847,15 @@ class TestInstalling(unittest.TestCase):
                 [card] = battle.priced(task, reader, [{"name": box.name, "key": "1", "left_x": box.x / task.width}])
                 self.assertEqual(expected, cards.price(card))
 
+    def test_a_name_cut_at_the_front_has_its_cost_read_where_the_whole_name_starts(self):
+        # Live, "dden: Dispos" put the digit box 5 letters right of the real one, and a free Forbidden: Disposable Ego was taken for 1 AP.
+        task = Pressed([])
+        box = FakeBox("dden: Dispos", 0.5, 0.75, width=100)
+        reader = types.SimpleNamespace(_hand_card_names=lambda task: [box])
+        with mock.patch.object(board, "cost_digit", wraps=board.cost_digit) as digit, mock.patch.object(board, "cost_lowered", return_value=False):
+            battle.priced(task, reader, [{"name": "Forbidden: Disposable Ego", "key": "1", "left_x": box.x / task.width}])
+        self.assertAlmostEqual((box.x - 100 * 5 / 10) / task.width, digit.call_args.args[0])
+
     def test_a_card_still_in_hand_is_not_tried_again(self):
         # The game kept it twice running, so the next frame should reach for the other card instead. A Retrieve the deck read showed
         # sends the card back to hand once, which is one stay more before that.
@@ -895,9 +904,11 @@ class TestInstalling(unittest.TestCase):
 
     def test_a_name_cut_at_the_front_is_keyed_from_where_the_whole_name_starts(self):
         # Live, "sidual Herb" was read 0.268 into a hand of 8 and keyed 2, though Harmonization: Residual Herb sat first.
-        read = [{"name": "sidual Herb", "key": "1", "x": 0.2849, "left_x": 0.2682}, {"name": "hidden:Guid", "key": "7", "x": 0.6771, "left_x": 0.662}]
+        boxes = [FakeBox("sidual Herb", 0.2849, 0.75, width=64), FakeBox("hidden:Guid", 0.6771, 0.75, width=58)]
+        read = [{"name": box.name, "key": key, "left_x": box.x / WIDTH} for box, key in zip(boxes, "17")]
         with upstream(read) as (utils_sortie, task), mock.patch.dict(cards.DECK, {"Harmonization: Residual Herb": ""}):
             task.counter = 8
+            utils_sortie._hand_card_names = lambda task: boxes
             battle.install()
             self.assertEqual([("sidual Herb", "1"), ("hidden:Guid", "7")], [(card["name"], card["key"]) for card in utils_sortie._hand_cards(task)])
 
