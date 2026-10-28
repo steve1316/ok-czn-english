@@ -13,7 +13,7 @@ import time
 
 from ok import Logger
 
-from src.en.battle import CANCEL, CANCEL_REGION, PARTY
+from src.en.battle import CANCEL, CANCEL_REGION, PARTY, TURN
 from src.en.handlers import insert_before, loaded, register, replace, standing_in, wrap
 from src.en.game_data import COMBATANTS
 from src.en.screen import combatant_names, text_in_region
@@ -185,7 +185,7 @@ def team_pending(task):
 
 
 def handle_open_team(task):
-    """Open the information page as a Sortie run or layer starts, so the team is read off its Combatants tab before a battle.
+    """Open the information page as a Sortie run or layer starts, or on the first battle frame after a restart, so the team is read.
 
     `handle_archive_target_member` then reads the names and closes the page, as it does for Chaos. A tap that reads no team is tried again
     after `TEAM_RETRY_SECONDS`, up to `TEAM_TRIES` times.
@@ -203,8 +203,12 @@ def handle_open_team(task):
     now = time.monotonic()
     if tries and now - last < TEAM_RETRY_SECONDS or not utils._get_current_hp_percent(task):
         return False
-    if text_in_region(task, "/10", HAND_COUNTER_REGION) or text_in_region(task, CANCEL, CANCEL_REGION):
-        # The health bar shows in battle too, and a prompt over the map would take the tap.
+    if text_in_region(task, CANCEL, CANCEL_REGION):
+        # A prompt would take the tap.
+        return False
+    turn = getattr(task, TURN, None)
+    if turn and (turn.played or turn.ended or turn.attempted) and text_in_region(task, "/10", HAND_COUNTER_REGION):
+        # The page opens in battle too, but only at a turn's start is nothing pressed that a prompt could still answer.
         return False
     task.node_status[TEAM_TAPPED] = (tries + 1, now)
     if not tries:

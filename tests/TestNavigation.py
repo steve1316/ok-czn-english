@@ -10,9 +10,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.en import cards, epiphany, navigation, piles, rewards  # noqa: E402
+from src.en import battle, cards, epiphany, navigation, piles, rewards  # noqa: E402
 from src.en.handlers import standing_in  # noqa: E402
-from src.en.battle import PARTY  # noqa: E402
+from src.en.battle import PARTY, TURN  # noqa: E402
 from src.en.game_text import DESCRIPTIONS, EPIPHANIES  # noqa: E402
 from tests.fakes import HEIGHT, WIDTH, FakeBox  # noqa: E402
 
@@ -283,11 +283,15 @@ class TestSortieTeamTrip(unittest.TestCase):
         with mock.patch.object(navigation.time, "monotonic", lambda: clock[0]):
             self.assertFalse(navigation.handle_open_team(task), "off the map there is nothing to tap")
             on_map[0] = True
-            # Live, a restart mid-battle tapped the portraits over the end turn prompt, which ended a turn with a card still playable.
-            for shown in ([FakeBox("04/10", 0.5, 0.97)], [FakeBox("取消", 0.34, 0.60)]):
-                task.all_texts = shown
-                self.assertFalse(navigation.handle_open_team(task), f"{shown[0].name} is not the map")
-            task.all_texts = []
+            # Live, the portraits were tapped over the end turn prompt, which ended a turn with a card still playable.
+            task.all_texts = [FakeBox("取消", 0.34, 0.60)]
+            self.assertFalse(navigation.handle_open_team(task))
+            # A restart on a battle screen still reads the team, but not once the turn has pressed anything.
+            task.all_texts = [FakeBox("04/10", 0.5, 0.97)]
+            setattr(task, TURN, battle.Turn(4))
+            getattr(task, TURN).ended = True
+            self.assertFalse(navigation.handle_open_team(task))
+            delattr(task, TURN)
             self.assertTrue(navigation.handle_open_team(task))
             # A pending dialog swallowed the tap, and its own handler needs the next frames to clear it.
             self.assertFalse(navigation.handle_open_team(task))
