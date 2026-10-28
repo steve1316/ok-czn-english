@@ -994,6 +994,10 @@ class TestKits(unittest.TestCase):
              cards.Board(action_points=1, played=("Slash", "Slash"), battle=("Chrono Archon", "Slash", "Slash")), ["Time Paradox", "Slash"]),
             # Generic play reads its 120% once, so a 180 card for 1 AP outbids the 240% it deals at Cost 2.
             ("Fate Imprint hits once for each point of its Cost", ("Amber Lumen", "Fate Imprint"), cards.Board(action_points=2), ["Fate Imprint"]),
+            # Live, generic play rated it a flat 100 and played it last or not at all.
+            ("Chrono Circle is worth its Fate Imprints", ("Amber Lumen", "Chrono Circle"), cards.Board(action_points=1), ["Chrono Circle"]),
+            ("Chrono Circle goes ahead of the attacks", ("Slash", "Chrono Circle"), cards.Board(action_points=2), ["Chrono Circle", "Slash"]),
+            ("Chrono Archon still outbids Chrono Circle", ("Chrono Circle", "Chrono Archon"), cards.Board(action_points=1), ["Chrono Archon"]),
         ))
 
     def test_selena_marks_before_attacking(self):
