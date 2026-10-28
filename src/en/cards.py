@@ -30,6 +30,8 @@ DEALT_TO_YOU = frozenset({"ABNORM", "CURSE"})
 # One of those that does its harm only while held - "If in hand, at the end of the turn", "If this card is in hand",
 # a "Retain:" line - so playing it is how to be rid of it.
 HELD_HARM = re.compile(r"\b(?:if|when) (?:this card is )?in hand|if the turn ends when in hand|when this card is retained|^Retain:", re.I | re.M)
+# The points clearing one of those leaves for the rest of the hand, since it is only bought ahead of the hand's own cards.
+CLEARING_RESERVE = 1
 # A card that gets cheaper for each card Exhausted this turn, as Brand of Annihilation does. The screen never reads it lowered.
 EXHAUST_DISCOUNT = re.compile(r"When a card is Exhausted, decrease Cost of this card by (\d+)", re.I)
 # Any effect a card's text can carry names a number, so a text without one - blank, or flavour - does nothing when played.
@@ -577,6 +579,18 @@ def worth_clearing(name):
     return kind in DEALT_TO_YOU and cost(name) != X_COST and (kind == "CURSE" or bool(HELD_HARM.search(text)) or not INERT_EFFECT.search(text))
 
 
+def hurts_held(name):
+    """Say whether a card dealt to you does its harm while it sits in hand, and so is cleared ahead of the hand's own cards.
+
+    Args:
+        name: The card name, in any spelling.
+
+    Returns:
+        True for a Curse or Status Ailment with a fixed cost whose text says it acts from the hand, as Shackles does.
+    """
+    return category(name) in DEALT_TO_YOU and cost(name) != X_COST and bool(HELD_HARM.search(description(name)))
+
+
 def clearing_order(name):
     """Order the cards worth clearing: the ones that deal damage first, then the cheapest.
 
@@ -807,7 +821,13 @@ def plan(hand, board):
     first = [category(card["name"]) == SETUP_CATEGORY and canonical(card["name"]) not in board.battle for card in fixed]
     upgrades = best_buy([card for card, new in zip(fixed, first) if new], budget, board)
     left = budget - sum(price(card) for card in upgrades)
-    chosen = upgrades + best_buy([card for card, new in zip(fixed, first) if not new], left, board)
+    # A card that hurts while held goes next, as long as a point stays for the rest of the hand.
+    cleared = []
+    for card in sorted((card for card in hand if hurts_held(card["name"])), key=lambda held: clearing_order(held["name"])):
+        if left - price(card) >= CLEARING_RESERVE:
+            cleared.append(card)
+            left -= price(card)
+    chosen = upgrades + cleared + best_buy([card for card, new in zip(fixed, first) if not new], left, board)
     spenders = [card for card in ranked if price(card) == X_COST]
     if spenders and sum(price(card) for card in chosen) < budget:
         # It takes the rest of the turn's points, so it is worth playing only while some remain, and nothing can follow it.

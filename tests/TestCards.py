@@ -20,8 +20,8 @@ JUSTICE_ATTACK = "Anchor"
 VOID_ATTACK = "Annihilation Shot"
 # Costs nothing, so only the Curse rule can keep it out of a plan.
 CURSE = "Anemia"
-# Costs nothing and even draws a card, and is still never worth playing.
-AILMENT = "Anxiety"
+# Costs nothing and may even draw a card, and is still never worth playing.
+AILMENT = "Taunt"
 # Free, and draws.
 FREE_DRAW = "Adagio"
 # One Action Point, and a Power card.
@@ -139,6 +139,12 @@ class TestOrdering(unittest.TestCase):
         for cards_in_hand, points, expected in cases:
             with self.subTest(hand=played(cards_in_hand)):
                 self.assertEqual(expected, played(cards.plan(cards_in_hand, cards.Board(action_points=points))))
+
+    def test_a_card_that_hurts_while_held_is_cleared_with_a_point_to_spare(self):
+        # Shackles makes a card Unactivatable each time an enemy acts, and was only ever cleared once nothing else was left to play.
+        for points, expected in ((2, ["Multishot", "Shackles"]), (1, ["Multishot"])):
+            with self.subTest(points=points):
+                self.assertEqual(expected, played(cards.plan(hand("Shackles", "Multishot", "Plasma Rain"), cards.Board(action_points=points, enemies=3))))
 
     def test_a_tight_budget_buys_the_better_attack(self):
         chosen = cards.plan(hand(JUSTICE_ATTACK, BIG_ATTACK), cards.Board(action_points=2))
