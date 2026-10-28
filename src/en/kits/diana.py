@@ -27,6 +27,8 @@ class Diana(Kit):
     def held(self, name, board):
         """Keep the discardable attacks while an outlet could discard them, and Liberated Feelings until it has two bullet types to count.
 
+        Liberated Feelings is only kept while other cards are still in hand, since a hand of it alone would end the turn with points unspent.
+
         Args:
             name: The card in question.
             board: The `cards.Board` it would be played into.
@@ -39,7 +41,7 @@ class Diana(Kit):
         if card in DISCARDABLE:
             return bool(OUTLETS & bases)
         if card == LIBERATED:
-            return not {SHAKER, BREAKER} <= bases
+            return not {SHAKER, BREAKER} <= bases and len(board.hand) > 1
         return False
 
 

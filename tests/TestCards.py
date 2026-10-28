@@ -784,6 +784,8 @@ class TestKits(unittest.TestCase):
             # Generic play fires the 500% card at once, with no bullet types in hand to count.
             ("Liberated Feelings waits for both bullet types", ("Liberated Feelings", "Heart Shaker", "Disruption Fire"), cards.Board(),
              ["Heart Shaker", "Disruption Fire"]),
+            # Live, a hand of it alone was held, and the turn ended with 3 Action Points unspent.
+            ("a lone Liberated Feelings is played", ("Liberated Feelings",), cards.Board(), ["Liberated Feelings"]),
             # Generic play plays the free bullets first, which empties the hand it counts.
             ("Liberated Feelings counts the bullets before they are played", ("Heart Shaker", "Heart Breaker", "Liberated Feelings"),
              cards.Board(), ["Liberated Feelings", "Heart Shaker", "Heart Breaker"]),
