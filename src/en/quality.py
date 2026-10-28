@@ -49,9 +49,10 @@ CONFUSABLE = {letter: group[0] for group in ("il1", "o0", "s5", "gq9", "b6", "z2
 # fragments that would each find something to be one edit from. `Dice`, `Quick` and `+60` are all real
 # readings that stop here.
 SHORTEST_WORTH_GUESSING = 6
-# A long name can lose a letter in this many and still be recognised, as long as the rest stay in order. Live, Rin's
-# `Dark Mist Secret Art: Destruction` came back as `DarkMistSecretAr:Destuctio`, three letters short of 28.
-LETTERS_PER_DROP = 8
+# A long name can lose a letter in this many and still be recognised, as long as the rest stay in order. The client squeezes a
+# long name to fit, and live `Harmonization: Criticism of Discord` came back as `HarmonizationcicimofDicord`, five short of 31.
+# Across 5,018 readings in the logs, one in six named no card wrongly.
+LETTERS_PER_DROP = 6
 
 
 class Lookup(NamedTuple):

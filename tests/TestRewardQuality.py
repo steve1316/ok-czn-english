@@ -550,10 +550,13 @@ class TestNearestName(unittest.TestCase):
                 self.assertEqual(real, self.lookup.look_up(reading))
 
     def test_a_long_name_survives_a_few_lost_letters(self):
-        # Live, two readings of Rin's Destruction three and two letters short, so her kit could not place it first.
-        for reading in ("DarkMistSecretAr:Destuctio", "DarkMistSecretArtDestction"):
+        # Live, two readings of Rin's Destruction three and two letters short, so her kit could not place it first. A squeezed
+        # Criticism of Discord lost five, so the reward screen never offered it.
+        for reading, name in (("DarkMistSecretAr:Destuctio", "Dark Mist Secret Art: Destruction"),
+                              ("DarkMistSecretArtDestction", "Dark Mist Secret Art: Destruction"),
+                              ("HarmonizationcicimofDicord", "Harmonization: Criticism of Discord")):
             with self.subTest(reading=reading):
-                self.assertEqual("Dark Mist Secret Art: Destruction", self.lookup.look_up(reading))
+                self.assertEqual(name, self.lookup.look_up(reading))
 
     def test_two_candidates_are_refused(self):
         # `Daze` and `Dice` are both real cards, so a reading of `Dace` belongs to neither.
