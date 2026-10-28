@@ -247,7 +247,7 @@ class TestEgoPlanner(unittest.TestCase):
 
     def test_a_press_the_game_ignored_does_not_use_up_the_turn(self):
         # Live, F1 pressed while an attack still played left the bar at 3 EP, and the retry that did fire was counted as a second.
-        # Hamburger's presses never took one turn, and each retry cost the turn ~5s, so a second miss ends the Egos for the turn.
+        # Each retry costs the turn ~5s, so a second miss ends the Egos for the turn rather than pressing until the cap.
         for ignored, counted in ((False, [1, 2]), (True, [0, ego.FIRES_PER_TURN])):
             with self.subTest(ignored=ignored):
                 task = types.SimpleNamespace(frame=flat(255 if ignored else 0), send_key=lambda key: None, sleep=lambda seconds: None,
