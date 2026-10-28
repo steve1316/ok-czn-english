@@ -10,6 +10,8 @@ from src.en.game_text import DESCRIPTIONS
 RETAIN_LINE = re.compile(r"^Retain: (.*)$", re.M)
 # The Epiphany a card has been upgraded with, which the client writes as a suffix: "Shard:Light (Cycle)".
 EPIPHANY_SUFFIX = re.compile(r"\s*\([^)]*\)$")
+# What follows "Create" in a card's text, which starts with the name of the card it makes: "Create 2 Heart Breaker".
+CREATES = re.compile(r"Create (?:\d+ |X )?(.+)")
 
 # Where a card sits in a turn, lowest first. Here rather than in cards.py so a kit can place a card between two of them.
 PHASE_ESCAPE = 0
@@ -83,15 +85,18 @@ def retain_lines(name, board):
 
 
 def owned(combatant):
-    """Find the cards a combatant brings to a deck.
+    """Find the cards a combatant brings to a deck, and the cards those create in battle, which the data gives no owner.
 
     Args:
         combatant: The combatant's name, as `CARD_OWNER` spells it.
 
     Returns:
-        The base names of every card the data says is theirs.
+        The base names of every card the data says is theirs, and of every card one of them creates.
     """
-    return frozenset(base_name(name) for name, owner in CARD_OWNER.items() if owner == combatant)
+    theirs = {base_name(name) for name, owner in CARD_OWNER.items() if owner == combatant}
+    made = {made for name in theirs for line in CREATES.findall(DESCRIPTIONS.get(name, "")) for made in DESCRIPTIONS
+            if line.startswith(made) and not line[len(made):len(made) + 1].isalnum()}
+    return frozenset(theirs | made)
 
 
 class Kit:

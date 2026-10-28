@@ -589,6 +589,9 @@ class TestKits(unittest.TestCase):
             # Generic play ties them and keeps hand order, which spends the Retain card before the plain attack.
             ("Advanced Shadow Dagger goes after Dagger Throw", ("Advanced Shadow Dagger", "Dagger Throw"), cards.Board(),
              ["Dagger Throw", "Advanced Shadow Dagger"]),
+            # Created cards have no owner in the data, so with none of her own cards in hand the kit stayed off.
+            ("a created dagger still switches her kit on", ("Advanced Shadow Dagger", "Multishot"), cards.Board(),
+             ["Multishot", "Advanced Shadow Dagger"]),
         ))
 
     def test_mika_spends_points_on_the_partner_first(self):
