@@ -782,7 +782,12 @@ def plan(hand, board):
                 and not wasted(card["name"], board))
     budget = board.action_points
     ranked = sorted(playable, key=lambda held: buying_order(held, board))
-    chosen = best_buy([card for card in ranked if price(card) != X_COST], budget, board)
+    fixed = [card for card in ranked if price(card) != X_COST]
+    # An Upgrade pays off every turn left in the battle, so its first copy is bought first and the rest of the hand shares what is left.
+    first = [category(card["name"]) == SETUP_CATEGORY and canonical(card["name"]) not in board.battle for card in fixed]
+    upgrades = best_buy([card for card, new in zip(fixed, first) if new], budget, board)
+    left = budget - sum(price(card) for card in upgrades)
+    chosen = upgrades + best_buy([card for card, new in zip(fixed, first) if not new], left, board)
     spenders = [card for card in ranked if price(card) == X_COST]
     if spenders and sum(price(card) for card in chosen) < budget:
         # It takes the rest of the turn's points, so it is worth playing only while some remain, and nothing can follow it.

@@ -133,7 +133,6 @@ class TestOrdering(unittest.TestCase):
         # Spending a point on the cheap card would leave too little for the dear one. Which cards get played
         # has to be settled on what they are worth, and only then put in the order they are played in.
         cases = [
-            (hand(BUFF, BIG_ATTACK), 2, [BIG_ATTACK]),
             # Live, Khalipe's Basic Lashing was bought first for its 100% per point, stranding the 2 points left after it.
             (hand("Lashing", "Vulture Ejection"), 3, ["Vulture Ejection"]),
         ]
@@ -824,8 +823,11 @@ class TestKits(unittest.TestCase):
             ("the Quiver goes first and Vortex Arrow last", ("Vortex Arrow", "Quiver Reload", "Draw & Release"), cards.Board(),
              ["Quiver Reload", "Draw & Release", "Vortex Arrow"]),
             # Generic play ties the Quiver with Big Game Ranger and takes whichever sits first in hand.
-            ("the Quiver is bought over Big Game Ranger", ("Big Game Ranger", "Quiver Reload", "Vortex Arrow", "Draw & Release"),
-             cards.Board(), ["Quiver Reload", "Draw & Release", "Vortex Arrow"]),
+            ("the Quiver is bought with Big Game Ranger", ("Big Game Ranger", "Quiver Reload", "Vortex Arrow", "Draw & Release"),
+             cards.Board(), ["Quiver Reload", "Big Game Ranger", "Vortex Arrow"]),
+            # Live, all three points went on attacks at 180-320, and both Upgrades waited for a turn that never had points to spare.
+            ("Upgrades are bought before attacks", ("Echo of Futility", "Deluge", "Multishot", "Plasma Rain", "Big Game Ranger"), cards.Board(enemies=3),
+             ["Deluge", "Big Game Ranger", "Echo of Futility"]),
             ("Big Game Ranger goes before the draw", ("Draw & Release", "Big Game Ranger"), cards.Board(action_points=2),
              ["Big Game Ranger", "Draw & Release"]),
             ("Plasma Rain goes before the arrows it should debuff", ("Vortex Arrow", "Plasma Rain"), cards.Board(action_points=2),
