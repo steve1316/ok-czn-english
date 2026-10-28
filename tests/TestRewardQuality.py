@@ -144,6 +144,13 @@ class TestRewardQuality(unittest.TestCase):
         self.assertEqual(["Prepare for Battle"], generated)
         self.assertLess(len(generated), 10)
 
+    def test_a_free_upgrade_beats_skipping(self):
+        # Live, a reward of Overpower, Mutation: Iron Wall and Distortion: Protective Shout was skipped whole.
+        offer = ["Overpower", "Mutation: Iron Wall", "Distortion: Protective Shout"]
+        for free, expected in ((True, ["Mutation: Iron Wall"]), (False, [])):
+            with self.subTest(free=free):
+                self.assertEqual(expected, rewards.generated_list(FakeTask(offer, set()), rewards.SORTIE_CARD_KEY, free=free))
+
     def test_equipment_is_offered_to_its_own_slot_only(self):
         task = FakeTask(SHOP_EQUIPMENT, {"vanguard", "controller"})
         by_slot = {slot: rewards.generated_list(task, key) for key, slot in rewards.EQUIPMENT_KEYS.items()}
