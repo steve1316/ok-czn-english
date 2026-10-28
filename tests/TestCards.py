@@ -839,6 +839,11 @@ class TestKits(unittest.TestCase):
             ("Black Hole waits for the Futility", ("Black Hole", "Futility"), cards.Board(), ["Futility"]),
             # Pins the hold being released, so it passes with the kit removed.
             ("Black Hole is played once the Futility is gone", ("Black Hole",), cards.Board(), ["Black Hole"]),
+            # Live, both points went on Futility at 160 each. With nothing of Kayron's to feed, the partners' cards come first.
+            ("a lone Futility waits for the partners", ("Futility", "Futility", "Futility", "Multishot", "Bowguard"), cards.Board(action_points=2),
+             ["Multishot", "Bowguard"]),
+            ("Futility still goes first with Brand of Annihilation to feed", ("Futility", "Multishot", "Brand of Annihilation"),
+             cards.Board(action_points=1), ["Futility"]),
         ))
 
     def test_khalipe_lets_vulture_ejection_fire_free(self):
