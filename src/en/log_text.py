@@ -6,6 +6,7 @@ which runs the other way: that one rewrites English read off the screen back int
 compare against.
 """
 
+import logging
 import re
 
 from ok import Logger
@@ -26,6 +27,9 @@ LOG_METHODS = ("log_info", "log_debug", "log_warning", "log_error")
 BY_FIRST_CHARACTER = {}
 ANCHORLESS = ()
 
+# Framework lines dropped before any handler sees them. Dragging the app window posts a config save per step, and ok-script
+# logs every older save it folds away.
+NOISE = ("handler:removing duplicate task",)
 # Stands for a row that has never been reported, so that a genuine None is still a change worth echoing once.
 UNREPORTED = object()
 
@@ -131,6 +135,18 @@ def reporting(original):
     return info_set_in_english
 
 
+def quiet(record):
+    """Drop a framework line that only says the app is busy.
+
+    Args:
+        record: The log record, from ok-script's one logger.
+
+    Returns:
+        False for a line in `NOISE`, so no handler writes it.
+    """
+    return not record.getMessage().startswith(NOISE)
+
+
 def apply():
     """Route every message `ok_tasks/` logs, and every row it reports, through the translation table.
 
@@ -145,6 +161,7 @@ def apply():
     if _patched:
         return
 
+    logging.getLogger("ok").addFilter(quiet)
     try:
         from ok.task.task import BaseTask
     except ImportError:
