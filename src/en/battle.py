@@ -124,6 +124,8 @@ SETTLE_WAIT = 2
 # Quiver Reload. Waited on for up to `SETTLE_WAIT` frames in a row.
 DRAWING = "card(s)"
 DRAWING_REGION = (0.0, 0.35, 0.25, 0.55)
+# The whole column those toasts climb as later effects arrive under them. Live, a Rhapsody's "Draw 1 card(s)" had climbed to (0.102, 0.249).
+FEED_REGION = (0.0, 0.1, 0.25, 0.55)
 # Where upstream's hand prompts read the hand cards they choose between.
 PROMPT_HAND = (0.116, 0.697, 0.859, 0.908)
 # The hand prompt as upstream finds it: its caption, rewritten to Chinese by `ocr_text.py`, over a hand counter reading "5/10".
@@ -293,7 +295,7 @@ def choose(hand, board, refused):
     return min(clearing, key=lambda card: cards.clearing_order(card["name"]), default=None)
 
 
-def was_refused(attempted, copies, hand_names):
+def was_refused(attempted, copies, hand_names, drew=False):
     """Say whether the card tried last frame is still sitting in hand.
 
     How many copies are left is what settles it: one fewer than there were means the game took it. Neither the
@@ -304,11 +306,13 @@ def was_refused(attempted, copies, hand_names):
         attempted: The card name tried last frame, or None when nothing was.
         copies: How many of that card were in hand when its key was pressed.
         hand_names: The names now in hand.
+        drew: Whether the card draws and a draw toast has come up since its key, from `draws_shown`. Live, Inferno Rhapsody drew
+            another Rhapsody from the eight Exorcist's Formation made, and was left for the turn as refused.
 
     Returns:
         True when the game would not play it, so it should be passed over for the rest of the turn.
     """
-    return attempted is not None and hand_names.count(attempted) >= copies
+    return attempted is not None and not drew and hand_names.count(attempted) >= copies
 
 
 def new_turn(before, after, ended):
@@ -392,6 +396,8 @@ class Turn:
         self.retrieved = collections.Counter(retrieved)
         self.attempted = None
         self.attempted_copies = 0
+        # The draw toasts up when that card's key was pressed, so one it brings up can be told from those already there.
+        self.draws_at_press = 0
         self.refused = set()
         # How many frames each card has stayed in hand after its key was pressed, since one can be a frame too soon.
         self.misses = collections.Counter()
@@ -610,6 +616,19 @@ def drawing(task):
     """
     box = text_in_region(task, DRAWING, DRAWING_REGION)
     return box is not None and box.name.strip().casefold().startswith("draw")
+
+
+def draws_shown(task):
+    """Count the "Draw N card(s)" toasts anywhere in the effect feed.
+
+    Args:
+        task: The running task, whose `all_texts` is the current screen.
+
+    Returns:
+        How many are up.
+    """
+    return sum(fold(box.name).startswith("draw") and DRAWING in box.name and in_region(box, FEED_REGION, task.width, task.height)
+               for box in task.all_texts or [])
 
 
 def attribute_handler(utils):
@@ -1198,7 +1217,8 @@ def install():
             return
         turn.hand = list(names)
 
-        if turn.attempted is not None and not was_refused(turn.attempted, turn.attempted_copies, names):
+        drew = bool(cards.DRAW.search(cards.description(turn.attempted or ""))) and draws_shown(task) > turn.draws_at_press
+        if turn.attempted is not None and not was_refused(turn.attempted, turn.attempted_copies, names, drew):
             # Settled once, so a frame that returns before picking again cannot count the same play twice.
             turn.played.append(turn.attempted)
             turn.attempted = None
@@ -1276,6 +1296,7 @@ def install():
                       f"worth {cards.value(name, state):.0f}")
         turn.attempted = name
         turn.attempted_copies = names.count(name)
+        turn.draws_at_press = draws_shown(task)
         tested.played(name)
         if not play_key(task, card["key"]):
             # Live, each unaffordable key waited out its Enter, a few seconds a card. The toast already says it stays in hand.

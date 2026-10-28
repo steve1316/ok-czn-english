@@ -337,6 +337,14 @@ class TestTurnTracking(unittest.TestCase):
     def test_the_last_copy_staying_put_is_a_refusal(self):
         self.assertTrue(battle.was_refused(ATTACK, 2, [ATTACK, ATTACK]))
 
+    def test_a_card_that_drew_its_own_copy_was_played(self):
+        """Live, Inferno Rhapsody drew another Rhapsody into the hand, and was left for the turn as refused."""
+        feed = [FakeBox("Draw 1 card(s)", 0.102, 0.249, width=200), FakeBox("Flame Arts + 1", 0.101, 0.305, width=200),
+                FakeBox("Descent +1", 0.093, 0.470, width=200)]
+        task = types.SimpleNamespace(width=1920, height=1080, all_texts=feed)
+        self.assertEqual(1, battle.draws_shown(task), "the toast had climbed above where a draw still on its way is looked for")
+        self.assertFalse(battle.was_refused("Inferno Rhapsody", 1, ["Inferno Rhapsody", "Amp Therapy"], drew=True))
+
     def test_nothing_attempted_is_not_a_refusal(self):
         self.assertFalse(battle.was_refused(None, 0, [ATTACK]))
 
