@@ -870,7 +870,7 @@ def prompt_progress(task, utils_sortie):
 
 
 def giving_up_order(name, box, kept, board_now, to_top=False):
-    """Order the hand cards a prompt could take: dealt-to-you cards first, Mental Breakdown and kit-kept cards last, the rest by what they do.
+    """Order the hand cards a prompt could take: dealt-to-you cards first, then by what they do, Upgrades, Mental Breakdown and kit-kept cards last.
 
     A card sent to the top of the Draw Pile is drawn again next turn, so there the order flips: the most expensive card first, since it
     is the one this turn's Action Points are least likely to cover, then the best of those, and a dealt-to-you card last.
@@ -893,7 +893,8 @@ def giving_up_order(name, box, kept, board_now, to_top=False):
         # A card that spends every Action Point left costs the most of all.
         price = cards.cost(name)
         return id(box) in kept, breakdown, dealt, -(math.inf if price == cards.X_COST else price), -rating
-    return id(box) in kept, breakdown, not dealt, rating
+    # An Upgrade rates no higher than a basic card, though the turn plays it first for the rest of the fight.
+    return id(box) in kept, breakdown, not dealt, cards.category(name) == cards.SETUP_CATEGORY, rating
 
 
 def boost_order(played):
