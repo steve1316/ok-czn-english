@@ -319,8 +319,9 @@ class Turn:
         # Frames spent waiting on a kit this turn, and whether the last frame was one.
         self.kit_waits = 0
         self.kit_waited = False
-        # Egos fired this turn, and whether holding EP has been logged.
+        # Egos fired this turn, whether a press has already failed to take, and whether holding EP has been logged.
         self.ego_fires = 0
+        self.ego_missed = False
         self.ego_held = False
         # Whether an enemy shows Absolute Invincibility, from `watch_invulnerable`, so the picker holds its attacks.
         self.invulnerable = False

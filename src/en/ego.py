@@ -15,6 +15,7 @@ import numpy as np
 from ok import Logger
 
 from src.en import board, cards
+from src.en.game_battle import CARD_EXHAUSTS
 from src.en.screen import centre_of, frame_of, in_region, lines_in, patch_of, raw_ocr, text_in_region
 
 logger = Logger.get_logger(__name__)
@@ -63,6 +64,8 @@ STRIKE = "strike"
 SETUP = "set-up"
 GUARDS = re.compile(r"Heal|Shield|Damage Reduction", re.I)
 STRIKES = re.compile(r"Damage(?!\s*(?:Amount|Reduction))", re.I)
+# An Ego that does nothing unless a card is Exhausted, as Activate Defense Module's "when a card is Exhausted, 1 Weaken".
+ON_EXHAUST = re.compile(r"\bExhausted\b", re.I)
 SETUPS = re.compile(r"Morale|Fortitude|Vulnerable|Weaken|Draw|Critical|Increase|Counterattack|Mark|\bAP\b", re.I)
 # A guard is fired once the next hit would leave the team below this share of its HP, and a full bar prefers one below the second.
 GUARD_BELOW = 0.30
@@ -248,7 +251,7 @@ def identify(task, utils, key):
     return Ego(name, roles_of(text), text) if text else None
 
 
-def decide(slots, banked, after_hit, invulnerable, attacking, boss):
+def decide(slots, banked, after_hit, invulnerable, attacking, boss, exhausting):
     """Choose the Ego to fire now, if any.
 
     The first rule that applies wins: a guard before a hit the team cannot take, a full bar spent on whatever fits, nothing into an
@@ -261,11 +264,12 @@ def decide(slots, banked, after_hit, invulnerable, attacking, boss):
         invulnerable: Whether an enemy shows Absolute Invincibility this turn.
         attacking: Whether the hand holds an Attack card and Action Points to play it with.
         boss: Whether this is the run's final boss.
+        exhausting: Whether the hand holds a card that Exhausts when played, from `CARD_EXHAUSTS`.
 
     Returns:
         A `(key, ego, reason)` triple, or None to fire nothing.
     """
-    ready = [(key, ego) for key, ego, affordable in slots if affordable and ego is not None]
+    ready = [(key, ego) for key, ego, affordable in slots if affordable and ego is not None and (exhausting or not ON_EXHAUST.search(ego.text))]
     first = {role: next(((key, ego) for key, ego in ready if role in ego.roles), None) for role in (GUARD, STRIKE, SETUP)}
     hurt = after_hit is not None and after_hit < HURT_BELOW
     if after_hit is not None and after_hit < GUARD_BELOW and first[GUARD]:
@@ -318,19 +322,20 @@ def take_turn(task, utils, turn):
     hand = utils._hand_cards(task) or []
     attacking = board.has_action_points(task) and any(cards.category(cards.canonical(card["name"])) == cards.ATTACK_CATEGORY for card in hand)
     boss = bool(getattr(task, "node_status", {}).get(BOSS))
+    exhausting = any(cards.canonical(card["name"]) in CARD_EXHAUSTS for card in hand)
     logger.debug(f"Egos {[(key, ego.name if ego else None, payable) for key, ego, payable in slots]}, EP {banked}, "
-                 f"after the next hit {after_hit}, invulnerable {invulnerable}, attacking {attacking}, boss {boss}")
-    choice = decide(slots, banked, after_hit, invulnerable, attacking, boss)
+                 f"after the next hit {after_hit}, invulnerable {invulnerable}, attacking {attacking}, boss {boss}, exhausting {exhausting}")
+    choice = decide(slots, banked, after_hit, invulnerable, attacking, boss, exhausting)
     if choice is None:
         if invulnerable and not turn.ego_held:
             task.log_info(f"an enemy is invulnerable this turn, holding EP {banked}")
             turn.ego_held = True
         return False
     key, ego, reason = choice
-    return fire(task, utils, turn, key, ego, reason)
+    return fire(task, utils, turn, key, ego, reason, banked)
 
 
-def fire(task, utils, turn, key, ego, reason):
+def fire(task, utils, turn, key, ego, reason, banked):
     """Fire one Ego, first checking a pure guard's preview adds HP or shield.
 
     Args:
@@ -340,12 +345,12 @@ def fire(task, utils, turn, key, ego, reason):
         key: The slot to fire.
         ego: The `Ego` on it.
         reason: Why, for the log.
+        banked: The EP the bar held before the press, from `board.banked_points`.
 
     Returns:
         True, since the frame was spent either way.
     """
     before = team_readout(task) if ego.roles == {GUARD} else None
-    turn.ego_fires += 1
     task.send_key(key)
     task.sleep(PREVIEW_WAIT)
     if before is not None:
@@ -354,8 +359,15 @@ def fire(task, utils, turn, key, ego, reason):
         if after is not None and after[0] <= before[0] and after[1] <= before[1]:
             task.log_info(f"{ego.name} would add nothing to HP {before[0]} and shield {before[1]}, cancelling it")
             cancel_preview(task, utils, key)
+            turn.ego_fires += 1
             return True
     task.log_info(f"firing {ego.name or key} ({', '.join(sorted(ego.roles))}) {reason}")
     task.send_key(CONFIRM_KEY)
     task.sleep(AFTER_FIRE)
+    # A press made while an attack or the turn's opening effects still play is ignored by the game, and the bar keeps its EP.
+    if board.banked_points(frame_of(task)) >= banked and not turn.ego_missed:
+        task.log_info(f"{ego.name or key} did not take, EP still {banked}, so it does not count against the turn")
+        turn.ego_missed = True
+    else:
+        turn.ego_fires += 1
     return True
