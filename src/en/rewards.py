@@ -9,7 +9,7 @@ from contextlib import ExitStack
 
 from ok import Logger
 
-from src.en import cards, quality
+from src.en import cards, piles, quality
 from src.en.battle import PARTY
 from src.en.dashboard import COMBATANTS, UNREAD
 from src.en.handlers import insert_before, loaded, register, replace, standing_in
@@ -59,6 +59,10 @@ def remember_team(task, utils):
         utils: The loaded `utils` module.
     """
     names = [name for name in combatant_names(task, utils) if name]
+    if names and task.node_status.get(piles.READ):
+        # The page has three name columns, so a combatant a Sortie draft added is found by their cards in the deck read on the same trip.
+        on_page = set(map(quality.COMBATANT_INDEX.look_up, names))
+        names += sorted({cards.owner(card) for card in cards.COPIES} - on_page - {None})
     if names:
         show_team(task, names)
     else:

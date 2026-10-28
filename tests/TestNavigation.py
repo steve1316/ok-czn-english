@@ -317,6 +317,11 @@ class TestSortieTeamTrip(unittest.TestCase):
 
             rewards.remember_team(task, utils)
             self.assertEqual({"Arabella", "Veronica", "Mika"}, getattr(task, PARTY))
+            # The page shows three names, so after a restart a drafted fourth comes from their cards in the deck read on the same trip.
+            task.node_status[piles.READ] = True
+            with mock.patch.dict(cards.COPIES, {"Hunting Instincts": {}, "Arcane Rush": {}}, clear=True):
+                rewards.remember_team(task, utils)
+            self.assertEqual({"Arabella", "Veronica", "Mika", "Hugo"}, getattr(task, PARTY))
             clock[0] += navigation.TEAM_RETRY_SECONDS
             self.assertFalse(navigation.handle_open_team(task), "a team read stops the retries")
 
