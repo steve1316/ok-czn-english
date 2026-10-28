@@ -52,6 +52,9 @@ START_ATTACK_REGION = (0.394, 0.779, 0.600, 0.858)
 NO_POINTS = "Not enough AP"
 # Where that toast sits, across the middle of the screen. Measured at (0.502, 0.501).
 NO_POINTS_REGION = (0.30, 0.42, 0.70, 0.58)
+# How often a key's wait looks for that toast, and the most it waits for one to clear, in seconds.
+TOAST_POLL = 0.25
+TOAST_FADE = 2
 # The Action Point digit, a little wider than `board.ACTION_POINTS`. OCR finds it only once the crop is enlarged and padded with black,
 # and then reads every count but most 1s and digits under a skill's flash: 51 of 76 lit frames, from 1 to 6, all of them right.
 POINTS_DIGIT = (0.478, 0.888, 0.538, 0.958)
@@ -412,13 +415,40 @@ class Turn:
 def play_key(task, key):
     """Play the card on a key, with upstream's own timings so both paths feel the same to the game.
 
+    The game answers the key itself with its "Not enough AP." toast, so a card it refuses is left there rather than confirmed and waited on.
+
     Args:
         task: The running task.
         key: The hotkey of the card to play.
+
+    Returns:
+        False when the game refused the card for want of Action Points, True when it was confirmed.
     """
     task.send_key(key)
-    task.sleep(AFTER_KEY)
+    if toast_within(task, AFTER_KEY):
+        # Waited out, since the next frame would read a toast still up as a spent turn.
+        toast_within(task, TOAST_FADE, up=False)
+        return False
     confirm(task)
+    return True
+
+
+def toast_within(task, seconds, up=True):
+    """Watch fresh frames for the game's "Not enough AP." toast to show, or to clear.
+
+    Args:
+        task: The running task, whose sleep drops the frame so each OCR reads a new one.
+        seconds: How long to watch for.
+        up: True to wait for the toast to show, False to wait for it to clear.
+
+    Returns:
+        True as soon as it does, False when the time runs out first.
+    """
+    for _ in range(round(seconds / TOAST_POLL)):
+        task.sleep(TOAST_POLL)
+        if any(fold(NO_POINTS) in fold(box.name) for box in task.ocr(*NO_POINTS_REGION) or []) == up:
+            return True
+    return False
 
 
 def confirm(task):
@@ -1172,7 +1202,8 @@ def install():
             if blind:
                 task.log_info(f"read {len(names)} of {count} cards and none worth playing, trying unread key {blind}")
                 turn.blind.add(blind)
-                play_key(task, blind)
+                if not play_key(task, blind):
+                    task.log_info(f"not enough AP for key {blind}, moving on")
                 return
             if not points:
                 turn.priced_out = [name for name in names if cards.cost(name) > 0 and name not in turn.refused]
@@ -1188,7 +1219,11 @@ def install():
                       f"worth {cards.value(name, state):.0f}")
         turn.attempted = name
         turn.attempted_copies = names.count(name)
-        play_key(task, card["key"])
+        if not play_key(task, card["key"]):
+            # Live, each unaffordable key waited out its Enter, a few seconds a card. The toast already says it stays in hand.
+            task.log_info(f"not enough AP for {name}, moving on")
+            turn.refused.add(name)
+            turn.attempted = None
 
     original_page = utils_sortie.handle_battle_page
 

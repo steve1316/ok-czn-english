@@ -379,6 +379,8 @@ class Pressed:
         self.taps = []
         self.progress = []
         self.prompt_hand = []
+        # What each fresh read of the "Not enough AP." toast's region gives, in turn. Nothing once they run out.
+        self.toasts = []
 
     def send_key(self, key):
         self.keys.append(key)
@@ -386,6 +388,8 @@ class Pressed:
     def ocr(self, *region, **kwargs):
         if region == battle.POINTS_DIGIT:
             return self.points
+        if region == battle.NO_POINTS_REGION:
+            return self.toasts.pop(0) if self.toasts else []
         return self.prompt_hand if region == battle.PROMPT_HAND else self.progress
 
     def box_of_screen(self, *region):
@@ -745,6 +749,15 @@ class TestInstalling(unittest.TestCase):
             # A read that never fills back in is played on regardless.
             utils_sortie._try_all_card_keys(task, 3)
             self.assertEqual(len(pressed) + 2, len(task.keys))
+
+    def test_a_card_the_game_cannot_afford_is_left_on_its_key(self):
+        # Live, each unaffordable key was confirmed and waited on. The toast on the key is enough to move to the next card.
+        with upstream(hand(ATTACK, BIG_ATTACK)) as (utils_sortie, task):
+            task.toasts = [[FakeBox("Not enough AP.", 0.502, 0.501)]]
+            battle.install()
+            utils_sortie._try_all_card_keys(task, 2)
+            utils_sortie._try_all_card_keys(task, 2)
+            self.assertEqual(task.keys, ["2", "1", battle.CONFIRM_KEY])
 
     def test_a_lowered_card_the_data_cannot_place_costs_what_its_digit_reads(self):
         # Live, "rbidenEctasyofVolence" took the assumed cost of 1, and so read as lowered to 0 for a card at 8.
