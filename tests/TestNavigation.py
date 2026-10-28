@@ -278,9 +278,16 @@ class TestSortieTeamTrip(unittest.TestCase):
         task.node_status = {}
         clock = [0.0]
 
+        task.width, task.height = WIDTH, HEIGHT
+
         with mock.patch.object(navigation.time, "monotonic", lambda: clock[0]):
             self.assertFalse(navigation.handle_open_team(task), "off the map there is nothing to tap")
             on_map[0] = True
+            # Live, a restart mid-battle tapped the portraits over the end turn prompt, which ended a turn with a card still playable.
+            for shown in ([FakeBox("04/10", 0.5, 0.97)], [FakeBox("取消", 0.34, 0.60)]):
+                task.all_texts = shown
+                self.assertFalse(navigation.handle_open_team(task), f"{shown[0].name} is not the map")
+            task.all_texts = []
             self.assertTrue(navigation.handle_open_team(task))
             # A pending dialog swallowed the tap, and its own handler needs the next frames to clear it.
             self.assertFalse(navigation.handle_open_team(task))

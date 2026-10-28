@@ -13,10 +13,10 @@ import time
 
 from ok import Logger
 
-from src.en.battle import PARTY
+from src.en.battle import CANCEL, CANCEL_REGION, PARTY
 from src.en.handlers import insert_before, loaded, register, replace, standing_in, wrap
 from src.en.game_data import COMBATANTS
-from src.en.screen import combatant_names
+from src.en.screen import combatant_names, text_in_region
 
 logger = Logger.get_logger(__name__)
 
@@ -39,6 +39,8 @@ TEAM_TAPPED = "_en_team_tapped"
 TEAM_TRIES = 5
 # Seconds between tries. A pending dialog, like the rest screen's, swallows the tap, and the gap lets its own handler clear it first.
 TEAM_RETRY_SECONDS = 5
+# Where a battle's hand counter reads, like "04/10". The map has none, and a restart mid-battle tapped the portraits over the end turn prompt.
+HAND_COUNTER_REGION = (0.45, 0.94, 0.56, 1.0)
 # The handler Sortie's trip runs ahead of, the same place Chaos lists its own.
 SORTIE_ANCHOR = "handle_route_selection"
 
@@ -200,6 +202,9 @@ def handle_open_team(task):
         return False
     now = time.monotonic()
     if tries and now - last < TEAM_RETRY_SECONDS or not utils._get_current_hp_percent(task):
+        return False
+    if text_in_region(task, "/10", HAND_COUNTER_REGION) or text_in_region(task, CANCEL, CANCEL_REGION):
+        # The health bar shows in battle too, and a prompt over the map would take the tap.
         return False
     task.node_status[TEAM_TAPPED] = (tries + 1, now)
     if not tries:
