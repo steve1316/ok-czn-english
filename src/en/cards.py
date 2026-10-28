@@ -8,6 +8,7 @@ hoping. This module replaces the hoping.
 
 import re
 from collections import Counter, namedtuple
+from difflib import SequenceMatcher
 from functools import lru_cache
 from itertools import combinations
 
@@ -273,6 +274,23 @@ def canonical(name, party=frozenset(), deck=frozenset()):
     if archetype:
         return ARCHETYPES.get(archetype.group(1) or "", ARCHETYPE_UNREAD)
     return name
+
+
+def described(name, description):
+    """Tell apart cards whose names differ only by the glyph after a colon, by the effect text read under the name.
+
+    Args:
+        name: The card name the reader produced.
+        description: The effect text the reader produced, from upstream's `recognize_cards`.
+
+    Returns:
+        The card of that family whose text the description is closest to, else the canonical name.
+    """
+    named = canonical(name)
+    family, colon, _ = named.partition(":")
+    kin = [card for card in DESCRIPTIONS if card.startswith(family + ":")] if colon and description else []
+    read = fold(description)
+    return max(kin, key=lambda card: SequenceMatcher(None, fold(text_of(card)), read).ratio(), default=named)
 
 
 def deck_card(stub, deck):

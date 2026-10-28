@@ -331,6 +331,17 @@ class TestReadingNames(unittest.TestCase):
             with self.subTest(description):
                 self.assertEqual(cards.canonical(reading, frozenset(party)), expected)
 
+    def test_an_archetype_on_offer_is_told_apart_by_its_text(self):
+        # Live, on Archetype Resonance's pick none of the three names kept the right glyph, but each effect text read.
+        for reading, description, expected in (
+            ("Archetype:", "Heal67%1AP", "Archetype: ○"),
+            ("Archetype: ∆", "67% ShieldIncrease Damageof next Attack Card byAmount of the first Hit30%(max 300%)", "Archetype: △"),
+            ("Archetype: l", "Draw 1 Archetype cardHeal67%", "Archetype: □"),
+            ("Slash", "100% Damage", "Slash"),
+        ):
+            with self.subTest(reading):
+                self.assertEqual(expected, cards.described(reading, description))
+
     def test_the_deck_settles_a_reading_too_garbled_for_the_roster(self):
         # Live, Annihilation came back as "DarkMistSecretAil", 12 letters short, beside Black Dance in the same deck.
         deck = frozenset({"Dark Mist Secret Art: Annihilation", "Dark Mist Secret Art: Black Dance"})

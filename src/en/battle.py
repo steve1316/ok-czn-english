@@ -57,6 +57,10 @@ CARDS_LEFT_REGION = (0.15, 0.20, 0.85, 0.60)
 # The check's Cancel button, which the catalog reads back as Chinese.
 CANCEL = "取消"
 CANCEL_REGION = (0.15, 0.45, 0.55, 0.80)
+# The title of the pick between created cards that an Ego such as Archetype Resonance raises. Upstream has no handler for it, so it sat 11s
+# for the stuck-screen fallback's random click. Its title reads above the cards' names, which sit at y ~0.29.
+ATTRIBUTE_CHOICE = "Select an attribute"
+ATTRIBUTE_CHOICE_REGION = (0.20, 0.00, 0.80, 0.26)
 # Parked on the task while the hand reads empty under a counter that says it is not: how many times the end of the turn
 # has been called back since, or None once the hand reads again.
 UNREAD_HAND = "_en_unread_hand"
@@ -489,6 +493,41 @@ def out_of_points(task):
     return text_in_region(task, NO_POINTS, NO_POINTS_REGION) is not None
 
 
+def attribute_handler(utils):
+    """Build the handler that answers the pick between created cards with the one the card picker rates highest.
+
+    Args:
+        utils: The loaded `utils` module, for its card reader and click.
+
+    Returns:
+        The handler.
+    """
+
+    def handle_attribute_choice(task):
+        """Take the best of the created cards on offer.
+
+        Args:
+            task: The running task, whose `all_texts` is the current screen.
+
+        Returns:
+            True when a card was taken.
+        """
+        if not text_in_region(task, ATTRIBUTE_CHOICE, ATTRIBUTE_CHOICE_REGION):
+            return False
+        offered = utils.recognize_cards(task, page="attribute choice")
+        if not offered:
+            return False
+        state = cards.Board(health=board.team_after_hit(frame_of(task)))
+        named = [(cards.described(card["name"], card["description"]), card) for card in offered]
+        name, card = max(named, key=lambda pair: cards.value(pair[0], state))
+        task.log_info(f"choosing {name} of {[each for each, _ in named]}")
+        utils._move_and_click(task, card["x"], card["y"])
+        task.sleep(AFTER_KEY)
+        return True
+
+    return handle_attribute_choice
+
+
 def note_hand_read(task, utils_sortie):
     """Remember whether this frame's hand read came up empty while the counter still showed cards.
 
@@ -889,6 +928,7 @@ def install():
         return
     # Before the guard below, so a mode list loaded after the picker went in still gets it. Story loads last.
     insert_before("handle_center_confirm", handle_cards_left)
+    insert_before("handle_card_function_select", attribute_handler(utils))
     if getattr(utils_sortie._try_all_card_keys, "_en_picker", False):
         return
     blind_fallback = utils_sortie._try_all_card_keys
