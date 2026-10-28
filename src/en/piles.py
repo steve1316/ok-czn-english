@@ -6,6 +6,7 @@ Epiphany card by its base text. Upstream never opens the view. This reads it on 
 
 import difflib
 import re
+import time
 from collections import Counter
 
 from ok import Logger
@@ -49,17 +50,24 @@ READ = "_en_piles_read"
 SORTIE_MODE = "SortieMode"
 TAG = "reads the deck before closing"
 # What tapping a card does to the deck on each screen upstream picks cards on: the module holding the function, which it also reads the
-# cards through, the function, and the change. `select_card` serves several screens, so its action decides.
+# cards through, the function, the change, and the column a pick is tapped in when that is not on the card. `select_card` serves several
+# screens, so its action decides. Card Assign reads one card and picks it by tapping the combatant who takes it.
 GAINED, REMOVED, SPARKED, EPIPHANY = "gained", "removed", "chosen for an Epiphany", "took an Epiphany"
-FOLLOWED = (("utils_sortie", "handle_get_card", GAINED), ("utils", "handle_card_reward", GAINED), ("utils", "handle_copy_card_choice", GAINED),
-            ("utils", "handle_view_original", EPIPHANY), ("utils", "select_card", None))
+FOLLOWED = (("utils_sortie", "handle_get_card", GAINED, None), ("utils", "handle_card_reward", GAINED, None),
+            ("utils", "handle_copy_card_choice", GAINED, None), ("utils", "handle_view_original", EPIPHANY, None), ("utils", "select_card", None, None),
+            ("utils", "handle_card_assign", GAINED, 0.756))
 SELECT_ACTIONS = {"移除": REMOVED, "复制": GAINED, "闪光": SPARKED, "灵光": SPARKED}
 READERS = ("recognize_cards", "recognize_cards_in_deck")
 FOLLOW_TAG = "follows the deck"
+# Seconds within which the same screen reading the same cards again means its last pick did not take. Live, an Obtain Card tap and its
+# Confirm came back 2.3s later to the same offer, and the card was counted twice.
+RETRY_SECONDS = 10
 
 _patched = False
 # The version each card chosen for an Epiphany had, by canonical name, until the next screen picks the one it takes instead.
 _sparking = {}
+# The last pick followed, as the screen's function, the cards it read, when, and the `(name, version, by)` changes it made.
+_last_pick = None
 
 
 def signature(text):
@@ -208,28 +216,34 @@ def follow(change, card):
     Args:
         change: What the tap does, one of `GAINED`, `REMOVED`, `SPARKED` and `EPIPHANY`.
         card: The card tapped, as upstream's reader returned it, with its `name` and `description`.
+
+    Returns:
+        The `(name, version, by)` changes made to the deck, so a pick that did not take can be undone.
     """
     name = quality.CARD_INDEX.look_up(card.get("name") or "")
     if name not in cards.CARD_COST:
         logger.debug(f"tapped {card.get('name')!r} but it names no card, so the deck is left as it was")
-        return
+        return []
     version = version_of(name, card.get("description") or "")
     if change == SPARKED:
         _sparking[name] = version
-        return
-    if change == EPIPHANY:
-        cards.change_deck(name, _sparking.pop(name, DESCRIPTIONS.get(name) or ""), -1)
-    cards.change_deck(name, version, -1 if change == REMOVED else 1)
+        return []
+    changes = [(name, _sparking.pop(name, DESCRIPTIONS.get(name) or ""), -1)] if change == EPIPHANY else []
+    changes.append((name, version, -1 if change == REMOVED else 1))
+    for changed in changes:
+        cards.change_deck(*changed)
     logger.info(f"{name} {change}, {'its base' if version == DESCRIPTIONS.get(name) else 'an Epiphany'}: {version!r}")
+    return changes
 
 
-def following(handler, module, change):
+def following(handler, module, change, column=None):
     """Wrap a function that taps cards on a screen, so each card it taps changes the deck.
 
     Args:
         handler: The function to wrap, upstream's or another patch's.
         module: The module the function reads the cards through.
         change: What a tap does, or None to take it from the `action` upstream passes `select_card`.
+        column: The screen x a pick is tapped at when it is not on the card, which picks the one card read. None to match the card's point.
 
     Returns:
         The wrapped function.
@@ -238,12 +252,13 @@ def following(handler, module, change):
         kind = change or SELECT_ACTIONS.get(kwargs.get("action", ""))
         if kind is None or type(task).__name__ != SORTIE_MODE:
             return handler(task, *args, **kwargs)
-        shown = []
+        shown, offer = [], []
 
         def reading(recognise):
             def recognised(*args_, **kwargs_):
                 found = recognise(*args_, **kwargs_)
                 shown[:] = found or []
+                offer[:] = [(card.get("name"), card.get("x"), card.get("y")) for card in shown]
                 return found
             return recognised
 
@@ -251,11 +266,19 @@ def following(handler, module, change):
 
         # Upstream taps a card at the very point its reader returned, so matching the point finds the card.
         def clicked(x=-1, y=-1, *args_, **kwargs_):
+            global _last_pick
             result = click(x, y, *args_, **kwargs_)
             card = next((card for card in shown if (card.get("x"), card.get("y")) == (x, y)), None)
+            if card is None and column is not None and x == column and len(shown) == 1:
+                card = shown[0]
             if card is not None:
                 shown.remove(card)
-                follow(kind, card)
+                now = time.monotonic()
+                if _last_pick and _last_pick[:2] == (handler, offer) and now - _last_pick[2] < RETRY_SECONDS:
+                    logger.info(f"the same {len(offer)} card(s) are on offer again, so the last pick did not take and is undone")
+                    for name, version, by in _last_pick[3]:
+                        cards.change_deck(name, version, -by)
+                _last_pick = (handler, list(offer), now, follow(kind, card))
             return result
 
         readers = {name: reading(getattr(module, name)) for name in READERS if name in vars(module)}
@@ -275,10 +298,10 @@ def apply():
         utils_chaos = loaded("utils_chaos")
         if utils_chaos is not None:
             wrap(utils_chaos, "handle_archive_target_member", lambda handler: reading_the_deck(handler, utils_chaos), TAG)
-        for module_name, name, change in FOLLOWED:
+        for module_name, name, change, column in FOLLOWED:
             module = loaded(module_name)
             if module is not None:
-                wrap(module, name, lambda handler, module=module, change=change: following(handler, module, change), FOLLOW_TAG)
+                wrap(module, name, lambda handler, module=module, change=change, column=column: following(handler, module, change, column), FOLLOW_TAG)
 
     register(install)
     _patched = True

@@ -207,11 +207,31 @@ class TestRewardQuality(unittest.TestCase):
         # The real `_move_and_click`, so the deck still follows if upstream stops tapping a card at the point its reader returned.
         with standing_in(utils_sortie, find_box_at_point=lambda task, x, y: types.SimpleNamespace(name=boxes.get((x, y), "")),
                          recognize_cards=lambda task, page: offer, _get_config_value=lambda task, key, default: ["Annoying"]):
-            piles.following(utils_sortie.handle_get_card, utils_sortie, piles.GAINED)(task)
-        self.assertEqual({"Annoying": sparked}, cards.DECK)
+            obtain = piles.following(utils_sortie.handle_get_card, utils_sortie, piles.GAINED)
+            # Live, the first tap and its Confirm did not take, the screen came back with the same offer, and the card was counted twice.
+            obtain(task)
+            obtain(task)
+        self.assertEqual({"Annoying": Counter({sparked: 1})}, cards.COPIES)
+
+    def test_a_card_assigned_to_a_combatant_joins_the_deck(self):
+        # Live, a Wanderer Arbitum handed out on Card Assign never reached the deck, since the pick taps the combatant, not the card.
+        card = {"name": "Annoying", "description": DESCRIPTIONS["Annoying"], "x": 0.17, "y": 0.31}
+        title = types.SimpleNamespace(name="请选择要接受卡牌的主战员")
+        level = types.SimpleNamespace(x=0, y=HEIGHT * 0.4, width=10, height=10)
+        task = type("SortieMode", (), {"sleep": lambda self, seconds: None, "log_info": lambda self, *args, **kwargs: None, "all_texts": [],
+                                       "width": WIDTH, "height": HEIGHT, "move_relative": lambda self, x, y: None, "click": lambda self, x, y: None})()
+        self.addCleanup(cards.use_deck, {})
+        # The real handler and `_move_and_click`, so the deck still follows if upstream moves the combatant column.
+        with standing_in(utils, find_box_at_point=lambda task, x, y: title if (x, y) == (0.863, 0.133) else None, _get_game_text=lambda task, text: text,
+                         recognize_cards=lambda task, region, page: [card], _get_card_list=lambda task, key: [],
+                         _get_card_reward_priority=lambda task: ["Annoying"], _find_member_level_tags=lambda task, region, page: [level],
+                         _find_target_member_index=lambda task, levels, region: 0, _member_deck_state=lambda task: {},
+                         _record_neutral_card=lambda task: None):
+            piles.following(utils.handle_card_assign, utils, piles.GAINED, next(column for *_, column in piles.FOLLOWED if column))(task)
+        self.assertEqual({"Annoying": DESCRIPTIONS["Annoying"]}, cards.DECK)
 
     def test_every_screen_that_changes_the_deck_is_still_there(self):
-        for module_name, name, _ in piles.FOLLOWED:
+        for module_name, name, *_ in piles.FOLLOWED:
             with self.subTest(name):
                 module = {"utils": utils, "utils_sortie": utils_sortie}[module_name]
                 self.assertTrue(callable(getattr(module, name, None)))
