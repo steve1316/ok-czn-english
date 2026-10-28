@@ -199,21 +199,27 @@ class TestRewardQuality(unittest.TestCase):
     def test_a_picked_reward_joins_the_deck(self):
         # Live, an Annoying taken mid-layer was valued by its base text until the next layer's read, though the screen showed its Epiphany.
         sparked = EPIPHANIES["Annoying"][-1]
-        offer = [{"name": "Annoying", "description": sparked, "x": 0.7375, "y": 0.3472}, {"name": "Ice Fragment", "description": "", "x": 0.5, "y": 0.3472}]
         boxes = {rewards.OBTAIN_TITLE_AT: rewards.OBTAIN_TITLE, (0.883, 0.131): "请选择1张要获得的卡牌"}
         task = type("SortieMode", (), {"sleep": lambda self, seconds: None, "log_info": lambda self, *args, **kwargs: None,
                                        "move_relative": lambda self, x, y: None, "click": lambda self, x, y: None})()
         self.addCleanup(cards.use_deck, {})
-        # The real `_move_and_click`, so the deck still follows if upstream stops tapping a card at the point its reader returned.
-        with standing_in(utils_sortie, find_box_at_point=lambda task, x, y: types.SimpleNamespace(name=boxes.get((x, y), "")),
-                         recognize_cards=lambda task, page: offer, _get_config_value=lambda task, key, default: ["Annoying"]):
-            obtain = piles.following(utils_sortie.handle_get_card, utils_sortie, piles.GAINED)
-            # Live, the first tap and its Confirm did not take, the screen came back with the same offer, and the card was counted twice.
-            # An Epiphany screen came back the same way with its cards moved and one name misread.
-            obtain(task)
-            offer[1] = {**offer[1], "name": "Ice Frao", "x": 0.2}
-            obtain(task)
-        self.assertEqual({"Annoying": Counter({sparked: 1})}, cards.COPIES)
+        # Live, the first tap and its Confirm did not take, the screen came back with the same offer, and the card was counted twice.
+        # An Epiphany screen came back the same way with its cards moved and one name misread. A second pick that takes another card is no
+        # retry: live, Photo Time was undone when Gear Bag followed it, though both took.
+        for second, misread, expected in (("Annoying", "Ice Frao", {"Annoying": 1}), ("Ice Fragment", "Ice Fragment", {"Annoying": 1, "Ice Fragment": 1})):
+            with self.subTest(second=second):
+                cards.use_deck({})
+                offer = [{"name": "Annoying", "description": sparked, "x": 0.7375, "y": 0.3472}, {"name": "Ice Fragment", "description": "", "x": 0.5, "y": 0.3472}]
+                priority = ["Annoying"]
+                # The real `_move_and_click`, so the deck still follows if upstream stops tapping a card at the point its reader returned.
+                with standing_in(utils_sortie, find_box_at_point=lambda task, x, y: types.SimpleNamespace(name=boxes.get((x, y), "")),
+                                 recognize_cards=lambda task, page: offer, _get_config_value=lambda task, key, default: priority),                         standing_in(piles, _last_pick=None):
+                    obtain = piles.following(utils_sortie.handle_get_card, utils_sortie, piles.GAINED)
+                    obtain(task)
+                    offer[1] = {**offer[1], "name": misread, "x": 0.2}
+                    priority[:] = [second]
+                    obtain(task)
+                self.assertEqual(expected, {name: sum(copies.values()) for name, copies in cards.COPIES.items()})
 
     def test_two_cards_taken_on_one_visit_both_count(self):
         # A screen that removes two cards taps both on one visit, which must not pass for a retry of the first.

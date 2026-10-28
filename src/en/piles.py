@@ -60,8 +60,8 @@ FOLLOWED = (("utils_sortie", "handle_get_card", GAINED, None), ("utils", "handle
 SELECT_ACTIONS = {"移除": REMOVED, "复制": GAINED, "闪光": SPARKED, "灵光": SPARKED}
 READERS = ("recognize_cards", "recognize_cards_in_deck")
 FOLLOW_TAG = "follows the deck"
-# Seconds within which the same screen offering the same cards again means its last pick did not take. Live, an Obtain Card pick came
-# back 2.3s later and an Epiphany pick 1.1s later, each counted twice. Two Claims on one reward screen were 6s apart.
+# Seconds within which the same screen offering the same cards again, and the same card tapped, means its last pick did not take. Live, an
+# Obtain Card pick came back 2.3s later and an Epiphany pick 1.1s later, each counted twice. Two Claims on one reward screen were 6s apart.
 RETRY_SECONDS = 5
 
 _patched = False
@@ -304,7 +304,9 @@ def following(handler, module, change, column=None):
             shown.remove(card)
             last, now = _last_pick, time.monotonic()
             if last is None or last.visit is not visit:
-                if last and last.handler is handler and now - last.at < RETRY_SECONDS and offered_again(last.offer, offer):
+                # A second pick off the same offer takes another card. Live, Gear Bag 2.3s after Photo Time undid Photo Time, though both took.
+                again = quality.CARD_INDEX.look_up(card.get("name") or "") in {name for name, *_ in last.changes} if last else False
+                if again and last.handler is handler and now - last.at < RETRY_SECONDS and offered_again(last.offer, offer):
                     logger.info(f"the same {len(offer)} card(s) are on offer again, so the last pick did not take and is undone")
                     for name, version, by in reversed(last.changes):
                         cards.change_deck(name, version, -by)
