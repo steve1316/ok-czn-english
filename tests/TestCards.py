@@ -989,6 +989,8 @@ class TestKits(unittest.TestCase):
             ("Last-Ditch Assault waits for bullets", ("Last-Ditch Assault", "Dirge Bullet", "Dirge Bullet", "Annihilation Shot"), cards.Board(),
              ["Annihilation Shot"]),
             ("Last-Ditch Assault plays with five bullets", ("Last-Ditch Assault", *bullets), cards.Board(), ["Last-Ditch Assault"]),
+            # Live, it waited on two bullets with nothing else to buy, and the turn ended with 3 AP unspent.
+            ("or with the points to spare", ("Last-Ditch Assault", "Dirge Bullet", "Dirge Bullet"), cards.Board(), ["Last-Ditch Assault"]),
             # Generic play buys the payoffs by value, Last-Ditch Assault first, so it discards the bullets the others count.
             ("the payoffs go Ballad, Instant Judgment, Last-Ditch", ("Last-Ditch Assault", "Instant Judgment", "Ballad of Pitch Black", *bullets),
              cards.Board(), ["Ballad of Pitch Black", "Instant Judgment", "Last-Ditch Assault"]),

@@ -110,7 +110,7 @@ def phase(name, board, base):
 
 
 def fodder(opener, name, board):
-    """Say whether any kit in play wants a prompt to give up a card first.
+    """Rank a card for a prompt to give up by what the kits in play say, highest first.
 
     Args:
         opener: The card whose play raised the prompt, or None when none is known.
@@ -118,9 +118,9 @@ def fodder(opener, name, board):
         board: The `cards.Board` of the hand on offer.
 
     Returns:
-        True to give it up first.
+        Above 0 to give it up first, below 0 to give it up last, 0 when no kit cares or no opener is known.
     """
-    return opener is not None and any(kit.fodder(opener, name, board) for kit in active(board.hand))
+    return 0 if opener is None else sum(kit.fodder(opener, name, board) for kit in active(board.hand))
 
 
 def waiting(names, count):

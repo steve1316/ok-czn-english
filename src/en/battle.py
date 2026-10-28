@@ -930,7 +930,7 @@ def giving_up_order(name, box, kept, board_now, to_top=False, opener=None):
         price = cards.cost(name)
         return id(box) in kept, breakdown, dealt, -(math.inf if price == cards.X_COST else price), -rating
     # An Upgrade rates no higher than a basic card, though the turn plays it first for the rest of the fight.
-    return not kits.fodder(opener, name, board_now), id(box) in kept, breakdown, not dealt, cards.category(name) == cards.SETUP_CATEGORY, rating
+    return -kits.fodder(opener, name, board_now), id(box) in kept, breakdown, not dealt, cards.category(name) == cards.SETUP_CATEGORY, rating
 
 
 def boost_order(played):
