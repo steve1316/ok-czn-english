@@ -358,6 +358,13 @@ class TestDeckRead(unittest.TestCase):
         cards.use_deck({"Experienced Strike": {SHIELD_GAIN, DESCRIPTIONS["Experienced Strike"]}})
         self.assertEqual(base, cards.features("Experienced Strike"))
 
+    def test_a_divine_epiphany_keeps_its_lines(self):
+        # Read live off a card holding Diallos's Epiphany, its lines out of order. Without them the deck stored the plain base.
+        text = ("Exhaust ]higher non-Unique DellangCreate 1 random 1-Cost orFor 1 turn, change Cost ofShop card(s)those cards to 0Morale 1"
+                "*Create 2. Activation Core")
+        base = DESCRIPTIONS["Mutation: Prepare for Battle"]
+        self.assertEqual(f"{base}\nMorale 1\nCreate 2 Activation Core", piles.version_of("Mutation: Prepare for Battle", text))
+
 
 
 class TestEpiphanyChoice(unittest.TestCase):

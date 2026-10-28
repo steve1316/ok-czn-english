@@ -13,7 +13,7 @@ from typing import NamedTuple
 from ok import Logger
 
 from src.en import cards, quality
-from src.en.game_text import DESCRIPTIONS, EPIPHANIES
+from src.en.game_text import DESCRIPTIONS, DIVINE_EPIPHANIES, DIVINE_SHARED, EPIPHANIES
 from src.en.handlers import loaded, register, standing_in, wrap
 from src.en.quality import fold
 from src.en.screen import PAGE_CLOSE, centre_of, lines_in, raw_ocr, text_in_region
@@ -45,6 +45,11 @@ MATCH_FLOOR = 0.5
 # A keyword tag like "[Unique / Initiation]", which the data keeps out of a card's text.
 KEYWORD_TAGS = re.compile(r"\[[^\]]*\]")
 NOT_A_LETTER = re.compile(r"[^a-z]")
+NOT_ALPHANUMERIC = re.compile(r"[^a-z0-9]")
+# A run shorter than this that a read shares with its version is chance, so it is left over for the Divine Epiphany lines.
+COVERED_RUN = 4
+# Stands in for a version's letters once a read has used them, so a later run can neither reuse nor bridge them.
+USED = "|"
 # Holds in `node_status` that this layer's deck has been read. Upstream rebuilds `node_status` as a layer starts.
 READ = "_en_piles_read"
 # Only Sortie reads the deck, though Chaos runs the same capture.
@@ -107,7 +112,8 @@ def version_of(name, text):
         text: The card's effect text as read.
 
     Returns:
-        The data's text for the closest version: the base, or one of its `EPIPHANIES`. The base when nothing comes close.
+        The data's text for the closest version: the base, or one of its `EPIPHANIES`. The base when nothing comes close. Any Divine
+        Epiphany lines the card holds follow it.
     """
     base = DESCRIPTIONS.get(name) or ""
     read = signature(text)
@@ -116,7 +122,47 @@ def version_of(name, text):
         score = difflib.SequenceMatcher(None, read, signature(version)).ratio()
         if score > best_score:
             best, best_score = version, score
-    return best
+    return "\n".join((best, *divine_lines(text, best)))
+
+
+def divine_lines(text, version):
+    """Find the Divine Epiphany lines a card's text holds under its own wording.
+
+    A Divine Epiphany adds one of `DIVINE_SHARED` and one of its god's lines. Only the letters the version leaves unmatched are searched, so
+    the card's own wording is never taken for one, and lines that read alike are told apart by their numbers. The reader runs wrapped lines
+    together out of order, so the version is matched in any order, its longest runs first.
+
+    Args:
+        text: The card's effect text as read.
+        version: The data's text for the version `version_of` matched it to.
+
+    Returns:
+        The lines found, the shared one first.
+    """
+    leftover, wording = [signature(text)], signature(version)
+    while True:
+        runs = [(difflib.SequenceMatcher(None, part, wording, autojunk=False).find_longest_match(), part) for part in leftover]
+        run, part = max(runs, key=lambda each: each[0].size)
+        if run.size < COVERED_RUN:
+            break
+        leftover.remove(part)
+        leftover.extend((part[:run.a], part[run.a + run.size:]))
+        wording = wording[:run.b] + USED + wording[run.b + run.size:]
+    exact = NOT_ALPHANUMERIC.sub("", text.lower())
+    gods = sorted({line for lines in DIVINE_EPIPHANIES.values() for line in lines})
+    # Longest wording first, so "1 Morale, 1 Resolve" is not split into two shorter lines.
+    candidates = sorted(((pool, line) for pool, lines in enumerate((DIVINE_SHARED, gods)) for line in lines),
+                        key=lambda each: (-len(signature(each[1])), NOT_ALPHANUMERIC.sub("", each[1].lower()) not in exact))
+    found = {}
+    for pool, line in candidates:
+        wording = signature(line)
+        part = next((part for part in leftover if wording in part), None)
+        if pool in found or part is None:
+            continue
+        found[pool] = line
+        leftover.remove(part)
+        leftover.extend(part.split(wording, 1))
+    return [found[pool] for pool in sorted(found)]
 
 
 def cards_on_page(task):
