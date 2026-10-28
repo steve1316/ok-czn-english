@@ -902,7 +902,7 @@ def prompt_progress(task, utils_sortie):
     return (int(read.group(1)), int(read.group(2)), PROMPT_TOP in caption.name, from_pile, PROMPT_OPTIONAL in caption.name) if read else None
 
 
-def giving_up_order(name, box, kept, board_now, to_top=False):
+def giving_up_order(name, box, kept, board_now, to_top=False, opener=None):
     """Order the hand cards a prompt could take: dealt-to-you cards first, then by what they do, Upgrades, Mental Breakdown and kit-kept cards last.
 
     A card sent to the top of the Draw Pile is drawn again next turn, so there the order flips: the most expensive card first, since it
@@ -914,6 +914,7 @@ def giving_up_order(name, box, kept, board_now, to_top=False):
         kept: The `id` of every box a kit is keeping, from `kept_boxes`.
         board_now: A `cards.Board` to rate the card against.
         to_top: Whether the prompt sends the card to the top of the Draw Pile, from `prompt_progress`.
+        opener: The card whose play raised the prompt, from `Turn.attempted`, for a kit that feeds it certain cards first.
 
     Returns:
         A sort key, the card best taken being smallest.
@@ -927,7 +928,7 @@ def giving_up_order(name, box, kept, board_now, to_top=False):
         price = cards.cost(name)
         return id(box) in kept, breakdown, dealt, -(math.inf if price == cards.X_COST else price), -rating
     # An Upgrade rates no higher than a basic card, though the turn plays it first for the rest of the fight.
-    return id(box) in kept, breakdown, not dealt, cards.category(name) == cards.SETUP_CATEGORY, rating
+    return not kits.fodder(opener, name, board_now), id(box) in kept, breakdown, not dealt, cards.category(name) == cards.SETUP_CATEGORY, rating
 
 
 def boost_order(played):
@@ -1047,7 +1048,8 @@ def answer_prompt(task, utils_sortie, chosen, need, to_top=False, from_pile=Fals
         doing = "boosting"
     else:
         kept = kept_boxes([box for _, box in hand])
-        prompt.tapped, box = min(hand, key=lambda card: giving_up_order(*card, kept, board_now, to_top))
+        opener = turn.attempted if turn else None
+        prompt.tapped, box = min(hand, key=lambda card: giving_up_order(*card, kept, board_now, to_top, opener))
         doing = "moving to the top" if to_top else "giving up"
     task.log_info(f"hand prompt reads {chosen}/{need}, {doing} {prompt.tapped}")
     x, y = centre_of(box, task.width, task.height)

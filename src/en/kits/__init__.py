@@ -109,6 +109,20 @@ def phase(name, board, base):
     return base
 
 
+def fodder(opener, name, board):
+    """Say whether any kit in play wants a prompt to give up a card first.
+
+    Args:
+        opener: The card whose play raised the prompt, or None when none is known.
+        name: A hand card the prompt could take.
+        board: The `cards.Board` of the hand on offer.
+
+    Returns:
+        True to give it up first.
+    """
+    return opener is not None and any(kit.fodder(opener, name) for kit in active(board.hand))
+
+
 def waiting(names, count):
     """Find a kit that wants the turn to sit for a frame.
 

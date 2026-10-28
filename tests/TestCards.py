@@ -977,6 +977,11 @@ class TestKits(unittest.TestCase):
         self.plays((
             # Generic play spends a point on the bullet, which would have fired for free at turn end.
             ("a bullet is never played", ("Dirge Bullet", "Annihilation Shot"), cards.Board(), ["Annihilation Shot"]),
+            # Live, the Finale bullet had no owner, so the kit never saw it and spent a point on it.
+            ("nor is the Finale bullet", ("Dirge Bullet: Finale", "Annihilation Shot"), cards.Board(), ["Annihilation Shot"]),
+            # Live, it opened every turn for free, and its discard took the cards the points went on to want.
+            ("Flower of Devoured Fate goes last", ("Annihilation Shot", "Echo of Sorrow", "Flower of Devoured Fate"), cards.Board(),
+             ["Echo of Sorrow", "Annihilation Shot", "Flower of Devoured Fate"]),
             # Generic play buys the 300% card on sight, with two bullets for it to count.
             ("Last-Ditch Assault waits for bullets", ("Last-Ditch Assault", "Dirge Bullet", "Dirge Bullet", "Annihilation Shot"), cards.Board(),
              ["Annihilation Shot"]),

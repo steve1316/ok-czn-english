@@ -1230,6 +1230,13 @@ class TestHandPrompt(unittest.TestCase):
                 task = self.frames("0/1", screens=(live,))
                 self.assertEqual([(taken, round(0.80 + battle.CARD_BODY, 3))], task.taps)
 
+    def test_flower_of_devoured_fate_is_fed_a_bullet_first(self):
+        # Live, it gave up Predator's Blade and Annihilation Shot every turn, though a bullet fed to it fires and comes back.
+        live = (FakeBox("请选择2张卡牌", 0.5, 0.111, width=600), FakeBox("04/10", 0.505, 0.971), FakeBox("Annihilation Shot", 0.285, 0.80),
+                FakeBox("Dirge Bullet", 0.40, 0.80), FakeBox("Echo of Sorrow", 0.55, 0.80))
+        task = self.frames("0/2", screens=(live,), played="Flower of Devoured Fate")
+        self.assertEqual([(0.40, round(0.80 + battle.CARD_BODY, 3))], task.taps)
+
     def test_a_pick_to_place_in_hand_takes_the_best_card(self):
         # Live, Nia's Curiosity offered two Amp Therapy and an Inferno Rhapsody, and sat 11s for the stuck-screen fallback's random click.
         offered = [{"name": name, "description": "", "x": x, "y": 0.33} for name, x in (("Amp Therapy", 0.26), ("Amp Therapy", 0.51), ("Inferno Rhapsody", 0.76))]
