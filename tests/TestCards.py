@@ -382,9 +382,9 @@ class TestKits(unittest.TestCase):
     def test_owen_lands_wind_charge_on_an_attack(self):
         """Wind Charge adds a hit to Owen's next attack, and Wind Riding fetches it back from the discard pile."""
         self.plays((
-            # Generic play spends a point on a hit no Owen attack will take.
-            ("Wind Charge waits for an Owen attack", ("Wind Charge", "Weapon Block"), cards.Board(), ["Weapon Block"]),
-            ("Break Armor goes first, so it does not take the hit", ("Wind Charge", "Break Armor"), cards.Board(), ["Break Armor"]),
+            # Live, it was held with a point to spare, though its hit waits for Owen's next attack on a later turn.
+            ("Wind Charge banks its hit with no Owen attack in hand", ("Wind Charge", "Weapon Block"), cards.Board(), ["Wind Charge", "Weapon Block"]),
+            ("Break Armor goes first, so it does not take the hit", ("Wind Charge", "Break Armor"), cards.Board(), ["Break Armor", "Wind Charge"]),
             ("Wind Charge lands between Break Armor and the attack", ("Wind Charge", "Gale Strike", "Break Armor"),
              cards.Board(action_points=4), ["Break Armor", "Wind Charge", "Gale Strike"]),
             # Generic play buys the 100% attack over a shield worth 90.
