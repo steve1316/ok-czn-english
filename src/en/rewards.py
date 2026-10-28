@@ -5,12 +5,14 @@ because reading the team off the screen is what fills it - `src/en/dashboard.py`
 its place in the table and what it says before it has been read.
 """
 
+from contextlib import ExitStack
+
 from ok import Logger
 
 from src.en import cards, quality
 from src.en.battle import PARTY
 from src.en.dashboard import COMBATANTS, UNREAD
-from src.en.handlers import insert_before, loaded, register, replace
+from src.en.handlers import insert_before, loaded, register, replace, standing_in
 from src.en.navigation import team_pending
 from src.en.overrides import FARMED_COMBATANT
 from src.en.screen import combatant_names, same_line
@@ -292,15 +294,36 @@ def after_the_team(handler, utils_sortie):
     return handle_get_card
 
 
+def spelled_out(recognise):
+    """Wrap a card reader so each card carries the client's own spelling of its name.
+
+    The filled-in lists hold that spelling, and upstream picks by plain containment in the name it read, so live a
+    Black Dance read as `Back Dance` matched nothing and the reward was skipped.
+
+    Args:
+        recognise: The module's own `recognize_cards`.
+
+    Returns:
+        The replacement reader.
+    """
+    def recognised(*args, **kwargs):
+        found = recognise(*args, **kwargs)
+        for card in found or []:
+            card["name"] = card.get("name") and quality.CARD_INDEX.look_up(card["name"]) or card.get("name")
+        return found
+
+    return recognised
+
+
 def with_generated_lists(handler, modules):
-    """Run a handler with the empty priority lists filled in for the length of the call.
+    """Run a handler with the empty priority lists filled in, and the card names spelled the client's way, for the length of the call.
 
     Scoping it to the call is what keeps this out of the event handler, which prepends the same equipment
     lists when it ranks options - filling them in there would make every event prefer an equipment option.
 
     Args:
         handler: The upstream handler to wrap.
-        modules: The modules whose `_get_config_value` the handler resolves through.
+        modules: The modules whose `_get_config_value` and `recognize_cards` the handler resolves through.
 
     Returns:
         The wrapped handler.
@@ -308,14 +331,14 @@ def with_generated_lists(handler, modules):
     free = handler.__name__ in FREE
 
     def wrapped(task):
-        originals = [(module, module._get_config_value) for module in modules]
-        for module, original in originals:
-            module._get_config_value = filling_in(original, module.__name__, free)
-        try:
+        with ExitStack() as stack:
+            for module in modules:
+                # Read before the stand-ins go up, so each wraps the module's own reader rather than itself.
+                stand_ins = {"_get_config_value": filling_in(module._get_config_value, module.__name__, free)}
+                if "recognize_cards" in vars(module):
+                    stand_ins["recognize_cards"] = spelled_out(module.recognize_cards)
+                stack.enter_context(standing_in(module, **stand_ins))
             return handler(task)
-        finally:
-            for module, original in originals:
-                module._get_config_value = original
 
     # A distinct name is what makes installing twice a no-op: `replace` matches by name, so once the list
     # holds this, nothing named after the original is left for a later install to wrap again.

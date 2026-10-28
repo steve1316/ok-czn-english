@@ -181,6 +181,18 @@ class TestRewardQuality(unittest.TestCase):
                     self.assertTrue(handler(task))
                     self.assertEqual(picks, bool(picked))
 
+    def test_a_misread_reward_is_still_picked(self):
+        # Live, Black Dance was read as `Back Dance`, so upstream found no listed name in it and skipped the reward.
+        offer = [{"name": "Dark Mist Secret Art: Back Dance", "x": 0.7375, "y": 0.3472}]
+        boxes = {rewards.OBTAIN_TITLE_AT: rewards.OBTAIN_TITLE, (0.883, 0.131): "请选择1张要获得的卡牌"}
+        clicks = []
+        task = types.SimpleNamespace(sleep=lambda seconds: None, log_info=lambda *args, **kwargs: None)
+        with standing_in(utils_sortie, find_box_at_point=lambda task, x, y: types.SimpleNamespace(name=boxes.get((x, y), "")),
+                         recognize_cards=lambda task, page: [dict(card) for card in offer], _move_and_click=lambda task, x, y: clicks.append((x, y)),
+                         _get_config_value=lambda task, key, default: ["Dark Mist Secret Art: Black Dance"]):
+            rewards.with_generated_lists(utils_sortie.handle_get_card, [utils_sortie])(task)
+        self.assertEqual((0.7375, 0.3472), clicks[0])
+
     def test_equipment_is_offered_to_its_own_slot_only(self):
         task = FakeTask(SHOP_EQUIPMENT, {"vanguard", "controller"})
         by_slot = {slot: rewards.generated_list(task, key) for key, slot in rewards.EQUIPMENT_KEYS.items()}
