@@ -629,7 +629,9 @@ def note_hand_read(task, utils_sortie):
     count = utils_sortie._read_hand_count(task)
     if not count:
         return count
-    if utils_sortie._hand_card_names(task):
+    # A card raised by a blind key shows its rules text in the name band, and that key still waits on its Enter.
+    blind = getattr(task, BLIND, None)
+    if utils_sortie._hand_card_names(task) and not (blind and blind.key and not blind.confirmed):
         setattr(task, UNREAD_HAND, None)
         setattr(task, BLIND, None)
     elif getattr(task, UNREAD_HAND, None) is None:

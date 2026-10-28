@@ -885,6 +885,22 @@ class TestCallingBackTheTurn(unittest.TestCase):
             task.all_texts = list(CARDS_LEFT_PROMPT)
             self.assertFalse(cards_left(task))
 
+    def test_a_blind_key_is_confirmed_over_the_raised_cards_text(self):
+        # Live, the card key 1 raised read as a hand of "Incinerate: Create", its Enter was dropped, and `e` did nothing for 20 frames.
+        with upstream([]) as (utils_sortie, task):
+            task.counter = 3
+            battle.install()
+            handlers = handlers_of(utils_sortie)
+            page = handlers["handle_battle_page"]
+            page(task)
+            task.all_texts = list(CARDS_LEFT_PROMPT)
+            self.assertTrue(handlers["handle_cards_left"](task))
+            task.all_texts = []
+            page(task)
+            utils_sortie._hand_card_names = lambda _: ["Incinerate: Create"]
+            page(task)
+            self.assertEqual(task.keys, ["1", battle.CONFIRM_KEY])
+
 
 class TestEgoChoice(unittest.TestCase):
     """Which Ego skill gets fired. Upstream picks one of the three at random, affordable or not."""
