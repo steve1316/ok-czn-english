@@ -15,7 +15,9 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from tests.fakes import FakeBox as Box  # noqa: E402
 
-from src.en.draft import DRAFTED, ROLES, badges, choose, confirming_our_pick, rank, rerollable, role_for, role_of, wanted  # noqa: E402
+from src.en.battle import PARTY  # noqa: E402
+from src.en.dashboard import COMBATANTS  # noqa: E402
+from src.en.draft import DRAFTED, ROLES, badges, choose, confirming_our_pick, drafting, rank, rerollable, role_for, role_of, wanted  # noqa: E402
 from src.en.game_quality import COMBATANT_ROLE  # noqa: E402
 
 WIDTH, HEIGHT = 1920, 1080
@@ -136,6 +138,24 @@ class TestDraft(unittest.TestCase):
         task.node_status = {}
         self.assertTrue(handle_confirm(task))
         self.assertEqual(2, len(confirmed))
+
+    def test_a_pick_whose_confirm_did_not_take_is_picked_again(self):
+        """Live, Mika's Confirm did not take, so the next pass counted her as joined and took Chizuru instead."""
+        screen = draft_screen(roles=("Healing", "攻击力", "攻击力"), counters=("0/1", "0/1", "0/1"))
+        offered = [slot(name, x) for name, (_, x) in zip(("Mika", "Chizuru", "Luke"), CARDS)]
+        utils = types.SimpleNamespace(find_box_at_point=lambda task, x, y: types.SimpleNamespace(name="请选择加入的主战员"),
+                                      _get_game_text=lambda task, text: text, _get_card_list=lambda task, key: [],
+                                      _move_and_click=lambda task, x, y: None)
+        handle_member_draft = drafting(utils, types.SimpleNamespace(_read_member_slots=lambda task: offered))
+        task = types.SimpleNamespace(width=WIDTH, height=HEIGHT, all_texts=screen.all_texts, node_status={}, info={},
+                                     log_info=lambda message: None, sleep=lambda seconds: None)
+        task.info_set = task.info.__setitem__
+        setattr(task, PARTY, frozenset({"Owen", "Khalipe"}))
+
+        for _ in range(2):
+            self.assertTrue(handle_member_draft(task))
+        self.assertEqual("Mika", task.node_status[DRAFTED])
+        self.assertEqual("Khalipe, Owen, Mika", task.info[COMBATANTS])
 
     def test_every_role_in_the_data_is_one_the_draft_ranks(self):
         """A patch renaming a role would rank that whole role below an unread badge."""
