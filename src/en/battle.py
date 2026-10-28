@@ -452,8 +452,8 @@ def start_attack(task, utils_sortie):
     if not button:
         return False
     task.log_info(f"the fight is waiting on its Attack button, pressing it (match {button.confidence:.2f})")
+    # `click_box` waits a second after the click itself.
     task.click_box(button)
-    task.sleep(AFTER_KEY)
     return True
 
 
@@ -558,8 +558,8 @@ def handle_cards_left(task):
         turn.objected = True
     if turn is not None:
         turn.ended = False
+    # `click_box` waits a second after the click itself, so a second wait here only held up the cards left to play.
     task.click_box(cancel)
-    task.sleep(AFTER_KEY)
     return True
 
 
