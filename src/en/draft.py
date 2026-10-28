@@ -1,12 +1,13 @@
 """Draft the role a Sortie team lacks, and reroll when none of the offers fill it.
 
 Upstream refreshes all three slots whenever no configured name matches, then picks at random - so with no
-priority list it spends both rerolls and still takes whatever it lands on.
+priority list it spends both rerolls and still takes whatever it lands on. A debug run drafts whoever has played least instead, so
+every combatant's kit gets run live.
 """
 
 from ok import Logger
 
-from src.en import quality
+from src.en import quality, tested
 from src.en.battle import PARTY
 from src.en.dashboard import TEAM_GEAR
 from src.en.equipment import EMPTY_TIER
@@ -88,21 +89,28 @@ def rank(role, wants=()):
     return order.index(role) if role in order else len(order)
 
 
-def choose(roles, wants, can_reroll):
+def choose(roles, wants, can_reroll, played=None):
     """Pick the offer to take, or decide to reroll.
+
+    With play counts, an offer who has never played is taken whatever their role, a reroll goes looking for one, and once the rerolls are
+    spent the least played is taken. The role the team wants only breaks ties.
 
     Args:
         roles: The role of each offer, left to right, None where it was not read.
         wants: The roles the team lacks, as `wanted` returns them.
         can_reroll: True while any slot still has its reroll.
+        played: How many cards each offer has played across debug runs, from `tested.plays`, or None to draft by role alone.
 
     Returns:
         The index of the offer to take, or None when a reroll should be spent first.
     """
-    best = min(range(len(roles)), key=lambda index: rank(roles[index], wants))
-    if wants and roles[best] not in wants and can_reroll:
-        return None
-    return best
+    if played:
+        best = min(range(len(roles)), key=lambda index: (played[index], rank(roles[index], wants)))
+        lacking = played[best] > 0
+    else:
+        best = min(range(len(roles)), key=lambda index: rank(roles[index], wants))
+        lacking = bool(wants) and roles[best] not in wants
+    return None if lacking and can_reroll else best
 
 
 def badges(task):
@@ -228,13 +236,16 @@ def drafting(utils, utils_sortie):
         # Whoever is still on offer has not joined, even if an earlier pass picked them and the Confirm did not take.
         party = getattr(task, PARTY, frozenset()) - set(names)
         wants = wanted(party)
+        counts = tested.plays()
+        played = None if counts is None else [counts[name] for name in names]
         labels = [f"{name} ({role or 'role unread'})" for name, role in zip(names, roles)]
-        task.log_info(f"draft offers {', '.join(labels)} to team {sorted(party)}, wanting {'/'.join(wants) or 'nothing'}")
+        task.log_info(f"draft offers {', '.join(labels)} to team {sorted(party)}, wanting {'/'.join(wants) or 'nothing'}"
+                      f"{'' if played is None else f', card plays so far {played}'}")
 
         spendable = [slot for slot in slots if rerollable(task, slot)]
-        pick = choose(roles, wants, bool(spendable))
+        pick = choose(roles, wants, bool(spendable), played)
         if pick is None:
-            task.log_info(f"draft offers no {' or '.join(wants)}, rerolling {len(spendable)} slot(s)")
+            task.log_info(f"draft offers {'no one untested' if played else 'no ' + ' or '.join(wants)}, rerolling {len(spendable)} slot(s)")
             for slot in spendable:
                 utils._move_and_click(task, slot["x"], slot["refresh_y"])
                 task.sleep(1)

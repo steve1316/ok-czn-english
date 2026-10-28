@@ -15,7 +15,7 @@ import cv2
 import numpy as np
 from ok import Logger
 
-from src.en import board, cards, ego, kits
+from src.en import board, cards, ego, kits, tested
 from src.en.handlers import StandIn, insert_before, loaded, register, replace, standing_in
 from src.en.overrides import SMART_CARD_PLAY
 from src.en.quality import fold
@@ -1250,6 +1250,7 @@ def install():
                       f"worth {cards.value(name, state):.0f}")
         turn.attempted = name
         turn.attempted_copies = names.count(name)
+        tested.played(name)
         if not play_key(task, card["key"]):
             # Live, each unaffordable key waited out its Enter, a few seconds a card. The toast already says it stays in hand.
             task.log_info(f"not enough AP for {name}, moving on")
