@@ -9,6 +9,7 @@ hoping. This module replaces the hoping.
 import re
 from collections import namedtuple
 from functools import lru_cache
+from itertools import combinations
 
 from src.en.game_battle import CARD_CATEGORY, CARD_COST, CARD_OWNER, COMBATANT_ATTRIBUTE, X_COST
 from src.en import kits
@@ -534,12 +535,37 @@ def buying_order(name, board):
     return price == X_COST, -value(name, board) / max(price, 1)
 
 
+def best_buy(ranked, budget, board):
+    """Pick the cards with a fixed price that are worth the most together within the turn's Action Points.
+
+    Buying the best value per point first can strand points: a 1-point Basic attack bought ahead of a 3-point attack leaves 2 points and
+    nothing to spend them on.
+
+    Args:
+        ranked: The playable hand cards with a fixed price, best buy first.
+        budget: The Action Points to spend.
+        board: The `Board` they would be played into.
+
+    Returns:
+        The cards to buy, best buy first. A tie goes to the set spending more points, then to the set of more cards.
+    """
+    worth = [value(card["name"], board) for card in ranked]
+    prices = [cost(card["name"]) for card in ranked]
+    best, best_key = (), (0, 0, 0)
+    for size in range(1, len(ranked) + 1):
+        for picked in combinations(range(len(ranked)), size):
+            spent = sum(prices[index] for index in picked)
+            key = (sum(worth[index] for index in picked), spent, size)
+            if spent <= budget and key > best_key:
+                best, best_key = picked, key
+    return [ranked[index] for index in best]
+
+
 def plan(hand, board):
     """Choose the cards to play this turn, in the order to play them.
 
     Two questions, answered in order, because answering them together gets both wrong. What the budget buys is
-    settled on value per Action Point, so 220% damage for two points is bought ahead of 100% for one and a cheap
-    card cannot crowd out a dear one that wins the fight. Only then are the survivors put into phase order, and
+    settled on the most value the points can buy, so a cheap card cannot crowd out a dear one that wins the fight. Only then are the survivors put into phase order, and
     cards that tie keep the order the hand had.
 
     Args:
@@ -554,18 +580,10 @@ def plan(hand, board):
     playable = (card for card in hand if worth_playing(card["name"]) and not kits.held(canonical(card["name"]), board.hand)
                 and not wasted(card["name"], board))
     budget = board.action_points
-    chosen = []
-    for card in sorted(playable, key=lambda held: buying_order(held["name"], board)):
-        price = cost(card["name"])
-        if price == X_COST:
-            # It takes the rest of the turn's points, so it is worth playing only while some remain, and
-            # nothing can follow it.
-            if budget > 0:
-                chosen.append(card)
-                budget = 0
-            continue
-        if price > budget:
-            continue
-        budget -= price
-        chosen.append(card)
+    ranked = sorted(playable, key=lambda held: buying_order(held["name"], board))
+    chosen = best_buy([card for card in ranked if cost(card["name"]) != X_COST], budget, board)
+    spenders = [card for card in ranked if cost(card["name"]) == X_COST]
+    if spenders and sum(cost(card["name"]) for card in chosen) < budget:
+        # It takes the rest of the turn's points, so it is worth playing only while some remain, and nothing can follow it.
+        chosen.append(spenders[0])
     return sorted(chosen, key=lambda held: phase(held["name"], board))
