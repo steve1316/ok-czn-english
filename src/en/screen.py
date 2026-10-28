@@ -93,8 +93,8 @@ def in_region(box, region, width, height):
 def text_in_region(task, needle, region):
     """Find the first OCR box in a region whose text contains a caption.
 
-    Case is ignored, which costs nothing on the Chinese literals the catalog produces and saves the callers
-    that read English straight off the screen from spelling the fold out themselves.
+    Case and spaces are ignored, which costs nothing on the Chinese literals the catalog produces and saves the callers that read English
+    straight off the screen from spelling the fold out themselves. OCR drops a space now and then, as in "canstill be used".
 
     Args:
         task: The running task, whose `all_texts` holds the current OCR pass.
@@ -104,9 +104,9 @@ def text_in_region(task, needle, region):
     Returns:
         The matching box, or None when the caption is not in that part of the screen.
     """
-    wanted = needle.casefold()
+    wanted = needle.casefold().replace(" ", "")
     for box in getattr(task, "all_texts", None) or []:
-        if wanted in box.name.casefold() and in_region(box, region, task.width, task.height):
+        if wanted in box.name.casefold().replace(" ", "") and in_region(box, region, task.width, task.height):
             return box
     return None
 

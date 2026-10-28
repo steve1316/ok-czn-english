@@ -64,6 +64,11 @@ class TestTextInRegion(unittest.TestCase):
         box = FakeBox("Combatants are limited to 1 piece of Mythic-grade equipment.", 0.5, 0.5)
         self.assertIsNotNone(text_in_region(FakeTask([box]), "mythic", BAND))
 
+    def test_ignores_spaces_ocr_dropped(self):
+        # Live, "canstill be used" hid the end turn prompt, so a turn ended holding a card the game said could still be played.
+        box = FakeBox("Cards in your hand canstill be used.", 0.5, 0.5)
+        self.assertIs(box, text_in_region(FakeTask([box]), "can still be used", BAND))
+
     def test_ignores_a_match_outside_the_band(self):
         self.assertIsNone(text_in_region(FakeTask([FakeBox("Free", 0.9, 0.9)]), "Free", BAND))
 
