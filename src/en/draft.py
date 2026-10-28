@@ -8,6 +8,8 @@ from ok import Logger
 
 from src.en import quality
 from src.en.battle import PARTY
+from src.en.dashboard import TEAM_GEAR
+from src.en.equipment import EMPTY_TIER
 from src.en.game_quality import COMBATANT_ROLE
 from src.en.handlers import insert_before, loaded, register, wrap
 from src.en.rewards import show_team
@@ -29,6 +31,8 @@ CARD_REGION = (0.077, 0.100, 0.946, 0.871)
 SAME_CARD = 0.12
 # The reroll counter reads "1/1" while a slot still has its reroll, and "0/1" once it is spent.
 SPENT_REROLL = "0/"
+# What a drafted combatant joins wearing, until an install or the Combatants screen reads the team again.
+BARE = "/".join([EMPTY_TIER] * 3)
 # Who the draft took on this screen, in `node_status`, which upstream rebuilds when a run or a layer starts.
 DRAFTED = "_en_drafted"
 
@@ -239,7 +243,11 @@ def drafting(utils, utils_sortie):
         utils._move_and_click(task, slots[pick]["x"], slots[pick]["y"])
         task.sleep(1)
         task.node_status[DRAFTED] = names[pick]
-        show_team(task, [*sorted(party), names[pick]])
+        team = [*sorted(party), names[pick]]
+        show_team(task, team)
+        gear = getattr(task, TEAM_GEAR, None)
+        if gear and len(gear.split(", ")) < len(team):
+            setattr(task, TEAM_GEAR, f"{gear}, {BARE}")
         return True
 
     return handle_member_draft

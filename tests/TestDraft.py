@@ -16,7 +16,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from tests.fakes import FakeBox as Box  # noqa: E402
 
 from src.en.battle import PARTY  # noqa: E402
-from src.en.dashboard import COMBATANTS  # noqa: E402
+from src.en.dashboard import COMBATANTS, TEAM_GEAR  # noqa: E402
 from src.en.draft import DRAFTED, ROLES, badges, choose, confirming_our_pick, drafting, rank, rerollable, role_for, role_of, wanted  # noqa: E402
 from src.en.game_quality import COMBATANT_ROLE  # noqa: E402
 
@@ -151,11 +151,13 @@ class TestDraft(unittest.TestCase):
                                      log_info=lambda message: None, sleep=lambda seconds: None)
         task.info_set = task.info.__setitem__
         setattr(task, PARTY, frozenset({"Owen", "Khalipe"}))
+        setattr(task, TEAM_GEAR, "Legend/Legend/Legend, -/-/-")
 
         for _ in range(2):
             self.assertTrue(handle_member_draft(task))
         self.assertEqual("Mika", task.node_status[DRAFTED])
         self.assertEqual("Khalipe, Owen, Mika", task.info[COMBATANTS])
+        self.assertEqual("Legend/Legend/Legend, -/-/-, -/-/-", getattr(task, TEAM_GEAR))
 
     def test_every_role_in_the_data_is_one_the_draft_ranks(self):
         """A patch renaming a role would rank that whole role below an unread badge."""
