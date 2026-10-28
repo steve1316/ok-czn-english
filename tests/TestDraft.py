@@ -194,6 +194,20 @@ class TestDraft(unittest.TestCase):
         self.assertEqual("Hugo, Owen, Mika", task.info[COMBATANTS])
         self.assertEqual("Legend/Legend/Legend, -/-/-, -/-/-", getattr(task, TEAM_GEAR))
 
+    def test_a_pick_moved_out_of_its_row_stands(self):
+        """Live, Renoa's card opened a details panel once clicked, the slot reader lost her, and the next pass drafted Tressa over her."""
+        offered = [slot("Beryl", 0.472), slot("Tressa", 0.744)]
+        utils = types.SimpleNamespace(find_box_at_point=lambda task, x, y: types.SimpleNamespace(name="请选择加入的主战员"),
+                                      _get_game_text=lambda task, text: text, _get_card_list=lambda task, key: [],
+                                      _move_and_click=lambda task, x, y: self.fail("drafted again"))
+        utils_sortie = types.SimpleNamespace(_read_member_slots=lambda task: offered)
+        confirmed = []
+        task = types.SimpleNamespace(width=WIDTH, height=HEIGHT, node_status={DRAFTED: "Renoa"}, log_info=lambda message: None,
+                                     all_texts=[FakeBox("Renoa", 0.239, 0.723), FakeBox("Beryl", 0.657, 0.725), FakeBox("Tressa", 0.922, 0.723)])
+        self.assertFalse(drafting(utils, utils_sortie)(task))
+        self.assertTrue(confirming_our_pick(lambda task: confirmed.append(True) or True, utils, utils_sortie)(task))
+        self.assertEqual([True], confirmed)
+
     def test_every_role_in_the_data_is_one_the_draft_ranks(self):
         """A patch renaming a role would rank that whole role below an unread badge."""
         self.assertLessEqual(set(COMBATANT_ROLE.values()), set(ROLES))

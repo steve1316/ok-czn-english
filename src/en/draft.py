@@ -192,6 +192,31 @@ def offers(task, utils, utils_sortie):
     return [(quality.COMBATANT_INDEX.look_up(slot["name"]) or slot["name"], slot) for slot in slots]
 
 
+def picked(task, offered):
+    """Say whether the combatant the draft took on this screen is still the one picked.
+
+    Args:
+        task: The running task, whose `node_status` holds `DRAFTED`.
+        offered: The `(name, slot)` pairs on offer, as `offers` returns them.
+
+    Returns:
+        True when the drafted name is on offer, or anywhere on the cards. Live, Renoa's card opened a details panel once clicked, which
+        moved her out of the row the slot reader scans, and the next frame drafted Tressa over her.
+    """
+    drafted = task.node_status.get(DRAFTED)
+    if not drafted:
+        return False
+    if drafted in [name for name, _ in offered]:
+        return True
+    left, top, right, bottom = CARD_REGION
+    for box in task.all_texts or []:
+        center_x = (box.x + box.width / 2) / task.width
+        center_y = (box.y + box.height / 2) / task.height
+        if left <= center_x <= right and top <= center_y <= bottom and quality.COMBATANT_INDEX.look_up(box.name) == drafted:
+            return True
+    return False
+
+
 def confirming_our_pick(confirm, utils, utils_sortie):
     """Hold upstream's Confirm on a draft screen until the draft has picked one of its offers.
 
@@ -208,7 +233,7 @@ def confirming_our_pick(confirm, utils, utils_sortie):
     """
     def handle_confirm(task):
         offered = offers(task, utils, utils_sortie)
-        if offered and task.node_status.get(DRAFTED) not in [name for name, _ in offered]:
+        if offered and not picked(task, offered):
             return False
         return confirm(task)
 
@@ -227,7 +252,7 @@ def drafting(utils, utils_sortie):
     """
     def handle_member_draft(task):
         offered = offers(task, utils, utils_sortie)
-        if not offered:
+        if not offered or picked(task, offered) and task.node_status[DRAFTED] not in [name for name, _ in offered]:
             return False
         names, slots = zip(*offered)
         found = badges(task)
