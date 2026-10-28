@@ -634,6 +634,17 @@ class TestInstalling(unittest.TestCase):
                 utils_sortie._try_all_card_keys(task, 2)
                 self.assertEqual(task.keys, [key, battle.CONFIRM_KEY])
 
+    def test_a_count_unread_mid_turn_is_planned_as_one_point_first(self):
+        # Live, 1 AP left read as nothing, was planned as 3, and Cassius's Cards went ahead of Iceberg Cleave and a free Longsword Slash.
+        for cards_in_hand, key in (((ATTACK, BIG_ATTACK), "1"), ((BIG_ATTACK,), "1")):
+            with self.subTest(hand=cards_in_hand), upstream(hand(*cards_in_hand)) as (utils_sortie, task):
+                battle.install()
+                turn = battle.Turn(5)
+                turn.played = [SHIELD]
+                setattr(task, battle.TURN, turn)
+                utils_sortie._try_all_card_keys(task, len(cards_in_hand))
+                self.assertEqual(task.keys, [key, battle.CONFIRM_KEY])
+
     def test_the_attribute_the_enemies_are_weak_to_is_preferred(self):
         with upstream(hand(ATTACK, VOID_ATTACK), weakness="PURPLE") as (utils_sortie, task):
             battle.install()

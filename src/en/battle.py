@@ -61,6 +61,9 @@ POINTS_DIGIT = (0.478, 0.888, 0.538, 0.958)
 POINTS_ZOOMS = (3, 2)
 POINTS_MARGIN = 20
 POINTS_SURE = 0.9
+# What a count that does not read is taken as once the turn has played a card. Live, 10 of 19 such reads came with one point left, and planning
+# them as three bought filler that the plan then played ahead of the better card, so one is tried first and three only when nothing fits.
+UNREAD_MID_TURN = 1
 # The game's own check when a turn is ended with a card it would still play, so it is the one reading that knows the
 # Action Points: it followed 2 of 18 empty-read turn ends in the logs, exactly the 2 that had cards left to play.
 CARDS_LEFT = "can still be used"
@@ -1186,9 +1189,11 @@ def install():
 
         # A turn whose count does not read is planned against a full three and corrected by what the game will actually accept.
         points = 0
+        unread = False
         if board.has_action_points(task) and not out_of_points(task):
             read = points_left(task, frame_of(task))
-            points = cards.BASE_ACTION_POINTS if read is None else read
+            unread = read is None
+            points = (UNREAD_MID_TURN if turn.played else cards.BASE_ACTION_POINTS) if unread else read
         # An attack's flash can pass for extra counters, and an enemy that dies stays gone. Too few only values all-enemy damage as before.
         seen = len(board.enemy_counters(frame_of(task)))
         if seen:
@@ -1207,6 +1212,8 @@ def install():
                             last_turn=turn.last_turn, battle=(*turn.earlier, *turn.played), hand_size=count or 0, kept=turn.kept, invulnerable=turn.invulnerable, enemies=turn.enemies or 1,
                             health=board.team_after_hit(frame_of(task)))
         card = choose(hand, state, turn.refused)
+        if card is None and unread and points < cards.BASE_ACTION_POINTS:
+            card = choose(hand, state._replace(action_points=cards.BASE_ACTION_POINTS), turn.refused)
         if card is None and turn.objected:
             # The game said a card is still playable, so the best of those passed over for cost is tried as if affordable.
             card = choose([held for held in hand if cards.price(held) > 0], state._replace(action_points=cards.BASE_ACTION_POINTS),
