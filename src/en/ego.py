@@ -113,8 +113,10 @@ def signature(frame, key):
         key: The slot's key, one of `board.EGO_KEYS`.
 
     Returns:
-        A unit vector, or None when there is no frame or the slot shows no portrait.
+        A unit vector, or None when there is no frame, the slot is empty or it shows no portrait.
     """
+    if not board.ego_in_slot(frame, key):
+        return None
     middle = board.EGO_BADGE_Y[key]
     patch = patch_of(frame, (PORTRAIT_X[0], middle + PORTRAIT_Y[0], PORTRAIT_X[1], middle + PORTRAIT_Y[1]))
     if patch is None or patch.size == 0:

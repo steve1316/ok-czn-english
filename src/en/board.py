@@ -46,6 +46,9 @@ TINT_SATURATION = 30
 # How much of a badge's lit pixels have to be tinted before the Ego behind it is treated as one that can be fired. Measured: 1.0 on a
 # blue badge, 0.995 on a reduced one and under 0.01 on a grey one.
 EGO_READY = 0.5
+# A slot draws its cost badge only while it holds an Ego, and a fired partner leaves an empty frame behind. Measured on 171 frames of a run:
+# an empty slot at most 0.08 bright, even under a skill's flash, and a badge at least 0.55, while it is the selected slot's Cancel button.
+EGO_PRESENT = 0.3
 # The EP bar left of the Ego panel: seven segments down from the top, lit pale blue for each point banked and pale yellow for the
 # points a previewed Ego would spend. Upstream's full-bar pixel at 0.947 is the seventh. A segment still filling is lit to about 203.
 EP_SEGMENT_X = (0.020, 0.044)
@@ -187,6 +190,22 @@ def affordable_egos(task):
         if tinted_fraction(patch_of(frame, box)) > EGO_READY:
             ready.append(key)
     return ready
+
+
+def ego_in_slot(frame, key):
+    """Say whether a slot holds an Ego, which the slot of a partner already fired no longer does.
+
+    Args:
+        frame: The frame to read, or None when there is none.
+        key: The slot's key, one of `EGO_KEYS`.
+
+    Returns:
+        True while the slot shows its cost badge, and False when there is no frame.
+    """
+    patch = patch_of(frame, box_around(EGO_BADGE_X, EGO_BADGE_Y[key], EGO_BADGE_HALF))
+    if patch is None or patch.size == 0:
+        return False
+    return float(np.count_nonzero(cv2.cvtColor(patch, cv2.COLOR_BGR2GRAY) >= BADGE_LIT)) / patch.shape[0] / patch.shape[1] >= EGO_PRESENT
 
 
 def banked_points(frame):
