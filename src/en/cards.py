@@ -416,6 +416,18 @@ def cost(name):
     return CARD_COST.get(canonical(name), ASSUMED_COST)
 
 
+def price(card):
+    """Say what a hand card costs to play, as it shows on screen when an effect has lowered it.
+
+    Args:
+        card: A hand card, carrying a `cost` only when `battle.py` read a lowered one off it.
+
+    Returns:
+        The Action Point cost, from the card when it carries one and from `cost` otherwise.
+    """
+    return card.get("cost", cost(card["name"]))
+
+
 def attribute_of(name):
     """Say which attribute a card attacks with.
 
@@ -689,7 +701,7 @@ def generic_phase(name):
     return PHASE_OTHER
 
 
-def buying_order(name, board):
+def buying_order(card, board):
     """Build the sort key that decides which cards a turn can afford.
 
     Value per Action Point, rather than value alone, because the question is what to spend a limited budget
@@ -697,14 +709,14 @@ def buying_order(name, board):
     and so can only ever be the turn's final play.
 
     Args:
-        name: The card name, in any spelling.
+        card: The hand card, as `_hand_cards` reads it.
         board: The `Board` it would be played into.
 
     Returns:
         A sort key putting the best buy first.
     """
-    price = cost(name)
-    return price == X_COST, -value(name, board) / max(price, 1)
+    points = price(card)
+    return points == X_COST, -value(card["name"], board) / max(points, 1)
 
 
 def best_buy(ranked, budget, board):
@@ -722,7 +734,7 @@ def best_buy(ranked, budget, board):
         The cards to buy, best buy first. A tie goes to the set spending more points, then to the set of more cards.
     """
     worth = [value(card["name"], board) for card in ranked]
-    prices = [cost(card["name"]) for card in ranked]
+    prices = [price(card) for card in ranked]
     best, best_key = (), (0, 0, 0)
     for size in range(1, len(ranked) + 1):
         for picked in combinations(range(len(ranked)), size):
@@ -752,10 +764,10 @@ def plan(hand, board):
     playable = (card for card in hand if worth_playing(card["name"]) and not kits.held(canonical(card["name"]), board)
                 and not wasted(card["name"], board))
     budget = board.action_points
-    ranked = sorted(playable, key=lambda held: buying_order(held["name"], board))
-    chosen = best_buy([card for card in ranked if cost(card["name"]) != X_COST], budget, board)
-    spenders = [card for card in ranked if cost(card["name"]) == X_COST]
-    if spenders and sum(cost(card["name"]) for card in chosen) < budget:
+    ranked = sorted(playable, key=lambda held: buying_order(held, board))
+    chosen = best_buy([card for card in ranked if price(card) != X_COST], budget, board)
+    spenders = [card for card in ranked if price(card) == X_COST]
+    if spenders and sum(price(card) for card in chosen) < budget:
         # It takes the rest of the turn's points, so it is worth playing only while some remain, and nothing can follow it.
         chosen.append(spenders[0])
     return sorted(chosen, key=lambda held: phase(held["name"], board))

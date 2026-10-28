@@ -96,6 +96,11 @@ class TestAffordability(unittest.TestCase):
     def test_a_free_card_is_played_whatever_the_budget(self):
         self.assertEqual(played(cards.plan(hand(FREE_DRAW), cards.Board(action_points=0))), [FREE_DRAW])
 
+    def test_a_lowered_cost_is_what_gets_paid(self):
+        # A card an effect has lowered to 0 is still playable with no points left.
+        lowered = [{**card, "cost": 0} for card in hand(JUSTICE_ATTACK)]
+        self.assertEqual(played(cards.plan(lowered, cards.Board(action_points=0))), [JUSTICE_ATTACK])
+
     def test_nothing_affordable_plays_nothing(self):
         self.assertEqual(cards.plan(hand(JUSTICE_ATTACK), cards.Board(action_points=0)), [])
 

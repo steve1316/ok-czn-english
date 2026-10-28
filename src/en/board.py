@@ -12,7 +12,7 @@ import numpy as np
 from ok import Logger
 
 from src.en.game_battle import ATTRIBUTES
-from src.en.screen import frame_of, hsv_of, patch_of, white_mask
+from src.en.screen import colour_share, frame_of, hsv_of, patch_of, white_mask
 
 logger = Logger.get_logger(__name__)
 
@@ -67,6 +67,14 @@ GREEN_HUE = (40, 85)
 GREEN_SATURATION = 100
 GREEN_VALUE = 120
 GREEN_ROWS = 2
+
+# A hand card's cost digit, as offsets from the left edge of its name box and the middle of its height.
+COST_OFFSET = (-0.026, -0.030, 0.002, 0.040)
+# The game draws a cost an effect has lowered in lit green, and any other cost in white. Green card art sits behind some white digits, so
+# only bright green counts: 0.059 to 0.097 of five lowered digits against at most 0.032 of 17 white ones.
+LOWERED_LOW = np.array([40, 80, 200])
+LOWERED_HIGH = np.array([85, 255, 255])
+LOWERED_ENOUGH = 0.045
 
 # The Absolute Invincibility badge drawn among an enemy's statuses, cut from a 1080p frame and matched on its white strokes.
 INVULNERABLE_IMAGE = Path(__file__).with_name("images") / "absolute_invincibility.png"
@@ -153,6 +161,33 @@ def has_action_points(task):
     if patch is None:
         return True
     return lit_fraction(patch) >= LIT_ENOUGH
+
+
+def cost_digit(left, middle):
+    """Build the relative box around a hand card's cost digit.
+
+    Args:
+        left: The left edge of the card's name box, as a fraction across the frame.
+        middle: The middle of the name box's height, as a fraction down the frame.
+
+    Returns:
+        A `(left, top, right, bottom)` tuple.
+    """
+    return left + COST_OFFSET[0], middle + COST_OFFSET[1], left + COST_OFFSET[2], middle + COST_OFFSET[3]
+
+
+def cost_lowered(frame, box):
+    """Say whether a hand card's cost digit is drawn in the green of a lowered cost.
+
+    Args:
+        frame: The frame to read, from `frame_of`.
+        box: The digit's box, from `cost_digit`.
+
+    Returns:
+        True for a lit green digit. A card the turn cannot afford is drawn dimmed and reads False, which costs nothing since it cannot be
+        played either way.
+    """
+    return colour_share(patch_of(frame, box), LOWERED_LOW, LOWERED_HIGH) >= LOWERED_ENOUGH
 
 
 def tinted_fraction(patch):

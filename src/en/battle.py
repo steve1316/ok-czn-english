@@ -265,7 +265,7 @@ def choose(hand, board, refused):
     # Nothing is worth playing for its own sake, so what is left goes on getting rid of cards that hurt while held.
     # Live, three Bleeds sat out turn after turn with all three points unspent.
     clearing = [card for card in playable
-                if cards.worth_clearing(card["name"]) and cards.cost(card["name"]) <= board.action_points]
+                if cards.worth_clearing(card["name"]) and cards.price(card) <= board.action_points]
     return min(clearing, key=lambda card: cards.clearing_order(card["name"]), default=None)
 
 
@@ -526,6 +526,54 @@ def attribute_handler(utils):
         return True
 
     return handle_attribute_choice
+
+
+def shown_cost(task, frame, box, printed):
+    """Read a hand card's cost off the screen when an effect has lowered it.
+
+    Args:
+        task: The running task, for its OCR.
+        frame: The frame to read, from `frame_of`.
+        box: The card's cost digit, from `board.cost_digit`.
+        printed: What the data says the card costs, from `cards.cost`.
+
+    Returns:
+        The lowered cost, or None when the digit is not drawn lowered or reads no lower than the data.
+    """
+    if printed in (0, cards.X_COST) or not board.cost_lowered(frame, box):
+        return None
+    if printed == 1:
+        # OCR seldom reads a lone 0, and a lowered 1 can only be one.
+        return 0
+    read = ego.DIGITS.search("".join(text.name for text in task.ocr(*box, frame=frame, frame_processor=ego.enlarged) or []))
+    if read is None:
+        return printed - 1
+    return int(read.group()) if int(read.group()) < printed else None
+
+
+def priced(task, utils_sortie, hand):
+    """Give each hand card an effect has lowered the cost it shows, since the data only knows the printed one.
+
+    Args:
+        task: The running task, on a battle screen.
+        utils_sortie: Upstream's Sortie module, for the name boxes the hand was read from.
+        hand: Hand cards as `_hand_cards` reads them, with canonical names.
+
+    Returns:
+        The hand, each lowered card carrying its shown cost as `cost`.
+    """
+    frame = frame_of(task)
+    names = {box.x / task.width: box for box in utils_sortie._hand_card_names(task) or []}
+    shown_hand = []
+    for card in hand:
+        box = names.get(card.get("left_x"))
+        printed = cards.cost(card["name"])
+        shown = None if box is None else shown_cost(task, frame, board.cost_digit(card["left_x"], (box.y + box.height / 2) / task.height), printed)
+        if shown is not None:
+            logger.debug(f"{card['name']} shows {shown} AP, lowered from {printed}")
+            card = {**card, "cost": shown}
+        shown_hand.append(card)
+    return shown_hand
 
 
 def note_hand_read(task, utils_sortie):
@@ -1000,7 +1048,7 @@ def install():
         # card it was about across them.
         read = utils_sortie._hand_cards(task) or []
         party = met(task, read)
-        hand = kits.reading([{**card, "name": cards.canonical(card["name"], party, frozenset(cards.DECK))} for card in read], count)
+        hand = priced(task, utils_sortie, kits.reading([{**card, "name": cards.canonical(card["name"], party, frozenset(cards.DECK))} for card in read], count))
         names = [card["name"] for card in hand]
         turn = turn_of(task, count)
         lost = unsettled(turn, names, count)
@@ -1041,7 +1089,7 @@ def install():
         card = choose(hand, state, turn.refused)
         if card is None and turn.objected:
             # The game said a card is still playable, so the best of those passed over for cost is tried as if affordable.
-            card = choose([held for held in hand if cards.cost(held["name"]) > 0], state._replace(action_points=cards.BASE_ACTION_POINTS),
+            card = choose([held for held in hand if cards.price(held) > 0], state._replace(action_points=cards.BASE_ACTION_POINTS),
                           turn.refused)
         turn.priced_out = []
         if card is None:
@@ -1067,7 +1115,7 @@ def install():
             return
 
         name = card["name"]
-        task.log_info(f"playing {name} for {cards.cost(name)} AP on key {card['key']}, "
+        task.log_info(f"playing {name} for {cards.price(card)} AP on key {card['key']}, "
                       f"worth {cards.value(name, state):.0f}")
         turn.attempted = name
         turn.attempted_copies = names.count(name)

@@ -167,6 +167,16 @@ class TestEgoBadges(unittest.TestCase):
         self.assertEqual(board.affordable_egos(FakeTask.__new__(FakeTask)), [])
 
 
+class TestHandCosts(unittest.TestCase):
+    """The cost a hand card shows once an effect has lowered it."""
+
+    def test_a_hand_card_reads_lowered_only_when_its_digit_is_lit_green(self):
+        # The lowest lit green seen, against white digits over the water and the green card frame that most look like one.
+        for name, lowered in (("cost_lowered", True), ("cost_white_on_water", False), ("cost_white_on_green", False)):
+            with self.subTest(name):
+                self.assertEqual(lowered, board.cost_lowered(fixture(name), (0, 0, 1, 1)))
+
+
 def in_hue(hue, saturation=220, value=220):
     """Build a BGR colour at one hue, the way the game draws its badges.
 
