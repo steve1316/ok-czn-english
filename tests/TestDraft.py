@@ -109,8 +109,8 @@ class TestDraft(unittest.TestCase):
             # (team, offers, can reroll, expected pick or None for a reroll)
             ({"Hugo"}, ("Beryl", "Hilde", "Khalipe"), True, "Khalipe"),
             ({"Hugo"}, ("Khalipe", "Mika", "Cassius"), True, "Mika"),
-            ({"Hugo", "Mika"}, ("Cassius", "Khalipe", "Rin"), True, "Khalipe"),
-            # A Supporter fills the Healer or Protector slot, so the team goes back to damage.
+            # One Healer, Protector or Supporter fills the support slot, so the team goes back to damage.
+            ({"Hugo", "Mika"}, ("Cassius", "Khalipe", "Rin"), True, "Rin"),
             ({"Hugo", "Cassius"}, ("Mika", "Khalipe", "Rin"), True, "Rin"),
             ({"Hugo"}, ("Beryl", "Rin", "Hilde"), True, None),
             ({"Hugo"}, ("Beryl", "Rin", "Hilde"), False, "Rin"),
@@ -155,13 +155,13 @@ class TestDraft(unittest.TestCase):
         task = types.SimpleNamespace(width=WIDTH, height=HEIGHT, all_texts=screen.all_texts, node_status={}, info={},
                                      log_info=lambda message: None, sleep=lambda seconds: None)
         task.info_set = task.info.__setitem__
-        setattr(task, PARTY, frozenset({"Owen", "Khalipe"}))
+        setattr(task, PARTY, frozenset({"Owen", "Hugo"}))
         setattr(task, TEAM_GEAR, "Legend/Legend/Legend, -/-/-")
 
         for _ in range(2):
             self.assertTrue(handle_member_draft(task))
         self.assertEqual("Mika", task.node_status[DRAFTED])
-        self.assertEqual("Khalipe, Owen, Mika", task.info[COMBATANTS])
+        self.assertEqual("Hugo, Owen, Mika", task.info[COMBATANTS])
         self.assertEqual("Legend/Legend/Legend, -/-/-, -/-/-", getattr(task, TEAM_GEAR))
 
     def test_every_role_in_the_data_is_one_the_draft_ranks(self):

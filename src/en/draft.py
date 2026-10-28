@@ -16,7 +16,7 @@ from src.en.rewards import show_team
 
 logger = Logger.get_logger(__name__)
 
-# The two damage roles, then the supporting roles in the order a team wants them.
+# The two damage roles, then the supporting roles in the order a team wants them. Any one of the supporting roles fills the team's one support slot.
 DAMAGE = ("Core", "Attack")
 SUPPORTING = ("Healing", "Protection", "Support")
 # What to settle for once the rerolls are spent and nothing the team lacks is on offer.
@@ -60,19 +60,18 @@ def role_of(text):
 def wanted(party):
     """Name the roles a team still lacks, best first.
 
-    A team with no damage dealer wants one before anything else, and so does the fourth pick. So does a team with a Supporter, which fills
-    the Healer or Protector slot. Otherwise it wants the supporting roles it has not got yet, so a second damage dealer is only ever a fallback.
+    A team wants a damage dealer first, then one Healer, Protector or Supporter, then damage again. The fourth pick always wants damage.
 
     Args:
         party: Names of the combatants on the team, from `battle.PARTY`.
 
     Returns:
-        A tuple of roles, empty when the team has every role.
+        A tuple of roles, best first.
     """
     have = {COMBATANT_ROLE.get(name) for name in party}
-    if len(party) >= FOURTH_PICK or not have & set(DAMAGE) or "Support" in have:
+    if len(party) >= FOURTH_PICK or not have & set(DAMAGE) or have & set(SUPPORTING):
         return DAMAGE
-    return tuple(role for role in SUPPORTING if role not in have)
+    return SUPPORTING
 
 
 def rank(role, wants=()):
