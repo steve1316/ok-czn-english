@@ -1404,6 +1404,12 @@ def install():
             watch_invulnerable(task, turn)
             if aim_at_boss(task, utils_sortie, turn) or ego.take_turn(task, utils_sortie, turn):
                 return True
+            # Upstream ends the turn on a blank read, and the game did not warn. Live, Flower of Devoured Fate's discard closed with
+            # Last-Ditch Assault and its 5 bullets still lowered, and the turn ended on 2 points.
+            if not turn.ended and not utils_sortie._hand_card_names(task) and unsettled(turn, [], count):
+                task.log_info(f"the hand reads blank under a counter of {count}, so it gets a frame to settle")
+                task.sleep(KIT_PAUSE)
+                return True
         with standing_in(utils_sortie, random=EgoChoice(task, utils_sortie.random)), standing_in(task, send_key=noting_end_of_turn(task)):
             return original_page(task)
 

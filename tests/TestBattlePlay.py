@@ -968,6 +968,17 @@ class TestCallingBackTheTurn(unittest.TestCase):
         task, answers = self.run_frames(names=[], popups=battle.CALLBACKS + 1)
         self.assertEqual(answers, [True] * battle.CALLBACKS + [False])
 
+    def test_a_hand_that_read_cards_is_waited_on_before_a_blank_read_ends_the_turn(self):
+        # Live, a discard prompt closed with the hand still lowered, and the game ended the turn with no warning.
+        with upstream([]) as (utils_sortie, task):
+            task.counter = 2
+            battle.install()
+            battle.turn_of(task, 2).hand = ["Dirge Bullet", "Last-Ditch Assault"]
+            page = handlers_of(utils_sortie)["handle_battle_page"]
+            for _ in range(battle.SETTLE_WAIT + 1):
+                page(task)
+            self.assertEqual(len(utils_sortie.asked), 1)
+
     def test_a_card_passed_over_for_cost_is_tried_once_the_game_says_it_plays(self):
         # Live, Rossweisse's Sword Resonance showed 0 AP against the data's 1, and was held at 0 AP for good.
         with upstream(hand("Sword Resonance"), action_points=False) as (utils_sortie, task):
@@ -1135,8 +1146,9 @@ class TestKits(unittest.TestCase):
             for _ in range(battle.KIT_WAIT - 1):
                 page(task)
             self.assertEqual(utils_sortie.asked, [])
-            # A fusion that never comes cannot hold the turn for good.
-            page(task)
+            # A fusion that never comes cannot hold the turn for good, past the frames any blank read gets.
+            for _ in range(battle.SETTLE_WAIT + 1):
+                page(task)
             self.assertEqual(len(utils_sortie.asked), 1)
 
     def test_a_finale_ends_the_turn_without_the_end_turn_key(self):
