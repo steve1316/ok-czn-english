@@ -353,7 +353,8 @@ def take_turn(task, utils, turn):
     for key in board.EGO_KEYS:
         mark = signature(frame, key)
         ego = recall(seen, mark)
-        if ego is None and mark is not None and not any(float(mark @ failed) >= SAME_EGO for failed in _unread):
+        # An Ego the bar cannot pay for cannot be fired, so it is not worth a preview yet.
+        if ego is None and mark is not None and key in affordable and not any(float(mark @ failed) >= SAME_EGO for failed in _unread):
             ego = identify(task, utils, key)
             if ego is None:
                 task.log_info(f"the Ego on {key} did not preview, leaving it to upstream until the app restarts")

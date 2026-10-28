@@ -262,6 +262,23 @@ class TestEgoPlanner(unittest.TestCase):
         with mock.patch.object(ego, "frame_of", frame_read):
             self.assertFalse(ego.take_turn(task, utils, types.SimpleNamespace(ego_fires=0)))
 
+    def test_only_an_ego_the_bar_can_pay_for_is_previewed(self):
+        # Live, Rita's 5-cost Hour of Glory was previewed on 2 EP, then the Ego in F2 fired.
+        task = types.SimpleNamespace(find_feature=lambda **kwargs: True, box_of_screen=lambda *box: None, log_info=lambda message: None)
+        utils = types.SimpleNamespace(_hand_cards=lambda task: [])
+        previewed = []
+        for affordable, expected in ((set(), []), ({"F2"}, ["F2"])):
+            with self.subTest(affordable=affordable), \
+                    mock.patch.object(ego, "frame_of", lambda task: None), mock.patch.object(board, "banked_points", lambda frame: 2), \
+                    mock.patch.object(board, "affordable_egos", lambda task: []), mock.patch.object(ego, "payable", lambda *args: affordable), \
+                    mock.patch.object(ego, "known", lambda: []), mock.patch.object(ego, "signature", lambda frame, key: np.ones(1)), \
+                    mock.patch.object(ego, "identify", lambda task, utils, key: previewed.append(key)), \
+                    mock.patch.object(ego, "_unread", []), mock.patch.object(board, "team_after_hit", lambda frame: 1.0), \
+                    mock.patch.object(board, "has_action_points", lambda task: False):
+                previewed.clear()
+                ego.take_turn(task, utils, types.SimpleNamespace(ego_fires=0, invulnerable=False, ego_held=False))
+                self.assertEqual(expected, previewed)
+
     def test_an_exhaust_ego_waits_for_a_card_to_exhaust(self):
         # Live, Activate Defense Module fired ahead of the attacks with no Exhaust card in hand, so its Weaken never landed.
         for banked in (3, 7):
