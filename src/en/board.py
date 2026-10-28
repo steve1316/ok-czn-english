@@ -299,15 +299,16 @@ def hue_distance(one, other):
     return min(gap, 180 - gap)
 
 
-def attribute_of(patch):
+def attribute_of(patch, beside_counter=True):
     """Say which attribute a badge is drawn for.
 
-    Assumes a battle screen, the only place this is reached from: swept over `captures/`, the 22 battle frames
-    read Instinct or nothing, but red artwork elsewhere - a Card Epiphany screen, a full-screen portrait -
-    throws up shapes that pass for counters and reads as Passion.
+    Assumes a battle or boss select screen: swept over `captures/`, the 22 battle frames read Instinct or nothing,
+    but red artwork elsewhere - a Card Epiphany screen, a full-screen portrait - throws up shapes that pass for counters and reads as Passion.
 
     Args:
         patch: The pixels the badge was sampled from, in BGR.
+        beside_counter: Whether the badge sits beside an enemy's action counter, as it does in battle. The boss
+            select screen has no counter, and its Passion badge is drawn at a hue of 176, inside the counter's band.
 
     Returns:
         The attribute's name, or None when the patch holds no badge worth reading.
@@ -323,7 +324,7 @@ def attribute_of(patch):
     # The counter sitting beside the badge is magenta, which is red's neighbour on the hue wheel, so its own
     # colour would otherwise read as a confident Passion. Anything in that band is the counter, or one of the
     # effects the game draws in the same colour, rather than a badge.
-    if COUNTER_HUE[0] < middle < COUNTER_HUE[1]:
+    if beside_counter and COUNTER_HUE[0] < middle < COUNTER_HUE[1]:
         return None
     colour = min(ATTRIBUTE_HUES, key=lambda name: hue_distance(middle, ATTRIBUTE_HUES[name]))
     if hue_distance(middle, ATTRIBUTE_HUES[colour]) > HUE_TOLERANCE:
