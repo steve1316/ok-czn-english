@@ -13,7 +13,7 @@ from src.en import cards
 from src.en.game_text import DESCRIPTIONS, EPIPHANIES
 from src.en.handlers import loaded, register, standing_in, wrap
 from src.en.quality import fold
-from src.en.screen import centre_of, lines_in, raw_ocr, text_in_region
+from src.en.screen import PAGE_CLOSE, centre_of, lines_in, raw_ocr, text_in_region
 from src.en.stuck import forget
 
 logger = Logger.get_logger(__name__)
@@ -44,8 +44,6 @@ KEYWORD_TAGS = re.compile(r"\[[^\]]*\]")
 NOT_A_LETTER = re.compile(r"[^a-z]")
 # Holds in `node_status` that this layer's deck has been read. Upstream rebuilds `node_status` as a layer starts.
 READ = "_en_piles_read"
-# Where the information page and All Piles both draw their X, the tap upstream's team capture closes the page with.
-CLOSE = (0.960, 0.054)
 # Only Sortie reads the deck, though Chaos runs the same capture.
 SORTIE_MODE = "SortieMode"
 TAG = "reads the deck before closing"
@@ -177,7 +175,7 @@ def reading_the_deck(handler, utils_chaos):
         original = utils_chaos._move_and_click
 
         def closing(task_, x, y):
-            if (x, y) == CLOSE and not task_.node_status.get(READ):
+            if (x, y) == PAGE_CLOSE and not task_.node_status.get(READ):
                 task_.node_status[READ] = True
                 # The team read after the capture takes its names from the Combatants pass, which the deck read replaces.
                 texts = task_.all_texts

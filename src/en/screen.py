@@ -13,6 +13,8 @@ from src.en.handlers import standing_in
 # Where the Combatants tab writes each team member's name. Upstream's own numbers, from the read inside
 # `handle_archive_target_member`. `combatant_names` is the read every caller wanted, so they share it.
 COMBATANT_NAME_POINTS = ((0.159, 0.368), (0.432, 0.368), (0.705, 0.369))
+# Where the information page and All Piles both draw their X, the tap upstream's team capture closes the page with.
+PAGE_CLOSE = (0.960, 0.054)
 # Where that same screen frames each of a combatant's three equipment slots, as an offset from their name's x
 # and an absolute y. Measured off the captured screen: the tiles are 92px wide, pitched 156px, and the band
 # sampled is the 20px of plain frame colour above the item art, between the tile's top edge and the icon.

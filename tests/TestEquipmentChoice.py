@@ -936,6 +936,10 @@ class TestReadingTheTeamGear(unittest.TestCase):
         utils = team_utils(names=("", "", ""))
         self.assertIsNone(self.read(utils, taps=(COMBATANTS_TAB,)))
 
+    def test_a_team_of_two_is_read_on_the_close_tap(self):
+        # Live, Rin and Magna never filled the third column, so the row kept the last run's gear.
+        self.assertEqual("Rare/Legend/Mythic, -/Mythic/-", self.read(team_utils(names=("Rin", "Magna", ""))))
+
     def test_the_read_happens_once_however_many_taps_follow(self):
         utils = team_utils()
         task = FakeTask([])
