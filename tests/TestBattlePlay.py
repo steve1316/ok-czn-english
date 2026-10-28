@@ -807,7 +807,7 @@ class TestInstalling(unittest.TestCase):
         # The game kept it twice running, so the next frame should reach for the other card instead. A Retrieve the deck read showed
         # sends the card back to hand once, which is one stay more before that.
         for retrieves, frames in ((0, 3), (1, 4)):
-            with self.subTest(retrieves=retrieves), upstream(hand(ATTACK, BIG_ATTACK)) as (utils_sortie, task), \
+            with self.subTest(retrieves=retrieves), upstream(hand(ATTACK, BIG_ATTACK), action_points=3) as (utils_sortie, task), \
                     mock.patch.dict(cards.RETRIEVES, {BIG_ATTACK: retrieves}):
                 battle.install()
                 for _ in range(frames):
