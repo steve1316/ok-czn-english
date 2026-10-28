@@ -642,6 +642,20 @@ def boost_order(played):
     return order
 
 
+def prompt_cards(task, texts):
+    """Pick out the hand cards a hand prompt shows.
+
+    Args:
+        task: The running task, for the frame size.
+        texts: OCR boxes, from the full-screen pass or a read of `PROMPT_HAND`.
+
+    Returns:
+        `(name, box)` for every box inside `PROMPT_HAND` that names a known card.
+    """
+    named = [(cards.canonical(box.name), box) for box in texts if in_region(box, PROMPT_HAND, task.width, task.height)]
+    return [(name, box) for name, box in named if name in cards.CARD_COST]
+
+
 def answer_prompt(task, utils_sortie, chosen, need, to_top=False):
     """Tap the card the hand can best spare, or confirm once the prompt's own counter says enough are chosen.
 
@@ -672,8 +686,8 @@ def answer_prompt(task, utils_sortie, chosen, need, to_top=False):
         utils_sortie._move_and_click(task, *PROMPT_CONFIRM)
         task.sleep(1)
         return True
-    named = [(cards.canonical(box.name), box) for box in task.all_texts if in_region(box, PROMPT_HAND, task.width, task.height)]
-    hand = [(name, box) for name, box in named if name in cards.CARD_COST]
+    # Under a prompt's glow the full-screen pass can miss every name in the hand, which a read of the hand alone still finds.
+    hand = prompt_cards(task, task.all_texts) or prompt_cards(task, task.ocr(*PROMPT_HAND) or [])
     for picked in prompt.picked:
         taken = next((card for card in hand if card[0] == picked), None)
         if taken is not None:

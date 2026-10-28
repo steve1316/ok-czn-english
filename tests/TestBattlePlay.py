@@ -322,15 +322,16 @@ class Pressed:
         paint(self.frame, egos)
         self.keys = []
         self.logged = []
-        # Where `_move_and_click` tapped, as screen fractions, and what a cropped read of the hand prompt's counter gives.
+        # Where `_move_and_click` tapped, as screen fractions, and what cropped reads of the hand prompt's counter and hand give.
         self.taps = []
         self.progress = []
+        self.prompt_hand = []
 
     def send_key(self, key):
         self.keys.append(key)
 
     def ocr(self, *region):
-        return self.progress
+        return self.prompt_hand if region == battle.PROMPT_HAND else self.progress
 
     def box_of_screen(self, *region):
         return region
@@ -904,13 +905,14 @@ class TestHandPrompt(unittest.TestCase):
     SCREEN = (FakeBox("请选择1张要移动至抽牌堆的卡牌", 0.5, 0.111, width=600), FakeBox("05/10", 0.505, 0.971), FakeBox("Launcher", 0.273, 0.721),
               FakeBox("Basi", 0.27, 0.80), FakeBox("Opening Found", 0.349, 0.765), FakeBox("Hunting Instincts", 0.603, 0.757), FakeBox(AILMENT, 0.73, 0.776))
 
-    def frames(self, *counters, screens=(), played=None):
+    def frames(self, *counters, screens=(), played=None, cropped=()):
         """Answer the prompt once per counter reading.
 
         Args:
             counters: What a cropped read of the prompt's counter gives each frame, empty for nothing read.
             screens: What the full-screen pass reads on the first frames, `SCREEN` for every frame after them.
             played: The card whose key opened the prompt, or None for a turn not tracked.
+            cropped: What a read of the hand alone gives.
 
         Returns:
             The task, with every tap it made.
@@ -924,6 +926,7 @@ class TestHandPrompt(unittest.TestCase):
             for index, counter in enumerate(counters):
                 task.all_texts = list(screens[index] if index < len(screens) else self.SCREEN)
                 task.progress = [FakeBox(counter, 0.5, 0.17)] if counter else []
+                task.prompt_hand = list(cropped)
                 handlers_of(utils_sortie)["handle_battle_hand_select"](task)
         return task
 
@@ -957,6 +960,12 @@ class TestHandPrompt(unittest.TestCase):
     def test_a_hand_not_read_yet_is_waited_for(self):
         # Live, the prompt opened on a frame with no card name read, and upstream's random pick gave up an Impulse over the curse.
         task = self.frames("0/1", "0/1", screens=(self.SCREEN[:2],))
+        self.assertEqual([(0.73, round(0.776 + battle.CARD_BODY, 3))], task.taps)
+        self.assertEqual([], task.clicked, "upstream's random pick never ran")
+
+    def test_a_hand_the_full_screen_pass_misses_is_read_on_its_own(self):
+        # Live, Dark Condensation's prompt glowed over Call & Response, and the full-screen pass read no name for 50s of random taps.
+        task = self.frames("0/1", screens=(self.SCREEN[:2],), cropped=self.SCREEN[2:])
         self.assertEqual([(0.73, round(0.776 + battle.CARD_BODY, 3))], task.taps)
         self.assertEqual([], task.clicked, "upstream's random pick never ran")
 
