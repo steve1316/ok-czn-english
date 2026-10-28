@@ -921,7 +921,7 @@ def giving_up_order(name, box, kept, board_now, to_top=False):
     dealt = cards.category(name) in cards.DEALT_TO_YOU
     # Playing a Mental Breakdown card is how its combatant recovers, so one is only given up once nothing else is left.
     breakdown = name in cards.BREAKDOWN_CARDS
-    rating = cards.rated(name, board_now)
+    rating = cards.value(name, board_now)
     if to_top:
         # A card that spends every Action Point left costs the most of all.
         price = cards.cost(name)

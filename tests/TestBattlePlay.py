@@ -1199,12 +1199,18 @@ class TestHandPrompt(unittest.TestCase):
         task = self.frames("0/1", screens=((*top, FakeBox("Android", 0.45, 0.765)),))
         self.assertEqual([(0.45, round(0.765 + battle.CARD_BODY, 3))], task.taps, "Android, the one 2-cost card, though Opening Found rates higher")
 
-    def test_an_upgrade_is_never_given_up_on_a_tie(self):
-        # Live, Adagio's discard rated Exorcist's Formation level with Stroke and G Chord, and took it for being leftmost.
-        live = (FakeBox("请选择1张卡牌", 0.5, 0.111, width=600), FakeBox("04/10", 0.505, 0.971), FakeBox("Exorcist's Formation", 0.285, 0.80),
-                FakeBox("Mutation: Forbidden Algorithm", 0.40, 0.80), FakeBox("Stroke", 0.55, 0.80), FakeBox("G Chord", 0.70, 0.80))
-        task = self.frames("0/1", screens=(live,))
-        self.assertEqual([(0.55, round(0.80 + battle.CARD_BODY, 3))], task.taps)
+    def test_an_upgrade_or_a_kit_buff_is_never_given_up_on_a_tie(self):
+        prompt = (FakeBox("请选择1张卡牌", 0.5, 0.111, width=600), FakeBox("04/10", 0.505, 0.971))
+        for description, hand, taken in (
+            # Live, Adagio's discard rated Exorcist's Formation level with Stroke and G Chord, and took it for being leftmost.
+            ("an Upgrade", ("Exorcist's Formation", "Mutation: Forbidden Algorithm", "Stroke", "G Chord"), 0.55),
+            # Live, Flower of Devoured Fate's discard rated Strike of Darkness level with the Dark Blade it would boost.
+            ("Rei's Strike of Darkness", ("Strike of Darkness", "Dark Blade", "Annihilation Shot", "Annihilation Shot"), 0.40),
+        ):
+            with self.subTest(description):
+                live = (*prompt, *(FakeBox(name, x, 0.80) for name, x in zip(hand, (0.285, 0.40, 0.55, 0.70))))
+                task = self.frames("0/1", screens=(live,))
+                self.assertEqual([(taken, round(0.80 + battle.CARD_BODY, 3))], task.taps)
 
     def test_a_pick_to_place_in_hand_takes_the_best_card(self):
         # Live, Nia's Curiosity offered two Amp Therapy and an Inferno Rhapsody, and sat 11s for the stuck-screen fallback's random click.
