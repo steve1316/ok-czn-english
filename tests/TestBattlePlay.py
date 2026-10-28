@@ -866,6 +866,7 @@ class TestInstalling(unittest.TestCase):
             task.counter = 2
             battle.install()
             utils_sortie._try_all_card_keys(task, 2)
+            utils_sortie._try_all_card_keys(task, 2)
             task.hand_cards = hand(AILMENT, "loming Laser L", at=[0.393, 0.541])
             utils_sortie._try_all_card_keys(task, 2)
             task.hand_cards = hand(AILMENT, "oming Laser L", at=[0.393, 0.541])
@@ -907,6 +908,9 @@ class TestInstalling(unittest.TestCase):
             task.counter = 4
             task.all_texts = [FakeBox("Not enough AP.", 0.5, 0.52)]
             battle.install()
+            # Live, a key pressed on the deal's first frame, with 5 of 6 read, played Stealth Reload for Chain Fire.
+            utils_sortie._try_all_card_keys(task, 4)
+            self.assertEqual([], task.keys)
             utils_sortie._try_all_card_keys(task, 4)
             self.assertEqual(task.keys, ["4", battle.CONFIRM_KEY])
 
@@ -916,8 +920,9 @@ class TestInstalling(unittest.TestCase):
         with upstream(hand(AILMENT, AILMENT, at=[0.468, 0.605])) as (utils_sortie, task):
             task.counter = 3
             battle.install()
-            utils_sortie._try_all_card_keys(task, 3)
-            utils_sortie._try_all_card_keys(task, 3)
+            # The turn's first read is short, so it waits a frame for the deal.
+            for _ in range(3):
+                utils_sortie._try_all_card_keys(task, 3)
             self.assertEqual(task.keys, ["1", battle.CONFIRM_KEY, battle.END_TURN_KEY])
 
     def test_the_games_out_of_points_toast_ends_the_turn(self):

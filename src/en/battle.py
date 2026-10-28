@@ -422,6 +422,8 @@ class Turn:
         self.kit_waited = False
         # The hand size last waited on for a read that lost cards, and how many frames it has waited.
         self.settling = (None, 0)
+        # Whether the turn's first read came up short and was given a frame for the deal to settle.
+        self.dealt = False
         # Frames in a row spent waiting on a draw's toast.
         self.drawing = 0
         # Cards the game took this turn, oldest first, and those the turn before took, for kits that count plays.
@@ -1270,6 +1272,12 @@ def install():
             task.sleep(KIT_PAUSE)
             return
         turn.drawing = 0
+        if not turn.opened and not turn.dealt and count and len(names) < count:
+            # Live, a key pressed on the deal's first frame, with 5 of 6 read, played Stealth Reload for Chain Fire.
+            turn.dealt = True
+            task.log_info(f"the turn's first read has {len(names)} of {count} cards, so the deal gets a frame to settle")
+            task.sleep(KIT_PAUSE)
+            return
         # Live, Rapid Fire and Sir Kowalski sat lowered out of the name band for 2s after Firing Preparation, and a Reloading played
         # alone ended the turn with two points left. A turn out of points has its cards dimmed for good, so only a lit count waits.
         finale = any(kits.ends_turn(name) for name in names) and board.has_action_points(task)
