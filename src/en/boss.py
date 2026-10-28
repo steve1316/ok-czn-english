@@ -49,7 +49,8 @@ def weakness(frame, boss):
     point = BADGES.get((boss["x"], boss["y"]))
     if point is None:
         return None
-    return board.attribute_of(patch_of(frame, board.box_around(*point, board.WEAKNESS_HALF)), beside_counter=False)
+    patch = patch_of(frame, board.box_around(*point, board.WEAKNESS_HALF))
+    return board.attribute_of(patch, beside_counter=False, saturation_floor=board.BOSS_BADGE_SATURATION)
 
 
 class WeakBoss(StandIn):

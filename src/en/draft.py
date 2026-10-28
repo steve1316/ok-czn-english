@@ -21,6 +21,8 @@ DAMAGE = ("Core", "Attack")
 SUPPORTING = ("Healing", "Protection", "Support")
 # What to settle for once the rerolls are spent and nothing the team lacks is on offer.
 ROLES = DAMAGE + SUPPORTING
+# The team size at which the draft goes back to damage, so the fourth pick wants a Core, then an Attack.
+FOURTH_PICK = 3
 # The badge readings for each role. `Attack` reaches us as 攻击力, because the catalog rewrites that word for the
 # card type label and the equipment stat row, which share it.
 ROLE_READINGS = {"Core": ("core",), "Attack": ("attack", "攻击力"), "Support": ("support",),
@@ -58,8 +60,8 @@ def role_of(text):
 def wanted(party):
     """Name the roles a team still lacks, best first.
 
-    A team with no damage dealer wants one before anything else. Otherwise it wants the supporting roles it has
-    not got yet, so a second damage dealer is only ever a fallback.
+    A team with no damage dealer wants one before anything else, and so does the fourth pick. Otherwise it wants the supporting roles it
+    has not got yet, so a second damage dealer is only ever a fallback.
 
     Args:
         party: Names of the combatants on the team, from `battle.PARTY`.
@@ -68,7 +70,7 @@ def wanted(party):
         A tuple of roles, empty when the team has every role.
     """
     have = {COMBATANT_ROLE.get(name) for name in party}
-    if not have & set(DAMAGE):
+    if len(party) >= FOURTH_PICK or not have & set(DAMAGE):
         return DAMAGE
     return tuple(role for role in SUPPORTING if role not in have)
 

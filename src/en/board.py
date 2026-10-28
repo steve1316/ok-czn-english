@@ -93,6 +93,8 @@ COUNTER_HEIGHT = (0.045, 0.072)
 WEAKNESS_OFFSET = (0.0185, 0.0225)
 WEAKNESS_HALF = (0.0085, 0.0085)
 WEAKNESS_SATURATION = 150
+# The boss select screen draws its badges paler. Its Order badge sits at a saturation of about 107.
+BOSS_BADGE_SATURATION = 100
 WEAKNESS_VALUE = 130
 # How much of the sampled patch has to be strongly coloured before it is read as a badge rather than scenery.
 WEAKNESS_ENOUGH = 0.20
@@ -299,7 +301,7 @@ def hue_distance(one, other):
     return min(gap, 180 - gap)
 
 
-def attribute_of(patch, beside_counter=True):
+def attribute_of(patch, beside_counter=True, saturation_floor=WEAKNESS_SATURATION):
     """Say which attribute a badge is drawn for.
 
     Assumes a battle or boss select screen: swept over `captures/`, the 22 battle frames read Instinct or nothing,
@@ -309,6 +311,7 @@ def attribute_of(patch, beside_counter=True):
         patch: The pixels the badge was sampled from, in BGR.
         beside_counter: Whether the badge sits beside an enemy's action counter, as it does in battle. The boss
             select screen has no counter, and its Passion badge is drawn at a hue of 176, inside the counter's band.
+        saturation_floor: How saturated a pixel has to be to count as badge colour.
 
     Returns:
         The attribute's name, or None when the patch holds no badge worth reading.
@@ -317,7 +320,7 @@ def attribute_of(patch, beside_counter=True):
     if hsv is None:
         return None
     hue, saturation, value = cv2.split(hsv)
-    strong = (saturation > WEAKNESS_SATURATION) & (value > WEAKNESS_VALUE)
+    strong = (saturation > saturation_floor) & (value > WEAKNESS_VALUE)
     if np.count_nonzero(strong) < WEAKNESS_ENOUGH * strong.size:
         return None
     middle = int(np.median(hue[strong]))

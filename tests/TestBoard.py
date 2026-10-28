@@ -283,8 +283,11 @@ class TestBossWeakness(unittest.TestCase):
 
     def test_each_boss_reads_its_weakness(self):
         # The Passion badge is drawn inside the battle counter's magenta band, so a read that keeps that check loses it.
-        frame = pasted("boss_weakness", *BOSS_BADGES_AT)
-        self.assertEqual([boss.weakness(frame, entry) for entry in BOSSES], ["Passion", "Void"])
+        # Live, the Order badge was paler than any battle badge and read as no weakness at all.
+        for name, expected in (("boss_weakness", ["Passion", "Void"]), ("boss_weakness_order", ["Passion", "Order"])):
+            with self.subTest(name=name):
+                frame = pasted(name, *BOSS_BADGES_AT)
+                self.assertEqual([boss.weakness(frame, entry) for entry in BOSSES], expected)
 
     def test_the_pick_follows_the_damage_dealers(self):
         frame = pasted("boss_weakness", *BOSS_BADGES_AT)
