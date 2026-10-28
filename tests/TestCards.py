@@ -844,8 +844,11 @@ class TestKits(unittest.TestCase):
             # Live, both points went on Futility at 160 each. With nothing of Kayron's to feed, the partners' cards come first.
             ("a lone Futility waits for the partners", ("Futility", "Futility", "Futility", "Multishot", "Bowguard"), cards.Board(action_points=2),
              ["Multishot", "Bowguard"]),
-            ("Futility still goes first with Brand of Annihilation to feed", ("Futility", "Multishot", "Brand of Annihilation"),
-             cards.Board(action_points=1), ["Futility"]),
+            ("Futility still goes first with Brand of Annihilation to feed", ("Futility", "Futility", "Multishot", "Brand of Annihilation"),
+             cards.Board(action_points=2), ["Futility", "Futility"]),
+            # Live, the last point went on a Futility with Multishot and Plasma Rain still in hand.
+            ("the last point goes to a partner's card", ("Brand of Annihilation", "Futility", "Multishot", "Plasma Rain"),
+             cards.Board(action_points=1, health=1.0), ["Multishot"]),
         ))
 
     def test_khalipe_lets_vulture_ejection_fire_free(self):

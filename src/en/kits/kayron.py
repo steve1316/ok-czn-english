@@ -1,9 +1,10 @@
-"""Kayron: exhaust every Futility first, then cash in with Black Hole, and play the team's cards over a Futility with nothing to feed.
+"""Kayron: exhaust every Futility first, then cash in with Black Hole, and play the team's cards over a Futility with nothing to feed or on the last point.
 
 Black Hole hits harder for each Futility exhausted over the whole battle. The generic picker buys it ahead of the Futility cards and plays it
 first, so it lands before the exhausts that would have powered it.
 """
 
+from src.en.game_battle import CARD_COST
 from src.en.kits.kit import Kit, base_name, owned
 
 # Cards that exhaust when played, or create Futility to be exhausted, so they all go before Black Hole.
@@ -13,6 +14,8 @@ FUTILITY = "Futility"
 # A Futility in a hand where it is all Kayron has left is cut to this share, so the team's cards are bought first. Futility rates 100-160,
 # so a quarter sits under a partner's weakest 1-AP card at 60, and it still takes points nothing else wants.
 LONE_FUTILITY_SHARE = 0.25
+# A Futility gives the turn's last point to any other card in hand that can use it.
+LAST_POINT = 1
 
 
 class Kayron(Kit):
@@ -36,7 +39,7 @@ class Kayron(Kit):
         return name == BLACK_HOLE and any(base_name(other) in EXHAUSTERS for other in board.hand)
 
     def worth(self, name, board, base, rate):
-        """Cut a Futility's value when no card of Kayron's in hand follows up on its exhaust.
+        """Cut a Futility's value when no card of Kayron's in hand follows up on its exhaust, or when another card can take the last point.
 
         Args:
             name: The card being valued.
@@ -47,7 +50,11 @@ class Kayron(Kit):
         Returns:
             The value to plan with.
         """
-        if base_name(name) != FUTILITY or any(self.claims(other) and base_name(other) != FUTILITY for other in board.hand):
+        if base_name(name) != FUTILITY:
+            return base
+        others = [other for other in board.hand if base_name(other) != FUTILITY and not self.held(other, board)]
+        last_point = board.action_points <= LAST_POINT and any(0 <= CARD_COST.get(base_name(other), -1) <= board.action_points for other in others)
+        if any(self.claims(other) for other in others) and not last_point:
             return base
         return base * LONE_FUTILITY_SHARE
 
