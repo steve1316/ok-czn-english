@@ -344,6 +344,10 @@ class TestReadingNames(unittest.TestCase):
             # Live, in a crowded Rossweisse hand. It fits her Sword Slash and Yuki's Longsword Slash, and only one of them was in the party.
             ("the party settles a stub two combatants' cards fit", "ord Slas", "Sword Slash", "Rossweisse"),
             ("a party that owns neither fit leaves it alone", "ord Slas", "ord Slas", "Haru"),
+            # Live, eight Rhapsodies crowded the hand to "Inferno" and "nferno", which also fit Inferno Rhapsody: Heaven at the same cost.
+            # Left unread at a guessed 1 AP, three free Rhapsodies were held while the turn was ended.
+            ("a stub of a card and a same-cost name built on it", "Inferno", "Inferno Rhapsody"),
+            ("the same cut at the front", "nferno", "Inferno Rhapsody"),
         ):
             with self.subTest(description):
                 self.assertEqual(cards.canonical(reading, frozenset(party)), expected)

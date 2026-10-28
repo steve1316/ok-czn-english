@@ -239,7 +239,8 @@ def stub_card(stub, party=frozenset()):
         party: The combatants known to be in the party. Empty when none are known yet, which leaves every card in play.
 
     Returns:
-        The card, or None when nothing or more than one card fits. A card and its Epiphanies count as one card, the plainest of them.
+        The card, or None when nothing or more than one card fits. A card and its Epiphanies count as one card, the plainest of them, as do
+        names that only add to it at the same cost.
     """
     tries = [(cut, fits) for cut in range(GARBLED_TAIL + 1) for fits in (str.startswith, str.__contains__)]
     for cut, fits in tries[:1] if looks_like_label(stub) else tries:
@@ -252,7 +253,10 @@ def stub_card(stub, party=frozenset()):
         if party:
             matches = [real for real in matches if owner(real) in (None, *party)] or matches
         if matches:
-            return min(matches, key=len) if len({base_name(real) for real in matches}) == 1 else None
+            plainest = min(matches, key=len)
+            # A longer name built on the plainest at its price is played the same: "Inferno" fits Inferno Rhapsody and Inferno Rhapsody: Heaven.
+            alike = all(fold(real).startswith(fold(plainest)) and cost(real) == cost(plainest) for real in matches)
+            return plainest if alike or len({base_name(real) for real in matches}) == 1 else None
     return None
 
 
