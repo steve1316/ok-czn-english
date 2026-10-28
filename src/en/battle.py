@@ -689,11 +689,13 @@ def shown_cost(task, frame, box, printed):
     if printed in (0, cards.X_COST) or not board.cost_lowered(frame, box):
         return None
     if printed == 1:
-        # OCR seldom reads a lone 0, and a lowered 1 can only be one.
+        # A lowered 1 can only be 0.
         return 0
     read = ego.DIGITS.search("".join(text.name for text in task.ocr(*box, frame=frame, frame_processor=ego.enlarged) or []))
     if read is None:
-        return None if printed is None else printed - 1
+        # OCR seldom reads a lone 0. Live, Mutation's free Ecstasy of Violence was taken for 8 and left unplayed, and a card
+        # that really costs more is only refused.
+        return None if printed is None else 0
     return int(read.group()) if printed is None or int(read.group()) < printed else None
 
 
