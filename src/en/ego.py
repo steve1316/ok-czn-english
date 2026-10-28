@@ -340,6 +340,10 @@ def take_turn(task, utils, turn):
     """
     if turn.ego_fires >= FIRES_PER_TURN or not task.find_feature(feature_name=FINISH_TURN, box=task.box_of_screen(*FINISH_TURN_REGION)):
         return False
+    hand = utils._hand_cards(task) or []
+    if any(cards.canonical(card["name"]) in cards.BREAKDOWN_CARDS for card in hand):
+        # Free, and Fear can end the fight outright, so the Egos wait for the hand to play them first.
+        return False
     frame = frame_of(task)
     banked = board.banked_points(frame)
     affordable = payable(task, frame, board.affordable_egos(task), banked)
@@ -360,7 +364,6 @@ def take_turn(task, utils, turn):
         slots.append((key, ego, key in affordable))
     after_hit = board.team_after_hit(frame)
     invulnerable = turn.invulnerable
-    hand = utils._hand_cards(task) or []
     attacking = board.has_action_points(task) and any(cards.category(cards.canonical(card["name"])) == cards.ATTACK_CATEGORY for card in hand)
     boss = bool(getattr(task, "node_status", {}).get(BOSS))
     exhausting = any(cards.canonical(card["name"]) in CARD_EXHAUSTS for card in hand)

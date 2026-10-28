@@ -253,6 +253,15 @@ class TestEgoPlanner(unittest.TestCase):
             with self.subTest(banked=banked):
                 self.assertEqual(fired, ego.payable(types.SimpleNamespace(ocr=ocr), None, board.EGO_KEYS, banked))
 
+    def test_no_ego_fires_ahead_of_a_breakdown_card(self):
+        def frame_read(**kwargs):
+            raise AssertionError("the Egos were read with a breakdown card still in hand")
+
+        task = types.SimpleNamespace(find_feature=lambda **kwargs: True, box_of_screen=lambda *box: None, frame=None)
+        utils = types.SimpleNamespace(_hand_cards=lambda task: [{"name": "Fear", "key": "1"}, {"name": ATTACK, "key": "2"}])
+        with mock.patch.object(ego, "frame_of", frame_read):
+            self.assertFalse(ego.take_turn(task, utils, types.SimpleNamespace(ego_fires=0)))
+
     def test_an_exhaust_ego_waits_for_a_card_to_exhaust(self):
         # Live, Activate Defense Module fired ahead of the attacks with no Exhaust card in hand, so its Weaken never landed.
         for banked in (3, 7):
