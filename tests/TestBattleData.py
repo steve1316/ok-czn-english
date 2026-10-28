@@ -16,6 +16,7 @@ from src.en.game_battle import (  # noqa: E402
     COMBATANT_ATTRIBUTE, COMBATANT_EGO_CARD, COMBATANT_EGO_COST, COMBATANT_SPARK_CARDS, X_COST,
 )
 from src.en.game_data import COMBATANTS  # noqa: E402
+from src.en.game_text import DIVINE_EPIPHANIES, DIVINE_SHARED, EPIPHANIES  # noqa: E402
 
 # The five attributes a player is shown. The client stores each as a colour and names it in its own table.
 EXPECTED_ATTRIBUTES = {"Instinct", "Justice", "Order", "Passion", "Void"}
@@ -98,6 +99,18 @@ class TestOwnership(unittest.TestCase):
                 owner = CARD_OWNER.get(card)
                 with self.subTest(card=card):
                     self.assertIn(owner, COMBATANT_ATTRIBUTE)
+
+
+class TestEpiphanyText(unittest.TestCase):
+    """Epiphany text, checked against lines read off the game's own screens."""
+
+    def test_epiphany_lines_match_the_screen(self):
+        # Resolute Blitz's Counterattack sits on an effect its damage links on to, and once read as the damage's 210%.
+        # The Divine pair is the "Epiphany: Diallos" screen, which used to be missing from the data altogether.
+        for lines, line in ((EPIPHANIES["Resolute Blitz"][0], "When Damage is inflicted, add 1 Counterattack"),
+                            (DIVINE_EPIPHANIES["Diallos"], "Create 2 Activation Core"), (DIVINE_SHARED, "Apply Agony 2 to all enemies")):
+            with self.subTest(line=line):
+                self.assertIn(line, lines)
 
 
 class TestEgoSkills(unittest.TestCase):
