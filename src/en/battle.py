@@ -1251,6 +1251,9 @@ def install():
         if count is None and turn is not None:
             # Off the battle screen, which is also how a fight won by a card ends without anyone pressing end turn.
             turn.ended = True
+        elif count == 0 and turn is not None and turn.ended:
+            # The hand is discarded at end turn, so the next deal is a new turn even when it is no bigger than what was left.
+            turn.hand_count = 0
         if count:
             turn = turn_of(task, count)
             if getattr(task, TEAM_WANTED, False) and not (turn.played or turn.attempted):

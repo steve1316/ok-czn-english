@@ -696,6 +696,20 @@ class TestInstalling(unittest.TestCase):
             utils_sortie._try_all_card_keys(task, 2)
             self.assertEqual(getattr(task, battle.TURN).last_turn, (ATTACK,))
 
+    def test_a_deal_no_bigger_than_the_hand_left_is_a_new_turn_once_the_hand_emptied(self):
+        # Live, a turn ended holding 6 and the next dealt 5, so the deal read as the old turn still going.
+        with upstream(hand(ATTACK, BIG_ATTACK, AILMENT)) as (utils_sortie, task):
+            battle.install()
+            page = handlers_of(utils_sortie)["handle_battle_page"]
+            page(task)
+            ended = getattr(task, battle.TURN)
+            battle.end_of_turn(task)
+            task.hand_cards = []
+            page(task)
+            task.hand_cards = hand(ATTACK, BIG_ATTACK)
+            page(task)
+            self.assertIsNot(getattr(task, battle.TURN), ended)
+
     def test_a_battle_keeps_every_play_until_the_next_node(self):
         # Two turns back is still this fight, but upstream counts the next node on leaving the route screen, before its fight opens.
         with upstream(hand(ATTACK)) as (utils_sortie, task):
