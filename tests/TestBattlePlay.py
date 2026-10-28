@@ -24,6 +24,7 @@ sys.path.insert(0, str(REPO_ROOT / "ok_tasks"))
 import utils_sortie as real_sortie  # noqa: E402
 
 from src.en import battle, board, cards, ego, overrides  # noqa: E402
+from src.en.game_text import EPIPHANIES  # noqa: E402
 from src.en.handlers import standing_in  # noqa: E402
 from tests.TestBoard import EGO_SLOTS_AT, FakeTask, flat, paint, paint_enemy, pasted  # noqa: E402
 from tests.fakes import FakeBox  # noqa: E402
@@ -941,10 +942,15 @@ class TestHandPrompt(unittest.TestCase):
 
     def test_a_boost_goes_to_the_best_card_it_fits(self):
         # Opening Found rates highest, but Growth Acceleration can only pick Orlea's own cards, and the curse is no boost at all.
-        cases = (("Growth Acceleration", (*self.SCREEN, FakeBox("Growing Creature", 0.45, 0.765)), 0.45),
-                 ("Dark Condensation", self.SCREEN, 0.349))
-        for played, screen, x in cases:
-            with self.subTest(played=played):
+        choose = next(text for text in EPIPHANIES["Dark Condensation"] if text.startswith("Choose"))
+        cases = (("Growth Acceleration", (*self.SCREEN, FakeBox("Growing Creature", 0.45, 0.765)), 0.45, {}),
+                 ("Dark Condensation", self.SCREEN, 0.349, {}),
+                 # Live, a deck holding this Epiphany took its prompt for a discard and kept tapping a Skill the prompt would not take.
+                 ("Dark Condensation", self.SCREEN, 0.349, {"Dark Condensation": [choose]}))
+        self.addCleanup(cards.use_deck, {})
+        for played, screen, x, deck in cases:
+            with self.subTest(played=played, epiphany=bool(deck)):
+                cards.use_deck(deck)
                 task = self.frames("0/1", screens=(screen,), played=played)
                 self.assertEqual([(x, round(0.765 + battle.CARD_BODY, 3))], task.taps)
 

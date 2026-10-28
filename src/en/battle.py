@@ -109,8 +109,10 @@ HAND_TOTAL = re.compile(r"\d+/10")
 PROMPT_PROGRESS = (0.40, 0.14, 0.60, 0.20)
 PROGRESS = re.compile(r"(\d+)\s*/\s*(\d+)")
 # Card text whose prompt picks a hand card to boost rather than give up, as Growth Acceleration, Dark Condensation and Sir Kowalski do.
-# `kind` narrows the pick to Attack cards or cards so named, and `own` to the played card's combatant.
-BOOST = re.compile(r"select (?:up to )?\d+ (?P<kind>[a-z ]*?) ?cards?(?:\(s\))?(?P<own> of this unit)? in hand,? (?:then|and) (?!move)", re.I)
+# `kind` narrows the pick to Attack cards or cards so named, and `own` to the played card's combatant. An Epiphany of Dark Condensation
+# reads "Choose 1 Attack Card(s) in hand, +X% Damage Amount", with the boost straight after the comma.
+BOOST = re.compile(r"(?:select|choose) (?:up to )?\d+ (?P<kind>[a-z ]*?) ?cards?(?:\(s\))?(?P<own> of this unit)? in hand,? (?:(?:then|and) (?!move)|(?=\+))",
+                   re.I)
 # How a card's text marks the line its Retain effect runs, which a boost that activates Retain needs to be worth anything.
 RETAIN_LINE = "Retain:"
 # How far below a card's name to tap it, onto its art. Upstream tapped a type label's fragment and the prompt stayed at 0/1.
