@@ -1,20 +1,35 @@
 """Rita: spend AP on other cards first so Time Paradox has Chronicle to convert, and fire Time Axis Collapse while the hand is full.
 
 Chrono Archon turns spent AP into Chronicle, Time Paradox turns the Chronicle into Chronal Ascension for extra Rita AP, and Time Axis Collapse
-gains damage for every Cost left in hand. The generic picker plays Time Paradox first, with no Chronicle yet, and plays Future Decreed as a skill.
+gains damage for every Cost left in hand. The generic picker plays Time Paradox first, with no Chronicle yet, plays Future Decreed as a skill,
+and rates Chrono Archon as an unread card, below any attack.
 """
 
 from src.en.kits.kit import PHASE_SETUP, Kit, base_name, owned
 
 TIME_PARADOX = "Time Paradox"
+# The battle-long buff that turns spent AP into Chronicle, so nothing Time Paradox converts exists before it is out.
+CHRONO_ARCHON = "Chrono Archon"
 # A random 3-Cost card is a gamble outside a hand built for it, so the plain card stays in hand. An Epiphany version is left to the generic picker.
 FUTURE_DECREED = "Future Decreed"
 # Cards played before Time Paradox has Chronicle from this turn's spending to convert.
 PLAYED_FIRST = 2
 
 
+def archon_waiting(board):
+    """Say whether a Chrono Archon is in hand and none has been played this battle.
+
+    Args:
+        board: The `cards.Board` of the turn.
+
+    Returns:
+        True while the battle's Chronicle has yet to start.
+    """
+    return any(base_name(card) == CHRONO_ARCHON for card in board.hand) and not any(base_name(card) == CHRONO_ARCHON for card in board.battle)
+
+
 class Rita(Kit):
-    """Keeps Time Paradox for after the turn's first plays, Future Decreed for good, and fires Time Axis Collapse before the hand empties."""
+    """Plays Chrono Archon first, keeps Time Paradox for after the turn's first plays, and Future Decreed for good."""
 
     name = "Rita"
     cards = owned("Rita")
@@ -33,10 +48,30 @@ class Rita(Kit):
         """
         if name == FUTURE_DECREED:
             return True
-        if base_name(name) != TIME_PARADOX or len(board.played) >= PLAYED_FIRST:
+        if base_name(name) != TIME_PARADOX:
+            return False
+        if archon_waiting(board):
+            return True
+        if len(board.played) >= PLAYED_FIRST:
             return False
         # With nothing else left to play there is nothing to wait for.
         return any(base_name(other) != TIME_PARADOX and other != FUTURE_DECREED for other in board.hand)
+
+    def worth(self, name, board, base, rate):
+        """Price the battle's first Chrono Archon above every other card in hand, so the turn's points reach it.
+
+        Args:
+            name: The card being valued.
+            board: The `cards.Board` it would be played into.
+            base: What the generic picker made of it.
+            rate: Gives the generic value of the other cards in hand.
+
+        Returns:
+            The value to plan with.
+        """
+        if base_name(name) != CHRONO_ARCHON or not archon_waiting(board):
+            return base
+        return max([base] + [rate(other) for other in board.hand if other != name]) + 1
 
 
 KIT = Rita()

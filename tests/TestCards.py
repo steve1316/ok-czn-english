@@ -968,6 +968,12 @@ class TestKits(unittest.TestCase):
              ["Time Axis Collapse", "Break Armor"]),
             # Generic play plays it as a skill and gets a random 3-Cost card.
             ("Future Decreed stays in hand", ("Future Decreed", "Anchor"), cards.Board(), ["Anchor"]),
+            # Live, Gear Bag and an attack took the battle's points while Chrono Archon sat in hand, and Time Paradox converted nothing.
+            ("Chrono Archon takes the point from an attack", ("Slash", "Chrono Archon"), cards.Board(action_points=1), ["Chrono Archon"]),
+            ("Time Paradox waits for Chrono Archon", ("Time Paradox", "Chrono Archon"), cards.Board(action_points=1, played=("Slash", "Slash")),
+             ["Chrono Archon"]),
+            ("a second Chrono Archon is an ordinary card", ("Time Paradox", "Slash", "Chrono Archon"),
+             cards.Board(action_points=1, played=("Slash", "Slash"), battle=("Chrono Archon", "Slash", "Slash")), ["Time Paradox", "Slash"]),
         ))
 
     def test_selena_marks_before_attacking(self):
