@@ -6,6 +6,7 @@ point. Neither knows a kit that wants cards held or played in an order, so each 
 
 from functools import lru_cache
 
+from src.en.kits.kit import base_name
 from src.en.kits import (
     adelheid, amir, anika, arabella, beryl, cassius, chizuru, diana, fei, haru, heidemarie, hilde, hugo, kayron,
     khalipe, lucas, luke, magna, maribell, mei_lin, mika, narja, nia, nine, olga, orlea, owen, rei, renoa, rin, rita,
@@ -119,3 +120,15 @@ def waiting(names, count):
         The kit, or None when nothing is waiting.
     """
     return next((kit for kit in active(names) if kit.waiting(names, count)), None)
+
+
+def ends_turn(name):
+    """Say whether a card is a Finale, which ends the turn on play.
+
+    Args:
+        name: A canonical card name.
+
+    Returns:
+        True when some kit lists the card, without its Epiphany, as a Finale.
+    """
+    return any(base_name(name) in kit.finales for kit in KITS)

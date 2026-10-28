@@ -111,6 +111,8 @@ class Kit:
     cards = frozenset()
     # Base names of the cards the kit moves in the turn, and the phase each goes to, for the default `phase`.
     places = {}
+    # Base names of the Finale cards, which end the turn on play without the end-turn key.
+    finales = frozenset()
 
     def claims(self, name):
         """Say whether a card switches this kit on.

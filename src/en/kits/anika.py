@@ -23,6 +23,7 @@ class Anika(Kit):
     cards = owned("Anika")
     # Ignition Slash leads the attacks since it breaks Tenacity, and Rampage Trigger follows them all.
     places = {IGNITION: PHASE_ATTACK - 0.25, RAMPAGE: PHASE_ATTACK + 0.5, RELOADING: PHASE_SPENDS_EVERYTHING + 1}
+    finales = frozenset({RELOADING})
 
     def held(self, name, board):
         """Keep Warming Up while no two-cost attack is in hand to take its discount.

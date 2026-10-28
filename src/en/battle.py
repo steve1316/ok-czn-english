@@ -352,13 +352,14 @@ def fight_of(task):
     return getattr(task, "start_time", None), status.get("pass_final_boss_count"), status.get("node_count")
 
 
-def unsettled(turn, names, count):
+def unsettled(turn, names, count, limit=SETTLE_WAIT):
     """Find the cards a short read lost since the last one, counting the frame it is about to wait.
 
     Args:
         turn: The `Turn` in progress, holding the hand last read and the card pressed since.
         names: The canonical names read this frame.
         count: The hand size the counter read.
+        limit: Frames a hand size is waited on, longer while a Finale would end the turn on what is left.
 
     Returns:
         The cards missing besides the one pressed, empty when the read is whole or this hand size has been waited on enough.
@@ -369,7 +370,7 @@ def unsettled(turn, names, count):
     lost = expected - collections.Counter(names)
     size, waits = turn.settling
     waits = waits if size == count else 0
-    if not count or len(names) >= count or not lost or waits >= SETTLE_WAIT:
+    if not count or len(names) >= count or not lost or waits >= limit:
         return []
     turn.settling = (count, waits + 1)
     return sorted(lost.elements())
@@ -792,7 +793,7 @@ def watch_invulnerable(task, turn):
 def handle_cards_left(task):
     """Cancel the end of a turn once the game says a card can still be played, when the bot may have missed one.
 
-    That is an end upstream called on an unread hand, or one the picker called holding cards it passed over for cost.
+    That is an end upstream called on an unread hand, or one the picker called holding cards it passed over for cost or the game refused.
 
     Args:
         task: The running task, whose `all_texts` is the current screen.
@@ -804,8 +805,9 @@ def handle_cards_left(task):
     callbacks = getattr(task, UNREAD_HAND, None)
     unread = callbacks is not None and callbacks < CALLBACKS
     turn = getattr(task, TURN, None)
-    priced_out = turn is not None and turn.priced_out and not turn.objected
-    if not (unread or priced_out) or not text_in_region(task, CARDS_LEFT, CARDS_LEFT_REGION):
+    # Live, the game refused every card for a turn with all three points to spend, then warned that they could still be played.
+    passed = turn is not None and not turn.objected and (turn.priced_out or sorted(turn.refused))
+    if not (unread or passed) or not text_in_region(task, CARDS_LEFT, CARDS_LEFT_REGION):
         return False
     cancel = text_in_region(task, CANCEL, CANCEL_REGION)
     if not cancel:
@@ -814,8 +816,9 @@ def handle_cards_left(task):
         task.log_info("the game says cards can still be played, so the hand was not raised yet - cancelling the end of turn")
         setattr(task, UNREAD_HAND, callbacks + 1)
     else:
-        task.log_info(f"the game says a card can still be played, so one of {turn.priced_out} must cost less than the data says")
+        task.log_info(f"the game says a card can still be played, so one of {passed} gets another try")
         turn.objected = True
+        turn.refused.clear()
     if turn is not None:
         turn.ended = False
     # `click_box` waits a second after the click itself, so a second wait here only held up the cards left to play.
@@ -1112,9 +1115,11 @@ def turn_of(task, hand_count):
         turn = Turn(hand_count, fight=fight)
         setattr(task, TURN, turn)
     elif new_turn(turn.hand_count, hand_count, turn.ended):
+        # A Finale ends the turn before its press settles, so the deal after it is what says it played.
+        played = [*turn.played, turn.attempted] if turn.attempted else turn.played
         # With no node to tell fights apart, the battle is only known back to the turn before.
-        earlier = (*turn.earlier, *turn.played) if fight is not None else turn.played
-        turn = Turn(hand_count, turn.played, turn.hand, earlier, fight, turn.retrieved if fight is not None else ())
+        earlier = (*turn.earlier, *played) if fight is not None else played
+        turn = Turn(hand_count, played, turn.hand, earlier, fight, turn.retrieved if fight is not None else ())
         setattr(task, TURN, turn)
     turn.hand_count = hand_count
     return turn
@@ -1258,7 +1263,10 @@ def install():
             task.sleep(KIT_PAUSE)
             return
         turn.drawing = 0
-        lost = unsettled(turn, names, count)
+        # Live, Rapid Fire and Sir Kowalski sat lowered out of the name band for 2s after Firing Preparation, and a Reloading played
+        # alone ended the turn with two points left. A turn out of points has its cards dimmed for good, so only a lit count waits.
+        finale = any(kits.ends_turn(name) for name in names) and board.has_action_points(task)
+        lost = unsettled(turn, names, count, KIT_WAIT if finale else SETTLE_WAIT)
         if lost:
             task.log_info(f"read {names} without {lost} from the last frame, so the hand gets a frame to settle")
             task.sleep(KIT_PAUSE)
@@ -1351,6 +1359,10 @@ def install():
             task.log_info(f"not enough AP for {name}, moving on")
             turn.refused.add(name)
             turn.attempted = None
+        elif kits.ends_turn(name):
+            # A Finale ends the turn with no end-turn key, and the next deal only starts a fresh turn once one has been ended. The press
+            # still settles as played or refused like any other, since the game can refuse a Finale too.
+            turn.ended = True
 
     original_page = utils_sortie.handle_battle_page
 

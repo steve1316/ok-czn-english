@@ -959,6 +959,20 @@ class TestCallingBackTheTurn(unittest.TestCase):
             task.all_texts = list(CARDS_LEFT_PROMPT)
             self.assertFalse(handlers["handle_cards_left"](task))
 
+    def test_cards_the_game_refused_are_tried_again_once_it_says_they_play(self):
+        # Live, a final boss turn refused every card with all three points to spend, then warned that they could still be played.
+        with upstream(hand("Rapid Fire")) as (utils_sortie, task):
+            battle.install()
+            handlers = handlers_of(utils_sortie)
+            for _ in range(battle.REFUSALS + 1):
+                utils_sortie._try_all_card_keys(task, 1)
+            self.assertEqual(task.keys[-1], battle.END_TURN_KEY)
+            task.all_texts = list(CARDS_LEFT_PROMPT)
+            self.assertTrue(handlers["handle_cards_left"](task))
+            task.all_texts, task.keys = [], []
+            utils_sortie._try_all_card_keys(task, 1)
+            self.assertEqual(task.keys, ["1", battle.CONFIRM_KEY])
+
     def test_a_hand_still_unread_after_a_callback_has_its_keys_tried(self):
         # Live, a 0 AP card never read over its holographic art, so each callback came back to the same empty hand.
         with upstream([]) as (utils_sortie, task):
@@ -1093,6 +1107,27 @@ class TestKits(unittest.TestCase):
             # A fusion that never comes cannot hold the turn for good.
             page(task)
             self.assertEqual(len(utils_sortie.asked), 1)
+
+    def test_a_finale_ends_the_turn_without_the_end_turn_key(self):
+        # Live, Reloading ended Anika's turn, and the next deal was played as the same turn, with its plays and enemy reads.
+        with upstream(hand("Reloading")) as (utils_sortie, task):
+            battle.install()
+            utils_sortie._try_all_card_keys(task, 1)
+            task.hand_cards = hand("Rapid Fire", "Blaster Swing")
+            utils_sortie._try_all_card_keys(task, 2)
+            self.assertEqual(getattr(task, battle.TURN).last_turn, ("Reloading",))
+
+    def test_a_finale_waits_on_cards_a_read_lost(self):
+        # Live, Rapid Fire and Sir Kowalski sat lowered out of the name band for 2s, and Reloading alone ended the turn on two points.
+        with upstream(hand("Reloading", "Rapid Fire", "Sir Kowalski")) as (utils_sortie, task):
+            battle.install()
+            utils_sortie._try_all_card_keys(task, 3)
+            task.hand_cards, task.counter, task.keys = hand("Reloading"), 2, []
+            for _ in range(battle.KIT_WAIT):
+                utils_sortie._try_all_card_keys(task, 2)
+            self.assertEqual(task.keys, [])
+            utils_sortie._try_all_card_keys(task, 2)
+            self.assertEqual(task.keys, ["1", battle.CONFIRM_KEY])
 
     def test_a_hand_prompt_never_gives_up_a_shard(self):
         with upstream(hand(ATTACK)) as (utils_sortie, task):

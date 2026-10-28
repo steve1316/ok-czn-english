@@ -22,6 +22,7 @@ class Amir(Kit):
     cards = owned("Amir")
     # Iron Skin is a Finale that ends the turn on play, so it sits past every other phase.
     places = {**dict.fromkeys(GENERATORS, PHASE_SETUP), IRON_SKIN: PHASE_SPENDS_EVERYTHING + 1}
+    finales = frozenset({IRON_SKIN})
 
     def worth(self, name, board, base, rate):
         """Price Steel Barrier as a shield plus the hit it sets off once Full Metal Hurricane has been played this turn.
