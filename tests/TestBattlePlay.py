@@ -202,6 +202,15 @@ class TestEgoPlanner(unittest.TestCase):
                 read = ego.identify(task, types.SimpleNamespace(), "F1")
                 self.assertEqual((read.name, read.text, read.roles), (name, "Heal140% all of Orlea's cards in hand", {ego.GUARD}))
 
+    def test_a_combatant_card_leaves_out_the_panel_beside_it(self):
+        # Live, Charisma of Resolve sat left beside the Ego panel and read with its EP count and Cancel button in the text.
+        task = Previewed([FakeBox("Charisma of Resolve", 0.249, 0.479, width=300), FakeBox("Ego Skill", 0.21, 0.518, width=150),
+                          FakeBox("450% Defense-Based", 0.237, 0.575, width=250), FakeBox("5", 0.062, 0.634, width=20),
+                          FakeBox("Damage to all enemies", 0.24, 0.611, width=300), FakeBox("Create 1 Vulture Ejection", 0.247, 0.644, width=350),
+                          FakeBox("'Cancel", 0.113, 0.818, width=120)])
+        read = ego.identify(task, types.SimpleNamespace(), "F2")
+        self.assertEqual(read.text, "450% Defense-Based Damage to all enemies Create 1 Vulture Ejection")
+
     def test_the_first_rule_that_applies_wins(self):
         every = [("F1", GUARD_EGO, True), ("F2", STRIKE_EGO, True), ("F3", SETUP_EGO, True)]
         cases = (
