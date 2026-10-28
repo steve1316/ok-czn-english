@@ -783,6 +783,18 @@ class TestInstalling(unittest.TestCase):
             utils_sortie._try_all_card_keys(task, 3)
             self.assertEqual(len(pressed) + 2, len(task.keys))
 
+    def test_a_draw_on_its_way_to_the_hand_waits_a_frame(self):
+        # Live, a key pressed under "Draw 2 card(s)" landed after the draw had shifted the hand, and played Multishot for Quiver Reload.
+        with upstream(hand(ATTACK, BIG_ATTACK)) as (utils_sortie, task):
+            task.all_texts = [FakeBox("Draw 2 card(s)", 0.104, 0.416)]
+            battle.install()
+            for _ in range(battle.SETTLE_WAIT):
+                utils_sortie._try_all_card_keys(task, 2)
+            self.assertEqual([], task.keys)
+            # A toast that never clears is played on regardless.
+            utils_sortie._try_all_card_keys(task, 2)
+            self.assertEqual(2, len(task.keys))
+
     def test_a_card_the_game_cannot_afford_is_left_on_its_key(self):
         # Live, each unaffordable key was confirmed and waited on. The toast on the key is enough to move to the next card.
         with upstream(hand(ATTACK, BIG_ATTACK)) as (utils_sortie, task):

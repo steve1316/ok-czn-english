@@ -119,6 +119,11 @@ KIT_PAUSE = 0.5
 # Frames a read that lost cards the last one held is waited on, a hand size at a time. Live, a Rhythm's hit still played over the hand
 # 2s after its key, and the read caught 1 of 6 cards.
 SETTLE_WAIT = 2
+# The toast a draw puts down the left while its cards are still on their way to the hand, as "Draw 2 card(s)", measured at
+# (0.104, 0.416) and (0.104, 0.471). Live, a key pressed under it landed after the draw had shifted the hand, and played Multishot for
+# Quiver Reload. Waited on for up to `SETTLE_WAIT` frames in a row.
+DRAWING = "card(s)"
+DRAWING_REGION = (0.0, 0.35, 0.25, 0.55)
 # Where upstream's hand prompts read the hand cards they choose between.
 PROMPT_HAND = (0.116, 0.697, 0.859, 0.908)
 # The hand prompt as upstream finds it: its caption, rewritten to Chinese by `ocr_text.py`, over a hand counter reading "5/10".
@@ -405,6 +410,8 @@ class Turn:
         self.kit_waited = False
         # The hand size last waited on for a read that lost cards, and how many frames it has waited.
         self.settling = (None, 0)
+        # Frames in a row spent waiting on a draw's toast.
+        self.drawing = 0
         # Cards the game took this turn, oldest first, and those the turn before took, for kits that count plays.
         self.played = []
         self.last_turn = tuple(last_turn)
@@ -590,6 +597,19 @@ def out_of_points(task):
         True while the game's "Not enough AP." toast is up.
     """
     return text_in_region(task, NO_POINTS, NO_POINTS_REGION) is not None
+
+
+def drawing(task):
+    """Say whether a card's draw is still on its way to the hand.
+
+    Args:
+        task: The running task, whose `all_texts` is the current screen.
+
+    Returns:
+        True while a "Draw N card(s)" toast is up.
+    """
+    box = text_in_region(task, DRAWING, DRAWING_REGION)
+    return box is not None and box.name.strip().casefold().startswith("draw")
 
 
 def attribute_handler(utils):
@@ -1165,6 +1185,12 @@ def install():
         hand = priced(task, utils_sortie, kits.reading([{**card, "name": cards.canonical(card["name"], party, frozenset(cards.DECK))} for card in read], count))
         names = [card["name"] for card in hand]
         turn = turn_of(task, count)
+        if drawing(task) and turn.drawing < SETTLE_WAIT:
+            turn.drawing += 1
+            task.log_info("a draw is still on its way to the hand, so the hand gets a frame to settle")
+            task.sleep(KIT_PAUSE)
+            return
+        turn.drawing = 0
         lost = unsettled(turn, names, count)
         if lost:
             task.log_info(f"read {names} without {lost} from the last frame, so the hand gets a frame to settle")
