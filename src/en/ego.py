@@ -32,9 +32,9 @@ PORTRAIT_Y = (-0.015, 0.050)
 SIGNATURE_SIZE = (16, 8)
 # A portrait this flat is not one, such as a frame with the panel covered.
 FLAT_PORTRAIT = 4.0
-# How closely two signatures have to correlate to be the same Ego. One portrait measured 0.99-1.00 against itself, or 0.71 against
-# its greyed-out look while the bar could not pay for it, and two different portraits at most 0.45.
-SAME_EGO = 0.6
+# How closely two signatures have to correlate to be the same Ego. One portrait measured 0.95-1.00 against itself, but 0.71 against its
+# greyed-out look while the bar could not pay for it, and Owen's against Khalipe's 0.69. So each look is learnt as its own entry.
+SAME_EGO = 0.85
 # How long a preview card takes to open, and where on screen its label is looked for. A partner's card says "Partners" under the
 # name and a combatant's says "Ego Skill", which OCR often cuts to "Ego Skil". The card moves with the length of its text.
 PREVIEW_WAIT = 1
