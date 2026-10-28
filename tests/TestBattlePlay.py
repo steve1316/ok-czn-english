@@ -42,6 +42,7 @@ SHIELD = "Barrier Utilization"
 GUARD_EGO = ego.Ego("Legato of Faith", frozenset({ego.GUARD}), "")
 STRIKE_EGO = ego.Ego("Execution", frozenset({ego.STRIKE}), "")
 SETUP_EGO = ego.Ego("Tactical Command", frozenset({ego.SETUP}), "")
+HEALING_SETUP_EGO = ego.Ego("Vitality Boosting Potion", frozenset({ego.GUARD, ego.SETUP}), "Heal142% 1 Morale for 1turn")
 EXHAUST_EGO = ego.Ego("Activate Defense Module", frozenset({ego.SETUP}), "For 1 turn, when a card is Exhausted, 1 Weaken to a random enemy")
 
 # Where the painted enemy stands. Anywhere inside the band the counters are looked for in will do.
@@ -231,6 +232,8 @@ class TestEgoPlanner(unittest.TestCase):
             ("invulnerable short of a full bar", every[1:], 3, 0.9, True, True, False, None),
             ("a set-up ahead of the attacks", every, 3, 0.9, False, True, False, "F3"),
             ("no attacks to set up", every, 3, 0.9, False, False, False, None),
+            ("a healing set-up on a healthy team", [("F2", HEALING_SETUP_EGO, True)], 3, 0.9, False, True, False, None),
+            ("a healing set-up on a hurt team", [("F2", HEALING_SETUP_EGO, True)], 3, 0.4, False, True, False, "F2"),
             ("a boss saving for its strike", [("F2", STRIKE_EGO, False), ("F3", SETUP_EGO, True)], 3, 0.9, False, True, True, None),
             ("an unaffordable guard", [("F1", GUARD_EGO, False), ("F3", SETUP_EGO, True)], 3, 0.2, False, True, False, "F3"),
             ("an Ego never read", [("F1", None, True)], 7, 0.2, False, True, False, None),

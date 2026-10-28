@@ -64,6 +64,8 @@ STRIKE = "strike"
 SETUP = "set-up"
 GUARDS = re.compile(r"Heal|Shield|Damage Reduction", re.I)
 STRIKES = re.compile(r"Damage(?!\s*(?:Amount|Reduction))", re.I)
+# A heal lands at once, so an Ego with one is fired as a set-up only for a hurt team, not at full HP for its Morale.
+HEALS = re.compile(r"\bHeal", re.I)
 # An Ego that does nothing unless a card is Exhausted, as Activate Defense Module's "when a card is Exhausted, 1 Weaken".
 ON_EXHAUST = re.compile(r"\bExhausted\b", re.I)
 SETUPS = re.compile(r"Morale|Fortitude|Vulnerable|Weaken|Draw|Critical|Increase|Counterattack|Mark|\bAP\b", re.I)
@@ -260,7 +262,8 @@ def decide(slots, banked, after_hit, invulnerable, attacking, boss, exhausting):
     """Choose the Ego to fire now, if any.
 
     The first rule that applies wins: a guard before a hit the team cannot take, a full bar spent on whatever fits, nothing into an
-    enemy that cannot lose Health, then a set-up ahead of the attacks unless a boss fight is saving for a damage Ego.
+    enemy that cannot lose Health, then a set-up ahead of the attacks unless a boss fight is saving for a damage Ego. A set-up that heals
+    waits for a hurt team.
 
     Args:
         slots: `(key, Ego or None, affordable)` for each slot, in panel order.
@@ -286,9 +289,10 @@ def decide(slots, banked, after_hit, invulnerable, attacking, boss, exhausting):
     if invulnerable or not attacking:
         return None
     saving = boss and any(ego is not None and STRIKE in ego.roles and not affordable for _, ego, affordable in slots)
-    if saving or not first[SETUP]:
+    setup = next(((key, ego) for key, ego in ready if SETUP in ego.roles and (hurt or not HEALS.search(ego.text))), None)
+    if saving or not setup:
         return None
-    return (*first[SETUP], "ahead of the attacks")
+    return (*setup, "ahead of the attacks")
 
 
 def enlarged(image):
