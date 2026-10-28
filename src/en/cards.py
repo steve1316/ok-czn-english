@@ -28,6 +28,8 @@ DEALT_TO_YOU = frozenset({"ABNORM", "CURSE"})
 # One of those that does its harm only while held - "If in hand, at the end of the turn", "If this card is in hand",
 # a "Retain:" line - so playing it is how to be rid of it.
 HELD_HARM = re.compile(r"\b(?:if|when) (?:this card is )?in hand|if the turn ends when in hand|when this card is retained|^Retain:", re.I | re.M)
+# Any effect a card's text can carry names a number, so a text without one - blank, or flavour - does nothing when played.
+INERT_EFFECT = re.compile(r"\d")
 # A card of your own that works just by being held, as Unknown: Mutant Sample's "If in hand, +40% Damage Amount".
 # It shows no cost and cannot be played.
 HELD_HELP = re.compile(r"^If (?:this card is )?in hand,", re.I)
@@ -430,9 +432,11 @@ def worth_clearing(name):
         name: The card name, in any spelling.
 
     Returns:
-        True for a Curse or Status Ailment that only hurts while it sits in hand and has a fixed cost.
+        True for a Curse or Status Ailment with a fixed cost that only hurts while it sits in hand, or whose text does nothing
+        when played - Stickiness reads only "It's horribly sticky." and the game still offers it.
     """
-    return category(name) in DEALT_TO_YOU and cost(name) != X_COST and bool(HELD_HARM.search(description(name)))
+    text = description(name)
+    return category(name) in DEALT_TO_YOU and cost(name) != X_COST and (bool(HELD_HARM.search(text)) or not INERT_EFFECT.search(text))
 
 
 def clearing_order(name):

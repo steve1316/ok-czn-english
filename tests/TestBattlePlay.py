@@ -33,7 +33,8 @@ from tests.fakes import FakeBox  # noqa: E402
 ATTACK = "Anchor"
 VOID_ATTACK = "Annihilation Shot"
 BIG_ATTACK = "Charge Launcher"
-CURSE = "Anemia"
+# A Curse that buffs the enemies when played, so the picker neither plays it nor clears it.
+CURSE = "Overflow"
 # A neutral 1-point Skill that only shields.
 SHIELD = "Barrier Utilization"
 # One Ego of each kind, as the planner would have read them off their previews.
@@ -129,8 +130,9 @@ class TestChoosing(unittest.TestCase):
     def test_spare_points_clear_a_card_that_hurts_while_held(self):
         # Live: three Bleeds sat out turn after turn with all three points unspent. Bleed deals damage, so it goes
         # ahead of Parasitic Spores. Abyssal Erosion hurts through its Retain line, but costs 4.
+        # Stickiness does nothing at all, and live two sat out a turn the game said they could be played in.
         for held, points, cleared in ((("Parasitic Spores", "Bleed"), 3, "Bleed"), (("Abyssal Erosion",), 3, None),
-                                      (("Abyssal Erosion",), 4, "Abyssal Erosion")):
+                                      (("Abyssal Erosion",), 4, "Abyssal Erosion"), (("Stickiness", CURSE), 3, "Stickiness")):
             with self.subTest(held=held, points=points):
                 chosen = battle.choose(hand(*held), cards.Board(action_points=points), set())
                 self.assertEqual(cleared, chosen and chosen["name"])
