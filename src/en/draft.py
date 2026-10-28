@@ -60,8 +60,8 @@ def role_of(text):
 def wanted(party):
     """Name the roles a team still lacks, best first.
 
-    A team with no damage dealer wants one before anything else, and so does the fourth pick. Otherwise it wants the supporting roles it
-    has not got yet, so a second damage dealer is only ever a fallback.
+    A team with no damage dealer wants one before anything else, and so does the fourth pick. So does a team with a Supporter, which fills
+    the Healer or Protector slot. Otherwise it wants the supporting roles it has not got yet, so a second damage dealer is only ever a fallback.
 
     Args:
         party: Names of the combatants on the team, from `battle.PARTY`.
@@ -70,7 +70,7 @@ def wanted(party):
         A tuple of roles, empty when the team has every role.
     """
     have = {COMBATANT_ROLE.get(name) for name in party}
-    if len(party) >= FOURTH_PICK or not have & set(DAMAGE):
+    if len(party) >= FOURTH_PICK or not have & set(DAMAGE) or "Support" in have:
         return DAMAGE
     return tuple(role for role in SUPPORTING if role not in have)
 

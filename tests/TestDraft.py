@@ -110,6 +110,8 @@ class TestDraft(unittest.TestCase):
             ({"Hugo"}, ("Beryl", "Hilde", "Khalipe"), True, "Khalipe"),
             ({"Hugo"}, ("Khalipe", "Mika", "Cassius"), True, "Mika"),
             ({"Hugo", "Mika"}, ("Cassius", "Khalipe", "Rin"), True, "Khalipe"),
+            # A Supporter fills the Healer or Protector slot, so the team goes back to damage.
+            ({"Hugo", "Cassius"}, ("Mika", "Khalipe", "Rin"), True, "Rin"),
             ({"Hugo"}, ("Beryl", "Rin", "Hilde"), True, None),
             ({"Hugo"}, ("Beryl", "Rin", "Hilde"), False, "Rin"),
             ({"Mika"}, ("Khalipe", "Beryl", "Cassius"), True, "Beryl"),
