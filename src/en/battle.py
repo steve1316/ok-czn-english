@@ -18,6 +18,7 @@ from ok import Logger
 from src.en import board, cards, ego, kits
 from src.en.handlers import StandIn, insert_before, loaded, register, replace, standing_in
 from src.en.overrides import SMART_CARD_PLAY
+from src.en.quality import fold
 from src.en.screen import centre_of, colour_share, frame_of, in_region, patch_of, text_in_region
 
 logger = Logger.get_logger(__name__)
@@ -485,6 +486,23 @@ def key_at(left_x, count):
     first, last = HAND_SPAN.get(count, WIDEST_SPAN)
     slot = min(max(round((left_x - first) / (last - first) * (count - 1)), 0), count - 1)
     return str(slot + 1) if slot < MAX_KEY else None
+
+
+def name_start(card):
+    """Say where a hand card's name begins, reaching back over the letters OCR cut off its front.
+
+    Args:
+        card: A hand card from upstream's `_hand_cards`, its `x` the centre of the name as read and `left_x` its left edge.
+
+    Returns:
+        The left edge of the whole name, as a screen fraction.
+    """
+    read = fold(card["name"])
+    cut = fold(cards.canonical(card["name"], deck=frozenset(cards.DECK))).find(read) if read and "x" in card else -1
+    if cut <= 0:
+        return card["left_x"]
+    # Each letter cut off is taken to be as wide as the letters read.
+    return card["left_x"] - 2 * (card["x"] - card["left_x"]) * cut / len(read)
 
 
 def padded(image, zoom):
@@ -1043,7 +1061,7 @@ def install():
             # every real card, so only what it knows is kept and keyed by position below.
             hand = [card for card in hand if cards.canonical(card["name"]) in cards.CARD_COST]
         if hand and count and len(hand) != count:
-            hand = [{**card, "key": key_at(card["left_x"], count)} for card in hand]
+            hand = [{**card, "key": key_at(name_start(card), count)} for card in hand]
             task.log_info(f"read {len(hand)} of {count} cards, so keys come from where each sits: "
                           f"{[(card['name'], card['key']) for card in hand]}")
         return hand

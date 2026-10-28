@@ -355,6 +355,8 @@ class TestReadingNames(unittest.TestCase):
             ("no deck read yet leaves it alone", "DarkMistSecretAil", frozenset(), "DarkMistSecretAil"),
             ("two deck cards it fits leave it alone", "DarkMistSecretA", deck, "DarkMistSecretA"),
             ("too little of the name left leaves it alone", "DarkMistS", frozenset({"Dark Mist Secret Art: Annihilation"}), "DarkMistS"),
+            ("the deck card a cut reading sits inside", "sidual Herb", frozenset({"Harmonization: Residual Herb"}), "Harmonization: Residual Herb"),
+            ("a whole name keeps its own card", "Residual Herb", frozenset({"Harmonization: Residual Herb"}), "Residual Herb"),
         ):
             with self.subTest(description):
                 self.assertEqual(cards.canonical(reading, deck=held), expected)

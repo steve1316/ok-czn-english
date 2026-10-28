@@ -779,6 +779,14 @@ class TestInstalling(unittest.TestCase):
             self.assertEqual([("Magnetic Field", "1"), ("Bleed", "4")],
                              [(card["name"], card["key"]) for card in utils_sortie._hand_cards(task)])
 
+    def test_a_name_cut_at_the_front_is_keyed_from_where_the_whole_name_starts(self):
+        # Live, "sidual Herb" was read 0.268 into a hand of 8 and keyed 2, though Harmonization: Residual Herb sat first.
+        read = [{"name": "sidual Herb", "key": "1", "x": 0.2849, "left_x": 0.2682}, {"name": "hidden:Guid", "key": "7", "x": 0.6771, "left_x": 0.662}]
+        with upstream(read) as (utils_sortie, task), mock.patch.dict(cards.DECK, {"Harmonization: Residual Herb": ""}):
+            task.counter = 8
+            battle.install()
+            self.assertEqual([("sidual Herb", "1"), ("hidden:Guid", "7")], [(card["name"], card["key"]) for card in utils_sortie._hand_cards(task)])
+
     def test_a_hand_read_short_is_keyed_by_where_each_card_sits(self):
         # The same lowered hand: only the raised fourth card was read, and upstream keyed it 1 - Pulse Fire, which
         # cost the point the turn no longer had. Measured off the capture, Homing Laser L's name starts at 0.705.

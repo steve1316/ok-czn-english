@@ -262,6 +262,11 @@ def canonical(name, party=frozenset(), deck=frozenset()):
     # looser spellings read a 1 as a letter and would land "1Homing Laser" on "Homing Laser L".
     stub = fold(name).lstrip("0123456789")
     known = CARD_INDEX.look_up(stub)
+    if known and deck and known not in deck and stub not in CARD_INDEX.exact:
+        # The index guesses at a reading it cannot spell, and a deck card the reading sits inside beats that guess. Live, "sidual Herb"
+        # went to Residual Herb with Harmonization: Residual Herb in the deck.
+        held = [real for real in deck if stub in fold(real)]
+        known = held[0] if len(held) == 1 else known
     if known:
         return known
     # The reader also cuts a name short while the hand animates, so "Knife Tos" arrives for "Knife Toss".
