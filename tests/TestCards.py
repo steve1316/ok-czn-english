@@ -985,6 +985,8 @@ class TestKits(unittest.TestCase):
              ["Chrono Archon"]),
             ("a second Chrono Archon is an ordinary card", ("Time Paradox", "Slash", "Chrono Archon"),
              cards.Board(action_points=1, played=("Slash", "Slash"), battle=("Chrono Archon", "Slash", "Slash")), ["Time Paradox", "Slash"]),
+            # Generic play reads its 120% once, so a 180 card for 1 AP outbids the 240% it deals at Cost 2.
+            ("Fate Imprint hits once for each point of its Cost", ("Amber Lumen", "Fate Imprint"), cards.Board(action_points=2), ["Fate Imprint"]),
         ))
 
     def test_selena_marks_before_attacking(self):
