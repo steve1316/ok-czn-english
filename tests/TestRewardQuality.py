@@ -13,7 +13,7 @@ sys.path.insert(0, str(REPO_ROOT / "ok_tasks"))
 # The real module, so the Settlement check fails if upstream stops reading the claim setting the way the fork stands in for it.
 import utils_sortie  # noqa: E402
 
-from src.en import dashboard, reason, rewards  # noqa: E402
+from src.en import cards, dashboard, reason, rewards  # noqa: E402
 from src.en.dashboard import COMBATANTS as COMBATANTS_ROW  # noqa: E402
 from src.en.game_data import COMBATANTS  # noqa: E402
 from src.en.overrides import FARMED_COMBATANT  # noqa: E402
@@ -157,6 +157,13 @@ class TestRewardQuality(unittest.TestCase):
         for free, expected in ((True, ["Gale Strike", "Unknown: Mutant Sample"]), (False, ["Gale Strike"])):
             with self.subTest(free=free):
                 self.assertEqual(expected, rewards.generated_list(FakeTask(offer, set()), rewards.SORTIE_CARD_KEY, free=free))
+
+    def test_a_card_the_deck_holds_ranks_after_one_it_lacks(self):
+        # Live, a second Gale Strike was taken over Unknown: Mutant Sample because its rarity ranked it first.
+        offer = ["Unknown: Mutant Sample", "Gale Strike", "Distortion: Hand-to-Hand Combat"]
+        cards.use_deck({"Gale Strike": {""}})
+        self.addCleanup(cards.DECK.clear)
+        self.assertEqual(["Unknown: Mutant Sample", "Gale Strike"], rewards.generated_list(FakeTask(offer, set()), rewards.SORTIE_CARD_KEY, free=True))
 
     def test_equipment_is_offered_to_its_own_slot_only(self):
         task = FakeTask(SHOP_EQUIPMENT, {"vanguard", "controller"})

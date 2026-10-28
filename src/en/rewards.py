@@ -228,7 +228,8 @@ def generated_list(task, key, farmed="", free=False):
             taken += [card for card in held_help(names, classes) + party_cards(names, getattr(task, PARTY, frozenset())) if card not in taken]
             # A free Upgrade such as Mutation: Iron Wall still beats skipping the reward.
             taken = taken or upgrades(names, classes)
-        return taken
+        # A card the deck already holds adds less than one it lacks, so it goes after every card the deck lacks, at any grade.
+        return sorted(taken, key=lambda card: card in cards.DECK)
     # Ordered by who is going to wear it. Rarity still decides, so this only separates pieces that were
     # otherwise going to be picked between on their names.
     return [name for name in quality.worth_taking(names, classes, cards=False, suited_to=farmed)
