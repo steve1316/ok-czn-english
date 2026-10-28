@@ -41,7 +41,7 @@ PREVIEW_WAIT = 1
 PREVIEW_AREA = (0.15, 0.25, 0.95, 0.82)
 PREVIEW_LABELS = ("Partners", "Ego Ski")
 # Where the name and effect text sit from the label's centre. On Legato of Faith the name is 0.04 above it and the text runs from 0.06
-# to 0.13 below it, within 0.05 either side.
+# to 0.13 below it, within 0.05 either side. Neither reaches left of `PREVIEW_AREA`, where the EP counters and Cancel sit.
 CARD_HALF_WIDTH = 0.15
 NAME_ABOVE = 0.06
 TEXT_BELOW = 0.30
@@ -238,7 +238,7 @@ def identify(task, utils, key):
     name, text = None, ""
     if label is not None:
         label_x, label_y = centre_of(label, task.width, task.height)
-        left, right = label_x - CARD_HALF_WIDTH, label_x + CARD_HALF_WIDTH
+        left, right = max(label_x - CARD_HALF_WIDTH, PREVIEW_AREA[0]), label_x + CARD_HALF_WIDTH
         name = lines_in(task, (left, label_y - NAME_ABOVE, right, label_y - 0.01)) or None
         text = lines_in(task, (left, label_y + 0.01, right, min(label_y + TEXT_BELOW, PREVIEW_AREA[3])))
     if text or text_in_region(task, CANCEL, EGO_PANEL) is not None:
