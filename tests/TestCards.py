@@ -142,9 +142,16 @@ class TestOrdering(unittest.TestCase):
 
     def test_a_card_that_hurts_while_held_is_cleared_with_a_point_to_spare(self):
         # Shackles makes a card Unactivatable each time an enemy acts, and was only ever cleared once nothing else was left to play.
-        for points, expected in ((2, ["Multishot", "Shackles"]), (1, ["Multishot"])):
-            with self.subTest(points=points):
-                self.assertEqual(expected, played(cards.plan(hand("Shackles", "Multishot", "Plasma Rain"), cards.Board(action_points=points, enemies=3))))
+        for held, points, expected in (
+            ({"name": "Shackles"}, 2, ["Multishot", "Shackles"]),
+            ({"name": "Shackles"}, 1, ["Multishot"]),
+            # A dearer one is left to get cheaper, and cleared once the screen shows it has.
+            ({"name": "Cursed Mace"}, 5, ["Plasma Rain", "Multishot"]),
+            ({"name": "Cursed Mace", "cost": 1}, 2, ["Multishot", "Cursed Mace"]),
+        ):
+            with self.subTest(held=held, points=points):
+                chosen = cards.plan([held, *hand("Multishot", "Plasma Rain")], cards.Board(action_points=points, enemies=3))
+                self.assertEqual(expected, played(chosen))
 
     def test_a_tight_budget_buys_the_better_attack(self):
         chosen = cards.plan(hand(JUSTICE_ATTACK, BIG_ATTACK), cards.Board(action_points=2))

@@ -32,6 +32,8 @@ DEALT_TO_YOU = frozenset({"ABNORM", "CURSE"})
 HELD_HARM = re.compile(r"\b(?:if|when) (?:this card is )?in hand|if the turn ends when in hand|when this card is retained|^Retain:", re.I | re.M)
 # The points clearing one of those leaves for the rest of the hand, since it is only bought ahead of the hand's own cards.
 CLEARING_RESERVE = 1
+# The most one of those may cost to be cleared. A dearer one, as Cursed Mace at 3, tends to have a way to get cheaper as the turn goes.
+CLEARING_MAX_COST = 1
 # A card that gets cheaper for each card Exhausted this turn, as Brand of Annihilation does. The screen never reads it lowered.
 EXHAUST_DISCOUNT = re.compile(r"When a card is Exhausted, decrease Cost of this card by (\d+)", re.I)
 # Any effect a card's text can carry names a number, so a text without one - blank, or flavour - does nothing when played.
@@ -821,10 +823,10 @@ def plan(hand, board):
     first = [category(card["name"]) == SETUP_CATEGORY and canonical(card["name"]) not in board.battle for card in fixed]
     upgrades = best_buy([card for card, new in zip(fixed, first) if new], budget, board)
     left = budget - sum(price(card) for card in upgrades)
-    # A card that hurts while held goes next, as long as a point stays for the rest of the hand.
+    # A cheap card that hurts while held goes next, as long as a point stays for the rest of the hand.
     cleared = []
     for card in sorted((card for card in hand if hurts_held(card["name"])), key=lambda held: clearing_order(held["name"])):
-        if left - price(card) >= CLEARING_RESERVE:
+        if price(card) <= CLEARING_MAX_COST and left - price(card) >= CLEARING_RESERVE:
             cleared.append(card)
             left -= price(card)
     chosen = upgrades + cleared + best_buy([card for card, new in zip(fixed, first) if not new], left, board)
