@@ -846,6 +846,9 @@ class TestKits(unittest.TestCase):
              ["Multishot", "Bowguard"]),
             ("Futility still goes first with Brand of Annihilation to feed", ("Futility", "Futility", "Multishot", "Brand of Annihilation"),
              cards.Board(action_points=2), ["Futility", "Futility"]),
+            # Live, two Futility brought Brand of Annihilation down to 1, and the shown-cost read never caught it lowered.
+            ("Brand of Annihilation costs less for each Exhaust", ("Multishot", "Brand of Annihilation"),
+             cards.Board(action_points=1, played=("Futility", "Futility")), ["Brand of Annihilation"]),
             # Live, the last point went on a Futility with Multishot and Plasma Rain still in hand.
             ("the last point goes to a partner's card", ("Brand of Annihilation", "Futility", "Multishot", "Plasma Rain"),
              cards.Board(action_points=1, health=1.0), ["Multishot"]),

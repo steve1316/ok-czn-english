@@ -12,7 +12,7 @@ from difflib import SequenceMatcher
 from functools import lru_cache
 from itertools import combinations
 
-from src.en.game_battle import CARD_CATEGORY, CARD_COST, CARD_OWNER, COMBATANT_ATTRIBUTE, X_COST
+from src.en.game_battle import CARD_CATEGORY, CARD_COST, CARD_EXHAUSTS, CARD_OWNER, COMBATANT_ATTRIBUTE, X_COST
 from src.en.game_quality import COMBATANT_ROLE
 from src.en import kits
 from src.en.game_text import DESCRIPTIONS
@@ -30,6 +30,8 @@ DEALT_TO_YOU = frozenset({"ABNORM", "CURSE"})
 # One of those that does its harm only while held - "If in hand, at the end of the turn", "If this card is in hand",
 # a "Retain:" line - so playing it is how to be rid of it.
 HELD_HARM = re.compile(r"\b(?:if|when) (?:this card is )?in hand|if the turn ends when in hand|when this card is retained|^Retain:", re.I | re.M)
+# A card that gets cheaper for each card Exhausted this turn, as Brand of Annihilation does. The screen never reads it lowered.
+EXHAUST_DISCOUNT = re.compile(r"When a card is Exhausted, decrease Cost of this card by (\d+)", re.I)
 # Any effect a card's text can carry names a number, so a text without one - blank, or flavour - does nothing when played.
 INERT_EFFECT = re.compile(r"\d")
 # A card of your own that works just by being held, as Unknown: Mutant Sample's "If in hand, +40% Damage Amount".
@@ -442,6 +444,23 @@ def price(card):
     return card.get("cost", cost(card["name"]))
 
 
+def discounted(card, board):
+    """Take off a card's price what this turn's Exhausts have lowered it by, when the screen did not read it lowered.
+
+    Args:
+        card: A hand card, as `_hand_cards` reads it.
+        board: The `Board` it would be played into, whose `played` holds this turn's cards.
+
+    Returns:
+        The card, carrying its lowered `cost` when an Exhaust took some off.
+    """
+    found = EXHAUST_DISCOUNT.search(description(card["name"]))
+    exhausted = sum(name in CARD_EXHAUSTS for name in board.played)
+    if not found or not exhausted or "cost" in card or cost(card["name"]) == X_COST:
+        return card
+    return {**card, "cost": max(0, cost(card["name"]) - int(found.group(1)) * exhausted)}
+
+
 def attribute_of(name):
     """Say which attribute a card attacks with.
 
@@ -778,6 +797,7 @@ def plan(hand, board):
     """
     if not board.hand:
         board = board._replace(hand=tuple(canonical(card["name"]) for card in hand))
+    hand = [discounted(card, board) for card in hand]
     playable = (card for card in hand if worth_playing(card["name"]) and not kits.held(canonical(card["name"]), board)
                 and not wasted(card["name"], board))
     budget = board.action_points
