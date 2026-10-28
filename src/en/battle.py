@@ -822,7 +822,8 @@ def prompt_progress(task, utils_sortie):
     from_pile = not in_hand and text_in_region(task, PILE, PILE_LABEL) is not None
     if not (caption and PROMPT_ASKS.search(caption.name) and (in_hand or from_pile)):
         return None
-    read = PROGRESS.search("".join(box.name for box in task.ocr(*PROMPT_PROGRESS) or []))
+    # Spaced, since a stray glyph beside the counter is read as its own box: live, "0/3" and "1" ran together into "0/31".
+    read = PROGRESS.search(" ".join(box.name for box in task.ocr(*PROMPT_PROGRESS) or []))
     return (int(read.group(1)), int(read.group(2)), PROMPT_TOP in caption.name, from_pile) if read else None
 
 

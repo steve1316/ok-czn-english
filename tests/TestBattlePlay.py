@@ -1097,7 +1097,7 @@ class TestHandPrompt(unittest.TestCase):
         """Answer the prompt once per counter reading.
 
         Args:
-            counters: What a cropped read of the prompt's counter gives each frame, empty for nothing read.
+            counters: What a cropped read of the prompt's counter gives each frame, empty for nothing read, a tuple for more than one box.
             screens: What the full-screen pass reads on the first frames, `SCREEN` for every frame after them.
             played: The card whose key opened the prompt, or None for a turn not tracked.
             cropped: What a read of the hand alone gives.
@@ -1113,15 +1113,18 @@ class TestHandPrompt(unittest.TestCase):
                 setattr(task, battle.TURN, turn)
             for index, counter in enumerate(counters):
                 task.all_texts = list(screens[index] if index < len(screens) else self.SCREEN)
-                task.progress = [FakeBox(counter, 0.5, 0.17)] if counter else []
+                task.progress = [FakeBox(text, 0.5, 0.17) for text in ((counter,) if isinstance(counter, str) else counter) if text]
                 task.prompt_hand = list(cropped)
                 handlers_of(utils_sortie)["handle_battle_hand_select"](task)
         return task
 
     def test_it_gives_up_the_curse_and_confirms_only_once_the_counter_moves(self):
-        task = self.frames("0/1", "1/1")
-        self.assertEqual([(0.73, round(0.776 + battle.CARD_BODY, 3)), battle.PROMPT_CONFIRM], task.taps)
-        self.assertEqual([], task.clicked, "upstream's random pick never ran")
+        # Live, a stray "1" read beside "0/3" ran into it as "0/31", and a count that high would never be met.
+        for counters in (("0/1", "1/1"), (("0/1", "1"), ("1/1", "1"))):
+            with self.subTest(counters=counters):
+                task = self.frames(*counters)
+                self.assertEqual([(0.73, round(0.776 + battle.CARD_BODY, 3)), battle.PROMPT_CONFIRM], task.taps)
+                self.assertEqual([], task.clicked, "upstream's random pick never ran")
 
     def test_the_top_of_the_draw_pile_takes_the_dearest_card_then_the_best_over_the_curse(self):
         # The card comes straight back next turn, so a curse put there is drawn again.
