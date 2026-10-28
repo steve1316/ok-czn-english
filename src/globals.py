@@ -36,7 +36,6 @@ class Globals(QObject):
         templates.apply()
         # These edit the mode handler lists, so they must run after the task modules are importable.
         navigation.apply()
-        piles.apply()
         # Ahead of pins, so the pinned-card wrappers sit outside this one and every page it ranks is already narrowed to the pinned cards.
         epiphany.apply()
         events.apply()
@@ -51,6 +50,8 @@ class Globals(QObject):
         boss.apply()
         reason.apply()
         equipment.apply()
+        # After equipment: both read on the capture's close tap, and the gear has to be read before the deck read leaves the Combatants tab.
+        piles.apply()
         # Anything wrapping a handler in `rewards.FILLED_IN` goes before rewards, which renames the
         # list entry it builds - after that rename, a later wrapper looking for the original name finds
         # nothing. Order does not otherwise matter: `handlers.wrap` composes rather than replaces.

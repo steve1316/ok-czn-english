@@ -11,6 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from src.en import cards, epiphany, navigation, piles, rewards  # noqa: E402
+from src.en.handlers import standing_in  # noqa: E402
 from src.en.battle import PARTY  # noqa: E402
 from src.en.game_text import DESCRIPTIONS, EPIPHANIES  # noqa: E402
 from tests.fakes import HEIGHT, WIDTH, FakeBox  # noqa: E402
@@ -303,6 +304,25 @@ class TestSortieTeamTrip(unittest.TestCase):
             self.assertEqual({"Arabella", "Veronica", "Mika"}, getattr(task, PARTY))
             clock[0] += navigation.TEAM_RETRY_SECONDS
             self.assertFalse(navigation.handle_open_team(task), "a team read stops the retries")
+
+    def test_the_deck_is_read_just_before_the_page_closes(self):
+        # Live, the read opened All Piles first and needed a tap back to the Combatants tab before the team could be read.
+        utils_chaos = install(ON_THE_TAB)
+        capture = piles.reading_the_deck(upstream_capture(utils_chaos), utils_chaos)
+        sortie, chaos = type("SortieMode", (FakeTask,), {})(), FakeTask()
+        for task in (sortie, chaos):
+            task.node_status, task.all_texts = {}, ["Owen"]
+
+        def read_deck(task, utils):
+            task.clicks.append("deck")
+            task.all_texts = ["All Piles"]
+
+        with standing_in(piles, read_deck=read_deck):
+            for task in (sortie, sortie, chaos):
+                capture(task)
+        self.assertEqual([navigation.COMBATANTS_TAB, "deck", CLOSE_PAGE] + [navigation.COMBATANTS_TAB, CLOSE_PAGE], sortie.clicks)
+        self.assertEqual(["Owen"], sortie.all_texts, "the team read after the capture takes its names from the Combatants pass")
+        self.assertNotIn("deck", chaos.clicks)
 
 
 class TestDeckRead(unittest.TestCase):

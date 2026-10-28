@@ -11,8 +11,7 @@ from ok import Logger
 
 from src.en import cards
 from src.en.game_text import DESCRIPTIONS, EPIPHANIES
-from src.en.handlers import insert_before, loaded, register
-from src.en.navigation import MEMBER_INFO_FEATURES, MEMBER_INFO_REGION, on_member_info_page
+from src.en.handlers import loaded, register, standing_in, wrap
 from src.en.quality import fold
 from src.en.screen import centre_of, lines_in, raw_ocr, text_in_region
 from src.en.stuck import forget
@@ -45,8 +44,11 @@ KEYWORD_TAGS = re.compile(r"\[[^\]]*\]")
 NOT_A_LETTER = re.compile(r"[^a-z]")
 # Holds in `node_status` that this layer's deck has been read. Upstream rebuilds `node_status` as a layer starts.
 READ = "_en_piles_read"
-# The team read this runs ahead of, on the same open page.
-ANCHOR = "handle_archive_target_member"
+# Where the information page and All Piles both draw their X, the tap upstream's team capture closes the page with.
+CLOSE = (0.960, 0.054)
+# Only Sortie reads the deck, though Chaos runs the same capture.
+SORTIE_MODE = "SortieMode"
+TAG = "reads the deck before closing"
 
 _patched = False
 
@@ -134,43 +136,71 @@ def read_piles(task, utils):
     return copies
 
 
-def handle_read_piles(task):
-    """Open All Piles from the information page once a layer, read the deck, and go back to the Combatants tab.
+def read_deck(task, utils):
+    """Open All Piles from the information page and read the deck.
 
     Args:
-        task: The running Sortie task.
-
-    Returns:
-        True when the deck was read this frame.
+        task: The running Sortie task, on the information page.
+        utils: The loaded `utils` module, for upstream's tap and scroll.
     """
-    utils = loaded("utils")
-    if utils is None or task.node_status.get(READ) or not on_member_info_page(task):
-        return False
-    task.node_status[READ] = True
     utils._move_and_click(task, *PILES_TAB)
     task.sleep(1)
     raw_ocr(task, task.box_of_screen(*TITLE_REGION))
     if text_in_region(task, TITLE, TITLE_REGION) is None:
         logger.warning("tapped the deck icon but All Piles did not open, keeping the last deck read")
-        return False
+        return
     copies = read_piles(task, utils)
     cards.use_deck(copies)
     epiphanies = sorted(name for name, texts in copies.items() if texts - {DESCRIPTIONS.get(name)})
     logger.info(f"read {len(copies)} distinct cards off All Piles, {len(epiphanies)} with an Epiphany: {epiphanies}")
     logger.debug(f"deck read: {sorted(copies)}")
-    back = task.find_one(feature_name=MEMBER_INFO_FEATURES, box=task.box_of_screen(*MEMBER_INFO_REGION))
-    if back is not None:
-        task.click_box(back)
-        task.sleep(0.5)
     # The read held one frame for seconds, which upstream's stuck detector would take for a frozen screen and close the page over.
     forget(task)
-    return True
+
+
+def reading_the_deck(handler, utils_chaos):
+    """Read the deck once a Sortie layer, between upstream's team capture and the tap that closes the page.
+
+    All Piles draws its X where the information page does, so the one close tap shuts both, with no tap back to the Combatants tab.
+
+    Args:
+        handler: Upstream's `handle_archive_target_member`, as the other modules have wrapped it.
+        utils_chaos: The module whose `_move_and_click` the capture taps through.
+
+    Returns:
+        The wrapped handler.
+    """
+    def wrapped(task):
+        utils = loaded("utils")
+        if utils is None or type(task).__name__ != SORTIE_MODE or task.node_status.get(READ):
+            return handler(task)
+        original = utils_chaos._move_and_click
+
+        def closing(task_, x, y):
+            if (x, y) == CLOSE and not task_.node_status.get(READ):
+                task_.node_status[READ] = True
+                # The team read after the capture takes its names from the Combatants pass, which the deck read replaces.
+                texts = task_.all_texts
+                read_deck(task_, utils)
+                task_.all_texts = texts
+            return original(task_, x, y)
+
+        with standing_in(utils_chaos, _move_and_click=closing):
+            return handler(task)
+
+    return wrapped
 
 
 def apply():
-    """Read the deck ahead of the team read on Sortie's information page trip."""
+    """Read the deck on Sortie's information page trip, just before the page closes."""
     global _patched
     if _patched:
         return
-    register(lambda: insert_before(ANCHOR, handle_read_piles, only=("utils_sortie",)))
+
+    def install():
+        utils_chaos = loaded("utils_chaos")
+        if utils_chaos is not None:
+            wrap(utils_chaos, "handle_archive_target_member", lambda handler: reading_the_deck(handler, utils_chaos), TAG)
+
+    register(install)
     _patched = True
