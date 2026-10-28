@@ -286,13 +286,17 @@ class TestSortieTeamTrip(unittest.TestCase):
             # Live, the portraits were tapped over the end turn prompt, which ended a turn with a card still playable.
             task.all_texts = [FakeBox("取消", 0.34, 0.60)]
             self.assertFalse(navigation.handle_open_team(task))
-            # A restart on a battle screen still reads the team, but not once the turn has pressed anything.
+            # A restart on a battle screen still reads the team, but once the turn has pressed anything it asks the next turn for a frame.
             task.all_texts = [FakeBox("04/10", 0.5, 0.97)]
             setattr(task, TURN, battle.Turn(4))
             getattr(task, TURN).ended = True
             self.assertFalse(navigation.handle_open_team(task))
+            self.assertTrue(getattr(task, battle.TEAM_WANTED))
             delattr(task, TURN)
+            # Live, the health bar read as "1728 /1728", which upstream's own read fails on.
+            on_map[0] = False
             self.assertTrue(navigation.handle_open_team(task))
+            on_map[0] = True
             # A pending dialog swallowed the tap, and its own handler needs the next frames to clear it.
             self.assertFalse(navigation.handle_open_team(task))
             # Once it has, the team is tapped for again, but not past `TEAM_TRIES`.

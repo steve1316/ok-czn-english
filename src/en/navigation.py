@@ -13,7 +13,7 @@ import time
 
 from ok import Logger
 
-from src.en.battle import CANCEL, CANCEL_REGION, PARTY, TURN
+from src.en.battle import CANCEL, CANCEL_REGION, PARTY, TEAM_WANTED, TURN
 from src.en.handlers import insert_before, loaded, register, replace, standing_in, wrap
 from src.en.game_data import COMBATANTS
 from src.en.screen import combatant_names, text_in_region
@@ -201,14 +201,17 @@ def handle_open_team(task):
     if utils is None or tries >= TEAM_TRIES or (tries and getattr(task, PARTY, None)):
         return False
     now = time.monotonic()
-    if tries and now - last < TEAM_RETRY_SECONDS or not utils._get_current_hp_percent(task):
+    if tries and now - last < TEAM_RETRY_SECONDS:
         return False
-    if text_in_region(task, CANCEL, CANCEL_REGION):
+    # Upstream's health read fails on a bar read with a space in it, as "1728 /1728" was, so a battle frame goes by its hand counter.
+    in_battle = text_in_region(task, "/10", HAND_COUNTER_REGION)
+    if not (in_battle or utils._get_current_hp_percent(task)) or text_in_region(task, CANCEL, CANCEL_REGION):
         # A prompt would take the tap.
         return False
     turn = getattr(task, TURN, None)
-    if turn and (turn.played or turn.ended or turn.attempted) and text_in_region(task, "/10", HAND_COUNTER_REGION):
-        # The page opens in battle too, but only at a turn's start is nothing pressed that a prompt could still answer.
+    if in_battle and turn and (turn.played or turn.ended or turn.attempted):
+        # The page opens in battle too, but a card or end turn in flight can still raise a prompt, so the next turn spares a frame.
+        setattr(task, TEAM_WANTED, True)
         return False
     task.node_status[TEAM_TAPPED] = (tries + 1, now)
     if not tries:

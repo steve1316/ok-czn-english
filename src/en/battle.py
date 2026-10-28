@@ -32,6 +32,8 @@ HAND_CACHE = "_en_hand_for"
 # The combatants in the party, parked on the task. Read off the Combatants screen at the start of a run, then topped up from the
 # owners of cards read in hand.
 PARTY = "_en_party"
+# Set by Sortie's team read when a turn had a card or end turn in flight, so the next turn opens with a frame spare for the tap.
+TEAM_WANTED = "_en_team_wanted"
 
 # Upstream's own timings for playing a card, kept so the two paths feel the same to the game.
 AFTER_KEY = 1
@@ -1052,6 +1054,9 @@ def install():
             turn.ended = True
         if count:
             turn = turn_of(task, count)
+            if getattr(task, TEAM_WANTED, False) and not (turn.played or turn.attempted):
+                setattr(task, TEAM_WANTED, False)
+                return True
             watch_invulnerable(task, turn)
             if ego.take_turn(task, utils_sortie, turn):
                 return True

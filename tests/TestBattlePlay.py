@@ -654,6 +654,17 @@ class TestInstalling(unittest.TestCase):
             turn = getattr(task, battle.TURN)
             self.assertEqual(((), ()), (turn.earlier, turn.last_turn))
 
+    def test_a_turn_spares_its_first_frame_for_the_team_read(self):
+        # Live, a restart mid-battle never read the team: by the time the read could tap, every turn already had a card in flight.
+        with upstream(hand(ATTACK)) as (utils_sortie, task):
+            battle.install()
+            page = handlers_of(utils_sortie)["handle_battle_page"]
+            setattr(task, battle.TEAM_WANTED, True)
+            page(task)
+            self.assertEqual([], utils_sortie.asked)
+            page(task)
+            self.assertEqual(1, len(utils_sortie.asked))
+
     def test_the_next_turn_knows_what_was_kept(self):
         # The Attack was pressed after the last read, so only the Curse was still in hand when the turn ended.
         with upstream(hand(ATTACK, AILMENT)) as (utils_sortie, task):
