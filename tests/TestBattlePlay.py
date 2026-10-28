@@ -747,13 +747,15 @@ class TestInstalling(unittest.TestCase):
             self.assertEqual(len(pressed) + 2, len(task.keys))
 
     def test_a_card_still_in_hand_is_not_tried_again(self):
-        with upstream(hand(ATTACK, BIG_ATTACK)) as (utils_sortie, task):
-            battle.install()
-            utils_sortie._try_all_card_keys(task, 2)
-            # The game kept it twice running, so the next frame should reach for the other card instead.
-            utils_sortie._try_all_card_keys(task, 2)
-            utils_sortie._try_all_card_keys(task, 2)
-            self.assertEqual(task.keys, ["2", battle.CONFIRM_KEY, "2", battle.CONFIRM_KEY, "1", battle.CONFIRM_KEY])
+        # The game kept it twice running, so the next frame should reach for the other card instead. A Retrieve the deck read showed
+        # sends the card back to hand once, which is one stay more before that.
+        for retrieves, frames in ((0, 3), (1, 4)):
+            with self.subTest(retrieves=retrieves), upstream(hand(ATTACK, BIG_ATTACK)) as (utils_sortie, task), \
+                    mock.patch.dict(cards.RETRIEVES, {BIG_ATTACK: retrieves}):
+                battle.install()
+                for _ in range(frames):
+                    utils_sortie._try_all_card_keys(task, 2)
+                self.assertEqual(task.keys, ["2", battle.CONFIRM_KEY] * (frames - 1) + ["1", battle.CONFIRM_KEY])
 
     def test_a_refusal_holds_while_ocr_misreads_the_hand(self):
         # Caught live: a lowered hand read as one card spelled a new way each frame, and as one card then two,

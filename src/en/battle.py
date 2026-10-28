@@ -357,7 +357,7 @@ class Turn:
     a frame or two - so it is read once and kept, and a turn that never manages to read one keeps trying.
     """
 
-    def __init__(self, hand_count, last_turn=(), kept=(), earlier=(), fight=None):
+    def __init__(self, hand_count, last_turn=(), kept=(), earlier=(), fight=None, retrieved=()):
         """Start a turn that has learnt nothing yet.
 
         Args:
@@ -366,10 +366,13 @@ class Turn:
             kept: The cards the turn before ended holding.
             earlier: The cards the turns before played this battle, oldest first.
             fight: The fight it belongs to, from `fight_of`.
+            retrieved: How many times each card has come back to hand this battle, from the turn before.
         """
         self.hand_count = hand_count
         self.fight = fight
         self.earlier = tuple(earlier)
+        # Plays of a card with Retrieve that it came back to hand from, this battle, against its `cards.RETRIEVES` allowance.
+        self.retrieved = collections.Counter(retrieved)
         self.attempted = None
         self.attempted_copies = 0
         self.refused = set()
@@ -973,7 +976,7 @@ def turn_of(task, hand_count):
     elif new_turn(turn.hand_count, hand_count, turn.ended):
         # With no node to tell fights apart, the battle is only known back to the turn before.
         earlier = (*turn.earlier, *turn.played) if fight is not None else turn.played
-        turn = Turn(hand_count, turn.played, turn.hand, earlier, fight)
+        turn = Turn(hand_count, turn.played, turn.hand, earlier, fight, turn.retrieved if fight is not None else ())
         setattr(task, TURN, turn)
     turn.hand_count = hand_count
     return turn
@@ -1117,6 +1120,12 @@ def install():
 
         if turn.attempted is not None and not was_refused(turn.attempted, turn.attempted_copies, names):
             # Settled once, so a frame that returns before picking again cannot count the same play twice.
+            turn.played.append(turn.attempted)
+            turn.attempted = None
+        elif turn.attempted is not None and turn.retrieved[turn.attempted] < cards.RETRIEVES.get(turn.attempted, 0):
+            # Live, Harmonization: Residual Herb shielded and came straight back, and was given up on as refused.
+            task.log_info(f"{turn.attempted} came back to hand on its Retrieve")
+            turn.retrieved[turn.attempted] += 1
             turn.played.append(turn.attempted)
             turn.attempted = None
         elif turn.attempted is not None:

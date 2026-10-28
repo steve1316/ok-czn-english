@@ -371,6 +371,14 @@ class TestDeckRead(unittest.TestCase):
         cards.use_deck({"Experienced Strike": {SHIELD_GAIN, DESCRIPTIONS["Experienced Strike"]}})
         self.assertEqual(base, cards.features("Experienced Strike"))
 
+    def test_only_a_retrieve_tag_counts(self):
+        # The first two were read live off All Piles. The others apply Retrieve to other cards, which leaves the card itself without one.
+        for text, expected in (("[Retrieve 2/Exhaust 396%ShieldIncinerate", "2"), ("[Retrieve] 100% Damage", ""),
+                               (DESCRIPTIONS["Harmonization: Spirit Kefox"], None), (DESCRIPTIONS["Spirit Kefox"], None)):
+            with self.subTest(text):
+                found = piles.RETRIEVE.search(text)
+                self.assertEqual(expected, found and found.group(1))
+
     def test_a_divine_epiphany_keeps_its_lines(self):
         # Read live off a card holding Diallos's Epiphany, its lines out of order. Without them the deck stored the plain base.
         text = ("Exhaust ]higher non-Unique DellangCreate 1 random 1-Cost orFor 1 turn, change Cost ofShop card(s)those cards to 0Morale 1"

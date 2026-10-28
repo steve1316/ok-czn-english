@@ -44,6 +44,9 @@ MAX_PAGES = 15
 MATCH_FLOOR = 0.5
 # A keyword tag like "[Unique / Initiation]", which the data keeps out of a card's text.
 KEYWORD_TAGS = re.compile(r"\[[^\]]*\]")
+# A keyword tag the version match strips, but `battle` needs: a card with Retrieve goes back to hand when played. A bare one comes back once.
+# Only the tag form, "[Retrieve 2/Exhaust]", since Spirit Kefox's own text applies Retrieve to other cards.
+RETRIEVE = re.compile(r"Retrieve\s*(\d*)\s*[/\]]", re.I)
 NOT_A_LETTER = re.compile(r"[^a-z]")
 NOT_ALPHANUMERIC = re.compile(r"[^a-z0-9]")
 # A run shorter than this that a read shares with its version is chance, so it is left over for the Divine Epiphany lines.
@@ -197,9 +200,10 @@ def read_piles(task, utils):
 
     Returns:
         Canonical card name to a `Counter` of the version texts its copies matched. Pages overlap, so a version counts the most copies
-        of it any one page showed, which can miss a copy two rows away.
+        of it any one page showed, which can miss a copy two rows away. Then canonical card name to the most Retrieves a copy showed.
     """
     copies = {}
+    retrieves = {}
     last_page = None
     for _ in range(MAX_PAGES):
         raw_ocr(task)
@@ -211,9 +215,13 @@ def read_piles(task, utils):
         for (name, version), number in Counter((name, version_of(name, text)) for name, text, _ in page).items():
             held = copies.setdefault(name, Counter())
             held[version] = max(held[version], number)
+        for name, text, _ in page:
+            retrieve = RETRIEVE.search(text)
+            if retrieve:
+                retrieves[name] = max(retrieves.get(name, 0), int(retrieve.group(1) or 1))
         last_page = where
         utils._scroll_card_page(task, *SCROLL_POINT, SCROLL_AMOUNT, "All Piles")
-    return copies
+    return copies, retrieves
 
 
 def read_deck(task, utils):
@@ -229,8 +237,8 @@ def read_deck(task, utils):
     if text_in_region(task, TITLE, TITLE_REGION) is None:
         logger.warning("tapped the deck icon but All Piles did not open, keeping the last deck read")
         return
-    copies = read_piles(task, utils)
-    cards.use_deck(copies)
+    copies, retrieves = read_piles(task, utils)
+    cards.use_deck(copies, retrieves)
     epiphanies = sorted(name for name, texts in copies.items() if set(texts) - {DESCRIPTIONS.get(name)})
     logger.info(f"read {len(copies)} distinct cards off All Piles, {len(epiphanies)} with an Epiphany: {epiphanies}")
     logger.debug(f"deck read: {sorted(copies)}")
