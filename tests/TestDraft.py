@@ -114,6 +114,9 @@ class TestDraft(unittest.TestCase):
             ({"Hugo"}, ("Beryl", "Rin", "Hilde"), False, "Rin"),
             ({"Mika"}, ("Khalipe", "Beryl", "Cassius"), True, "Beryl"),
             (set(), ("Khalipe", "Beryl", "Rin"), True, "Rin"),
+            # Live, the fourth pick wanted the Support the team lacked and rerolled all three offers away.
+            ({"Maribell", "Rei", "Tenebria"}, ("Arabella", "Diana", "Olga"), True, "Arabella"),
+            ({"Maribell", "Rei", "Tenebria"}, ("Veronica", "Diana", "Khalipe"), True, "Diana"),
         ]
         for party, offers, can_reroll, expected in cases:
             with self.subTest(party=party, offers=offers, can_reroll=can_reroll):
