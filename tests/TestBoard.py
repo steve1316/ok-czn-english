@@ -20,6 +20,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from src.en import board, boss  # noqa: E402
 from src.en.battle import PARTY  # noqa: E402
+from tests.fakes import FakeBox  # noqa: E402
 
 IMAGES = REPO_ROOT / "tests" / "images"
 WIDTH, HEIGHT = 1920, 1080
@@ -36,6 +37,9 @@ EP_BAR_AT = (30, 830)
 EGO_SLOTS_AT = (100, 740)
 TEAM_BAR_AT = (40, 30)
 STATUSES_AT = (1270, 190)
+# A boss with two summoned minions, their HP numbers where OCR reads them, and a magenta tentacle that passes for a counter.
+SUMMONED_AT = (820, 80)
+SUMMONED_HEALTH = (("1179", 0.725, 0.108), ("253", 0.535, 0.444), ("206", 0.910, 0.444))
 # The two Weakness badges on the Sortie boss select screen, Shadow Collector's Passion and Cold, Sweet Dream's Void.
 BOSS_BADGES_AT = (820, 785)
 # Upstream's boss entries for that screen, at the points it reads each name from.
@@ -281,6 +285,12 @@ class TestRealEnemies(unittest.TestCase):
 
     def test_a_real_enemy_reads_its_weakness(self):
         self.assertEqual(board.weakness(FakeTask(pasted("enemy_instinct", *ENEMY_AT))), "Instinct")
+
+    def test_the_boss_is_targeted_over_its_summons(self):
+        # Live, a fight was lost attacking minions the boss summoned again every turn.
+        task = FakeTask(pasted("summoned_minions", *SUMMONED_AT))
+        task.all_texts = [FakeBox(text, x, y) for text, x, y in SUMMONED_HEALTH]
+        self.assertEqual((0.725, 0.108 + board.HEALTH_BAR_BELOW), tuple(round(value, 3) for value in board.target_point(task)))
 
     def test_a_real_attack_flash_is_not_an_enemy(self):
         # It is the right colour, well over the minimum area and within the squareness band, so the height is

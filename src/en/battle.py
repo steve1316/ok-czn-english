@@ -439,6 +439,8 @@ class Turn:
         self.invulnerable = False
         # The fewest enemies a frame of this turn has shown, from `board.enemy_counters`. 0 until a frame shows one.
         self.enemies = 0
+        # Whether this turn has tapped the boss's HP bar, from `aim_at_boss`.
+        self.aimed = False
 
 
 def play_key(task, key):
@@ -744,6 +746,31 @@ def note_hand_read(task, utils_sortie):
     elif getattr(task, UNREAD_HAND, None) is None:
         setattr(task, UNREAD_HAND, 0)
     return count
+
+
+def aim_at_boss(task, utils_sortie, turn):
+    """Make the boss the target before the turn's first card, while it has minions out.
+
+    Live, a fight was lost attacking minions the boss summoned again every turn.
+
+    Args:
+        task: The running task, on a battle screen.
+        utils_sortie: Upstream's Sortie module, for its `_move_and_click`.
+        turn: The battle's `Turn`, which notes the tap so it is made once a turn.
+
+    Returns:
+        True when this frame was spent tapping the boss.
+    """
+    if turn.aimed or turn.played or turn.attempted:
+        return False
+    point = board.target_point(task)
+    if point is None:
+        return False
+    turn.aimed = True
+    task.log_info(f"the boss has minions out, so its HP bar at ({point[0]:.3f}, {point[1]:.3f}) is tapped to target it")
+    utils_sortie._move_and_click(task, *point)
+    task.sleep(1)
+    return True
 
 
 def watch_invulnerable(task, turn):
@@ -1354,7 +1381,7 @@ def install():
                 setattr(task, TEAM_WANTED, False)
                 return True
             watch_invulnerable(task, turn)
-            if ego.take_turn(task, utils_sortie, turn):
+            if aim_at_boss(task, utils_sortie, turn) or ego.take_turn(task, utils_sortie, turn):
                 return True
         with standing_in(utils_sortie, random=EgoChoice(task, utils_sortie.random)), standing_in(task, send_key=noting_end_of_turn(task)):
             return original_page(task)

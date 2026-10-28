@@ -4,6 +4,7 @@
 everything here comes out of that pass or out of raw pixels. Nothing in this module runs OCR.
 """
 
+import re
 from functools import lru_cache
 from pathlib import Path
 
@@ -12,7 +13,7 @@ import numpy as np
 from ok import Logger
 
 from src.en.game_battle import ATTRIBUTES
-from src.en.screen import colour_share, frame_of, hsv_of, patch_of, white_mask
+from src.en.screen import centre_of, colour_share, frame_of, hsv_of, in_region, patch_of, white_mask
 
 logger = Logger.get_logger(__name__)
 
@@ -113,6 +114,20 @@ WEAKNESS_ENOUGH = 0.20
 ATTRIBUTE_HUES = {"RED": 0, "ORANGE": 15, "GREEN": 78, "BLUE": 110, "PURPLE": 133}
 # How far a badge's hue may sit from the nearest of those before it is treated as not a badge at all.
 HUE_TOLERANCE = 20
+
+# The two statuses the game marks a summoned enemy with, either or both, cut from a 1080p frame and matched on their white strokes.
+SUMMONED_IMAGES = tuple(Path(__file__).with_name("images") / name for name in ("summoned_horns.png", "summoned_ghost.png"))
+# Real ones scored 0.92 to 1.0. Across 197 counters in 851 captures, nothing else scored above 0.60.
+SUMMONED_MATCH = 0.8
+# Wider than `ENEMY_BAND` at the top, which cuts through the counter of a boss standing tall enough to put it there.
+TARGET_BAND = (0.30, 0.05, 1.00, 0.60)
+# The row of statuses below an enemy's HP bar, as offsets from its counter's centre.
+STATUS_ROW = (0.01, 0.005, 0.17, 0.07)
+# Where an enemy's HP number sits, as offsets from its counter's centre. A counter with no number there is scenery in the same magenta.
+HEALTH_NUMBER = (0.03, -0.05, 0.12, 0.0)
+HEALTH_DIGITS = re.compile(r"^\d+$")
+# How far below its HP number to tap an enemy's HP bar, which makes it the target for the rest of the fight.
+HEALTH_BAR_BELOW = 0.015
 
 
 def box_around(centre_x, centre_y, half):
@@ -283,19 +298,20 @@ def team_after_hit(frame):
     return float(columns[-1] + 1) / green.shape[1]
 
 
-@lru_cache(maxsize=4)
-def invulnerable_template(height):
-    """Load the Absolute Invincibility badge, scaled to a frame's size.
+@lru_cache(maxsize=8)
+def icon_template(path, height):
+    """Load a status icon cut from a 1080p frame, scaled to a frame's size.
 
     Args:
+        path: The icon's image file, such as `INVULNERABLE_IMAGE`.
         height: The frame height in pixels.
 
     Returns:
-        The badge's white mask, or None when the image cannot be read.
+        The icon's white mask, or None when the image cannot be read.
     """
-    image = cv2.imread(str(INVULNERABLE_IMAGE))
+    image = cv2.imread(str(path))
     if image is None:
-        logger.warning(f"could not read the invulnerability badge from {INVULNERABLE_IMAGE}")
+        logger.warning(f"could not read the status icon from {path}")
         return None
     scale = height / TEMPLATE_HEIGHT
     if scale != 1:
@@ -315,10 +331,24 @@ def enemy_invulnerable(frame):
     patch = patch_of(frame, ENEMY_BAND)
     if patch is None or patch.size == 0:
         return False
-    template = invulnerable_template(frame.shape[0])
-    if template is None or patch.shape[0] < template.shape[0] or patch.shape[1] < template.shape[1]:
-        return False
-    return float(cv2.matchTemplate(white_mask(patch), template, cv2.TM_CCOEFF_NORMED).max()) >= INVULNERABLE_MATCH
+    return icon_match(patch, INVULNERABLE_IMAGE, frame.shape[0]) >= INVULNERABLE_MATCH
+
+
+def icon_match(patch, path, height):
+    """Score how well a status icon matches anywhere in a patch.
+
+    Args:
+        patch: The pixels to search, in BGR.
+        path: The icon's image file.
+        height: The frame height in pixels, which the icon is scaled to.
+
+    Returns:
+        The best match, from -1 to 1, or 0 when the icon cannot be read or does not fit in the patch.
+    """
+    template = icon_template(path, height)
+    if template is None or patch is None or patch.shape[0] < template.shape[0] or patch.shape[1] < template.shape[1]:
+        return 0.0
+    return float(cv2.matchTemplate(white_mask(patch), template, cv2.TM_CCOEFF_NORMED).max())
 
 
 def hue_distance(one, other):
@@ -369,16 +399,17 @@ def attribute_of(patch, beside_counter=True, saturation_floor=WEAKNESS_SATURATIO
     return ATTRIBUTES.get(colour)
 
 
-def enemy_counters(frame):
+def enemy_counters(frame, band=ENEMY_BAND):
     """Find the action counter of every enemy on screen.
 
     Args:
         frame: The frame to read, or None when there is none.
+        band: Where to look, `ENEMY_BAND` unless a caller needs the top of the screen too.
 
     Returns:
         A list of `(x, y)` centres in fractions of the frame, left to right.
     """
-    hsv = hsv_of(patch_of(frame, ENEMY_BAND))
+    hsv = hsv_of(patch_of(frame, band))
     if hsv is None:
         return []
     height, width = frame.shape[:2]
@@ -387,7 +418,7 @@ def enemy_counters(frame):
     mask = cv2.inRange(hsv, (COUNTER_HUE[0] + 1, COUNTER_SATURATION + 1, COUNTER_VALUE + 1),
                        (COUNTER_HUE[1] - 1, 255, 255))
     count, _, stats, centres = cv2.connectedComponentsWithStats(mask, 8)
-    left, top = ENEMY_BAND[0], ENEMY_BAND[1]
+    left, top = band[0], band[1]
     found = []
     for index in range(1, count):
         _, _, box_width, box_height, area = stats[index]
@@ -422,3 +453,30 @@ def weakness(task):
         if attribute:
             seen.add(attribute)
     return seen.pop() if len(seen) == 1 else None
+
+
+def target_point(task):
+    """Find the HP bar to tap so the fight's attacks go to the boss rather than to the minions it summons again each turn.
+
+    Args:
+        task: The running task, whose `all_texts` holds each enemy's HP number.
+
+    Returns:
+        The `(x, y)` of the one enemy on screen not marked as summoned, or None unless at least one is and exactly one is not.
+    """
+    frame = frame_of(task)
+    height = frame.shape[0] if frame is not None else 0
+    numbers = [box for box in getattr(task, "all_texts", None) or [] if HEALTH_DIGITS.match(box.name)]
+    summoned, unsummoned = 0, []
+    for centre_x, centre_y in enemy_counters(frame, TARGET_BAND):
+        region = (centre_x + HEALTH_NUMBER[0], centre_y + HEALTH_NUMBER[1], centre_x + HEALTH_NUMBER[2], centre_y + HEALTH_NUMBER[3])
+        number = next((box for box in numbers if in_region(box, region, task.width, task.height)), None)
+        if number is None:
+            continue
+        row = patch_of(frame, (centre_x + STATUS_ROW[0], centre_y + STATUS_ROW[1], min(1.0, centre_x + STATUS_ROW[2]), centre_y + STATUS_ROW[3]))
+        if any(icon_match(row, path, height) >= SUMMONED_MATCH for path in SUMMONED_IMAGES):
+            summoned += 1
+        else:
+            number_x, number_y = centre_of(number, task.width, task.height)
+            unsummoned.append((number_x, number_y + HEALTH_BAR_BELOW))
+    return unsummoned[0] if summoned and len(unsummoned) == 1 else None
