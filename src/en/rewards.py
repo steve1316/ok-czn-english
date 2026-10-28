@@ -53,10 +53,22 @@ def remember_team(task, utils):
     """
     names = [name for name in combatant_names(task, utils) if name]
     if names:
-        task.info_set(COMBATANTS, ", ".join(names))
+        show_team(task, names)
+    else:
+        logger.info("the Combatants screen showed no names, so cards will not be class filtered")
+
+
+def show_team(task, names):
+    """Show the team in the Combatants row and keep it for the card picker and the reward screens.
+
+    Args:
+        task: The running task.
+        names: The whole team, as read off the Combatants screen or grown by a draft.
+    """
+    task.info_set(COMBATANTS, ", ".join(names))
     party = frozenset(filter(None, map(quality.COMBATANT_INDEX.look_up, names)))
     if party:
-        # Read off the screen, so it replaces whatever the hand taught the card picker before.
+        # Read off a screen, so it replaces whatever the hand taught the card picker before.
         setattr(task, PARTY, party)
     classes = quality.team_classes(names)
     if classes:

@@ -10,6 +10,7 @@ from src.en import quality
 from src.en.battle import PARTY
 from src.en.game_quality import COMBATANT_ROLE
 from src.en.handlers import insert_before, loaded, register, wrap
+from src.en.rewards import show_team
 
 logger = Logger.get_logger(__name__)
 
@@ -201,6 +202,49 @@ def confirming_our_pick(confirm, utils, utils_sortie):
     return handle_confirm
 
 
+def drafting(utils, utils_sortie):
+    """Build the handler that picks, or rerolls for, the role the team lacks at a Sortie draft.
+
+    Args:
+        utils: The loaded `utils` module.
+        utils_sortie: The loaded `utils_sortie` module.
+
+    Returns:
+        The handler, which claims the frame when it clicks.
+    """
+    def handle_member_draft(task):
+        offered = offers(task, utils, utils_sortie)
+        if not offered:
+            return False
+        names, slots = zip(*offered)
+        found = badges(task)
+        # The data knows every combatant's role, and the badge covers a name the reader could not place.
+        roles = [COMBATANT_ROLE.get(name) or role_for(slot, found) for name, slot in offered]
+        # Whoever is still on offer has not joined, even if an earlier pass picked them and the Confirm did not take.
+        party = getattr(task, PARTY, frozenset()) - set(names)
+        wants = wanted(party)
+        labels = [f"{name} ({role or 'role unread'})" for name, role in zip(names, roles)]
+        task.log_info(f"draft offers {', '.join(labels)} to team {sorted(party)}, wanting {'/'.join(wants) or 'nothing'}")
+
+        spendable = [slot for slot in slots if rerollable(task, slot)]
+        pick = choose(roles, wants, bool(spendable))
+        if pick is None:
+            task.log_info(f"draft offers no {' or '.join(wants)}, rerolling {len(spendable)} slot(s)")
+            for slot in spendable:
+                utils._move_and_click(task, slot["x"], slot["refresh_y"])
+                task.sleep(1)
+            return True
+
+        task.log_info(f"draft taking {labels[pick]}")
+        utils._move_and_click(task, slots[pick]["x"], slots[pick]["y"])
+        task.sleep(1)
+        task.node_status[DRAFTED] = names[pick]
+        show_team(task, [*sorted(party), names[pick]])
+        return True
+
+    return handle_member_draft
+
+
 def apply():
     """Rank the candidates at a Sortie draft, ahead of upstream's own handler."""
     global _patched
@@ -213,37 +257,8 @@ def apply():
         if utils is None or utils_sortie is None:
             return
 
-        def handle_member_draft(task):
-            offered = offers(task, utils, utils_sortie)
-            if not offered:
-                return False
-            names, slots = zip(*offered)
-            found = badges(task)
-            # The data knows every combatant's role, and the badge covers a name the reader could not place.
-            roles = [COMBATANT_ROLE.get(name) or role_for(slot, found) for name, slot in offered]
-            party = getattr(task, PARTY, frozenset())
-            wants = wanted(party)
-            labels = [f"{name} ({role or 'role unread'})" for name, role in zip(names, roles)]
-            task.log_info(f"draft offers {', '.join(labels)} to team {sorted(party)}, wanting {'/'.join(wants) or 'nothing'}")
-
-            spendable = [slot for slot in slots if rerollable(task, slot)]
-            pick = choose(roles, wants, bool(spendable))
-            if pick is None:
-                task.log_info(f"draft offers no {' or '.join(wants)}, rerolling {len(spendable)} slot(s)")
-                for slot in spendable:
-                    utils._move_and_click(task, slot["x"], slot["refresh_y"])
-                    task.sleep(1)
-                return True
-
-            task.log_info(f"draft taking {labels[pick]}")
-            utils._move_and_click(task, slots[pick]["x"], slots[pick]["y"])
-            task.sleep(1)
-            task.node_status[DRAFTED] = names[pick]
-            setattr(task, PARTY, party | {names[pick]})
-            return True
-
         wrap(utils, "handle_confirm", lambda confirm: confirming_our_pick(confirm, utils, utils_sortie), "confirms a draft only once it has picked")
-        insert_before("handle_member_selection", handle_member_draft)
+        insert_before("handle_member_selection", drafting(utils, utils_sortie))
 
     register(install)
     _patched = True
