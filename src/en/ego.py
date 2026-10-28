@@ -89,6 +89,8 @@ BOSS = "final_boss_battle"
 _known = None
 # Signatures of portraits whose preview did not read this session, so a slot is not previewed again every turn.
 _unread = []
+# The unknown portrait each slot showed when last looked at, by key.
+_sighted = {}
 
 Ego = collections.namedtuple("Ego", [
     # The name on the preview card, or None when its label did not read.
@@ -192,6 +194,24 @@ def recall(known, mark):
         return None
     score, ego = max(((float(mark @ seen), ego) for seen, ego in known), key=lambda pair: pair[0])
     return ego if score >= SAME_EGO else None
+
+
+def steady(key, mark):
+    """Say whether a slot showed the same unknown portrait the last time it was looked at.
+
+    A combatant's art sweeps over the panel for a moment when a card is played, and a portrait read through it would be saved as an Ego of
+    its own.
+
+    Args:
+        key: The slot's key, one of `board.EGO_KEYS`.
+        mark: The portrait signature it shows now, from `signature`.
+
+    Returns:
+        True when the last look agreed, so the portrait is worth a preview.
+    """
+    before = _sighted.get(key)
+    _sighted[key] = mark
+    return before is not None and float(mark @ before) >= SAME_EGO
 
 
 def team_readout(task):
@@ -358,7 +378,7 @@ def take_turn(task, utils, turn):
         mark = signature(frame, key)
         ego = recall(seen, mark)
         # An Ego the bar cannot pay for cannot be fired, so it is not worth a preview yet.
-        if ego is None and mark is not None and key in affordable and not any(float(mark @ failed) >= SAME_EGO for failed in _unread):
+        if ego is None and mark is not None and key in affordable and not any(float(mark @ failed) >= SAME_EGO for failed in _unread) and steady(key, mark):
             ego = identify(task, utils, key)
             if ego is None:
                 task.log_info(f"the Ego on {key} did not preview, leaving it to upstream until the app restarts")
