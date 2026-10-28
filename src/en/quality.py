@@ -49,6 +49,9 @@ CONFUSABLE = {letter: group[0] for group in ("il1", "o0", "s5", "gq9", "b6", "z2
 # fragments that would each find something to be one edit from. `Dice`, `Quick` and `+60` are all real
 # readings that stop here.
 SHORTEST_WORTH_GUESSING = 6
+# A long name can lose a letter in this many and still be recognised, as long as the rest stay in order. Live, Rin's
+# `Dark Mist Secret Art: Destruction` came back as `DarkMistSecretAr:Destuctio`, three letters short of 28.
+LETTERS_PER_DROP = 8
 
 
 class Lookup(NamedTuple):
@@ -98,10 +101,12 @@ class Lookup(NamedTuple):
         """
         if len(folded) < SHORTEST_WORTH_GUESSING:
             return None
-        found = [name for known, name in self.exact.items() if one_edit_apart(folded, known)]
+        found, how = [name for known, name in self.exact.items() if one_edit_apart(folded, known)], "one edit away"
+        if not found:
+            found, how = [name for known, name in self.exact.items() if letters_dropped(folded, known)], "with letters dropped"
         if len(found) != 1:
             return None
-        logger.info(f"reading 「{folded}」 as {found[0]}, one edit away")
+        logger.info(f"reading 「{folded}」 as {found[0]}, {how}")
         return found[0]
 
 
@@ -167,6 +172,22 @@ def one_edit_apart(left, right):
                 return shorter[position + 1:] == longer[position + 1:]
             return shorter[position:] == longer[position + 1:]
     return len(longer) - len(shorter) == 1
+
+
+def letters_dropped(reading, known):
+    """Report whether a reading is a long name with a few of its letters lost and the rest in order.
+
+    Args:
+        reading: The folded reading.
+        known: A folded real name.
+
+    Returns:
+        True when every letter of the reading appears in the name in order, with at most one in `LETTERS_PER_DROP` missing.
+    """
+    if not 0 < len(known) - len(reading) <= len(known) // LETTERS_PER_DROP:
+        return False
+    letters = iter(known)
+    return all(letter in letters for letter in reading)
 
 
 def index(names):
