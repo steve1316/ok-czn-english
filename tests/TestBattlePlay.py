@@ -25,7 +25,7 @@ import utils_sortie as real_sortie  # noqa: E402
 
 from src.en import battle, board, cards, ego, overrides  # noqa: E402
 from src.en.handlers import standing_in  # noqa: E402
-from tests.TestBoard import FakeTask, flat, paint, paint_enemy, pasted  # noqa: E402
+from tests.TestBoard import EGO_SLOTS_AT, FakeTask, flat, paint, paint_enemy, pasted  # noqa: E402
 from tests.fakes import FakeBox  # noqa: E402
 
 # Haru is Justice and Renoa is Void, and these two cards are otherwise identical: one Action Point, an
@@ -209,6 +209,11 @@ class TestEgoPlanner(unittest.TestCase):
                           FakeBox("'Cancel", 0.113, 0.818, width=120)])
         read = ego.identify(task, types.SimpleNamespace(), "F2")
         self.assertEqual(read.text, "450% Defense-Based Damage to all enemies Create 1 Vulture Ejection")
+
+    def test_two_silver_haired_portraits_are_told_apart(self):
+        # Live, Owen's Ego in F3 was recalled as Khalipe's Charisma of Resolve in F2, so it was never previewed.
+        frame = pasted("ego_slot_used", *EGO_SLOTS_AT)
+        self.assertIsNone(ego.recall([(ego.signature(frame, "F2"), STRIKE_EGO)], ego.signature(frame, "F3")))
 
     def test_the_first_rule_that_applies_wins(self):
         every = [("F1", GUARD_EGO, True), ("F2", STRIKE_EGO, True), ("F3", SETUP_EGO, True)]
