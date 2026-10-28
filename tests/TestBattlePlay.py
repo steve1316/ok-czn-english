@@ -234,6 +234,7 @@ class TestEgoPlanner(unittest.TestCase):
             ("a boss saving for its strike", [("F2", STRIKE_EGO, False), ("F3", SETUP_EGO, True)], 3, 0.9, False, True, True, None),
             ("an unaffordable guard", [("F1", GUARD_EGO, False), ("F3", SETUP_EGO, True)], 3, 0.2, False, True, False, "F3"),
             ("an Ego never read", [("F1", None, True)], 7, 0.2, False, True, False, None),
+            ("an empty bar under lit badges", every, 0, 0.2, False, True, False, None),
         )
         for name, slots, banked, after_hit, invulnerable, attacking, boss, fired in cases:
             with self.subTest(name):
@@ -251,17 +252,21 @@ class TestEgoPlanner(unittest.TestCase):
     def test_a_press_the_game_ignored_does_not_use_up_the_turn(self):
         # Live, F1 pressed while an attack still played left the bar at 3 EP, and the retry that did fire was counted as a second.
         # Each retry costs the turn ~5s, so a second miss ends the Egos for the turn rather than pressing until the cap.
-        for ignored, counted in ((False, [1, 2]), (True, [0, ego.FIRES_PER_TURN])):
+        # Live, the first miss left Last Resort selected, and upstream pressed end turn past it for 20s.
+        for ignored, counted, cancels in ((False, [1, 2], 0), (True, [0, ego.FIRES_PER_TURN], 2)):
             with self.subTest(ignored=ignored):
+                clicked = []
                 task = types.SimpleNamespace(frame=flat(255 if ignored else 0), send_key=lambda key: None, sleep=lambda seconds: None,
                                              log_info=lambda message: None, executor=types.SimpleNamespace(ocr_po_translation=None),
-                                             ocr=lambda box=None: [])
+                                             ocr=lambda box=None: [FakeBox("Cancel", 0.105, 0.819)], width=1920, height=1080,
+                                             click_box=clicked.append)
                 turn = types.SimpleNamespace(ego_fires=0, ego_missed=False)
                 fires = []
                 for _ in range(2):
                     ego.fire(task, None, turn, "F1", SETUP_EGO, "ahead of the attacks", 3)
                     fires.append(turn.ego_fires)
                 self.assertEqual(counted, fires)
+                self.assertEqual(cancels, len(clicked))
 
 
 class TestTurnTracking(unittest.TestCase):

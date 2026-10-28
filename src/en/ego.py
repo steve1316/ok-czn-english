@@ -269,6 +269,9 @@ def decide(slots, banked, after_hit, invulnerable, attacking, boss, exhausting):
     Returns:
         A `(key, ego, reason)` triple, or None to fire nothing.
     """
+    # A reduced cost tints the badge whether or not the bar can pay, and live an Ego was fired on 0 EP that way.
+    if not banked:
+        return None
     ready = [(key, ego) for key, ego, affordable in slots if affordable and ego is not None and (exhausting or not ON_EXHAUST.search(ego.text))]
     first = {role: next(((key, ego) for key, ego in ready if role in ego.roles), None) for role in (GUARD, STRIKE, SETUP)}
     hurt = after_hit is not None and after_hit < HURT_BELOW
@@ -368,13 +371,15 @@ def fire(task, utils, turn, key, ego, reason, banked):
     # covers that. A second miss means the game will not take it this turn, so the turn stops firing rather than pressing it again.
     if board.banked_points(frame_of(task)) < banked:
         turn.ego_fires += 1
-    elif not turn.ego_missed:
+        return True
+    if not turn.ego_missed:
         task.log_info(f"{ego.name or key} did not take, EP still {banked}, so it does not count against the turn")
         turn.ego_missed = True
     else:
         task.log_info(f"{ego.name or key} did not take again, leaving the Egos alone for the rest of the turn")
         turn.ego_fires = FIRES_PER_TURN
-        raw_ocr(task)
-        if text_in_region(task, CANCEL, EGO_PANEL) is not None:
-            cancel_preview(task, utils, key)
+    # A missed Ego stays selected, and upstream's end turn key does nothing past it.
+    raw_ocr(task)
+    if text_in_region(task, CANCEL, EGO_PANEL) is not None:
+        cancel_preview(task, utils, key)
     return True
