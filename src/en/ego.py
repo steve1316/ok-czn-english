@@ -77,6 +77,8 @@ FINISH_TURN = "finishturn"
 FINISH_TURN_REGION = (0.844, 0.782, 0.998, 0.990)
 # The full-frame pass misses a cost badge's digit, so a badge is read on its own, enlarged this much. Offline, both of two captures read.
 BADGE_ZOOM = 3
+# The breakdown card that can end the fight outright, which would waste an Ego fired ahead of it.
+ESCAPE_CARD = "Fear"
 DIGITS = re.compile(r"\d+")
 # Set by upstream once the run reaches its last boss.
 BOSS = "final_boss_battle"
@@ -341,8 +343,7 @@ def take_turn(task, utils, turn):
     if turn.ego_fires >= FIRES_PER_TURN or not task.find_feature(feature_name=FINISH_TURN, box=task.box_of_screen(*FINISH_TURN_REGION)):
         return False
     hand = utils._hand_cards(task) or []
-    if any(cards.canonical(card["name"]) in cards.BREAKDOWN_CARDS for card in hand):
-        # Free, and Fear can end the fight outright, so the Egos wait for the hand to play them first.
+    if any(cards.canonical(card["name"]) == ESCAPE_CARD for card in hand):
         return False
     frame = frame_of(task)
     banked = board.banked_points(frame)
