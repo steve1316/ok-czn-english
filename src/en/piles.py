@@ -200,7 +200,8 @@ def read_piles(task, utils):
 
     Returns:
         Canonical card name to a `Counter` of the version texts its copies matched. Pages overlap, so a version counts the most copies
-        of it any one page showed, which can miss a copy two rows away. Then canonical card name to the most Retrieves a copy showed.
+        of it any one page showed, which can miss a copy two rows away. Then canonical card name to its Retrieves, which each copy keeps
+        its own of, counted the same way.
     """
     copies = {}
     retrieves = {}
@@ -215,10 +216,12 @@ def read_piles(task, utils):
         for (name, version), number in Counter((name, version_of(name, text)) for name, text, _ in page).items():
             held = copies.setdefault(name, Counter())
             held[version] = max(held[version], number)
+        on_page = Counter()
         for name, text, _ in page:
             retrieve = RETRIEVE.search(text)
-            if retrieve:
-                retrieves[name] = max(retrieves.get(name, 0), int(retrieve.group(1) or 1))
+            on_page[name] += int(retrieve.group(1) or 1) if retrieve else 0
+        for name, number in on_page.items():
+            retrieves[name] = max(retrieves.get(name, 0), number)
         last_page = where
         utils._scroll_card_page(task, *SCROLL_POINT, SCROLL_AMOUNT, "All Piles")
     return copies, retrieves

@@ -94,7 +94,7 @@ COPIES = {}
 # The effect text of every card in `COPIES`, by canonical name: the Epiphany it carries, the weakest where copies differ.
 # Mutated in place, never rebound, and empty until a read, so every card falls back to its base text.
 DECK = {}
-# How many times a battle a card comes back to hand after it is played, by canonical name, for the cards the deck read showed with Retrieve.
+# How many times a battle a card comes back to hand after it is played, by canonical name, summed over its copies, from the deck read.
 RETRIEVES = {}
 
 # What a card does, in the terms the ordering cares about.
@@ -511,7 +511,7 @@ def use_deck(copies, retrieves=None):
     Args:
         copies: Canonical card name to the effect texts its copies were matched to, from `piles`. A `Counter` of copies per text, or
             any collection of texts, each then counted once.
-        retrieves: Canonical card name to the Retrieve count its text showed, from `piles`. None when no card showed one.
+        retrieves: Canonical card name to the Retrieve counts its copies showed, summed, from `piles`. None when no card showed one.
     """
     COPIES.clear()
     COPIES.update({name: Counter(texts) for name, texts in copies.items()})

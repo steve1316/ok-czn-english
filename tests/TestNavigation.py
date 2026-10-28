@@ -379,6 +379,14 @@ class TestDeckRead(unittest.TestCase):
                 found = piles.RETRIEVE.search(text)
                 self.assertEqual(expected, found and found.group(1))
 
+    def test_each_copy_keeps_its_own_retrieves(self):
+        # Two copies on one page are 4 returns, not 2. The next page shows the lower copy again, which must not make it 6.
+        herb, text = "Harmonization: Residual Herb", "[Retrieve 2/Exhaust 3]96% Shield"
+        pages = iter([[(herb, text, 100), (herb, text, 300)], [(herb, text, 50)], [(herb, text, 50)]])
+        with standing_in(piles, raw_ocr=lambda task: None, cards_on_page=lambda task: next(pages)):
+            _, retrieves = piles.read_piles(None, types.SimpleNamespace(_scroll_card_page=lambda *args: None))
+        self.assertEqual({herb: 4}, retrieves)
+
     def test_a_divine_epiphany_keeps_its_lines(self):
         # Read live off a card holding Diallos's Epiphany, its lines out of order. Without them the deck stored the plain base.
         text = ("Exhaust ]higher non-Unique DellangCreate 1 random 1-Cost orFor 1 turn, change Cost ofShop card(s)those cards to 0Morale 1"
