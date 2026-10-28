@@ -60,6 +60,8 @@ SUPPORT_DAMAGE = 0.5
 SUPPORT_ROLES = frozenset({"Healing", "Protection"})
 # What a role's own specialty is worth against the figure printed on it, over damage: a Healer's heal and a Protector's shield.
 SPECIALTY_WEIGHT = 1.5
+# The share of the team's HP left after the enemy's next hit at which a heal has nothing to restore, so it is worth nothing.
+HEALTHY = 0.9
 # What a card is worth when its effect text says nothing measurable - an Immunity, a Morale, a status with no
 # figure on it. Rating those zero would mean a buff never got played at all, which is worse than the guess.
 # The ordinary card costing one point does 100% damage, so an unreadable effect is priced at the same rate.
@@ -131,7 +133,9 @@ Board = namedtuple("Board", [
     "invulnerable",
     # How many enemies are on screen, from `board.enemy_counters`, so damage to all enemies counts once for each. 1 when not known.
     "enemies",
-], defaults=[BASE_ACTION_POINTS, None, None, (), (), (), (), 0, (), DECK, False, 1])
+    # The share of the team's HP left after the enemy's next hit, from `board.team_after_hit`. None when not read.
+    "health",
+], defaults=[BASE_ACTION_POINTS, None, None, (), (), (), (), 0, (), DECK, False, 1, None])
 
 # How many distinct readings to remember the folding of. OCR invents new misspellings all session, so this
 # is bounded rather than unlimited, and it is far larger than the ten names one frame ever asks about.
@@ -572,8 +576,9 @@ def rated(name, board):
     if wasted(name, board):
         return 0
     hit = doing.damage + doing.spread * (board.enemies - 1)
-    worth = strength(doing._replace(damage=0 if board.invulnerable else hit * (WEAKNESS_BONUS if matched else 1)), COMBATANT_ROLE.get(owner(name)))
-    if not worth:
+    heal = 0 if board.health is not None and board.health >= HEALTHY else doing.heal
+    worth = strength(doing._replace(damage=0 if board.invulnerable else hit * (WEAKNESS_BONUS if matched else 1), heal=heal), COMBATANT_ROLE.get(owner(name)))
+    if not worth and not doing.heal:
         worth = UNREAD_VALUE * max(cost(name), 1)
     if lit_up(name, board):
         worth += EPIPHANY_BONUS

@@ -529,8 +529,10 @@ class TestKits(unittest.TestCase):
             ("a Healer's attack leaves the point to a Core's", ("Matter Disintegration", "Slash"), cards.Board(action_points=1), ["Slash"]),
             ("a Protector's attack leaves the point to a Core's", ("Frozen Fist", "Slash"), cards.Board(action_points=1), ["Slash"]),
             # A heal is a Healer's specialty, and read nothing it tied with Slash on hand order.
-            ("a Healer's heal takes the point from a Core's attack", ("Slash", "Barrier Deployment"), cards.Board(action_points=1),
+            ("a Healer's heal takes the point from a Core's attack", ("Slash", "Barrier Deployment"), cards.Board(action_points=1, health=0.5),
              ["Barrier Deployment"]),
+            ("a heal leaves the point to an attack while the team is healthy", ("Slash", "Barrier Deployment"),
+             cards.Board(action_points=1, health=cards.HEALTHY), ["Slash"]),
         ))
 
     def test_mei_lin_buffs_first_and_ends_on_the_spire(self):
