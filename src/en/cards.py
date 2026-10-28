@@ -49,14 +49,17 @@ BREAKDOWN_CARDS = frozenset({"Confusion", "Impulse", "Guilt", "Daze", "Escapism"
 # Roughly what one drawn card is worth, said in damage. A card drawn is about one more card played, and the
 # ordinary card costing one point does 100% damage, so that is the exchange rate the data itself suggests.
 DRAW_VALUE = 100
-# Shield keeps a combatant standing but does not end the fight, so the same number is worth less than damage.
+# Shield and heal keep a combatant standing but do not end the fight, so the same number is worth less than damage.
 SHIELD_WEIGHT = 0.6
 # What matching the attribute an enemy is weak to is worth. The game pays a match in extra damage and in
 # extra Tenacity damage both, so a matching card is worth more than the figure printed on it.
 WEAKNESS_BONUS = 1.5
-# What a Healer's damage is worth against the figure printed on it. A Healer's stats are low, so the same 100% hits for less than a Core's or
-# an Attacker's, and a Healer's attack should not take their points.
-HEALER_DAMAGE = 0.5
+# What a Healer's or a Protector's damage is worth against the figure printed on it. Their stats are low, so the same 100% hits for less than
+# a Core's or an Attacker's, and their attacks should not take their points.
+SUPPORT_DAMAGE = 0.5
+SUPPORT_ROLES = frozenset({"Healing", "Protection"})
+# What a role's own specialty is worth against the figure printed on it, over damage: a Healer's heal and a Protector's shield.
+SPECIALTY_WEIGHT = 1.5
 # What a card is worth when its effect text says nothing measurable - an Immunity, a Morale, a status with no
 # figure on it. Rating those zero would mean a buff never got played at all, which is worse than the guess.
 # The ordinary card costing one point does 100% damage, so an unreadable effect is priced at the same rate.
@@ -73,6 +76,8 @@ EPIPHANY_BONUS = 1000
 DAMAGE = re.compile(r"(\d+)%(?:\s*[×x]\s*(\d+))?[^\n]{0,24}?Damage(?!\s+Amount)(?:\s*[×x]\s*(\d+))?")
 SHIELD = re.compile(r"(\d+)%[^\n]{0,20}?Shield")
 DRAW = re.compile(r"\bDraw (\d+)")
+# A heal the card makes when played, as in "Heal 100%". Mid-line ones are triggers, as in "At the end of the turn, Fixed Heal 30%".
+HEAL = re.compile(r"^Heal (\d+)%", re.MULTILINE)
 # A line of damage that lands on every enemy, as in Vulture Ejection's "120% Defense-Based Damage to all enemies". The data's own target
 # misses some, Diagonal Slash among them. "To random enemies" spreads its hits instead, so that stays one target's worth.
 ALL_ENEMIES = re.compile(r"\bto all enemies\b")
@@ -97,7 +102,9 @@ Features = namedtuple("Features", [
     "draw",
     # The part of `damage` that lands on every enemy rather than one.
     "spread",
-], defaults=[0])
+    # Heal, as a percentage.
+    "heal",
+], defaults=[0, 0])
 # What the picker knows about the moment it is choosing in.
 Board = namedtuple("Board", [
     # Action Points to plan against.
@@ -370,6 +377,7 @@ def figures(text):
         shield=sum(int(found) for found in SHIELD.findall(text)),
         draw=sum(int(found) for found in DRAW.findall(text)),
         spread=sum(damage_in(line) for line in text.splitlines() if ALL_ENEMIES.search(line)),
+        heal=sum(int(found) for found in HEAL.findall(text)),
     )
 
 
@@ -563,8 +571,8 @@ def rated(name, board):
     matched = board.weakness is not None and attribute_of(name) == board.weakness
     if wasted(name, board):
         return 0
-    hit = (doing.damage + doing.spread * (board.enemies - 1)) * (HEALER_DAMAGE if COMBATANT_ROLE.get(owner(name)) == "Healing" else 1)
-    worth = strength(doing._replace(damage=0 if board.invulnerable else hit * (WEAKNESS_BONUS if matched else 1)))
+    hit = doing.damage + doing.spread * (board.enemies - 1)
+    worth = strength(doing._replace(damage=0 if board.invulnerable else hit * (WEAKNESS_BONUS if matched else 1)), COMBATANT_ROLE.get(owner(name)))
     if not worth:
         worth = UNREAD_VALUE * max(cost(name), 1)
     if lit_up(name, board):
@@ -586,16 +594,20 @@ def wasted(name, board):
     return board.invulnerable and doing.damage > 0 and not strength(doing._replace(damage=0))
 
 
-def strength(doing):
+def strength(doing, role=None):
     """Say what a card's figures are worth together, in damage terms.
 
     Args:
         doing: The card's `Features`.
+        role: The owner's role from `COMBATANT_ROLE`, which weighs a Healer's or Protector's damage down and their specialty up.
 
     Returns:
-        The damage, plus the shield and draw at their exchange rates.
+        The damage, plus the shield, heal and draw at their exchange rates.
     """
-    return doing.damage + SHIELD_WEIGHT * doing.shield + DRAW_VALUE * doing.draw
+    damage = doing.damage * (SUPPORT_DAMAGE if role in SUPPORT_ROLES else 1)
+    shield = doing.shield * (SPECIALTY_WEIGHT if role == "Protection" else SHIELD_WEIGHT)
+    heal = doing.heal * (SPECIALTY_WEIGHT if role == "Healing" else SHIELD_WEIGHT)
+    return damage + shield + heal + DRAW_VALUE * doing.draw
 
 
 def lit_up(name, board):

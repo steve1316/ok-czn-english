@@ -527,6 +527,10 @@ class TestKits(unittest.TestCase):
              cards.Board(battle=("Quantum Seed", "Strike")), ["Form Convergence"]),
             # Live, Tiphera's 100% Matter Disintegration took the last point, tied with Nine's 100% Slash on hand order.
             ("a Healer's attack leaves the point to a Core's", ("Matter Disintegration", "Slash"), cards.Board(action_points=1), ["Slash"]),
+            ("a Protector's attack leaves the point to a Core's", ("Frozen Fist", "Slash"), cards.Board(action_points=1), ["Slash"]),
+            # A heal is a Healer's specialty, and read nothing it tied with Slash on hand order.
+            ("a Healer's heal takes the point from a Core's attack", ("Slash", "Barrier Deployment"), cards.Board(action_points=1),
+             ["Barrier Deployment"]),
         ))
 
     def test_mei_lin_buffs_first_and_ends_on_the_spire(self):
@@ -898,8 +902,9 @@ class TestKits(unittest.TestCase):
             ("the buffs keep their order", ("Predator's Blade", "Dark Condensation", "Strike of Darkness"),
              ["Strike of Darkness", "Dark Condensation", "Predator's Blade"]),
             # Live, Dark Condensation tied with the other 1-cost skills and lost the buy, though it boosts the attack beside it.
+            # Material Regeneration is a Healer's heal, so it is bought over Photo Time's guessed worth.
             ("Dark Condensation is bought for the attack it boosts", ("Photo Time", "Material Regeneration", "Predator's Blade", "Dark Condensation"),
-             ["Dark Condensation", "Predator's Blade", "Photo Time"]),
+             ["Dark Condensation", "Predator's Blade", "Material Regeneration"]),
         ):
             with self.subTest(description):
                 self.assertEqual(played(cards.plan(hand(*cards_in_hand), cards.Board())), expected)
@@ -937,8 +942,8 @@ class TestKits(unittest.TestCase):
              cards.Board(action_points=3, deck=RIN_DECK),
              ["Dark Mist Sword: First Form", "Dark Mist Secret Art: Black Dance", "Sacred Censer"]),
             # Without the Epiphany, First Form takes no stance and Black Dance gets no bonus to chase.
-            ("a plain First Form is not bought for the stance", ("Sacred Censer", "Growth Acceleration", "Frozen Fist", "Dark Mist Sword: First Form",
-             "Dark Mist Secret Art: Black Dance"), cards.Board(action_points=3), ["Dark Mist Secret Art: Black Dance", "Frozen Fist", "Sacred Censer"]),
+            ("a plain First Form is not bought for the stance", ("Sacred Censer", "Growth Acceleration", "Slash", "Dark Mist Sword: First Form",
+             "Dark Mist Secret Art: Black Dance"), cards.Board(action_points=3), ["Dark Mist Secret Art: Black Dance", "Slash", "Sacred Censer"]),
             ("the cost cut goes before the cards it cheapens",
              ("Dark Mist Secret Art: Black Dance", "Dark Mist Secret Art: Annihilation", "Dark Mist Sword: First Form"),
              cards.Board(action_points=3, deck=RIN_DECK),
