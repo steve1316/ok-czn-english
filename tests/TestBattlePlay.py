@@ -1141,6 +1141,12 @@ class TestHandPrompt(unittest.TestCase):
         task = self.frames("0/1", "1/1", screens=(pile, pile))
         self.assertEqual([(0.84, round(0.27 + battle.CARD_BODY, 3)), battle.PILE_CONFIRM], task.taps)
 
+    def test_a_mental_breakdown_card_is_kept_over_any_other(self):
+        # Live, an "up to 3" discard gave up two Impulses, the free cards that end a combatant's Mental Breakdown when played.
+        screen = (FakeBox("请选择1张卡牌", 0.5, 0.111, width=600), self.SCREEN[1], FakeBox("Impulse", 0.38, 0.765), FakeBox("Dice Trick", 0.50, 0.765))
+        task = self.frames("0/1", screens=(screen,))
+        self.assertEqual([(0.50, round(0.765 + battle.CARD_BODY, 3))], task.taps, "Dice Trick, so Impulse stays to be played")
+
     def test_a_boost_goes_to_the_best_card_it_fits(self):
         # Opening Found rates highest, but Growth Acceleration can only pick Orlea's own cards, and the curse is no boost at all.
         choose = next(text for text in EPIPHANIES["Dark Condensation"] if text.startswith("Choose"))
