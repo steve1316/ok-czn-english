@@ -185,8 +185,19 @@ def letters_dropped(reading, known):
     Returns:
         True when every letter of the reading appears in the name in order, with at most one in `LETTERS_PER_DROP` missing.
     """
-    if not 0 < len(known) - len(reading) <= len(known) // LETTERS_PER_DROP:
-        return False
+    return 0 < len(known) - len(reading) <= len(known) // LETTERS_PER_DROP and in_order(reading, known)
+
+
+def in_order(reading, known):
+    """Report whether every letter of a reading appears in a name in the same order, with any number lost between them.
+
+    Args:
+        reading: The folded reading.
+        known: A folded real name.
+
+    Returns:
+        True when the reading is the name with letters dropped.
+    """
     letters = iter(known)
     return all(letter in letters for letter in reading)
 

@@ -16,7 +16,7 @@ from src.en import kits
 from src.en.game_text import DESCRIPTIONS
 from src.en.kits.kit import (ATTACK_CATEGORY, PHASE_ATTACK, PHASE_EPIPHANY, PHASE_ESCAPE, PHASE_FREE, PHASE_OTHER, PHASE_PRIME, PHASE_SETUP,
                              PHASE_SPENDS_EVERYTHING, base_name)
-from src.en.quality import fold, index, one_edit_apart
+from src.en.quality import fold, in_order, index, one_edit_apart, unconfused
 
 # Action Points a turn starts with, before anything in a run changes the figure.
 BASE_ACTION_POINTS = 3
@@ -144,6 +144,9 @@ MIN_STUB = 5
 # How many letters at the end of a name cut short may be wrong. The reader mangles the letter it cut at, as in "Quantun",
 # "Barrier Der" and "Fairy's Prc", so a stub that fits nothing is retried with up to this many dropped.
 GARBLED_TAIL = 2
+# How much of a name a reading checked against the deck has to keep, as a share of its letters. Live, Annihilation came back as
+# "DarkMistSecretAil", 17 of 29, far past what the whole roster can risk but the only Dark Mist card those letters fit in that deck.
+DECK_SHARE = 0.5
 # Tiphera's three Archetype cards differ only by a glyph the reader seldom keeps - "Archetype:O", "Archetyp", "rchetype:".
 # Matched on folded text, on a piece of the word, with a real glyph or the O, C or 0 the reader takes the circle for at the end.
 ARCHETYPE_READ = re.compile(r"(?:rchet|het[yv]p)[a-z]*?([○△□oc0]?)$|^arche$")
@@ -218,12 +221,13 @@ def stub_card(stub, party=frozenset()):
 
 
 @lru_cache(maxsize=CACHED_READINGS)
-def canonical(name, party=frozenset()):
+def canonical(name, party=frozenset(), deck=frozenset()):
     """Turn a name as read off the screen into the one the data is keyed by.
 
     Args:
         name: The card name the reader produced.
         party: The combatants known to be in the party, which settles a name cut short that fits cards of several combatants.
+        deck: The canonical names of the cards the deck holds, from `DECK`, for a hand card too garbled for the whole roster.
 
     Returns:
         The client's spelling, or the name unchanged when nothing matches it.
@@ -239,13 +243,30 @@ def canonical(name, party=frozenset()):
     # The reader also cuts a name short while the hand animates, so "Knife Tos" arrives for "Knife Toss".
     # Only an unambiguous stub is repaired: two cards start "Attac", and guessing between them would be
     # worse than leaving the reading alone for the label test to deal with.
-    known = stub_card(stub, party)
+    known = stub_card(stub, party) or deck_card(stub, deck)
     if known:
         return known
     archetype = ARCHETYPE_READ.search(stub)
     if archetype:
         return ARCHETYPES.get(archetype.group(1) or "", ARCHETYPE_UNREAD)
     return name
+
+
+def deck_card(stub, deck):
+    """Find the one card the deck holds whose letters a garbled reading keeps in order.
+
+    Args:
+        stub: A folded reading neither the index nor `stub_card` could place.
+        deck: The canonical names of the cards the deck holds. Empty before the piles are read, which finds nothing.
+
+    Returns:
+        The card, or None when no card or more than one fits, or the reading keeps less than `DECK_SHARE` of the name.
+    """
+    if len(stub) < MIN_STUB or looks_like_label(stub):
+        return None
+    # Lookalikes folded on both sides, since "Mutation:Forbidden AIgorthm" keeps every letter in order but one capital I.
+    matches = [real for real in deck if len(stub) >= len(fold(real)) * DECK_SHARE and in_order(unconfused(stub), unconfused(fold(real)))]
+    return min(matches, key=len) if matches and len({base_name(real) for real in matches}) == 1 else None
 
 
 def is_card_name(reading):

@@ -889,7 +889,7 @@ def install():
         # card it was about across them.
         read = utils_sortie._hand_cards(task) or []
         party = met(task, read)
-        hand = kits.reading([{**card, "name": cards.canonical(card["name"], party)} for card in read], count)
+        hand = kits.reading([{**card, "name": cards.canonical(card["name"], party, frozenset(cards.DECK))} for card in read], count)
         names = [card["name"] for card in hand]
         turn = turn_of(task, count)
         turn.hand = list(names)

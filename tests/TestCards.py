@@ -315,6 +315,18 @@ class TestReadingNames(unittest.TestCase):
             with self.subTest(description):
                 self.assertEqual(cards.canonical(reading, frozenset(party)), expected)
 
+    def test_the_deck_settles_a_reading_too_garbled_for_the_roster(self):
+        # Live, Annihilation came back as "DarkMistSecretAil", 12 letters short, beside Black Dance in the same deck.
+        deck = frozenset({"Dark Mist Secret Art: Annihilation", "Dark Mist Secret Art: Black Dance"})
+        for description, reading, held, expected in (
+            ("the one deck card it fits", "DarkMistSecretAil", deck, "Dark Mist Secret Art: Annihilation"),
+            ("no deck read yet leaves it alone", "DarkMistSecretAil", frozenset(), "DarkMistSecretAil"),
+            ("two deck cards it fits leave it alone", "DarkMistSecretA", deck, "DarkMistSecretA"),
+            ("too little of the name left leaves it alone", "DarkMistS", frozenset({"Dark Mist Secret Art: Annihilation"}), "DarkMistS"),
+        ):
+            with self.subTest(description):
+                self.assertEqual(cards.canonical(reading, deck=held), expected)
+
     def test_a_card_the_data_never_heard_of_is_still_played(self):
         chosen = cards.plan(hand("Some Card From A Later Patch"), cards.Board())
         self.assertEqual(len(chosen), 1)
