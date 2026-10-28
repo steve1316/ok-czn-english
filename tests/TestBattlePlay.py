@@ -40,6 +40,7 @@ SHIELD = "Barrier Utilization"
 GUARD_EGO = ego.Ego("Legato of Faith", frozenset({ego.GUARD}), "")
 STRIKE_EGO = ego.Ego("Execution", frozenset({ego.STRIKE}), "")
 SETUP_EGO = ego.Ego("Tactical Command", frozenset({ego.SETUP}), "")
+EXHAUST_EGO = ego.Ego("Activate Defense Module", frozenset({ego.SETUP}), "For 1 turn, when a card is Exhausted, 1 Weaken to a random enemy")
 
 # Where the painted enemy stands. Anywhere inside the band the counters are looked for in will do.
 ENEMY_AT = (0.50, 0.25)
@@ -233,8 +234,29 @@ class TestEgoPlanner(unittest.TestCase):
         )
         for name, slots, banked, after_hit, invulnerable, attacking, boss, fired in cases:
             with self.subTest(name):
-                choice = ego.decide(slots, banked, after_hit, invulnerable, attacking, boss)
+                choice = ego.decide(slots, banked, after_hit, invulnerable, attacking, boss, False)
                 self.assertEqual(fired, choice and choice[0])
+
+    def test_an_exhaust_ego_waits_for_a_card_to_exhaust(self):
+        # Live, Activate Defense Module fired ahead of the attacks with no Exhaust card in hand, so its Weaken never landed.
+        for banked in (3, 7):
+            for exhausting, fired in ((False, None), (True, "F1")):
+                with self.subTest(banked=banked, exhausting=exhausting):
+                    choice = ego.decide([("F1", EXHAUST_EGO, True)], banked, 0.9, False, True, False, exhausting)
+                    self.assertEqual(fired, choice and choice[0])
+
+    def test_a_press_the_game_ignored_does_not_use_up_the_turn(self):
+        # Live, F1 pressed while an attack still played left the bar at 3 EP, and the retry that did fire was counted as a second.
+        for ignored, counted in ((False, [1, 2]), (True, [0, 1])):
+            with self.subTest(ignored=ignored):
+                task = types.SimpleNamespace(frame=flat(255 if ignored else 0), send_key=lambda key: None, sleep=lambda seconds: None,
+                                             log_info=lambda message: None)
+                turn = types.SimpleNamespace(ego_fires=0, ego_missed=False)
+                fires = []
+                for _ in range(2):
+                    ego.fire(task, None, turn, "F1", SETUP_EGO, "ahead of the attacks", 3)
+                    fires.append(turn.ego_fires)
+                self.assertEqual(counted, fires)
 
 
 class TestTurnTracking(unittest.TestCase):
