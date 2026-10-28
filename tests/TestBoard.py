@@ -32,6 +32,7 @@ FLASH_AT = (1000, 454)
 # The Sortie battle panels, cut from the user's 1080p captures: the EP bar holding 6 of 7, the team HP bar with the next hit
 # taking it to about 36%, and the band of enemy statuses with and without the Absolute Invincibility badge.
 EP_BAR_AT = (30, 830)
+EGO_SLOTS_AT = (100, 740)
 TEAM_BAR_AT = (40, 30)
 STATUSES_AT = (1270, 190)
 
@@ -274,6 +275,11 @@ class TestRealEnemies(unittest.TestCase):
 
 class TestFightState(unittest.TestCase):
     """The reads the Ego planner judges a turn on, against the game's own rendering."""
+
+    def test_a_fired_partner_leaves_its_slot_empty(self):
+        # Live, the empty frame a fired partner left in F1 was previewed every turn as an Ego that would not read.
+        frame = pasted("ego_slot_used", *EGO_SLOTS_AT)
+        self.assertEqual([board.ego_in_slot(frame, key) for key in board.EGO_KEYS], [False, True, True])
 
     def test_the_ep_bar_counts_its_lit_segments(self):
         # The seventh segment is still filling, so this also holds the line between lit and filling.
