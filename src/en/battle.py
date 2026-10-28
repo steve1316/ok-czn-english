@@ -298,6 +298,21 @@ def new_turn(before, after, ended):
     return before is None or (ended and after > before)
 
 
+def fight_of(task):
+    """Say which fight the battle screen belongs to, from the map node upstream counts on leaving the route screen.
+
+    Args:
+        task: The running task, whose `node_status` Sortie and Chaos keep.
+
+    Returns:
+        The run, floor and node the fight is on, or None in a mode that counts no nodes.
+    """
+    status = getattr(task, "node_status", None)
+    if status is None:
+        return None
+    return getattr(task, "start_time", None), status.get("pass_final_boss_count"), status.get("node_count")
+
+
 def unsettled(turn, names, count):
     """Find the cards a short read lost since the last one, counting the frame it is about to wait.
 
@@ -329,15 +344,19 @@ class Turn:
     a frame or two - so it is read once and kept, and a turn that never manages to read one keeps trying.
     """
 
-    def __init__(self, hand_count, last_turn=(), kept=()):
+    def __init__(self, hand_count, last_turn=(), kept=(), earlier=(), fight=None):
         """Start a turn that has learnt nothing yet.
 
         Args:
             hand_count: The hand size this turn opened with.
             last_turn: The cards the turn before played, oldest first.
             kept: The cards the turn before ended holding.
+            earlier: The cards the turns before played this battle, oldest first.
+            fight: The fight it belongs to, from `fight_of`.
         """
         self.hand_count = hand_count
+        self.fight = fight
+        self.earlier = tuple(earlier)
         self.attempted = None
         self.attempted_copies = 0
         self.refused = set()
@@ -801,8 +820,14 @@ def turn_of(task, hand_count):
         The `Turn` in progress, fresh when the hand has just been dealt again.
     """
     turn = getattr(task, TURN, None)
-    if turn is None or new_turn(turn.hand_count, hand_count, turn.ended):
-        turn = Turn(hand_count, turn.played if turn else (), turn.hand if turn else ())
+    fight = fight_of(task)
+    if turn is None or turn.fight != fight:
+        turn = Turn(hand_count, fight=fight)
+        setattr(task, TURN, turn)
+    elif new_turn(turn.hand_count, hand_count, turn.ended):
+        # With no node to tell fights apart, the battle is only known back to the turn before.
+        earlier = (*turn.earlier, *turn.played) if fight is not None else turn.played
+        turn = Turn(hand_count, turn.played, turn.hand, earlier, fight)
         setattr(task, TURN, turn)
     turn.hand_count = hand_count
     return turn
@@ -969,7 +994,7 @@ def install():
             budget = "Action Points to spend" if points else "no Action Points"
             task.log_info(f"turn opens with {budget}, {turn.enemies} enemy counter(s), {against}, hand {names}")
         state = cards.Board(action_points=points, weakness=turn.weakness, hand=tuple(names), played=tuple(turn.played),
-                            last_turn=turn.last_turn, hand_size=count or 0, kept=turn.kept, invulnerable=turn.invulnerable, enemies=turn.enemies or 1)
+                            last_turn=turn.last_turn, battle=(*turn.earlier, *turn.played), hand_size=count or 0, kept=turn.kept, invulnerable=turn.invulnerable, enemies=turn.enemies or 1)
         card = choose(hand, state, turn.refused)
         if card is None and turn.objected:
             # The game said a card is still playable, so the best of those passed over for cost is tried as if affordable.

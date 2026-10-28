@@ -621,6 +621,22 @@ class TestInstalling(unittest.TestCase):
             utils_sortie._try_all_card_keys(task, 2)
             self.assertEqual(getattr(task, battle.TURN).last_turn, (ATTACK,))
 
+    def test_a_battle_keeps_every_play_until_the_next_node(self):
+        # Two turns back is still this fight, but upstream counts the next node on leaving the route screen, before its fight opens.
+        with upstream(hand(ATTACK)) as (utils_sortie, task):
+            battle.install()
+            task.node_status = {"node_count": 1}
+            for count in (1, 2):
+                utils_sortie._try_all_card_keys(task, count)
+                battle.end_of_turn(task)
+                task.hand_cards = hand(*[ATTACK] * (count + 1))
+            utils_sortie._try_all_card_keys(task, 3)
+            self.assertEqual((ATTACK, ATTACK), getattr(task, battle.TURN).earlier)
+            task.node_status["node_count"] += 1
+            utils_sortie._try_all_card_keys(task, 3)
+            turn = getattr(task, battle.TURN)
+            self.assertEqual(((), ()), (turn.earlier, turn.last_turn))
+
     def test_the_next_turn_knows_what_was_kept(self):
         # The Attack was pressed after the last read, so only the Curse was still in hand when the turn ended.
         with upstream(hand(ATTACK, AILMENT)) as (utils_sortie, task):

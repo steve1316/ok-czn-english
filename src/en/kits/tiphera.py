@@ -20,7 +20,7 @@ class Tiphera(Kit):
     places = {"Dual Creation": PHASE_FREE - 0.5}
 
     def held(self, name, board):
-        """Keep the cards that draw Archetypes until a Quantum Seed was played this turn or last.
+        """Keep the cards that draw Archetypes until a Quantum Seed was played this battle.
 
         Args:
             name: The card in question.
@@ -31,7 +31,7 @@ class Tiphera(Kit):
         """
         if base_name(name) not in DRAWERS:
             return False
-        return not any(base_name(played) == SEED for played in (*board.played, *board.last_turn))
+        return not any(base_name(played) == SEED for played in board.battle)
 
 
 KIT = Tiphera()

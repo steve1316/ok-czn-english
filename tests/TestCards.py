@@ -522,9 +522,9 @@ class TestKits(unittest.TestCase):
             # Generic play buys Form Convergence's 200 first, with no Archetype made for it to draw.
             ("Form Convergence waits for a Seed", ("Form Convergence", "Dual Creation"), cards.Board(), ["Dual Creation"]),
             ("the square Archetype waits for a Seed", ("Archetype: \u25a1", "Quantum Seed"), cards.Board(), ["Quantum Seed"]),
-            # Pins the hold being released, which generic play passes too.
-            ("Form Convergence plays once last turn's Seed made Archetypes", ("Form Convergence",), cards.Board(last_turn=("Quantum Seed",)),
-             ["Form Convergence"]),
+            # The Archetypes a Seed makes stay in the deck all battle, so one played two turns back still releases the hold.
+            ("Form Convergence plays once this battle's Seed made Archetypes", ("Form Convergence",),
+             cards.Board(battle=("Quantum Seed", "Strike")), ["Form Convergence"]),
         ))
 
     def test_mei_lin_buffs_first_and_ends_on_the_spire(self):

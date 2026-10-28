@@ -108,6 +108,8 @@ Board = namedtuple("Board", [
     "played",
     # The same for the turn before, which is empty on a battle's first turn.
     "last_turn",
+    # The same for the whole battle, this turn's last. Where a mode counts no map nodes to tell fights apart, it reaches back one turn.
+    "battle",
     # The hand size the hand counter reads, which is more than `hand` when OCR missed a card. 0 when not known.
     "hand_size",
     # Canonical names of the cards still in hand when the turn before ended, so their Retain effects have fired.
@@ -118,7 +120,7 @@ Board = namedtuple("Board", [
     "invulnerable",
     # How many enemies are on screen, from `board.enemy_counters`, so damage to all enemies counts once for each. 1 when not known.
     "enemies",
-], defaults=[BASE_ACTION_POINTS, None, None, (), (), (), 0, (), DECK, False, 1])
+], defaults=[BASE_ACTION_POINTS, None, None, (), (), (), (), 0, (), DECK, False, 1])
 
 # How many distinct readings to remember the folding of. OCR invents new misspellings all session, so this
 # is bounded rather than unlimited, and it is far larger than the ten names one frame ever asks about.
