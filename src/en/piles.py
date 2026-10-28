@@ -8,6 +8,7 @@ import difflib
 import re
 import time
 from collections import Counter
+from typing import NamedTuple
 
 from ok import Logger
 
@@ -59,15 +60,29 @@ FOLLOWED = (("utils_sortie", "handle_get_card", GAINED, None), ("utils", "handle
 SELECT_ACTIONS = {"移除": REMOVED, "复制": GAINED, "闪光": SPARKED, "灵光": SPARKED}
 READERS = ("recognize_cards", "recognize_cards_in_deck")
 FOLLOW_TAG = "follows the deck"
-# Seconds within which the same screen reading the same cards again means its last pick did not take. Live, an Obtain Card tap and its
-# Confirm came back 2.3s later to the same offer, and the card was counted twice.
-RETRY_SECONDS = 10
+# Seconds within which the same screen offering the same cards again means its last pick did not take. Live, an Obtain Card pick came
+# back 2.3s later and an Epiphany pick 1.1s later, each counted twice. Two Claims on one reward screen were 6s apart.
+RETRY_SECONDS = 5
 
 _patched = False
 # The version each card chosen for an Epiphany had, by canonical name, until the next screen picks the one it takes instead.
 _sparking = {}
-# The last pick followed, as the screen's function, the cards it read, when, and the `(name, version, by)` changes it made.
 _last_pick = None
+
+
+class Pick(NamedTuple):
+    """The deck changes one visit to a screen made, kept until the next visit says whether they took."""
+
+    # The wrapped function of the screen, so a visit to another screen is never taken for a retry.
+    handler: object
+    # The canonical name of each card the screen read, None where OCR spelled one past recognising.
+    offer: list
+    # `time.monotonic()` at the first pick of the visit.
+    at: float
+    # A token for the visit, so the second tap of one visit is not taken for a retry of the first.
+    visit: object
+    # The `(name, version, by)` changes the visit made to the deck, in order.
+    changes: list
 
 
 def signature(text):
@@ -236,6 +251,19 @@ def follow(change, card):
     return changes
 
 
+def offered_again(before, now):
+    """Say whether a screen offers the cards it offered on the last visit, wherever they now sit.
+
+    Args:
+        before: The canonical names the last visit read, None where OCR spelled one past recognising.
+        now: The same for this visit.
+
+    Returns:
+        True when the count matches and every name this visit recognised was on offer last time.
+    """
+    return len(before) == len(now) and all(name in before for name in now if name)
+
+
 def following(handler, module, change, column=None):
     """Wrap a function that taps cards on a screen, so each card it taps changes the deck.
 
@@ -252,13 +280,13 @@ def following(handler, module, change, column=None):
         kind = change or SELECT_ACTIONS.get(kwargs.get("action", ""))
         if kind is None or type(task).__name__ != SORTIE_MODE:
             return handler(task, *args, **kwargs)
-        shown, offer = [], []
+        shown, offer, visit = [], [], object()
 
         def reading(recognise):
             def recognised(*args_, **kwargs_):
                 found = recognise(*args_, **kwargs_)
                 shown[:] = found or []
-                offer[:] = [(card.get("name"), card.get("x"), card.get("y")) for card in shown]
+                offer[:] = [quality.CARD_INDEX.look_up(card.get("name") or "") for card in shown]
                 return found
             return recognised
 
@@ -271,14 +299,17 @@ def following(handler, module, change, column=None):
             card = next((card for card in shown if (card.get("x"), card.get("y")) == (x, y)), None)
             if card is None and column is not None and x == column and len(shown) == 1:
                 card = shown[0]
-            if card is not None:
-                shown.remove(card)
-                now = time.monotonic()
-                if _last_pick and _last_pick[:2] == (handler, offer) and now - _last_pick[2] < RETRY_SECONDS:
+            if card is None:
+                return result
+            shown.remove(card)
+            last, now = _last_pick, time.monotonic()
+            if last is None or last.visit is not visit:
+                if last and last.handler is handler and now - last.at < RETRY_SECONDS and offered_again(last.offer, offer):
                     logger.info(f"the same {len(offer)} card(s) are on offer again, so the last pick did not take and is undone")
-                    for name, version, by in _last_pick[3]:
+                    for name, version, by in reversed(last.changes):
                         cards.change_deck(name, version, -by)
-                _last_pick = (handler, list(offer), now, follow(kind, card))
+                _last_pick = Pick(handler, list(offer), now, visit, [])
+            _last_pick.changes.extend(follow(kind, card))
             return result
 
         readers = {name: reading(getattr(module, name)) for name in READERS if name in vars(module)}

@@ -209,9 +209,27 @@ class TestRewardQuality(unittest.TestCase):
                          recognize_cards=lambda task, page: offer, _get_config_value=lambda task, key, default: ["Annoying"]):
             obtain = piles.following(utils_sortie.handle_get_card, utils_sortie, piles.GAINED)
             # Live, the first tap and its Confirm did not take, the screen came back with the same offer, and the card was counted twice.
+            # An Epiphany screen came back the same way with its cards moved and one name misread.
             obtain(task)
+            offer[1] = {**offer[1], "name": "Ice Frao", "x": 0.2}
             obtain(task)
         self.assertEqual({"Annoying": Counter({sparked: 1})}, cards.COPIES)
+
+    def test_two_cards_taken_on_one_visit_both_count(self):
+        # A screen that removes two cards taps both on one visit, which must not pass for a retry of the first.
+        base = DESCRIPTIONS["Experienced Strike"]
+        offer = [{"name": "Experienced Strike", "description": base, "x": 0.3, "y": 0.4}, {"name": "Experienced Strike", "description": base, "x": 0.5, "y": 0.4}]
+        module = types.SimpleNamespace(recognize_cards=lambda task: offer)
+        task = type("SortieMode", (), {"click": lambda self, x, y: None})()
+
+        def remove_two(task):
+            for card in module.recognize_cards(task):
+                task.click(card["x"], card["y"])
+
+        cards.use_deck({"Experienced Strike": [base, base, base]})
+        self.addCleanup(cards.use_deck, {})
+        piles.following(remove_two, module, piles.REMOVED)(task)
+        self.assertEqual({"Experienced Strike": Counter({base: 1})}, cards.COPIES)
 
     def test_a_card_assigned_to_a_combatant_joins_the_deck(self):
         # Live, a Wanderer Arbitum handed out on Card Assign never reached the deck, since the pick taps the combatant, not the card.
