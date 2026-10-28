@@ -15,10 +15,15 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(REPO_ROOT / "ok_tasks"))
+
+import utils  # noqa: E402
 
 from src.en.deck import (  # noqa: E402
-    GAP_KEY, PORTRAIT, ROW_TOLERANCE, portrait_of, preferring_target_row, row_of, rows_first,
+    COPY_LIST, GAP_KEY, PORTRAIT, ROW_TOLERANCE, choosing_ap_copies, copying_ap_cards, portrait_of, preferring_target_row, row_of, rows_first,
 )
+from src.en.handlers import standing_in  # noqa: E402
+from tests.fakes import FakeBox  # noqa: E402
 
 WIDTH, HEIGHT = 1920, 1080
 
@@ -211,6 +216,31 @@ class TestPreferringTargetRow(unittest.TestCase):
 
         preferring_target_row(select_card, utils)(FakeTask(portrait_y=0.8), [], action="移除")
         self.assertEqual([True], seen)
+
+
+class TestCopyingApCards(unittest.TestCase):
+    """A copy with nothing on the user's list takes a card that gains AP, rather than skipping."""
+
+    def test_only_a_copy_falls_back_to_ap_cards(self):
+        # Appended to a removal, the same list would delete Source of Water from the deck.
+        for action, expected in (("复制", True), ("移除", False), ("闪光", False)):
+            with self.subTest(action):
+                seen = []
+                copying_ap_cards(lambda task, names, count=1, action="": seen.extend(names))(None, ["Ignition Slash"], action=action)
+                self.assertEqual("Ignition Slash", seen[0])
+                self.assertEqual(expected, "Source of Water" in seen)
+                self.assertNotIn("Seven Arms", seen, "its AP comes with a condition")
+
+    def test_upstreams_copy_screen_takes_the_ap_card_on_an_empty_list(self):
+        clicked = []
+        offered = [{"name": "Brand of Annihilation", "x": 0.66, "y": 0.60}, {"name": "+Source of Water", "x": 0.33, "y": 0.18}]
+        task = types.SimpleNamespace(log_info=lambda *a: None, sleep=lambda *a: None)
+        with standing_in(utils, find_box_at_point=lambda *a: FakeBox("请选择要复制的卡牌", 0.498, 0.133), _get_game_text=lambda task_, text: text,
+                         find_target_card=lambda task_: ([], []), recognize_cards=lambda task_, page="": offered,
+                         _get_config_value=lambda task_, key, default: [] if key == COPY_LIST else default,
+                         _move_and_click=lambda task_, x, y: clicked.append((x, y))):
+            self.assertTrue(choosing_ap_copies(utils.handle_copy_card_choice, utils)(task))
+        self.assertEqual([(0.33, 0.18)], clicked)
 
 
 if __name__ == "__main__":

@@ -79,6 +79,8 @@ EPIPHANY_BONUS = 1000
 DAMAGE = re.compile(r"(\d+)%(?:\s*[×x]\s*(\d+))?[^\n]{0,24}?Damage(?!\s+Amount)(?:\s*[×x]\s*(\d+))?")
 SHIELD = re.compile(r"(\d+)%[^\n]{0,20}?Shield")
 DRAW = re.compile(r"\bDraw (\d+)")
+# A line that gains Action Points outright, as Source of Water's "Gain 1 AP". Seven Arms' "If ..., gain 2 AP" has a condition, so it does not count.
+AP_GAIN = re.compile(r"^(?:Draw \d+,? and )?gain \d+ AP\b", re.I | re.M)
 # A heal the card makes when played, as in "Heal 100%". Mid-line ones are triggers, as in "At the end of the turn, Fixed Heal 30%".
 HEAL = re.compile(r"^Heal (\d+)%", re.MULTILINE)
 # A line of damage that lands on every enemy, as in Vulture Ejection's "120% Defense-Based Damage to all enemies". The data's own target
@@ -145,6 +147,8 @@ Board = namedtuple("Board", [
 CACHED_READINGS = 1024
 # Folded card name to the client's own spelling, so a reading run together or in the wrong case still lands.
 CARD_INDEX = index(CARD_COST)
+# Every card that gains AP outright, which a copy falls back to when nothing on the user's list is on offer.
+AP_CARDS = tuple(sorted(name for name in CARD_COST if AP_GAIN.search(DESCRIPTIONS.get(name, ""))))
 
 # The type label the game prints under every card, in both the English the Global client draws and the
 # Chinese `ocr.po` rewrites some of them into. Upstream's own filter lists only Chinese, so every English

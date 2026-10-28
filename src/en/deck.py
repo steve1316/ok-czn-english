@@ -1,12 +1,14 @@
-"""Act on the kept combatant's row first when removing cards or sparking an Epiphany.
+"""Act on the kept combatant's row first when removing cards or sparking an Epiphany, and copy an AP card by default.
 
 A Chaos run keeps one combatant - the save-scum target - and throws the other two away at the end, so anything
 spent on the discarded pair is spent on nothing. Upstream can already find that row, but gates the rule on the
-`刷空档` strategy being on and on the operation being a removal, so it almost never fires on this client.
+`刷空档` strategy being on and on the operation being a removal, so it almost never fires on this client. A copy
+only takes cards on the user's list, and skips when none is on offer.
 """
 
 from ok import Logger
 
+from src.en import cards
 from src.en.handlers import loaded, register, standing_in, wrap
 
 logger = Logger.get_logger(__name__)
@@ -24,6 +26,10 @@ GAP_KEY = "刷空档"
 ROW_ACTIONS = ("移除", "闪光", "灵光")
 # Names this change in the shared record of what a function already carries.
 TAG = "kept combatant's row"
+# The operation and the setting a copy reads its cards from, and the tag its fallback carries.
+COPY = "复制"
+COPY_LIST = "复制卡牌列表"
+COPY_TAG = "AP cards copied by default"
 
 _patched = False
 
@@ -123,8 +129,61 @@ def preferring_target_row(select_card, utils):
     return wrapped
 
 
+def with_ap_cards(names):
+    """Add every card that gains AP after the cards the user named.
+
+    Args:
+        names: The cards to copy, from the `复制卡牌列表` setting.
+
+    Returns:
+        The user's cards first, then `cards.AP_CARDS` not already among them.
+    """
+    names = list(names or [])
+    return names + [name for name in cards.AP_CARDS if name not in names]
+
+
+def copying_ap_cards(select_card):
+    """Wrap `select_card` so a copy that matches nothing on the user's list takes a card that gains AP.
+
+    Args:
+        select_card: The function to wrap, upstream's or another patch's.
+
+    Returns:
+        The wrapped function.
+    """
+    def wrapped(task, card_names, count=1, action=""):
+        if action == COPY:
+            card_names = with_ap_cards(card_names)
+        return select_card(task, card_names, count=count, action=action)
+
+    return wrapped
+
+
+def choosing_ap_copies(choice, utils):
+    """Wrap upstream's other copy screen, which reads the same setting itself, so it falls back to AP cards too.
+
+    Args:
+        choice: Upstream's `handle_copy_card_choice`.
+        utils: The module holding `_get_config_value`, the seam it reads the setting through.
+
+    Returns:
+        The wrapped handler.
+    """
+    def handle_copy_card_choice(task):
+        original = utils._get_config_value
+
+        def answering(task_, key, default):
+            value = original(task_, key, default)
+            return with_ap_cards(value) if key == COPY_LIST else value
+
+        with standing_in(utils, _get_config_value=answering):
+            return choice(task)
+
+    return handle_copy_card_choice
+
+
 def install(utils):
-    """Wrap `select_card` wherever the run reaches it.
+    """Wrap `select_card` and the copy screen wherever the run reaches them.
 
     Args:
         utils: The loaded `utils` module, or None when it is not importable yet.
@@ -132,10 +191,12 @@ def install(utils):
     if utils is None:
         return
     wrap(utils, "select_card", lambda select_card: preferring_target_row(select_card, utils), TAG)
+    wrap(utils, "select_card", copying_ap_cards, COPY_TAG)
+    wrap(utils, "handle_copy_card_choice", lambda choice: choosing_ap_copies(choice, utils), COPY_TAG)
 
 
 def apply():
-    """Start removals and Epiphanies on the row of the combatant the run is keeping."""
+    """Start removals and Epiphanies on the row of the combatant the run is keeping, and copy AP cards by default."""
     global _patched
     if _patched:
         return
