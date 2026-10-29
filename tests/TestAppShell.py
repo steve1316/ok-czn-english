@@ -16,6 +16,7 @@ from ok.task.exceptions import TaskDisabledException  # noqa: E402
 from src.config import config  # noqa: E402
 from src.en import dashboard, devices, layout, monitors, shell, shutdown  # noqa: E402
 from src.en.framework import import_ui  # noqa: E402
+from tests.fakes import EchoApp  # noqa: E402
 
 # How many passes the fake executor allows before it stops the loop, standing in for a press of Stop.
 PASSES = 3
@@ -253,6 +254,30 @@ class TestAppShell(unittest.TestCase):
     def test_a_fresh_install_sends_keys_by_post_message(self):
         # The first method is the default, and Genshin sends every key as A, so no card or Ego hotkey ever lands.
         self.assertEqual("PostMessage", config["windows"]["interaction"][0])
+
+
+class TestOneModeAtATime(unittest.TestCase):
+    """The Start buttons while a mode runs, which upstream leaves pressable to queue a second mode silently."""
+
+    def test_the_other_starts_lock_until_the_run_stops(self):
+        # Locking alone is half of it. A Start that stays disabled after the run would strand every other mode.
+        from ok import og
+
+        executor = FakeExecutor()
+        running, other = FakeTask(executor), FakeTask(executor)
+        running.name, other._enabled = "Auto Sortie Mode", False
+        executor.onetime_tasks = [running, other]
+        button = types.SimpleNamespace(enabled=True, tip="")
+        button.setEnabled = lambda value: setattr(button, "enabled", value)
+        button.setToolTip = lambda text: setattr(button, "tip", text)
+        card = types.SimpleNamespace(task=other, start_button=button)
+        with mock.patch.object(og, "executor", executor, create=True), mock.patch.object(og, "app", EchoApp(), create=True):
+            update_buttons = shell.locking(lambda card, task: None)
+            update_buttons(card, running)
+            self.assertEqual((False, "Stop Auto Sortie Mode first"), (button.enabled, button.tip))
+            running._enabled = False
+            update_buttons(card, running)
+            self.assertEqual((True, ""), (button.enabled, button.tip))
 
 
 class TestEmulatorConnect(unittest.TestCase):
