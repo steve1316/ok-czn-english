@@ -124,6 +124,16 @@ class TestUpstreamManifest(unittest.TestCase):
             with self.subTest(name):
                 self.assertTrue(hasattr(owner, name), f"{owner.__name__}.{name} is gone")
 
+    def test_the_about_tab_still_lists_upstream_by_its_url(self):
+        # shell.py swaps the Chaos Zero Nightmare card by this exact URL. A moved repo puts upstream's link back in silence.
+        import inspect
+
+        from ok.gui.about import AboutTab
+
+        from src.en.shell import UPSTREAM_REPO
+
+        self.assertIn(f'"url": "{UPSTREAM_REPO}"', inspect.getsource(AboutTab))
+
     def test_the_framework_still_offers_the_emulator_seams(self):
         # `devices.py` replaces the running-emulator scan and classifies by name with `is_emulator`. A rename leaves the
         # replacement set on nothing, so Refresh quietly goes back to reading every process's command line.

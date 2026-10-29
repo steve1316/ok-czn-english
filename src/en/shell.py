@@ -1,4 +1,4 @@
-"""Give the game modes Start buttons, one usable at a time, and drop the scaffold tabs.
+"""Give the game modes Start buttons, one usable at a time, drop the scaffold tabs, and link About to this fork.
 
 Upstream ships the modes as trigger tasks, so the framework draws them as a switch in a separate Triggers tab.
 """
@@ -15,6 +15,8 @@ logger = Logger.get_logger(__name__)
 # `ok_tasks/` stays byte-identical to upstream. Every other trigger task becomes a mode with a Start button,
 # so a mode upstream renames or adds is picked up without editing a list here.
 HIDDEN = ("TestTrigger", "GetMengbian")
+# Upstream's entry in the About tab's Other Projects grid, which the framework hardcodes rather than reading from `links`.
+UPSTREAM_REPO = "https://github.com/baoxin1100/ok-kes"
 
 _patched = False
 
@@ -142,6 +144,23 @@ def show_instructions(card):
     dialog.exec()
 
 
+def to_the_fork(original):
+    """Wrap `ProjectCard.__init__` so the Chaos Zero Nightmare card opens this fork's repo, not upstream's.
+
+    Args:
+        original: The unbound `__init__` being replaced.
+
+    Returns:
+        The replacement.
+    """
+    def __init__(self, name, url, parent=None):
+        if url == UPSTREAM_REPO:
+            url = og.config["links"]["default"]["github"]
+        original(self, name, url, parent)
+
+    return __init__
+
+
 def restructure(executor, task_manager, communicate):
     """Re-shape the task lists before the window builds its tabs from them.
 
@@ -177,6 +196,9 @@ def apply():
     if task_card is not None:
         task_card.update_buttons = locking(task_card.update_buttons)
         task_card.show_instructions = show_instructions
+    project_card = import_ui("about.ProjectCard", "ProjectCard")
+    if project_card is not None:
+        project_card.__init__ = to_the_fork(project_card.__init__)
     original_init = main_window.__init__
 
     def patched_init(self, *args, **kwargs):
