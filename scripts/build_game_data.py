@@ -72,11 +72,23 @@ EFFECT_TABLES = ("*skill_eff.json", "eff_value")
 RELIC_TABLES = ("*relic.json", "s1_cs_value")
 # Pairs a card's id with the id of each Epiphany version it can turn into.
 EPIPHANY_TABLES = ("*card_r_spark.json", "change_link_card_id")
+# A Divine Epiphany adds lines under a card's own text rather than swapping it for another version. Each row is one line: a god's own,
+# drawn under that god's icon, or one of the shared lines drawn beside it, whose god is `NO_GOD`.
+DIVINE_TABLES = ("*r_spark.json", "god_type")
+DIVINE_LINKS = "add_link_skill_eff_id"
+NO_GOD = "none"
+# The title of a god's Epiphany screen, "Epiphany: Diallos", which spells the god as the client does.
+GOD_TITLE_ID = "fate_god_type_define@interrupt_title_0@{god}"
+GOD_TITLE_PREFIX = "Epiphany: "
 
 # A card addresses its own linked effects by position, so `#result_ev_0#` is the first linked effect's value
 # and `#result_ecv_1#` the second one's count. The prefix varies with where the text is shown and does not
 # change which column is read, so only the `ev` / `ecv` / `damage` part of the name matters.
 CARD_PLACEHOLDER = re.compile(r"#([a-z][a-z0-9_]*)_(\d+)#")
+# `#during_result_ev_0_1#` reads the effect that linked effect 0 links on to through its `during_eff_1_link_skill_eff_id`.
+DURING_PREFIX = "during_"
+DURING_PLACEHOLDER = re.compile(r"#during_([a-z][a-z0-9_]*)_(\d+)_(\d+)#")
+DURING_LINK = "during_eff_{}_link_skill_eff_id"
 VALUE_COLUMN = "eff_value"
 COUNT_COLUMN = "eff_count_value"
 CARD_VALUE_KINDS = {"ecv": COUNT_COLUMN, "ev": VALUE_COLUMN, "damage": VALUE_COLUMN}
@@ -248,18 +260,27 @@ def resolve_card_values(text, card, effects):
     """
     links = LIST_ENTRY.findall(card.get("link_skill_eff_id") or "")
 
-    def replace(match):
-        column = card_value_field(match.group(1))
-        index = int(match.group(2))
-        if column is None or index >= len(links):
-            return match.group(0)
-        effect = effects.get(links[index]) or {}
-        value = effect.get(column)
+    def linked(index):
+        return (effects.get(links[index]) or {}) if index < len(links) else {}
+
+    def value_of(effect, family, match, source):
+        column = card_value_field(family)
+        value = effect.get(column) if column else None
         if not value:
             return match.group(0)
-        return value + "%" if needs_percent(effect, column, text, match.end()) else value
+        return value + "%" if needs_percent(effect, column, source, match.end()) else value
 
-    return CARD_PLACEHOLDER.sub(replace, text)
+    def replace_during(match):
+        effect = effects.get(linked(int(match.group(2))).get(DURING_LINK.format(match.group(3))) or "") or {}
+        return value_of(effect, match.group(1), match, text)
+
+    def replace(match):
+        if match.group(1).startswith(DURING_PREFIX):
+            return match.group(0)
+        return value_of(linked(int(match.group(2))), match.group(1), match, resolved)
+
+    resolved = DURING_PLACEHOLDER.sub(replace_during, text)
+    return CARD_PLACEHOLDER.sub(replace, resolved)
 
 
 def resolve_relic_values(text, relic):
@@ -680,6 +701,30 @@ def collect_epiphanies(table, dump_dir, described):
     return epiphanies
 
 
+def collect_divine(table, dump_dir):
+    """Collect the lines a Divine Epiphany can add under a card's own text, values filled in.
+
+    Args:
+        table: The localization table.
+        dump_dir: Path to the dump's `output` directory.
+
+    Returns:
+        `(gods, shared)`: a dict of god name to the lines that god's Epiphany adds, and the shared lines one of which is drawn beside it.
+    """
+    effects = load_data_tables(dump_dir, EFFECT_TABLES)
+    lines = {}
+    for row in load_data_tables(dump_dir, DIVINE_TABLES).values():
+        raw = table.get(row.get("description") or "")
+        if not raw:
+            continue
+        text = clean_description(resolve_card_values(raw, {"link_skill_eff_id": row.get(DIVINE_LINKS)}, effects), table)
+        god = row["god_type"].lower()
+        name = god if god == NO_GOD else table.get(GOD_TITLE_ID.format(god=god), god.title()).removeprefix(GOD_TITLE_PREFIX)
+        lines.setdefault(name, set()).add(text)
+    shared = tuple(sorted(lines.pop(NO_GOD, ())))
+    return {name: tuple(sorted(texts)) for name, texts in sorted(lines.items())}, shared
+
+
 def render(groups, dump_dir):
     """Build the source of the generated module.
 
@@ -710,12 +755,13 @@ def render(groups, dump_dir):
     return "\n".join(lines)
 
 
-def render_descriptions(described, epiphanies, dump_dir):
+def render_descriptions(described, epiphanies, divine, dump_dir):
     """Build the source of the generated description module.
 
     Args:
         described: A dict of entity name to cleaned description.
         epiphanies: A dict of card name to its Epiphany texts, from `collect_epiphanies`.
+        divine: The god and shared Divine Epiphany lines, from `collect_divine`.
         dump_dir: The dump the text came from, recorded in the header.
 
     Returns:
@@ -741,6 +787,15 @@ def render_descriptions(described, epiphanies, dump_dir):
     lines.append("EPIPHANIES = {")
     lines.extend(f"    {name!r}: {epiphanies[name]!r}," for name in sorted(epiphanies))
     lines.append("}")
+    lines.append("")
+    gods, shared = divine
+    lines.append("# The lines a god's Divine Epiphany adds under a card's own text, drawn under the god's icon. Values as above.")
+    lines.append("DIVINE_EPIPHANIES = {")
+    lines.extend(f"    {name!r}: {gods[name]!r}," for name in gods)
+    lines.append("}")
+    lines.append("")
+    lines.append("# The shared lines a Divine Epiphany draws one of, shown beside its god's line.")
+    lines.append(f"DIVINE_SHARED = {shared!r}")
     lines.append("")
     return "\n".join(lines)
 
@@ -931,12 +986,13 @@ def main():
     groups = [(name, collector(table, args.dump), comment) for name, comment, collector in GROUPS]
     described = collect_descriptions(table, args.dump)
     epiphanies = collect_epiphanies(table, args.dump, described)
+    divine = collect_divine(table, args.dump)
     quality = collect_quality(table, args.dump)
     battle = collect_battle(table, args.dump)
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUT_PATH.write_text(render(groups, args.dump), encoding="utf-8")
-    OUT_TEXT_PATH.write_text(render_descriptions(described, epiphanies, args.dump), encoding="utf-8")
+    OUT_TEXT_PATH.write_text(render_descriptions(described, epiphanies, divine, args.dump), encoding="utf-8")
     OUT_QUALITY_PATH.write_text(render_quality(quality), encoding="utf-8")
     OUT_BATTLE_PATH.write_text(render_battle(battle), encoding="utf-8")
 
@@ -947,7 +1003,8 @@ def main():
         print(f"  {name:12} {len(values):5d}   {with_text:5d} described")
     print(f"wrote {OUT_PATH.relative_to(REPO_ROOT)}")
     print(f"wrote {OUT_TEXT_PATH.relative_to(REPO_ROOT)} with {len(described)} descriptions, "
-          f"{unresolved} of them still holding an unresolved value, and {sum(map(len, epiphanies.values()))} Epiphany texts")
+          f"{unresolved} of them still holding an unresolved value, {sum(map(len, epiphanies.values()))} Epiphany texts, "
+          f"and {sum(map(len, divine[0].values())) + len(divine[1])} Divine Epiphany lines")
     print(f"wrote {OUT_QUALITY_PATH.relative_to(REPO_ROOT)} with "
           + ", ".join(f"{len(values)} {name.lower()}" for name, values in quality.items()))
     print(f"wrote {OUT_BATTLE_PATH.relative_to(REPO_ROOT)} with "
