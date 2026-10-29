@@ -11,14 +11,15 @@ import time
 import unittest
 from pathlib import Path
 
+import cv2
 import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.en.dialogue import (AFTER_TAP, AFTER_TOGGLE, BUBBLE_AFTER_STUCK, MAX_TEXT_BOXES, MIN_GLOW,  # noqa: E402
-                            TOGGLE_POINT, TOGGLE_REGION, TOGGLE_RETRY, TOGGLED_AT, auto_advance_off, handle_dialogue,
-                            narration_line, speech_line)
+from src.en.dialogue import (AFTER_TOGGLE, BETWEEN_TAPS, BUBBLE_AFTER_STUCK, MAX_TAPS, MAX_TEXT_BOXES, MIN_GLOW,  # noqa: E402
+                            TAP_AREA, TOGGLE_POINT, TOGGLE_REGION, TOGGLE_RETRY, TOGGLED_AT, advance_arrow_showing,
+                            auto_advance_off, handle_dialogue, narration_line, speech_line)
 from src.en.stuck import CLOCK  # noqa: E402
 
 WIDTH, HEIGHT = 1920, 1080
@@ -29,6 +30,8 @@ GLOW = (77, 111, 156)
 UNLIT = (168, 168, 168)
 # The lit ring washed out by a scene change, which once read as off and got auto-advance switched off.
 PALE_GLOW = (207, 229, 230)
+# Where the corner crops in `tests/images/` were cut from, as the pixel at their top left.
+ARROW_CORNER = (1749, 900)
 # The share of the patch the ring covers when it is lit. Twenty frames of the Global client were sampled over
 # its patch: every frame showing it running ran 0.105 to 0.150 and every frame showing it off came back 0.000,
 # so the thinnest of the lit ones is what the threshold has to sit under.
@@ -57,23 +60,26 @@ class FakeBox:
 
 
 class FakeTask:
-    """A task holding one OCR pass and one capture, recording what the handler clicked."""
+    """A task holding one OCR pass and one capture, recording where the handler tapped.
+
+    `later` holds the OCR passes the screen reads as after each tap, in order, and it reads as blank once they run out.
+    """
 
     width, height = WIDTH, HEIGHT
 
-    def __init__(self, boxes, frame=None):
+    def __init__(self, boxes, frame=None, later=()):
         self.all_texts = boxes
         self.frame = frame
-        self.clicked = None
-        self.tapped = None
+        self.later = list(later)
+        self.taps = []
         self.moved = None
         self.slept = 0
 
-    def click_box(self, box):
-        self.clicked = box
+    def ocr(self):
+        return self.later.pop(0) if self.later else []
 
     def click(self, x, y, after_sleep=0):
-        self.tapped = (x, y)
+        self.taps.append((x, y))
         self.slept += after_sleep
 
     def move_relative(self, x, y):
@@ -101,6 +107,22 @@ def frame_with_button(color, share=1.0):
     width, height = int(right * WIDTH) - x, int(bottom * HEIGHT) - y
     frame = np.zeros((HEIGHT, WIDTH, 3), dtype=np.uint8)
     frame[y:y + max(1, round(height * share)), x:x + width] = color
+    return frame
+
+
+def with_corner(name):
+    """Put a capture's bottom right corner, where the advance arrow bobs, back into an otherwise black frame.
+
+    Args:
+        name: The base name of the crop in `tests/images/`, cut from a 1080p capture at `ARROW_CORNER`.
+
+    Returns:
+        A `(height, width, 3)` BGR array.
+    """
+    patch = cv2.imread(str(REPO_ROOT / "tests" / "images" / f"{name}.png"))
+    left, top = ARROW_CORNER
+    frame = np.zeros((HEIGHT, WIDTH, 3), dtype=np.uint8)
+    frame[top:top + patch.shape[0], left:left + patch.shape[1]] = patch
     return frame
 
 
@@ -152,7 +174,23 @@ def option_screen():
     ])
 
 
-class TestDialogue(unittest.TestCase):
+class TapsInArea:
+    """Checking where the handler tapped, mixed into the test cases that tap."""
+
+    def assertTapsInArea(self, taps, count):
+        """Check the handler tapped `count` times, every one of them inside `TAP_AREA`.
+
+        Args:
+            taps: The points the fake task recorded.
+            count: How many taps there should have been.
+        """
+        left, top, right, bottom = TAP_AREA
+        self.assertEqual(count, len(taps))
+        for x, y in taps:
+            self.assertTrue(left <= x <= right and top <= y <= bottom, (x, y))
+
+
+class TestDialogue(TapsInArea, unittest.TestCase):
 
     def test_the_stalled_narration_screen_is_recognised(self):
         """The whole point: this frame held the run until it was stopped by hand."""
@@ -161,15 +199,19 @@ class TestDialogue(unittest.TestCase):
         self.assertEqual(SOLDIER, line.name)
 
     def test_a_short_line_of_narration_is_recognised(self):
-        """A Chaos run sat on this one-line inscription for two minutes, keyboard hints and all."""
-        task = FakeTask([
-            FakeBox("3045/3045", 0.212, 0.040, 0.10),
-            FakeBox("373", 0.650, 0.051, 0.02),
-            FakeBox("Q", 0.959, 0.080, 0.01),
-            FakeBox("The inscription on the statue reads:", 0.494, 0.836, 0.316),
-            FakeBox("Space", 0.937, 0.912, 0.04),
-        ])
-        self.assertIsNotNone(narration_line(task))
+        """Chaos runs sat on each of these one-line screens until stopped by hand. The second is under `MIN_WIDTH`,
+        so the advance arrow is what passes it."""
+        for text, width, frame in (
+            ("The inscription on the statue reads:", 0.316, None),
+            ("A sheet of paper lies on the floor.", 0.299, with_corner("advance_arrow")),
+        ):
+            with self.subTest(text):
+                task = FakeTask([
+                    FakeBox("3045/3045", 0.212, 0.040, 0.10),
+                    FakeBox("373", 0.650, 0.051, 0.02),
+                    FakeBox(text, 0.494, 0.836, width),
+                ], frame)
+                self.assertIsNotNone(narration_line(task))
 
     def test_a_two_line_narration_screen_is_recognised(self):
         self.assertIsNotNone(narration_line(two_line_narration_screen()))
@@ -222,23 +264,37 @@ class TestDialogue(unittest.TestCase):
         ])
         self.assertIsNotNone(narration_line(task))
 
-    def test_the_handler_taps_the_line_and_claims_the_frame(self):
+    def test_the_handler_taps_above_the_event_options_and_claims_the_frame(self):
+        """The prose shares its band with the option cards that follow it, so the tap goes higher than either."""
         task = narration_screen()
         self.assertTrue(handle_dialogue(task))
-        self.assertIsNotNone(task.clicked)
-        self.assertEqual(SOLDIER, task.clicked.name)
+        self.assertTapsInArea(task.taps, 1)
+        options_top = min(box.y for box in option_screen().all_texts if box.y > HEIGHT / 2) / HEIGHT
+        self.assertLess(TAP_AREA[3], options_top)
 
-    def test_the_handler_waits_for_the_next_line_to_be_drawn(self):
-        """Without the pause the same screen is read again before the tap has landed."""
+    def test_the_handler_taps_through_the_lines_until_the_options_appear(self):
+        """Reading again between taps is what saves the run loop's second per line, and the option screen that
+        follows the last line must still never be tapped."""
         task = narration_screen()
+        task.later = [two_line_narration_screen().all_texts, option_screen().all_texts]
+        self.assertTrue(handle_dialogue(task))
+        self.assertTapsInArea(task.taps, 2)
+        self.assertEqual(2 * BETWEEN_TAPS, task.slept)
+
+    def test_a_line_that_never_advances_hands_the_frame_back(self):
+        """Otherwise the handler would hold the run loop for as long as the screen stayed put."""
+        task = narration_screen()
+        task.later = [narration_screen().all_texts for _ in range(MAX_TAPS * 2)]
         handle_dialogue(task)
-        self.assertEqual(AFTER_TAP, task.slept)
+        self.assertTapsInArea(task.taps, MAX_TAPS)
+        # Spread over the area rather than landing on one pixel every time.
+        self.assertGreater(len(set(task.taps)), 1)
 
     def test_the_handler_declines_a_screen_it_does_not_recognise(self):
         """Returning False is what lets the run loop carry on to whatever else might handle the frame."""
         task = option_screen()
         self.assertFalse(handle_dialogue(task))
-        self.assertIsNone(task.clicked)
+        self.assertEqual([], task.taps)
 
 
 def bubble_screen(frozen_for):
@@ -260,13 +316,13 @@ def bubble_screen(frozen_for):
     return task
 
 
-class TestSpeechBubble(unittest.TestCase):
+class TestSpeechBubble(TapsInArea, unittest.TestCase):
     """An NPC's speech bubble, which sits over the scene rather than in the narration band."""
 
     def test_the_stalled_bubble_is_tapped_once_the_frame_has_frozen(self):
         task = bubble_screen(BUBBLE_AFTER_STUCK + 1)
         self.assertTrue(handle_dialogue(task))
-        self.assertEqual(BUBBLE_FIRST, task.clicked.name)
+        self.assertTapsInArea(task.taps, 1)
 
     def test_a_bubble_is_left_alone_while_the_frame_is_still_changing(self):
         """The freeze is what says no other handler wants the frame, so a live frame is never read this loosely."""
@@ -284,7 +340,21 @@ class TestSpeechBubble(unittest.TestCase):
                 self.assertIsNone(speech_line(task))
 
 
-class TestAutoAdvance(unittest.TestCase):
+class TestAdvanceArrow(unittest.TestCase):
+    """The arrow narration draws in the bottom right corner, which is what lets a short line through."""
+
+    def test_the_arrow_is_told_apart_from_the_closest_thing_that_is_not_one(self):
+        """The arrow is the lowest scoring of the captures that show it, and the other crop is the best scoring of
+        the rest, a card's edge."""
+        for name, showing in (("advance_arrow", True), ("advance_arrow_absent", False)):
+            with self.subTest(name):
+                self.assertEqual(showing, advance_arrow_showing(FakeTask([], with_corner(name))))
+
+    def test_a_frame_the_reader_never_got_shows_no_arrow(self):
+        self.assertFalse(advance_arrow_showing(FakeTask([])))
+
+
+class TestAutoAdvance(TapsInArea, unittest.TestCase):
     """Reading the auto-advance button, and reaching for it before tapping the prose."""
 
     def test_the_lit_button_reads_as_running(self):
@@ -310,9 +380,8 @@ class TestAutoAdvance(unittest.TestCase):
         task = narration_screen()
         task.frame = frame_with_button(UNLIT)
         self.assertTrue(handle_dialogue(task))
-        self.assertEqual(TOGGLE_POINT, task.tapped)
+        self.assertEqual([TOGGLE_POINT], task.taps)
         self.assertEqual(TOGGLE_POINT, task.moved)
-        self.assertIsNone(task.clicked)
 
     def test_the_button_gets_the_pointer_before_the_tap(self):
         """Upstream dwells on every button before clicking it, and this client drops a click that
@@ -326,34 +395,32 @@ class TestAutoAdvance(unittest.TestCase):
         task = narration_screen()
         task.frame = frame_with_button(GLOW, MEASURED_GLOW)
         self.assertTrue(handle_dialogue(task))
-        self.assertIsNotNone(task.clicked)
-        self.assertIsNone(task.tapped)
+        self.assertTapsInArea(task.taps, 1)
 
     def test_a_button_that_will_not_turn_on_gives_way_to_tapping_the_line(self):
         """A live run tapped a button that never lit for over a minute and never advanced the line."""
         task = narration_screen()
         task.frame = frame_with_button(UNLIT)
         handle_dialogue(task)
-        task.tapped = None
+        task.taps.clear()
         self.assertTrue(handle_dialogue(task))
-        self.assertIsNone(task.tapped)
-        self.assertIsNotNone(task.clicked)
+        self.assertTapsInArea(task.taps, 1)
 
     def test_the_button_is_tried_again_once_the_retry_wait_has_passed(self):
         task = narration_screen()
         task.frame = frame_with_button(UNLIT)
         handle_dialogue(task)
-        task.tapped = None
+        task.taps.clear()
         setattr(task, TOGGLED_AT, getattr(task, TOGGLED_AT) - TOGGLE_RETRY)
         handle_dialogue(task)
-        self.assertEqual(TOGGLE_POINT, task.tapped)
+        self.assertEqual([TOGGLE_POINT], task.taps)
 
     def test_the_button_is_never_tapped_off_a_narration_screen(self):
         """The corner is only read once the screen has been recognised, so nothing else can be reached for."""
         task = option_screen()
         task.frame = frame_with_button(UNLIT)
         self.assertFalse(handle_dialogue(task))
-        self.assertIsNone(task.tapped)
+        self.assertEqual([], task.taps)
 
 
 if __name__ == "__main__":
