@@ -370,6 +370,16 @@ msgstr "Memory Bonus"
 msgid "Enter End of Memory"
 msgstr "Enter End of Memory"
 
+msgid "Re-observe"
+msgstr "Re-observe"
+
+# The Re-observe settings this fork adds, English for the same reason.
+msgid "Re-observe Bad Modifiers"
+msgstr "Re-observe Bad Modifiers"
+
+msgid "Modifier Blacklist"
+msgstr "Modifier Blacklist"
+
 msgid "优先移除基础牌"
 msgstr "Remove Basic Cards First"
 

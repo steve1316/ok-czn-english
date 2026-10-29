@@ -21,7 +21,7 @@ import polib
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.en import etched_memory, overrides, picker, sections  # noqa: E402
+from src.en import etched_memory, overrides, picker, reobserve, sections  # noqa: E402
 from src.en.game_data import CARDS, COMBATANTS, EQUIPMENT, NODE_TYPES  # noqa: E402
 from src.en.game_text import DESCRIPTIONS  # noqa: E402
 from src.en.framework import import_ui  # noqa: E402
@@ -292,7 +292,7 @@ class TestSeasonSections(unittest.TestCase):
 
     def test_every_folded_setting_is_still_declared_upstream(self):
         # A renamed key is not folded and no error says so - the setting just reappears in the flat list.
-        declared = mode_setting_keys() | {overrides.DESIRE_FACTION, *SEASON_FIVE}
+        declared = mode_setting_keys() | {overrides.DESIRE_FACTION, *SEASON_FIVE, reobserve.REOBSERVE, reobserve.MODIFIER_BLACKLIST}
         for _, keys in sections.SECTIONS:
             for key in keys:
                 with self.subTest(key=key):

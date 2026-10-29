@@ -34,8 +34,8 @@ UPSTREAM_NAMES = {
         "recognize_cards", "recognize_cards_in_deck", "recognize_event_options", "select_card",
     ),
     "utils_chaos": (
-        "_move_and_click", "handle_archive_target_member", "handle_battle_auto_check", "handle_mask_card",
-        "handle_save_target_member",
+        "_get_config_value", "_move_and_click", "handle_archive_target_member", "handle_battle_auto_check", "handle_mask_card",
+        "handle_save_target_member", "handle_season_chaos_initial_page",
     ),
     "utils_sortie": (
         "_get_config_value", "_hand_card_names", "_hand_cards", "_is_card_name", "_move_and_click", "_read_hand_count", "_read_member_slots",
@@ -66,6 +66,7 @@ ANCHORS_IN_LISTS = {
     "handle_return_to_draw_pile": ("utils_sortie",),
     "handle_route_selection": ("utils_sortie",),
     "handle_save_target_member": ("utils_chaos",),
+    "handle_season_chaos_initial_page": ("utils_chaos",),
     "handle_shop": ("utils_chaos", "utils_sortie"),
     "handle_stuck_log": ("utils_chaos", "utils_sortie"),
     "handle_view_original": ("utils_chaos", "utils_sortie"),
