@@ -29,6 +29,7 @@ from src.en.framework import import_ui  # noqa: E402
 from src.en.game_data import CARDS  # noqa: E402
 from src.en.game_text import DESCRIPTIONS  # noqa: E402
 from src.en.overrides import ROUTE_NODES  # noqa: E402
+from src.en.reobserve import MODIFIER_BLACKLIST, MODIFIER_HELP, MODIFIERS  # noqa: E402
 from tests.fakes import EchoApp  # noqa: E402
 
 ModifyListDialog = import_ui("tasks.ModifyListDialog", "ModifyListDialog")
@@ -194,7 +195,7 @@ class TestOptionPicker(unittest.TestCase):
         dialog = ModifyListDialog(["one", "two"], self.parent)
         self.assertIsNone(self.option_row(dialog))
 
-    def open_from_row(self, key, description, options=None):
+    def open_from_row(self, key, description, options=None, selected=()):
         """Open a picker the way clicking Modify on a settings row does.
 
         Going through `ModifyListItem` is the whole point - it is what hands the dialog its help text, and a
@@ -204,6 +205,7 @@ class TestOptionPicker(unittest.TestCase):
             key: The config key the row is for.
             description: The row's help text, or None for a setting that has none.
             options: The roster to offer, or None for a free-text list.
+            selected: Values already saved in the setting.
 
         Returns:
             The `ModifyListDialog` the row opened.
@@ -213,7 +215,7 @@ class TestOptionPicker(unittest.TestCase):
         # The real `clicked` builds the dialog and then blocks on exec, so catch it there.
         ModifyListDialog.exec = lambda dialog: opened.setdefault("dialog", dialog)
         try:
-            row = ModifyListItem({key: description} if description else {}, {key: []}, key,
+            row = ModifyListItem({key: description} if description else {}, {key: list(selected)}, key,
                                  options_available=options)
             row.clicked()
         finally:
@@ -255,6 +257,16 @@ class TestOptionPicker(unittest.TestCase):
         """The text is parked in a module global for one constructor call and must not outlive it."""
         self.open_from_row("需要冥想的卡牌", "Meditate on these.", CARDS)
         self.assertIsNone(picker._pending_help)
+        self.assertIsNone(picker._pending_effects)
+
+    def test_a_modifier_shows_its_own_effect_not_the_card_of_the_same_name(self):
+        """Plague and Anxiety are also cards, and a short roster's buttons have no tooltips upstream."""
+        dialog = self.open_from_row(MODIFIER_BLACKLIST, None, MODIFIERS, selected=["Plague"])
+        expected = escape(MODIFIER_HELP["Plague"])
+        for side, tooltip in (("available", dialog.option_buttons["Plague"].toolTip()), ("selected", dialog.list_widget.item(0).toolTip())):
+            with self.subTest(side):
+                self.assertIn(expected, tooltip)
+                self.assertNotIn(escape(DESCRIPTIONS["Plague"].splitlines()[0]), tooltip)
 
     def test_confirm_returns_canonical_values_in_order(self):
         """The config stores the canonical value, so handing back display text would stop OCR matching."""

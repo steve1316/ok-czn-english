@@ -18,6 +18,7 @@ from ok import Logger, og
 
 from src.en.framework import import_ui
 from src.en.game_text import DESCRIPTIONS
+from src.en.reobserve import MODIFIER_BLACKLIST, MODIFIER_HELP
 
 logger = Logger.get_logger(__name__)
 
@@ -32,12 +33,16 @@ ENABLED_FLAGS = Qt.ItemIsEnabled | Qt.ItemIsSelectable
 FALLBACK_THRESHOLD = 20
 # The dialog's two option columns, Available and Selected.
 COLUMN_COUNT = 2
+# Settings whose options are not cards, keyed to their own effect text. A modifier named Plague is not the card Plague.
+OPTION_EFFECTS = {MODIFIER_BLACKLIST: MODIFIER_HELP}
 
 _patched = False
 # The row's help text, handed to the dialog it is about to open. `ModifyListItem` knows which setting it is
 # for and the dialog never does, so the text is parked here for the length of one constructor call. Qt widgets
 # only ever run on the GUI thread, so nothing else can be opening a dialog in between.
 _pending_help = None
+# The row's entry in `OPTION_EFFECTS`, parked the same way.
+_pending_effects = None
 
 
 def wants_option_list(options, threshold):
@@ -57,7 +62,7 @@ def wants_option_list(options, threshold):
     return options is not None and len(options) > threshold
 
 
-def tooltip_for(option, display):
+def tooltip_for(option, display, effects=DESCRIPTIONS):
     """Build the hover text for one option.
 
     The result is HTML rather than plain text on purpose. Qt only word-wraps a tooltip it recognises as rich
@@ -67,12 +72,13 @@ def tooltip_for(option, display):
     Args:
         option: The canonical config value, which is the name the description is keyed by.
         display: The translated name shown on the row.
+        effects: Option -> effect text, the card descriptions unless the setting has its own in `OPTION_EFFECTS`.
 
     Returns:
-        The name, followed by its effect text when the game data has one.
+        The name, followed by its effect text when there is one.
     """
     name = f"<b>{escape(display)}</b>"
-    effect = DESCRIPTIONS.get(option)
+    effect = effects.get(option)
     if not effect:
         return name
     return f"{name}<br><br>{escape(effect).replace(chr(10), '<br>')}"
@@ -152,7 +158,7 @@ def label_selected_rows(dialog):
         display = item.text()
         # The list stores display text, so go back through the dialog's own map for the name a description is
         # keyed by. On the Global client the two are the same, but a translated build would need the lookup.
-        item.setToolTip(tooltip_for(dialog.source_by_display.get(display, display), display))
+        item.setToolTip(tooltip_for(dialog.source_by_display.get(display, display), display, dialog.option_effects))
 
 
 def show_setting_help(dialog):
@@ -196,7 +202,7 @@ def build_option_list(dialog):
         item = QListWidgetItem(display)
         item.setData(OPTION_ROLE, option)
         item.setData(SEARCH_ROLE, f"{option}\n{display}".casefold())
-        item.setToolTip(tooltip_for(option, display))
+        item.setToolTip(tooltip_for(option, display, dialog.option_effects))
         view.addItem(item)
 
     view.itemClicked.connect(lambda item: dialog.add_available_item(item.data(OPTION_ROLE)))
@@ -229,8 +235,17 @@ def apply():
         return wants_option_list(dialog.options_available, threshold)
 
     def patched_create(self):
+        self.option_effects = _pending_effects
         if not virtualized(self):
-            return original_create(self)
+            widget = original_create(self)
+            # A short grid only gets tooltips from a setting's own effects. Route Priority's node names are not cards.
+            if self.option_effects:
+                for option, button in self.option_buttons.items():
+                    button.setToolTip(tooltip_for(option, og.app.tr(option), self.option_effects))
+                use_instant_tooltips(self.list_widget)
+            return widget
+        if self.option_effects is None:
+            self.option_effects = DESCRIPTIONS
         self.option_list = build_option_list(self)
         # The Selected Options list already exists by now, and its rows want the same treatment.
         use_instant_tooltips(self.list_widget)
@@ -238,15 +253,18 @@ def apply():
 
     def patched_update(self):
         if not virtualized(self):
-            return original_update(self)
-        # The rows already hold translated text, so compare against that rather than translating every option
-        # again on every selection change.
-        selected = {self.list_widget.item(row).text() for row in range(self.list_widget.count())}
-        for row in range(self.option_list.count()):
-            item = self.option_list.item(row)
-            available = self.allow_duplication or item.text() not in selected
-            item.setFlags(ENABLED_FLAGS if available else Qt.NoItemFlags)
-        label_selected_rows(self)
+            original_update(self)
+        else:
+            # The rows already hold translated text, so compare against that rather than translating every option
+            # again on every selection change.
+            selected = {self.list_widget.item(row).text() for row in range(self.list_widget.count())}
+            for row in range(self.option_list.count()):
+                item = self.option_list.item(row)
+                available = self.allow_duplication or item.text() not in selected
+                item.setFlags(ENABLED_FLAGS if available else Qt.NoItemFlags)
+        # Unset on a free-text list, which never builds an options pane.
+        if getattr(self, "option_effects", None):
+            label_selected_rows(self)
 
     def patched_filter(self, text):
         if not virtualized(self):
@@ -289,13 +307,14 @@ def remember_help_text():
     original_clicked = item_class.clicked
 
     def patched_clicked(self):
-        global _pending_help
+        global _pending_help, _pending_effects
         # `contentLabel` only exists when the setting has a description at all.
         label = getattr(self, "contentLabel", None)
         _pending_help = label.text() if label is not None else None
+        _pending_effects = OPTION_EFFECTS.get(self.key)
         try:
             original_clicked(self)
         finally:
-            _pending_help = None
+            _pending_help = _pending_effects = None
 
     item_class.clicked = patched_clicked

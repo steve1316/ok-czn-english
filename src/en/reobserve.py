@@ -16,9 +16,21 @@ logger = Logger.get_logger(__name__)
 # This fork's settings, with English keys since upstream ships neither.
 REOBSERVE = "Re-observe Bad Modifiers"
 MODIFIER_BLACKLIST = "Modifier Blacklist"
-# Every penalty family in the client's `zero_system_eff` table (zero_orb_penalty_001-027), as the panel tags them.
-# The table names two families differently from the panel: Retribution shows as Revenge, Carelessness as Neglect.
-MODIFIERS = ["Anxiety", "Elite", "Gangrene", "Harden", "Loss", "Neglect", "Plague", "Rage", "Revenge", "Tyrant"]
+# Every penalty family in the client's `zero_system_eff` table (zero_orb_penalty_001-027) as the panel tags it, with its
+# effect across levels for the picker's tooltips. The table names Revenge as Retribution and Neglect as Carelessness.
+MODIFIER_HELP = {
+    "Anxiety": "Cannot rest in Safe Zones.",
+    "Elite": "Adds 2 to 8 Elite Areas.",
+    "Gangrene": "Lose 3 to 5% Health at the start of each turn, from turn 2.",
+    "Harden": "Monsters gain 1 to 2 Fortitude every 3 turns.",
+    "Loss": "40 to 70% fewer Credits from battle.",
+    "Neglect": "Discard 1 random card at the start of each turn.",
+    "Plague": "Max HP decreased by 20 to 50%.",
+    "Rage": "Monsters gain 1 to 2 Fury every 3 turns.",
+    "Revenge": "When a monster dies, the others gain 1 to 2 Morale.",
+    "Tyrant": "Monsters in Elite and Boss Areas gain 10 to 40% Attack and Health.",
+}
+MODIFIERS = list(MODIFIER_HELP)
 # How OCR's casing of a tag maps back to its family.
 FAMILY_OF = {name.casefold(): name for name in MODIFIERS}
 DEFAULT_BLACKLIST = ["Anxiety", "Plague"]
