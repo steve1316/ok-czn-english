@@ -6,13 +6,16 @@ bubble over the scene - so nothing in Chaos or Sortie ever advances either, and 
 them because its general random-click fallback is commented out.
 """
 
+import random
 import re
 import time
+from pathlib import Path
 
 import numpy as np
 
 from ok import Logger
 
+from src.en.board import icon_match
 from src.en.handlers import append, register
 from src.en.screen import colour_share, frame_of, in_region, patch_of
 from src.en.stuck import frozen_for
@@ -27,8 +30,16 @@ logger = Logger.get_logger(__name__)
 # closes above one and below the other. The line also has to be near the middle to count.
 NARRATION_REGION = (0.35, 0.80, 0.65, 0.90)
 # How wide it has to be. Across the capture corpus prose measured 0.316 to 0.798, and the widest other line in
-# the band was the Persona card picker's tip at 0.283, so this splits the two.
+# the band was the Persona card picker's tip at 0.283, so this splits the two. A shorter line needs the arrow.
 MIN_WIDTH = 0.30
+# The down-pointing arrow narration draws in the bottom right corner once a line is waiting for a tap, cut from
+# a 1080p frame. Three narration captures out of six show it, so it lets a short line in rather than being required.
+ARROW_IMAGE = Path(__file__).with_name("images") / "advance_arrow.png"
+# Where the arrow bobs, as `(left, top, right, bottom)` screen fractions. Its top edge measured 924 to 933 down at
+# 1080p, and the keyboard hint drawn under it on PC starts at 977.
+ARROW_REGION = (0.911, 0.833, 0.958, 0.903)
+# The three captures showing the arrow scored 0.869 to 1.000, and the best of 846 others 0.570.
+ARROW_MATCH = 0.75
 # How much text a narration screen can carry. It dims the frame and hides the HUD, so the measured ones read
 # three to six boxes. A screen busy enough to hold ten is showing something else and is not ours to tap.
 MAX_TEXT_BOXES = 10
@@ -43,8 +54,14 @@ SPEECH_REGION = (0.0, 0.12, 1.0, 0.65)
 MIN_SPEECH_WORDS = 3
 # A word, for counting them. Two letters or more, so a stray OCR fragment does not count as one.
 WORD = re.compile(r"[A-Za-z']{2,}")
-# Long enough for the next line to be drawn before the screen is read again.
-AFTER_TAP = 0.5
+# Where a tap that advances the dialogue lands, picked at random inside this `(left, top, right, bottom)` box of
+# screen fractions. A tap anywhere advances it, and the middle is scene art on every event screen captured, clear
+# of the option cards from 0.78 down, the prompt above 0.30 and the magnifier one event draws at (0.60, 0.39).
+TAP_AREA = (0.42, 0.42, 0.58, 0.58)
+# How long a tap gets to land before the screen is read again. A tap either finishes drawing a line or moves to the next one.
+BETWEEN_TAPS = 0.2
+# The most taps one pass makes before handing the frame back, so a line that never advances cannot hold the run loop.
+MAX_TAPS = 30
 # The patch of frame the auto-advance button is drawn in, as `(left, top, right, bottom)` screen fractions.
 # The ring measures 1660 to 1716 across and 30 to 86 down on a 1920x1080 capture.
 TOGGLE_REGION = (0.865, 0.028, 0.894, 0.080)
@@ -77,20 +94,35 @@ def narration_line(task):
     """Find the line of prose on a narration screen, if this is one.
 
     Shape rather than content, because the text is different every time and the reader has nothing else to go
-    on. Any qualifying line will do, since a tap anywhere on the screen advances it.
+    on. Any qualifying line will do, since the tap that follows goes to the middle of the screen, not the line.
 
     Args:
-        task: The running task, holding the current OCR pass.
+        task: The running task, holding the current OCR pass and capture.
 
     Returns:
         The narration box, or None when this screen is not one.
     """
-    for box in task.all_texts:
-        if not box.name.strip() or box.width / task.width < MIN_WIDTH:
-            continue
-        if in_region(box, NARRATION_REGION, task.width, task.height):
-            return box
-    return None
+    lines = [box for box in task.all_texts if box.name.strip() and in_region(box, NARRATION_REGION, task.width, task.height)]
+    wide = next((box for box in lines if box.width / task.width >= MIN_WIDTH), None)
+    if wide is not None or not lines:
+        return wide
+    return lines[0] if advance_arrow_showing(task) else None
+
+
+def advance_arrow_showing(task):
+    """Report whether the game is drawing the arrow that says a narration line is waiting for a tap.
+
+    Args:
+        task: The running task, whose `frame` holds the current capture.
+
+    Returns:
+        True when the arrow is in the corner. False when it is not, or there is no frame to read.
+    """
+    frame = frame_of(task)
+    patch = patch_of(frame, ARROW_REGION)
+    if patch is None or patch.size == 0:
+        return False
+    return icon_match(patch, ARROW_IMAGE, frame.shape[0]) >= ARROW_MATCH
 
 
 def speech_line(task):
@@ -162,10 +194,27 @@ def handle_dialogue(task):
     if auto_advance_off(task) and time.monotonic() - getattr(task, TOGGLED_AT, float("-inf")) >= TOGGLE_RETRY:
         turn_auto_advance_on(task)
         return True
-    task.log_info(f"dialogue, tapping to advance: {line.name}")
-    task.click_box(line)
-    task.sleep(AFTER_TAP)
+    tap_through(task, line)
     return True
+
+
+def tap_through(task, line):
+    """Tap the middle of the screen, then keep tapping for as long as it still reads as narration.
+
+    The screen is read again between taps here rather than left to the run loop, which only reads it once a second.
+
+    Args:
+        task: The running task.
+        line: The line on screen, from `narration_line` or `speech_line`, which is logged rather than tapped.
+    """
+    left, top, right, bottom = TAP_AREA
+    for _ in range(MAX_TAPS):
+        task.log_info(f"dialogue, tapping to advance: {line.name}")
+        task.click(random.uniform(left, right), random.uniform(top, bottom), after_sleep=BETWEEN_TAPS)
+        task.all_texts = task.ocr()
+        line = narration_line(task) if len(task.all_texts) <= MAX_TEXT_BOXES else None
+        if line is None:
+            return
 
 
 def apply():
