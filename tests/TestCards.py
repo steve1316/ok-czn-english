@@ -84,6 +84,13 @@ class TestNeverPlayed(unittest.TestCase):
     def test_a_hand_of_nothing_but_junk_plays_nothing(self):
         self.assertEqual(cards.plan(hand(CURSE, AILMENT), cards.Board()), [])
 
+    def test_an_ailment_that_exhausts_is_cleared_unless_playing_it_hurts(self):
+        # Live: Mark of the Dead sat between Rossweisse's Shards, though it Exhausts once played. Piercing Deafness only hurts when drawn.
+        # Horrifying Memory gives the enemy Morale and Taunt can hit combatants, so both stay held.
+        for name, cleared in (("Mark of the Dead", True), ("Piercing Deafness", True), ("Horrifying Memory", False), ("Taunt", False)):
+            with self.subTest(name=name):
+                self.assertEqual(cleared, cards.worth_clearing(name))
+
 
 class TestAffordability(unittest.TestCase):
     """The Action Point budget, which upstream never knew anything about."""

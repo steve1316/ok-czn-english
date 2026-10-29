@@ -30,6 +30,10 @@ DEALT_TO_YOU = frozenset({"ABNORM", "CURSE"})
 # One of those that does its harm only while held - "If in hand, at the end of the turn", "If this card is in hand",
 # a "Retain:" line - so playing it is how to be rid of it.
 HELD_HARM = re.compile(r"\b(?:if|when) (?:this card is )?in hand|if the turn ends when in hand|when this card is retained|^Retain:", re.I | re.M)
+# A line of effect text that fires on some other event - "When this card is Drawn", "If in hand" - rather than when the card is played.
+TRIGGERED_LINE = re.compile(r"^\s*(?:if|when)\b", re.I)
+# What a dealt card can do when played that is worse than holding it: hit your side, buff the enemy, or make more of itself.
+PLAYED_HARM = re.compile(r"\b(?:allies|combatants?|self|stress|create)\b|\bdecrease (?:hp|ap)\b|\b(?:morale|fortitude|immunity|evasion|shield)\b.*\benem", re.I)
 # The points clearing one of those leaves for the rest of the hand, since it is only bought ahead of the hand's own cards.
 CLEARING_RESERVE = 1
 # The most one of those may cost to be cleared. A dearer one, as Cursed Mace at 3, tends to have a way to get cheaper as the turn goes.
@@ -571,6 +575,18 @@ def change_deck(name, text, by):
     settle_deck()
 
 
+def harmless_to_play(name):
+    """Say whether a card's played effect does nothing against you, leaving out lines that fire on some other event.
+
+    Args:
+        name: The card name, in any spelling.
+
+    Returns:
+        True when no played line matches `PLAYED_HARM`.
+    """
+    return not any(PLAYED_HARM.search(line) for line in description(name).splitlines() if not TRIGGERED_LINE.match(line))
+
+
 def worth_clearing(name):
     """Say whether a card dealt to you is better played than held, once nothing better is left to play.
 
@@ -579,10 +595,12 @@ def worth_clearing(name):
 
     Returns:
         True for any Curse with a fixed cost, since a Curse left in hand only clogs it. A Status Ailment counts when it only hurts
-        while it sits in hand, or when its text does nothing on play.
+        while it sits in hand, when its text does nothing on play, or when it Exhausts once played and does no harm doing it.
     """
     kind, text = category(name), description(name)
-    return kind in DEALT_TO_YOU and cost(name) != X_COST and (kind == "CURSE" or bool(HELD_HARM.search(text)) or not INERT_EFFECT.search(text))
+    if kind not in DEALT_TO_YOU or cost(name) == X_COST:
+        return False
+    return kind == "CURSE" or bool(HELD_HARM.search(text)) or not INERT_EFFECT.search(text) or canonical(name) in CARD_EXHAUSTS and harmless_to_play(name)
 
 
 def hurts_held(name):
