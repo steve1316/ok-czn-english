@@ -440,6 +440,26 @@ class TestRebuiltCardList(unittest.TestCase):
         view.show()
         self.assertTrue(card.isVisible())
 
+    def test_a_card_moved_to_the_end_of_a_list_on_screen_is_placed_there(self):
+        """The Auto Analysis switch is moved below the rebuilt mode cards, and was left sitting on top of one of them."""
+        from PySide6.QtWidgets import QWidget
+
+        view, card_layout = self.listed()
+        view.resize(400, 400)
+        moved = QWidget()
+        moved.setFixedHeight(50)
+        card_layout.addWidget(moved)
+        view.show()
+        self.qt_app.processEvents()
+        card_layout.removeWidget(moved)
+        # Showing a new card lays the list out at once, which settles it before `moved` is back.
+        rebuilt = QWidget()
+        rebuilt.setFixedHeight(50)
+        card_layout.addWidget(rebuilt)
+        card_layout.addWidget(moved)
+        self.qt_app.processEvents()
+        self.assertGreater(moved.y(), rebuilt.y(), "the moved card overlaps the card added before it")
+
 
 class TestExitStopsAdb(unittest.TestCase):
     """The adb server upstream leaves running, which made the Launcher think the app never closed."""
