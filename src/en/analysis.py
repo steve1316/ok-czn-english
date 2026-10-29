@@ -19,8 +19,10 @@ LABEL = "Auto Analysis"
 DESCRIPTION = "Record what the game's Auto plays in Chaos battles, for offline study. Costs extra OCR on every battle frame."
 # The file under `configs/` the switch is saved to.
 CONFIG_NAME = "auto_analysis"
-# Where a tab keeps its switch card, so a rebuilt card list reuses it rather than adding a second.
+# Where a tab keeps its heading and switch card, so a rebuilt card list reuses them rather than adding a second pair.
 SWITCH = "_en_auto_analysis"
+# The heading that sets the switch apart from the modes above it.
+HEADING = "Options"
 
 _patched = False
 
@@ -72,6 +74,24 @@ def switch_card(parent):
     return card
 
 
+def heading(parent):
+    """Build the label that sits between the last mode and the switch.
+
+    Args:
+        parent: The Tasks tab's card list the label goes in.
+
+    Returns:
+        The label, given a fixed height because the card list stacks its children by their current height.
+    """
+    from PySide6.QtCore import Qt
+    from qfluentwidgets import StrongBodyLabel
+
+    label = StrongBodyLabel(HEADING, parent)
+    label.setFixedHeight(32)
+    label.setAlignment(Qt.AlignLeft | Qt.AlignBottom)
+    return label
+
+
 def apply():
     """Put the switch on the Tasks tab, below the last mode."""
     global _patched
@@ -88,14 +108,16 @@ def apply():
         if not self.is_standalone:
             return
         try:
-            card = getattr(self, SWITCH, None)
-            if card is None:
-                card = switch_card(self.task_cards_view)
-                setattr(self, SWITCH, card)
+            widgets = getattr(self, SWITCH, None)
+            if widgets is None:
+                widgets = (heading(self.task_cards_view), switch_card(self.task_cards_view))
+                setattr(self, SWITCH, widgets)
             else:
-                self.remove_task_card(card)
+                for widget in widgets:
+                    self.remove_task_card(widget)
             # In the mode cards' own list, last, so it sits below Semi-Auto Story Mode with their spacing and width.
-            self.add_task_card(card)
+            for widget in widgets:
+                self.add_task_card(widget)
         except Exception as error:
             logger.warning(f"could not add the {LABEL} switch: {error}")
 
