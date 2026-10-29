@@ -16,8 +16,9 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "ok_tasks"))
 
 import cv2  # noqa: E402
+import numpy as np  # noqa: E402
 from ok import Box  # noqa: E402
-from ok.feature.FeatureSet import read_from_json  # noqa: E402
+from ok.feature.FeatureSet import FeatureSet  # noqa: E402
 
 import utils  # noqa: E402
 
@@ -25,11 +26,14 @@ from src.en import templates  # noqa: E402
 from src.en.handlers import standing_in  # noqa: E402
 from tests.fakes import FakeBox  # noqa: E402
 
-# The free Epiphany icon over a combatant at camp, cropped from Global client frames: the larger size from the 2026-10-25
-# run, the smaller from a 2026-10-28 camp the run walked past.
-CAMP_EPIPHANIES = [REPO_ROOT / "tests" / "images" / name for name in ("camp_epiphany.png", "camp_epiphany_small.png")]
+# The free Epiphany icon over a combatant at camp, cropped from Global client frames: the largest size from the 2026-10-25
+# run, the middle from a 2026-10-28 camp the run walked past, the smallest from a 2026-10-29 camp walked past on restart.
+CAMP_EPIPHANIES = [REPO_ROOT / "tests" / "images" / name
+                   for name in ("camp_epiphany.png", "camp_epiphany_small.png", "camp_epiphany_smallest.png")]
 # The templates `handle_rest` tries for that icon, both at once.
 CAMP_TEMPLATES = ["special_flash_luosi", "special_flash_luosi2"]
+# The region `handle_rest` searches for that icon, in pixels of a 1920x1080 frame.
+CAMP_REGION = Box(420, 225, 1089, 654)
 # Upstream's `default_threshold` in `src/config.py`, which `handle_rest` matches the icon against.
 THRESHOLD = 0.8
 # The icon matches upstream found on the 2026-10-27 Obtain Card screen, as (centre x, centre y, confidence) per template.
@@ -158,17 +162,16 @@ class TestTemplateFallback(unittest.TestCase):
         self.assertEqual([], templates.resolve([], ["memberinfo", "memberinfo2"], self.task, None))
         self.assertEqual([], templates.resolve([], None, self.task, None))
 
-    def test_both_sizes_of_the_camp_epiphany_icon_match_once_resized(self):
-        """Neither upstream template matched the Global icon at its own size, so the free Epiphany at camp was walked past."""
-        annotations = str(REPO_ROOT / "ok_tasks" / "assets" / "coco_annotations.json")
-        features = {name: read_from_json(annotations, 1920, 1080, target_category_name=name)[0][name] for name in CAMP_TEMPLATES}
-        for name, feature in features.items():
-            templates.resize(name, feature)
+    def test_every_size_of_the_camp_epiphany_icon_is_found(self):
+        """Resizing a template in place lost the size it matched as is, so the free Epiphany at camp was walked past."""
+        feature_set = FeatureSet(False, str(REPO_ROOT / "ok_tasks" / "assets" / "coco_annotations.json"), 0.002, 0.002, THRESHOLD)
         for path in CAMP_EPIPHANIES:
             with self.subTest(icon=path.name):
-                icon = cv2.imread(str(path))
-                best = max(cv2.minMaxLoc(cv2.matchTemplate(icon, feature.mat, cv2.TM_CCOEFF_NORMED))[1] for feature in features.values())
-                self.assertGreaterEqual(best, THRESHOLD)
+                frame = np.zeros((1080, 1920, 3), np.uint8)
+                frame[310:470, 640:800] = cv2.imread(str(path))
+                find = lambda name, **kwargs: feature_set.find_feature(frame, name, **kwargs)
+                get_feature = lambda name: feature_set.get_feature_by_name(frame, name)
+                self.assertTrue(templates.find_at_any_size(find, get_feature, CAMP_TEMPLATES, box=CAMP_REGION))
 
     def test_a_sparkle_beside_a_portrait_does_not_hide_the_card(self):
         """The sparkle out-scored the Skill icon on both party cards, so the reward was skipped as offering nothing wanted."""

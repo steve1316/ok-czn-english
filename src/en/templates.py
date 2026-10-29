@@ -2,7 +2,7 @@
 
 `ok_tasks/assets/` ships 79 templates and nearly all of them match the Global client unchanged. `leveltag` is a
 crop of 等级, the caption the client draws as "LEVEL" beside a combatant portrait, and the camp's free Epiphany icon
-is drawn larger than on the CN client. A card-type icon can also match the sparkle beside a party card's portrait.
+comes in more sizes than the two templates upstream ships for it. A card-type icon can also match the sparkle beside a party card's portrait.
 """
 
 import cv2
@@ -23,11 +23,12 @@ logger = Logger.get_logger(__name__)
 TEXT_TEMPLATES = {
     "leveltag": ("LEVEL", "等级"),
 }
-# Each template the Global client draws at another size, and the factor it is resized by. The camp's Epiphany icon comes
-# in two sizes, and `handle_rest` tries both templates: the larger icon scores 0.72 on `special_flash_luosi2` against the
-# 0.8 cutoff and 0.97 at 1.1x, the smaller 0.69 on `special_flash_luosi` and 0.95 at 1.1x. At 1.1x the smaller icon's
-# template scored no higher than 0.67 on any of 850 frames in `captures/`.
-RESIZED_TEMPLATES = {
+# Each template the Global client also draws at another size, and that size as a factor of the template's own. The camp's
+# Epiphany icon comes in three sizes and `handle_rest` tries both templates: each matches one size as is (0.97) and the next
+# size up at 1.1x (0.95-0.97), while every other pairing scores 0.51-0.75 against the 0.8 cutoff. Replacing a template with
+# its 1.1x copy loses the size it matched as is. At 1.1x `special_flash_luosi` scored no higher than 0.67 on any of 850
+# frames in `captures/`.
+EXTRA_SIZES = {
     "special_flash_luosi": 1.1,
     "special_flash_luosi2": 1.1,
 }
@@ -90,16 +91,27 @@ def resolve(found, feature_name, task, region):
     return fallback
 
 
-def resize(feature_name, feature):
-    """Resize a template the Global client draws at another size, as ok-script loads it.
+def find_at_any_size(find, get_feature, feature_name, **kwargs):
+    """Search for a template at its own size, then at the other size the Global client draws it if that found nothing.
 
     Args:
-        feature_name: The template's name in `coco_annotations.json`.
-        feature: The loaded `Feature`, whose `mat` is replaced in place.
+        find: Upstream's `find_feature`, taking a template name and its keyword arguments.
+        get_feature: Looks up a loaded `Feature` by name, for the template to resize.
+        feature_name: The template, or list of templates, the caller searched for.
+        **kwargs: The caller's own search arguments, passed through unchanged.
+
+    Returns:
+        The matches at the template's own size when there are any, otherwise those at the other size.
     """
-    factor = RESIZED_TEMPLATES.get(feature_name)
-    if factor:
-        feature.mat = cv2.resize(feature.mat, None, fx=factor, fy=factor, interpolation=cv2.INTER_LINEAR)
+    found = find(feature_name, **kwargs)
+    if found or kwargs.get("template") is not None:
+        return found
+    for name in feature_name if isinstance(feature_name, list) else [feature_name]:
+        factor = EXTRA_SIZES.get(name)
+        if factor:
+            template = cv2.resize(get_feature(name).mat, None, fx=factor, fy=factor, interpolation=cv2.INTER_LINEAR)
+            found = found + find(name, **{**kwargs, "template": template})
+    return found
 
 
 def name_region(task, box, offsets):
@@ -175,7 +187,8 @@ def apply():
     original_find_feature = FindFeature.find_feature
 
     def patched_find_feature(self, feature_name=None, *args, **kwargs):
-        found = original_find_feature(self, feature_name, *args, **kwargs)
+        find = lambda name, **inner: original_find_feature(self, name, *args, **inner)
+        found = find_at_any_size(find, self.get_feature_by_name, feature_name, **kwargs)
         return resolve(found, feature_name, self, kwargs.get("box"))
 
     FindFeature.find_feature = patched_find_feature
