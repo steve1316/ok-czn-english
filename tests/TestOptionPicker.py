@@ -21,6 +21,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from PySide6.QtCore import Qt  # noqa: E402
 from PySide6.QtWidgets import QApplication, QStyle, QWidget  # noqa: E402
+from qfluentwidgets import ToolTipFilter  # noqa: E402
 
 from ok import og  # noqa: E402
 
@@ -168,18 +169,6 @@ class TestOptionPicker(unittest.TestCase):
             with self.subTest(list=name):
                 self.assertEqual(0, view.style().styleHint(QStyle.SH_ToolTip_WakeUpDelay, None, view))
 
-    def test_no_bare_stylesheet_reaches_the_available_tooltips(self):
-        """Qt styles a tooltip from its owner's stylesheets, and upstream's selector-less transparent background drew them see-through."""
-        for name, roster in (("cards", CARDS), ("route nodes", ROUTE_NODES)):
-            dialog, bare = self.open_picker(roster), []
-            widget = dialog._options_container
-            while widget is not dialog:
-                if widget.styleSheet() and "{" not in widget.styleSheet():
-                    bare.append(widget.styleSheet())
-                widget = widget.parentWidget()
-            with self.subTest(roster=name):
-                self.assertEqual([], bare)
-
     def option_row(self, dialog):
         """Find the layout holding the Available and Selected columns.
 
@@ -272,13 +261,14 @@ class TestOptionPicker(unittest.TestCase):
         self.assertIsNone(picker._pending_effects)
 
     def test_a_modifier_shows_its_own_effect_not_the_card_of_the_same_name(self):
-        """Plague and Anxiety are also cards, and a short roster's buttons have no tooltips upstream."""
+        """Plague and Anxiety are also cards, and a short roster's buttons have no tooltips upstream, let alone themed ones."""
         dialog = self.open_from_row(MODIFIER_BLACKLIST, None, MODIFIERS, selected=["Plague"])
         expected = escape(MODIFIER_HELP["Plague"])
         for side, tooltip in (("available", dialog.option_buttons["Plague"].toolTip()), ("selected", dialog.list_widget.item(0).toolTip())):
             with self.subTest(side):
                 self.assertIn(expected, tooltip)
                 self.assertNotIn(escape(DESCRIPTIONS["Plague"].splitlines()[0]), tooltip)
+        self.assertTrue(dialog.option_buttons["Tyrant"].findChildren(ToolTipFilter))
 
     def test_confirm_returns_canonical_values_in_order(self):
         """The config stores the canonical value, so handing back display text would stop OCR matching."""

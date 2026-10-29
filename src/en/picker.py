@@ -12,7 +12,7 @@ from html import escape
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QListWidgetItem, QProxyStyle, QStyle
-from qfluentwidgets import BodyLabel, ListWidget
+from qfluentwidgets import BodyLabel, ListWidget, ToolTipFilter
 
 from ok import Logger, og
 
@@ -33,6 +33,8 @@ ENABLED_FLAGS = Qt.ItemIsEnabled | Qt.ItemIsSelectable
 FALLBACK_THRESHOLD = 20
 # The dialog's two option columns, Available and Selected.
 COLUMN_COUNT = 2
+# The hover delay qfluentwidgets gives its own list rows, so the button grid's tooltips arrive as quickly.
+LIST_TOOLTIP_DELAY_MS = 100
 # Settings whose options are not cards, keyed to their own effect text. A modifier named Plague is not the card Plague.
 OPTION_EFFECTS = {MODIFIER_BLACKLIST: MODIFIER_HELP}
 
@@ -131,25 +133,6 @@ def balance_dialog_columns(dialog):
             for column in range(COLUMN_COUNT):
                 row.setStretch(column, 1)
             return
-
-
-def keep_tooltips_opaque(dialog):
-    """Scope upstream's selector-less stylesheets in the Available column to their own widgets.
-
-    Qt styles a tooltip from its owner's stylesheets, so the bare `background-color: transparent;` on that column's scroll area
-    and grid made every tooltip under them transparent, unlike the Selected column's. Scoped, the rule no longer reaches them.
-
-    Args:
-        dialog: The `ModifyListDialog` being set up, with its Available column already in place.
-    """
-    widget = getattr(dialog, "_options_container", None)
-    while widget is not None and widget is not dialog:
-        sheet = widget.styleSheet()
-        if sheet and "{" not in sheet:
-            name = widget.objectName() or "availableOptions"
-            widget.setObjectName(name)
-            widget.setStyleSheet(f"#{name} {{ {sheet} }}")
-        widget = widget.parentWidget()
 
 
 def use_instant_tooltips(view):
@@ -258,10 +241,11 @@ def apply():
         if not virtualized(self):
             widget = original_create(self)
             # A short grid only gets tooltips from a setting's own effects. Route Priority's node names are not cards.
+            # The filter draws the themed tooltip the lists use, where a bare `setToolTip` would get Qt's unthemed one.
             if self.option_effects:
                 for option, button in self.option_buttons.items():
                     button.setToolTip(tooltip_for(option, og.app.tr(option), self.option_effects))
-                    use_instant_tooltips(button)
+                    button.installEventFilter(ToolTipFilter(button, LIST_TOOLTIP_DELAY_MS))
                 use_instant_tooltips(self.list_widget)
             return widget
         if self.option_effects is None:
@@ -301,7 +285,6 @@ def apply():
         # Every dialog with a roster gets it, not only the virtualized ones, so the shape stays consistent.
         if self.options_available is not None:
             balance_dialog_columns(self)
-            keep_tooltips_opaque(self)
 
     dialog_class._create_available_options_widget = patched_create
     dialog_class.update_option_buttons = patched_update
