@@ -16,7 +16,9 @@ import numpy as np
 from ok import Logger
 
 from src.en import board, cards, ego, kits, tested
+from src.en.game_battle import CARD_TARGET
 from src.en.handlers import StandIn, insert_before, loaded, register, replace, standing_in
+from src.en.kits.kit import base_name
 from src.en.overrides import SMART_CARD_PLAY
 from src.en.quality import fold, one_edit_apart
 from src.en.screen import centre_of, colour_share, frame_of, in_region, patch_of, text_in_region
@@ -43,6 +45,15 @@ AFTER_CONFIRM = 2
 # The key that ends a turn, as upstream sends it.
 END_TURN_KEY = "e"
 CONFIRM_KEY = "enter"
+# The key that moves a raised attack card's reticle to the next enemy. Clicking an enemy does not, and an enemy with Taunt holds it.
+TAB_KEY = "tab"
+AFTER_TAB = 0.5
+# The data's targets for a card that hits one enemy the player picks, which a TAB can move.
+AIMED = frozenset({"TARGET_SELECTED_MONSTER", "TARGET_SELECTED_WITH_SPLASH", "TARGET_SELECTED_MONSTER_AUTO_RANDOM"})
+# How far a reticle can sit from its enemy's HP number, against 0.002 in both captures. Enemies stand at least 0.1 apart.
+RETICLE_SLACK = 0.03
+# TAB presses for one card, more than a lap of the 4 enemies a fight has shown, so a ring misread every frame cannot hold the card up.
+MAX_TABS = 5
 # Upstream's template for the Attack button a fight entered from an event opens on, and the box Chaos looks for it in.
 # It scores 0.997 on the Global client's button and at most 0.41 on the 711 other captures.
 START_ATTACK = "start_attack_event"
@@ -445,11 +456,9 @@ class Turn:
         self.invulnerable = False
         # The fewest enemies a frame of this turn has shown, from `board.enemy_counters`. 0 until a frame shows one.
         self.enemies = 0
-        # Whether this turn has tapped the boss's HP bar, from `aim_at_boss`.
-        self.aimed = False
 
 
-def play_key(task, key):
+def play_key(task, key, name=None):
     """Play the card on a key, with upstream's own timings so both paths feel the same to the game.
 
     The game answers the key itself with its "Not enough AP." toast, so a card it refuses is left there rather than confirmed and waited on.
@@ -457,17 +466,44 @@ def play_key(task, key):
     Args:
         task: The running task.
         key: The hotkey of the card to play.
+        name: The card's canonical name, so one that hits a picked enemy is aimed at the boss. None for a key pressed blind.
 
     Returns:
         False when the game refused the card for want of Action Points, True when it was confirmed.
     """
+    # Read before the key, while `all_texts` still holds the HP numbers of the frame the card was chosen on.
+    boss = board.boss_x(task) if name and CARD_TARGET.get(base_name(name)) in AIMED else None
     task.send_key(key)
     if toast_within(task, AFTER_KEY):
         # Waited out, since the next frame would read a toast still up as a spent turn.
         toast_within(task, TOAST_FADE, up=False)
         return False
+    if boss is not None:
+        aim(task, boss)
     confirm(task)
     return True
+
+
+def aim(task, boss):
+    """Press TAB until a raised card's reticle sits over the boss, so it is not spent on minions the boss summons again each turn.
+
+    Args:
+        task: The running task, with an aimed card raised.
+        boss: The x of the boss's HP number, from `board.boss_x`.
+    """
+    seen = []
+    for _ in range(MAX_TABS):
+        on = board.reticle_x(frame_of(task))
+        if on is None or abs(on - boss) <= RETICLE_SLACK:
+            return
+        if any(abs(on - was) <= RETICLE_SLACK for was in seen):
+            # A Taunt holds the reticle where it is, and a full lap means the boss was never one of the stops.
+            task.log_info(f"TAB did not bring the reticle to the boss at {boss:.3f}, so the card goes to the enemy at {on:.3f}")
+            return
+        seen.append(on)
+        task.log_info(f"the reticle is on the enemy at {on:.3f}, pressing TAB to move it to the boss at {boss:.3f}")
+        task.send_key(TAB_KEY)
+        task.sleep(AFTER_TAB)
 
 
 def toast_within(task, seconds, up=True):
@@ -775,31 +811,6 @@ def note_hand_read(task, utils_sortie):
     elif getattr(task, UNREAD_HAND, None) is None:
         setattr(task, UNREAD_HAND, 0)
     return count
-
-
-def aim_at_boss(task, utils_sortie, turn):
-    """Make the boss the target before the turn's first card, while it has minions out.
-
-    Live, a fight was lost attacking minions the boss summoned again every turn.
-
-    Args:
-        task: The running task, on a battle screen.
-        utils_sortie: Upstream's Sortie module, for its `_move_and_click`.
-        turn: The battle's `Turn`, which notes the tap so it is made once a turn.
-
-    Returns:
-        True when this frame was spent tapping the boss.
-    """
-    if turn.aimed or turn.played or turn.attempted:
-        return False
-    point = board.target_point(task)
-    if point is None:
-        return False
-    turn.aimed = True
-    task.log_info(f"the boss has minions out, so its HP bar at ({point[0]:.3f}, {point[1]:.3f}) is tapped to target it")
-    utils_sortie._move_and_click(task, *point)
-    task.sleep(1)
-    return True
 
 
 def watch_invulnerable(task, turn):
@@ -1395,7 +1406,7 @@ def install():
         turn.attempted_copies = names.count(name)
         turn.draws_at_press = draws_shown(task)
         tested.played(name)
-        if not play_key(task, card["key"]):
+        if not play_key(task, card["key"], name):
             # Live, each unaffordable key waited out its Enter, a few seconds a card. The toast already says it stays in hand.
             task.log_info(f"not enough AP for {name}, moving on")
             turn.refused.add(name)
@@ -1436,7 +1447,7 @@ def install():
                 setattr(task, TEAM_WANTED, False)
                 return True
             watch_invulnerable(task, turn)
-            if aim_at_boss(task, utils_sortie, turn) or ego.take_turn(task, utils_sortie, turn):
+            if ego.take_turn(task, utils_sortie, turn):
                 return True
             # Upstream ends the turn on a blank read, and the game did not warn. Live, Flower of Devoured Fate's discard closed with
             # Last-Ditch Assault and its 5 bullets still lowered, and the turn ended on 2 points.

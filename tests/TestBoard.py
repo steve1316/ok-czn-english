@@ -40,6 +40,8 @@ STATUSES_AT = (1270, 190)
 # A boss with two summoned minions, their HP numbers where OCR reads them, and a magenta tentacle that passes for a counter.
 SUMMONED_AT = (820, 80)
 SUMMONED_HEALTH = (("1179", 0.725, 0.108), ("253", 0.535, 0.444), ("206", 0.910, 0.444))
+# A raised attack card's reticle in each of its two colours, cut with the enemy behind it, and the x of that enemy's HP number.
+RETICLES = (("reticle_white", (894, 395), 0.522), ("reticle_cyan", (1128, 402), 0.642))
 # The two Weakness badges on the Sortie boss select screen, Shadow Collector's Passion and Cold, Sweet Dream's Void.
 BOSS_BADGES_AT = (820, 785)
 # Upstream's boss entries for that screen, at the points it reads each name from.
@@ -290,7 +292,14 @@ class TestRealEnemies(unittest.TestCase):
         # Live, a fight was lost attacking minions the boss summoned again every turn.
         task = FakeTask(pasted("summoned_minions", *SUMMONED_AT))
         task.all_texts = [FakeBox(text, x, y) for text, x, y in SUMMONED_HEALTH]
-        self.assertEqual((0.725, 0.108 + board.HEALTH_BAR_BELOW), tuple(round(value, 3) for value in board.target_point(task)))
+        self.assertEqual(0.725, round(board.boss_x(task), 3))
+
+    def test_a_reticle_lines_up_with_its_enemys_health(self):
+        for name, at, health in RETICLES:
+            with self.subTest(name):
+                self.assertAlmostEqual(board.reticle_x(pasted(name, *at)), health, delta=0.01)
+        # The same enemies with no card raised.
+        self.assertIsNone(board.reticle_x(pasted("summoned_minions", *SUMMONED_AT)))
 
     def test_a_real_attack_flash_is_not_an_enemy(self):
         # It is the right colour, well over the minimum area and within the squareness band, so the height is

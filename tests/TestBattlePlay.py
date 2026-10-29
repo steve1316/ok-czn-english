@@ -556,6 +556,18 @@ class TestInstalling(unittest.TestCase):
             # Charge Launcher is the better buy, and it is the second card, so key 2 then the confirm.
             self.assertEqual(task.keys, ["2", battle.CONFIRM_KEY])
 
+    def test_an_aimed_card_is_tabbed_onto_the_boss_before_it_is_confirmed(self):
+        # Tapping the boss's HP bar never moved the target. Only TAB moves a raised card's reticle, and an enemy with Taunt holds it.
+        tab, enter = battle.TAB_KEY, battle.CONFIRM_KEY
+        for case, card, rings, keys in (("moved", ATTACK, [0.52, 0.76], ["1", tab, enter]), ("taunt", ATTACK, [0.52, 0.52], ["1", tab, enter]),
+                                        ("no target", SHIELD, [0.52, 0.76], ["1", enter])):
+            reads = iter(rings)
+            with self.subTest(case), upstream(hand(card)) as (utils_sortie, task), \
+                    standing_in(board, boss_x=lambda _: 0.76, reticle_x=lambda _: next(reads)):
+                battle.install()
+                utils_sortie._try_all_card_keys(task, 1)
+                self.assertEqual(task.keys, keys)
+
     def test_a_hand_of_curses_ends_the_turn(self):
         with upstream(hand(AILMENT)) as (utils_sortie, task):
             battle.install()

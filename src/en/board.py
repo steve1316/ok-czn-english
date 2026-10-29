@@ -126,8 +126,13 @@ STATUS_ROW = (0.01, 0.005, 0.17, 0.07)
 # Where an enemy's HP number sits, as offsets from its counter's centre. A counter with no number there is scenery in the same magenta.
 HEALTH_NUMBER = (0.03, -0.05, 0.12, 0.0)
 HEALTH_DIGITS = re.compile(r"^\d+$")
-# How far below its HP number to tap an enemy's HP bar, which makes it the target for the rest of the fight.
-HEALTH_BAR_BELOW = 0.015
+# Where the ring a raised attack card puts over its target can be centred. Below it, the raised card's own art can hold a ring of the same size.
+RETICLE_BAND = (0.30, 0.25, 1.00, 0.60)
+# The ring's radius as a share of the frame height, 74 to 77px at 1080p in both captures, white or cyan by who plays the card.
+RETICLE_RADIUS = (0.059, 0.078)
+# Canny's upper edge threshold and the accumulator votes a ring needs. Across 847 captures the rings found were real ones or scenery.
+RETICLE_EDGES = 120
+RETICLE_VOTES = 40
 
 
 def box_around(centre_x, centre_y, half):
@@ -455,14 +460,14 @@ def weakness(task):
     return seen.pop() if len(seen) == 1 else None
 
 
-def target_point(task):
-    """Find the HP bar to tap so the fight's attacks go to the boss rather than to the minions it summons again each turn.
+def boss_x(task):
+    """Find where the boss stands, so attacks go to it rather than to the minions it summons again each turn.
 
     Args:
         task: The running task, whose `all_texts` holds each enemy's HP number.
 
     Returns:
-        The `(x, y)` of the one enemy on screen not marked as summoned, or None unless at least one is and exactly one is not.
+        The x of the HP number of the one enemy on screen not marked as summoned, or None unless at least one is and exactly one is not.
     """
     frame = frame_of(task)
     height = frame.shape[0] if frame is not None else 0
@@ -477,6 +482,26 @@ def target_point(task):
         if any(icon_match(row, path, height) >= SUMMONED_MATCH for path in SUMMONED_IMAGES):
             summoned += 1
         else:
-            number_x, number_y = centre_of(number, task.width, task.height)
-            unsummoned.append((number_x, number_y + HEALTH_BAR_BELOW))
+            unsummoned.append(centre_of(number, task.width, task.height)[0])
     return unsummoned[0] if summoned and len(unsummoned) == 1 else None
+
+
+def reticle_x(frame):
+    """Find which enemy a raised attack card is aimed at, by the ring it puts over that enemy's body.
+
+    Args:
+        frame: The frame to read, taken after the card's key was pressed.
+
+    Returns:
+        The ring's x, which lines up with its enemy's HP number. None for no ring, or several, as an all-enemy card or scenery draws.
+    """
+    patch = patch_of(frame, RETICLE_BAND)
+    if patch is None or patch.size == 0:
+        return None
+    height, width = frame.shape[:2]
+    grey = cv2.medianBlur(cv2.cvtColor(patch, cv2.COLOR_BGR2GRAY), 3)
+    rings = cv2.HoughCircles(grey, cv2.HOUGH_GRADIENT, dp=1, minDist=height * RETICLE_RADIUS[1], param1=RETICLE_EDGES, param2=RETICLE_VOTES,
+                             minRadius=round(height * RETICLE_RADIUS[0]), maxRadius=round(height * RETICLE_RADIUS[1]))
+    if rings is None or len(rings[0]) != 1:
+        return None
+    return RETICLE_BAND[0] + float(rings[0][0][0]) / width
