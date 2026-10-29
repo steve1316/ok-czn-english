@@ -344,6 +344,15 @@ class TestReshape(unittest.TestCase):
                 self.assertIn(key, declared)
                 self.assertEqual(value, reshaped({key: None}).default_config[key])
 
+    def test_number_ranges_are_still_declared_upstream(self):
+        """A renamed key would put back ok-script's floor of 1 - the save threshold could no longer reach 0 to keep every save."""
+        declared = mode_setting_keys()
+        for key, bounds in overrides.NUMBER_RANGES.items():
+            with self.subTest(key=key):
+                self.assertIn(key, declared)
+                self.assertEqual(bounds, reshaped({key: 1}).config_type[key])
+        self.assertEqual(0, overrides.NUMBER_RANGES["保留大于多少TB的存档"]["min"])
+
     def test_route_priority_keeps_its_canonical_values(self):
         """Route values are internal labels built from template feature names, never text read off the screen.
 

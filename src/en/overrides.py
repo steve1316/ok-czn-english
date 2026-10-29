@@ -78,8 +78,9 @@ SINGLE_CHOICE = {
 # upstream switches it off once the Loot Certification Cards run out.
 NEVER_PAY = -1
 FORCED_DEFAULTS = {"进入商店": True, PAID_THRESHOLD: NEVER_PAY, "领取奖励(只使用验证卡)": True}
-# Number settings whose range the fork pins. ok-script opens a negative default's range to -999999.
-NUMBER_RANGES = {PAID_THRESHOLD: {"min": NEVER_PAY}}
+# Number settings whose range the fork pins. ok-script opens a negative default's range to -999999 and floors a positive
+# one at 1, which would stop the save threshold reaching its keep-everything 0.
+NUMBER_RANGES = {PAID_THRESHOLD: {"min": NEVER_PAY}, "保留大于多少TB的存档": {"min": 0}}
 # Free-text settings whose Chinese default cannot carry over. Cleared so the user fills them from what the
 # client actually shows, rather than inheriting a value that can never match.
 CLEARED_TEXT = ["指定面具卡牌", "面具卡牌刻印", "指定记忆卡牌", "刷初始卡牌"]
