@@ -23,10 +23,12 @@ logger = Logger.get_logger(__name__)
 TEXT_TEMPLATES = {
     "leveltag": ("LEVEL", "等级"),
 }
-# Each template the Global client draws at another size, and the factor it is resized by. `special_flash_luosi2`, the
-# Epiphany icon over a combatant at camp, scored 0.71-0.72 against the 0.8 cutoff on four camp frames and 0.96-0.97 at
-# 1.1x, while no other frame of the same run passed 0.60.
+# Each template the Global client draws at another size, and the factor it is resized by. The camp's Epiphany icon comes
+# in two sizes, and `handle_rest` tries both templates: the larger icon scores 0.72 on `special_flash_luosi2` against the
+# 0.8 cutoff and 0.97 at 1.1x, the smaller 0.69 on `special_flash_luosi` and 0.95 at 1.1x. At 1.1x the smaller icon's
+# template scored no higher than 0.67 on any of 850 frames in `captures/`.
 RESIZED_TEMPLATES = {
+    "special_flash_luosi": 1.1,
     "special_flash_luosi2": 1.1,
 }
 

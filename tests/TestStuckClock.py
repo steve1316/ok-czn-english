@@ -22,7 +22,7 @@ sys.path.insert(0, str(REPO_ROOT / "ok_tasks"))
 
 import utils  # noqa: E402
 
-from src.en import notify, rest, stuck  # noqa: E402
+from src.en import notify, obtain, rest, stuck  # noqa: E402
 from tests.fakes import FakeBox  # noqa: E402
 
 # Small enough to keep the detector's resize and diff cheap, large enough to survive dividing by four.
@@ -308,6 +308,27 @@ class TestOfferedInteraction(unittest.TestCase):
                 except RuntimeError:
                     pass
                 self.assertIs(False, task.node_status[rest.FLAG])
+
+
+class TestQuickObtain(unittest.TestCase):
+    """Each Obtain tap sat through two seconds of waiting before the next reward could be claimed."""
+
+    def test_upstreams_obtain_tap_waits_no_longer_than_settle(self):
+        # Upstream's own handler, so a rename or a wait that stops going through `task.sleep` fails here.
+        waits, clicks = [], []
+        task = SimpleNamespace(width=1920, height=1080, all_texts=[FakeBox("获得", 0.924, 0.922)], log_info=lambda message: None)
+        task.sleep = waits.append
+
+        def click_box(box, after_sleep=1):
+            # ok-script's click waits through `task.sleep`, so the stand-in has to reach it the same way.
+            clicks.append(box.name)
+            task.sleep(after_sleep)
+
+        task.click_box = click_box
+        self.assertTrue(obtain.quick(utils.handle_obtain_reward)(task))
+        self.assertEqual(["获得"], clicks)
+        self.assertTrue(waits)
+        self.assertLessEqual(max(waits), obtain.SETTLE)
 
 
 if __name__ == "__main__":
