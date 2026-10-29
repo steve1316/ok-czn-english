@@ -88,7 +88,7 @@ class Khalipe(Kit):
         Returns:
             The card's place in the turn.
         """
-        if base_name(name) == AQUILA and any(base_name(other) == EJECTION for other in board.hand):
+        if base_name(name) == AQUILA and count(board.hand, {EJECTION}):
             return PHASE_ATTACK - 0.5
         return super().phase(name, board, base)
 

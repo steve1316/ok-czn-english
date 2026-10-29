@@ -4,7 +4,7 @@ Oni Hunt and Tsukuyomi buffs build until a Shadow of the Moon uses them, and Sha
 The generic picker plays Shadow at once as her best attack, and Tsukuyomi first, so the wisps land on whichever attack goes first.
 """
 
-from src.en.kits.kit import PHASE_ATTACK, PHASE_PRIME, PHASE_SPENDS_EVERYTHING, Kit, base_name, owned
+from src.en.kits.kit import PHASE_ATTACK, PHASE_PRIME, PHASE_SPENDS_EVERYTHING, Kit, base_name, count, owned
 
 # Both spellings of the card, as the client shows it before and after its bind reaches three.
 SHADOWS = frozenset({"Shadow of the Moon", "Shadow of the Moon+"})
@@ -34,7 +34,7 @@ class Chizuru(Kit):
         Returns:
             True for a Shadow of the Moon with buffs left to play.
         """
-        return base_name(name) in SHADOWS and any(base_name(card) in BUFFS for card in board.hand)
+        return base_name(name) in SHADOWS and count(board.hand, BUFFS) > 0
 
     def phase(self, name, board, base):
         """Put Tsukuyomi right before Oni Hunt, so the wisps count its hits.
@@ -47,7 +47,7 @@ class Chizuru(Kit):
         Returns:
             The card's place in the turn.
         """
-        if base_name(name) == TSUKUYOMI and any(base_name(card) == ONI_HUNT for card in board.hand):
+        if base_name(name) == TSUKUYOMI and count(board.hand, {ONI_HUNT}):
             return PHASE_PRIME - 0.5
         return super().phase(name, board, base)
 

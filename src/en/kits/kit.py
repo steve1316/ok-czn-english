@@ -3,7 +3,7 @@
 import re
 from functools import lru_cache
 
-from src.en.game_battle import CARD_OWNER
+from src.en.game_battle import CARD_CATEGORY, CARD_OWNER
 from src.en.game_text import DESCRIPTIONS
 
 # A line the generator marks as firing when the card is kept in hand at the end of the turn, captured without its prefix.
@@ -55,6 +55,20 @@ def count(names, group):
         How many are in `group`, in any Epiphany.
     """
     return sum(base_name(name) in group for name in names)
+
+
+def borrowed(card, category, own):
+    """Say whether a card of one category belongs to another combatant.
+
+    Args:
+        card: A card's base name.
+        category: The data's category to match, such as `ATTACK_CATEGORY`.
+        own: The name of the kit's own combatant.
+
+    Returns:
+        True for another combatant's card of that category. A neutral card has no owner, so it never counts.
+    """
+    return CARD_CATEGORY.get(card) == category and CARD_OWNER.get(card) not in (None, own)
 
 
 def text(name, board):

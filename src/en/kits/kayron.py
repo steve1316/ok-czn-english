@@ -5,7 +5,7 @@ first, so it lands before the exhausts that would have powered it.
 """
 
 from src.en.game_battle import CARD_COST
-from src.en.kits.kit import Kit, base_name, owned
+from src.en.kits.kit import Kit, base_name, count, owned
 
 # Cards that exhaust when played, or create Futility to be exhausted, so they all go before Black Hole.
 EXHAUSTERS = frozenset({"Futility", "Echo of Futility", "Echoes of True Abyss"})
@@ -36,7 +36,7 @@ class Kayron(Kit):
             True for a plain Black Hole with exhausting still to do.
         """
         # Black Hole with an Epiphany can be a mid-combo card instead, so only the plain one waits.
-        return name == BLACK_HOLE and any(base_name(other) in EXHAUSTERS for other in board.hand)
+        return name == BLACK_HOLE and count(board.hand, EXHAUSTERS) > 0
 
     def worth(self, name, board, base, rate):
         """Cut a Futility's value when no card of Kayron's in hand follows up on its exhaust, or when another card can take the last point.

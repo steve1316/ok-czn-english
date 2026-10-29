@@ -4,7 +4,7 @@ Wind Charge adds a hit to the next Attack Owen plays, and Wind Riding returns a 
 prices Wind Charge's hit at a flat 100 and values Wind Riding as a plain shield.
 """
 
-from src.en.kits.kit import PHASE_PRIME, Kit, base_name, owned
+from src.en.kits.kit import PHASE_PRIME, Kit, base_name, count, owned
 
 CHARGE = "Wind Charge"
 RIDING = "Wind Riding"
@@ -52,7 +52,7 @@ class Owen(Kit):
         if card == CHARGE and (aim := target(board.hand)):
             return rate(aim)
         # Only a Wind Charge from an earlier turn is in the discard pile for it to fetch, per im_Tsu and Adachi.
-        if card == RIDING and any(base_name(played) == CHARGE for played in board.last_turn):
+        if card == RIDING and count(board.last_turn, {CHARGE}):
             return base + rate(CHARGE)
         return base
 

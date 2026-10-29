@@ -4,7 +4,7 @@ Quantum Seed creates Archetype cards, Dual Creation copies each pair as they are
 The generic picker plays Quantum Seed before Dual Creation, and Form Convergence on a deck that holds no Archetype to draw.
 """
 
-from src.en.kits.kit import PHASE_FREE, Kit, base_name, owned
+from src.en.kits.kit import PHASE_FREE, Kit, base_name, count, owned
 
 SEED = "Quantum Seed"
 # The cards that draw Archetypes: Form Convergence, and the square one the Seed makes.
@@ -31,7 +31,7 @@ class Tiphera(Kit):
         """
         if base_name(name) not in DRAWERS:
             return False
-        return not any(base_name(played) == SEED for played in board.battle)
+        return not count(board.battle, {SEED})
 
 
 KIT = Tiphera()

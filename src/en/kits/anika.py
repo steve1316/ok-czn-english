@@ -4,7 +4,7 @@ Warming Up cuts the cost of only the next Anika card, and Reloading is a Finale 
 The generic picker plays the free Reloading first, Warming Up with no big attack to discount, and Rampage Trigger as a plain 100% hit.
 """
 
-from src.en.kits.kit import PHASE_ATTACK, PHASE_SPENDS_EVERYTHING, Kit, base_name, owned
+from src.en.kits.kit import PHASE_ATTACK, PHASE_SPENDS_EVERYTHING, Kit, base_name, count, owned
 
 RELOADING = "Reloading"
 WARMING = "Warming Up"
@@ -35,7 +35,7 @@ class Anika(Kit):
         Returns:
             True for a Warming Up with nothing to discount.
         """
-        return base_name(name) == WARMING and not any(base_name(card) in BIG_ATTACKS for card in board.hand)
+        return base_name(name) == WARMING and not count(board.hand, BIG_ATTACKS)
 
     def phase(self, name, board, base):
         """Put Warming Up right before the first big attack.
@@ -50,7 +50,7 @@ class Anika(Kit):
         """
         if base_name(name) == WARMING:
             # Ignition Slash leads when it is in hand, else the discount waits for Rampage Trigger.
-            slash = any(base_name(card) == IGNITION for card in board.hand)
+            slash = count(board.hand, {IGNITION}) > 0
             return PHASE_ATTACK - 0.5 if slash else PHASE_ATTACK + 0.25
         return super().phase(name, board, base)
 

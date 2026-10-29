@@ -14,6 +14,7 @@ from src.en.equipment import EMPTY_TIER
 from src.en.game_quality import COMBATANT_ROLE
 from src.en.handlers import insert_before, loaded, register, wrap
 from src.en.rewards import show_team
+from src.en.screen import centre_of, in_region
 
 logger = Logger.get_logger(__name__)
 
@@ -122,16 +123,11 @@ def badges(task):
     Returns:
         A list of `(centre_x, role)` pairs.
     """
-    left, top, right, bottom = CARD_REGION
     found = []
     for box in task.all_texts or []:
         role = role_of(box.name)
-        if role is None:
-            continue
-        center_x = (box.x + box.width / 2) / task.width
-        center_y = (box.y + box.height / 2) / task.height
-        if left <= center_x <= right and top <= center_y <= bottom:
-            found.append((center_x, role))
+        if role is not None and in_region(box, CARD_REGION, task.width, task.height):
+            found.append((centre_of(box, task.width, task.height)[0], role))
     return found
 
 
@@ -163,8 +159,7 @@ def rerollable(task, slot):
     if slot.get("refresh_y") is None:
         return False
     for box in task.all_texts or []:
-        center_x = (box.x + box.width / 2) / task.width
-        center_y = (box.y + box.height / 2) / task.height
+        center_x, center_y = centre_of(box, task.width, task.height)
         if abs(center_x - slot["x"]) <= SAME_CARD and abs(center_y - slot["refresh_y"]) <= 0.03:
             if box.name.strip().startswith(SPENT_REROLL):
                 return False
@@ -208,13 +203,8 @@ def picked(task, offered):
         return False
     if drafted in [name for name, _ in offered]:
         return True
-    left, top, right, bottom = CARD_REGION
-    for box in task.all_texts or []:
-        center_x = (box.x + box.width / 2) / task.width
-        center_y = (box.y + box.height / 2) / task.height
-        if left <= center_x <= right and top <= center_y <= bottom and quality.COMBATANT_INDEX.look_up(box.name) == drafted:
-            return True
-    return False
+    return any(in_region(box, CARD_REGION, task.width, task.height) and quality.COMBATANT_INDEX.look_up(box.name) == drafted
+               for box in task.all_texts or [])
 
 
 def confirming_our_pick(confirm, utils, utils_sortie):

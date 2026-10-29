@@ -4,7 +4,7 @@ Hovering Metal and Metal Extraction give Metalization, each Shield she gains the
 The generic picker plays the generators and Iron Skin in value order after the attacks, and rates Steel Barrier below Rapier.
 """
 
-from src.en.kits.kit import PHASE_SETUP, PHASE_SPENDS_EVERYTHING, Kit, base_name, owned
+from src.en.kits.kit import PHASE_SETUP, PHASE_SPENDS_EVERYTHING, Kit, base_name, count, owned
 
 # The cards that give Metalization stacks, so they go ahead of anything that shields or spends.
 GENERATORS = frozenset({"Hovering Metal", "Metal Extraction"})
@@ -36,7 +36,7 @@ class Amir(Kit):
         Returns:
             The value to plan with.
         """
-        if base_name(name) == BARRIER and any(base_name(played) == FMH for played in board.played):
+        if base_name(name) == BARRIER and count(board.played, {FMH}):
             return base + SHIELD_HIT
         return base
 

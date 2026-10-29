@@ -6,8 +6,8 @@ The generic picker knows none of this, so it plays Black Dance before the stance
 
 import re
 
-from src.en.game_battle import CARD_CATEGORY, CARD_OWNER
-from src.en.kits.kit import ATTACK_CATEGORY, PHASE_ATTACK, PHASE_FREE, PHASE_PRIME, SKILL_CATEGORY, Kit, base_name, count, owned, text
+from src.en.game_battle import CARD_CATEGORY
+from src.en.kits.kit import ATTACK_CATEGORY, PHASE_ATTACK, PHASE_FREE, PHASE_PRIME, SKILL_CATEGORY, Kit, base_name, borrowed, count, owned, text
 
 BLACK_DANCE = "Dark Mist Secret Art: Black Dance"
 INNER_ART = "Dark Mist Inner Art"
@@ -53,7 +53,7 @@ class Rin(Kit):
         for card in board.played:
             if self.gains(card, board):
                 up = True
-            elif CARD_CATEGORY.get(base_name(card)) == ATTACK_CATEGORY and CARD_OWNER.get(base_name(card)) not in (None, self.name):
+            elif borrowed(base_name(card), ATTACK_CATEGORY, self.name):
                 up = False
         return up
 
@@ -120,7 +120,7 @@ class Rin(Kit):
             return PHASE_FREE + 0.5
         if coming and count(board.hand, {BLACK_DANCE}) and card != BLACK_DANCE and self.counted(name, board):
             return PHASE_ATTACK + 0.5
-        if base == PHASE_ATTACK and CARD_CATEGORY.get(card) == ATTACK_CATEGORY and CARD_OWNER.get(card) not in (None, self.name):
+        if base == PHASE_ATTACK and borrowed(card, ATTACK_CATEGORY, self.name):
             return PHASE_ATTACK + 0.75
         return super().phase(name, board, base)
 

@@ -118,12 +118,12 @@ def team_of(task):
     return getattr(task, TEAM, set())
 
 
-def party_cards(names, party):
-    """Pick out the cards on screen that belong to someone on the team.
+def picked(names, keep):
+    """Pick out the cards on screen that `keep` accepts.
 
     Args:
         names: Candidate names as read off the screen.
-        party: Names of the combatants on the team, from `battle.PARTY`.
+        keep: Takes a canonical card name and says whether it is wanted.
 
     Returns:
         The canonical names, in screen order, each appearing once.
@@ -131,43 +131,7 @@ def party_cards(names, party):
     found = []
     for name in names:
         card = quality.CARD_INDEX.look_up(name)
-        if card and cards.owner(card) in party and card not in found:
-            found.append(card)
-    return found
-
-
-def held_help(names, classes):
-    """Pick out the cards on screen that help just by being held, such as Unknown: Mutant Sample, which are worth having at any grade.
-
-    Args:
-        names: Candidate names as read off the screen.
-        classes: The team's classes, used to skip cards nobody could hold.
-
-    Returns:
-        The canonical names, in screen order, each appearing once.
-    """
-    found = []
-    for name in names:
-        card = quality.CARD_INDEX.look_up(name)
-        if card and cards.helps_held(card) and quality.usable_by(card, classes) and card not in found:
-            found.append(card)
-    return found
-
-
-def upgrades(names, classes):
-    """Pick out the Upgrade cards on screen, which are played once and then keep working for the rest of the fight.
-
-    Args:
-        names: Candidate names as read off the screen.
-        classes: The team's classes, used to skip cards nobody could hold.
-
-    Returns:
-        The canonical names, in screen order, each appearing once.
-    """
-    found = []
-    for name in names:
-        card = quality.CARD_INDEX.look_up(name)
-        if card and cards.category(card) == cards.SETUP_CATEGORY and quality.usable_by(card, classes) and card not in found:
+        if card and keep(card) and card not in found:
             found.append(card)
     return found
 
@@ -236,9 +200,12 @@ def generated_list(task, key, farmed="", free=False):
     if card_list:
         taken = quality.worth_taking(names, classes)
         if free:
-            taken += [card for card in held_help(names, classes) + party_cards(names, getattr(task, PARTY, frozenset())) if card not in taken]
+            party = getattr(task, PARTY, frozenset())
+            # Cards that help just by being held, such as Unknown: Mutant Sample, are worth having at any grade.
+            held = picked(names, lambda card: cards.helps_held(card) and quality.usable_by(card, classes))
+            taken += [card for card in held + picked(names, lambda card: cards.owner(card) in party) if card not in taken]
             # A free Upgrade such as Mutation: Iron Wall still beats skipping the reward.
-            taken = taken or upgrades(names, classes)
+            taken = taken or picked(names, lambda card: cards.category(card) == cards.SETUP_CATEGORY and quality.usable_by(card, classes))
         # A card the deck already holds adds less than one it lacks, so it goes after every card the deck lacks, at any grade.
         return sorted(taken, key=lambda card: card in cards.DECK)
     # Ordered by who is going to wear it. Rarity still decides, so this only separates pieces that were

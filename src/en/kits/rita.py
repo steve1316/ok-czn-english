@@ -31,7 +31,7 @@ def archon_waiting(board):
     Returns:
         True while the battle's Chronicle has yet to start.
     """
-    return any(base_name(card) == CHRONO_ARCHON for card in board.hand) and not any(base_name(card) == CHRONO_ARCHON for card in board.battle)
+    return count(board.hand, {CHRONO_ARCHON}) > 0 and not count(board.battle, {CHRONO_ARCHON})
 
 
 class Rita(Kit):

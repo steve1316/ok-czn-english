@@ -4,7 +4,7 @@ Call & Response counts as a Rhythm while it sits in hand, Encore only procs a Rh
 played Rhythm. The generic picker plays Call & Response and Spotlight early and Encore at random, so all three lose their bonus.
 """
 
-from src.en.kits.kit import PHASE_ATTACK, PHASE_ESCAPE, Kit, base_name, owned
+from src.en.kits.kit import PHASE_ATTACK, PHASE_ESCAPE, Kit, base_name, count, owned
 
 CALL = "Call & Response"
 ENCORE = "Encore"
@@ -54,7 +54,7 @@ class Tenebria(Kit):
             # With no Rhythm in hand there is nothing to wait for, and Spotlight fetches one.
             return bool(rhythms(board.hand)) and not rhythms(board.played)
         if card == ENCORE:
-            coming = rhythms(board.hand) or any(base_name(other) in FETCHERS for other in board.hand)
+            coming = rhythms(board.hand) or count(board.hand, FETCHERS) > 0
             return bool(coming) and not rhythms(board.played[-1:])
         return False
 

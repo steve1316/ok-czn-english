@@ -4,7 +4,7 @@ Playing one Linked card discards the other Linked cards in hand, which fires the
 buys Linked cards one by one, plays Expansion after the attacks, and plays the useless Effulgent Compression and Release first.
 """
 
-from src.en.kits.kit import PHASE_ATTACK, PHASE_SETUP, PHASE_SPENDS_EVERYTHING, Kit, base_name, owned
+from src.en.kits.kit import PHASE_ATTACK, PHASE_SETUP, PHASE_SPENDS_EVERYTHING, Kit, base_name, count, owned
 
 # Cards that are Linked, so playing one discards the rest.
 LINKED = frozenset({"Effulgent Blade", "Sword Rain", "Thread of Light"})
@@ -38,7 +38,7 @@ class Heidemarie(Kit):
         card = base_name(name)
         if card == COMPRESSION:
             return True
-        return card in LINKED and any(base_name(played) in LINKED for played in board.played)
+        return card in LINKED and count(board.played, LINKED) > 0
 
     def phase(self, name, board, base):
         """Play a plain Effulgent Expansion ahead of the attacks, so its Blades are in hand for the chain.

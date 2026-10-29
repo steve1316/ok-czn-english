@@ -9,7 +9,7 @@ only takes cards on the user's list, and skips when none is on offer.
 from ok import Logger
 
 from src.en import cards
-from src.en.handlers import loaded, register, standing_in, wrap
+from src.en.handlers import answering, loaded, register, standing_in, wrap
 
 logger = Logger.get_logger(__name__)
 
@@ -170,13 +170,7 @@ def choosing_ap_copies(choice, utils):
         The wrapped handler.
     """
     def handle_copy_card_choice(task):
-        original = utils._get_config_value
-
-        def answering(task_, key, default):
-            value = original(task_, key, default)
-            return with_ap_cards(value) if key == COPY_LIST else value
-
-        with standing_in(utils, _get_config_value=answering):
+        with answering(utils, COPY_LIST, lambda task_, value: with_ap_cards(value)):
             return choice(task)
 
     return handle_copy_card_choice

@@ -9,6 +9,7 @@ import cv2
 from ok import Logger
 
 from src.en.handlers import loaded, register, standing_in, wrap
+from src.en.screen import centre_of
 
 logger = Logger.get_logger(__name__)
 
@@ -110,8 +111,7 @@ def name_region(task, box, offsets):
     Returns:
         The region as screen fractions, clamped to the frame.
     """
-    center_x = (box.x + box.width / 2) / task.width
-    center_y = (box.y + box.height / 2) / task.height
+    center_x, center_y = centre_of(box, task.width, task.height)
     return (max(0.0, center_x + offsets[0]), max(0.0, center_y + offsets[1]),
             min(1.0, center_x + offsets[2]), min(1.0, center_y + offsets[3]))
 

@@ -327,6 +327,21 @@ def enlarged(image):
     return cv2.resize(image, None, fx=BADGE_ZOOM, fy=BADGE_ZOOM)
 
 
+def read_digit(task, frame, box):
+    """Read the number in a cost badge or a card's cost digit.
+
+    Args:
+        task: The running task, for its OCR.
+        frame: The frame to read, from `frame_of`.
+        box: Where the number sits, in screen fractions.
+
+    Returns:
+        The number, or None when OCR reads no digit.
+    """
+    read = DIGITS.search("".join(text.name for text in task.ocr(*box, frame=frame, frame_processor=enlarged) or []))
+    return None if read is None else int(read.group())
+
+
 def payable(task, frame, tinted, banked):
     """Narrow the slots with a tinted badge to those the bar can pay for.
 
@@ -347,8 +362,8 @@ def payable(task, frame, tinted, banked):
         return keys
     for key in tinted:
         box = board.box_around(board.EGO_BADGE_X, board.EGO_BADGE_Y[key], board.EGO_BADGE_HALF)
-        cost = DIGITS.search("".join(read.name for read in task.ocr(*box, frame=frame, frame_processor=enlarged) or []))
-        if cost is None or int(cost.group()) <= banked:
+        cost = read_digit(task, frame, box)
+        if cost is None or cost <= banked:
             keys.add(key)
     return keys
 

@@ -4,7 +4,7 @@ Descent comes from draws once Formation is out, Blazing War Dance returns an Inf
 Dance scales with the points it is left. The generic picker draws before Formation, fires War Dance first, and spends points ahead of Soulfire.
 """
 
-from src.en.kits.kit import PHASE_FREE, PHASE_SPENDS_EVERYTHING, Kit, base_name, owned
+from src.en.kits.kit import PHASE_FREE, PHASE_SPENDS_EVERYTHING, Kit, base_name, count, owned
 
 # Formation goes before every draw, so the draws gain Descent and Soliloquy cannot discard it.
 FORMATION = "Exorcist\u2019s Formation"
@@ -33,7 +33,7 @@ class Fei(Kit):
         Returns:
             True for a one-point card with Soulfire Dance in hand.
         """
-        return base_name(name) in SMALL_SPENDS and any(base_name(other) == SOULFIRE for other in board.hand)
+        return base_name(name) in SMALL_SPENDS and count(board.hand, {SOULFIRE}) > 0
 
 
 KIT = Fei()

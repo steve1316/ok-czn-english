@@ -397,11 +397,12 @@ class TestKits(unittest.TestCase):
         """Check that each hand plans to exactly the cards expected, in the order expected.
 
         Args:
-            cases: `(description, cards_in_hand, board, expected)` rows, where `expected` is the planned card names in play order.
+            cases: `(description, cards_in_hand, board, expected)` rows, where `expected` is the planned card names in play order. A row
+                without a board plans on a fresh `cards.Board()`.
         """
-        for description, cards_in_hand, board, expected in cases:
+        for description, cards_in_hand, *board, expected in cases:
             with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board)), expected)
+                self.assertEqual(played(cards.plan(hand(*cards_in_hand), board[0] if board else cards.Board())), expected)
 
     def test_rossweisse_keeps_her_shards_for_the_fusion(self):
         """Rossweisse's Shards fire while held and fuse into a free Flicker Blade once they are the only cards left."""
@@ -936,7 +937,7 @@ class TestKits(unittest.TestCase):
         buffs first."""
         swiftie, softie, sturdie = "Swiftie \u2605\u2605\u2605", "Softie \u2605\u2605\u2605", "Sturdie \u2605"
         crowded = ("Slash",) * 5
-        for description, cards_in_hand, expected in (
+        self.plays((
             # Generic play spends a point to make a one-star creature that waiting would have made a three-star one.
             ("Growing Creature is never played", ("Growing Creature", "Attack, My Minions"), ["Attack, My Minions"]),
             # Generic play spends every free creature on sight, where Auto ends its turns holding Swiftie and Softie.
@@ -947,13 +948,11 @@ class TestKits(unittest.TestCase):
             ("Growth Acceleration waits for a creature", ("Growth Acceleration", "Healing of Light"), ["Healing of Light"]),
             # Pins the hold being released by a crowded hand, and generic play takes hand order, so the Swiftie attacks before the buff is up.
             ("Softie goes before Swiftie once the hand is crowded", (swiftie, softie, sturdie, *crowded), [softie, swiftie, sturdie, *crowded[:3]]),
-        ):
-            with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), cards.Board())), expected)
+        ))
 
     def test_rei_buffs_before_the_attacks(self):
         """Strike of Darkness, Dark Condensation and Predator's Blade buff the attacks played after them."""
-        for description, cards_in_hand, expected in (
+        self.plays((
             # Generic play files the 100% buff attack with the plain attacks, in hand order.
             ("Strike of Darkness goes before the basic attack", ("Dark Blade", "Strike of Darkness"), ["Strike of Darkness", "Dark Blade"]),
             # Generic play files this one as a skill, after every attack.
@@ -967,9 +966,7 @@ class TestKits(unittest.TestCase):
             # Live, Strike of Darkness tied with Dark Blade, and two unboosted Dark Blades took the turn's points.
             ("Strike of Darkness is bought for the basic attack it boosts", ("Dark Blade", "Dark Blade", "Dark Blade", "Strike of Darkness"),
              ["Strike of Darkness", "Dark Blade", "Dark Blade"]),
-        ):
-            with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), cards.Board())), expected)
+        ))
 
     def test_renoa_keeps_her_bullets_in_hand(self):
         """Dirge Bullets fire when the turn ends, and the payoff attacks scale with the bullets still in hand."""
@@ -1054,7 +1051,7 @@ class TestKits(unittest.TestCase):
 
     def test_selena_marks_before_attacking(self):
         """Marks make each later attack card fire an extra attack, so the cards that give them go before the attacks."""
-        for description, cards_in_hand, expected in (
+        self.plays((
             # Generic play files the Mark skill after the attacks, so the Marks wait for next turn.
             ("High-Power Scope goes before the attack", ("Engagement Fire", "High-Power Scope"), ["High-Power Scope", "Engagement Fire"]),
             # Generic play buys the 210% attack first and plays it first, before Target Spotted's Mark.
@@ -1062,9 +1059,7 @@ class TestKits(unittest.TestCase):
             ("Drone Bombing goes before the plain attack", ("Cold Shot", "Drone Bombing"), ["Drone Bombing", "Cold Shot"]),
             ("the Marks come before Drone Bombing", ("Drone Bombing", "Target Spotted", "High-Power Scope"),
              ["High-Power Scope", "Target Spotted", "Drone Bombing"]),
-        ):
-            with self.subTest(description):
-                self.assertEqual(played(cards.plan(hand(*cards_in_hand), cards.Board())), expected)
+        ))
 
     def test_every_kit_names_real_cards(self):
         # A game patch that renames a card would otherwise switch its kit off without a word.

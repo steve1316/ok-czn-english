@@ -4,8 +4,7 @@ Dingo Howling and Fan of Daggers give stacks, Hunting Instincts gives one for ea
 between turns. The generic picker plays Dingo Howling after the attacks that spend it, and Quick Fix first for a draw that needs a stack.
 """
 
-from src.en.game_battle import CARD_CATEGORY, CARD_OWNER
-from src.en.kits.kit import PHASE_ATTACK, PHASE_OTHER, PHASE_PRIME, SKILL_CATEGORY, Kit, base_name, owned
+from src.en.kits.kit import PHASE_ATTACK, PHASE_OTHER, PHASE_PRIME, SKILL_CATEGORY, Kit, base_name, borrowed, count, owned
 
 # His cards that give Commence the Hunt stacks.
 STACKERS = frozenset({"Dingo Howling", "Fan of Daggers"})
@@ -35,9 +34,9 @@ class Hugo(Kit):
         card = base_name(name)
         if card == QUICK_FIX:
             # Stacks carry over, so a stack-giver played this turn or last is the best sign there is one to draw on.
-            stacked = any(base_name(played) in STACKERS for played in (*board.played, *board.last_turn))
+            stacked = count((*board.played, *board.last_turn), STACKERS) > 0
             return base if stacked else PHASE_ATTACK - 0.25
-        if base == PHASE_OTHER and CARD_CATEGORY.get(card) == SKILL_CATEGORY and CARD_OWNER.get(card) not in (None, self.name):
+        if base == PHASE_OTHER and borrowed(card, SKILL_CATEGORY, self.name):
             # Each feeds Hunting Instincts a stack, just ahead of Fan of Daggers.
             return PHASE_ATTACK - 0.75
         return super().phase(name, board, base)

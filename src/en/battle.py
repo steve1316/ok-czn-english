@@ -459,6 +459,11 @@ class Turn:
         # The fewest enemies a frame of this turn has shown, from `board.enemy_counters`. 0 until a frame shows one.
         self.enemies = 0
 
+    def settle(self):
+        """Count the card last pressed as played. Settled once, so a frame that returns before picking again cannot count it twice."""
+        self.played.append(self.attempted)
+        self.attempted = None
+
 
 def play_key(task, key, name=None):
     """Play the card on a key, with upstream's own timings so both paths feel the same to the game.
@@ -735,12 +740,12 @@ def shown_cost(task, frame, box, printed):
     if printed == 1:
         # A lowered 1 can only be 0.
         return 0
-    read = ego.DIGITS.search("".join(text.name for text in task.ocr(*box, frame=frame, frame_processor=ego.enlarged) or []))
+    read = ego.read_digit(task, frame, box)
     if read is None:
         # OCR seldom reads a lone 0. Live, Mutation's free Ecstasy of Violence was taken for 8 and left unplayed, and a card
         # that really costs more is only refused.
         return None if printed is None else 0
-    return int(read.group()) if printed is None or int(read.group()) < printed else None
+    return read if printed is None or read < printed else None
 
 
 def remembered(name, hand):
@@ -1189,10 +1194,9 @@ def end_of_turn(task):
     if turn is None:
         return
     if turn.attempted is not None:
-        turn.played.append(turn.attempted)
         if turn.attempted in turn.hand:
             turn.hand.remove(turn.attempted)
-        turn.attempted = None
+        turn.settle()
     turn.ended = True
 
 
@@ -1337,15 +1341,12 @@ def install():
 
         drew = bool(cards.DRAW.search(cards.description(turn.attempted or ""))) and draws_shown(task) > turn.draws_at_press
         if turn.attempted is not None and not was_refused(turn.attempted, turn.attempted_copies, names, drew):
-            # Settled once, so a frame that returns before picking again cannot count the same play twice.
-            turn.played.append(turn.attempted)
-            turn.attempted = None
+            turn.settle()
         elif turn.attempted is not None and turn.retrieved[turn.attempted] < cards.RETRIEVES.get(turn.attempted, 0):
             # Live, Harmonization: Residual Herb shielded and came straight back, and was given up on as refused.
             task.log_info(f"{turn.attempted} came back to hand on its Retrieve")
             turn.retrieved[turn.attempted] += 1
-            turn.played.append(turn.attempted)
-            turn.attempted = None
+            turn.settle()
         elif turn.attempted is not None:
             turn.misses[turn.attempted] += 1
             # Live, Magnetic Field stayed in hand once with all three points to spend, and was given up on for the turn.
