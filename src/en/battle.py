@@ -191,6 +191,8 @@ Blind = collections.namedtuple("Blind", [
     "refused",
     # Whether Enter has followed the last key. Held back a frame, since the game refuses a card at its key.
     "confirmed",
+    # Whether the last key tried the card that slid onto a key that just played at 0 AP. If it is refused, the game is asked again.
+    "probe",
 ])
 
 
@@ -880,8 +882,9 @@ def press_unread(task, count):
     callbacks = getattr(task, UNREAD_HAND, None)
     if not count or not callbacks or callbacks >= CALLBACKS:
         return False
-    last = getattr(task, BLIND, None) or Blind(count, None, frozenset(), True)
+    last = getattr(task, BLIND, None) or Blind(count, None, frozenset(), True, False)
     refused = last.refused
+    probe = ask_again = False
     if last.key and not last.confirmed:
         if not out_of_points(task):
             confirm(task)
@@ -889,26 +892,29 @@ def press_unread(task, count):
             return True
         task.log_info(f"not enough AP for key {last.key}, so it is not confirmed")
         refused |= {last.key}
+        ask_again = last.probe
     elif last.key and count != last.count:
-        # The last key played, and every card right of it slid one key left. With points left, the card now on that key is tried next.
+        # The last key played, and every card right of it slid one key left, so the card now on that key is tried next.
         # Going back through end turn instead cost 6.5s a card, for the game to say the same thing again.
         refused = frozenset(key for key in refused if int(key) < int(last.key))
-        if not board.has_action_points(task):
-            # Live, the sweep pressed every other key into a hand the points could not pay for, 4s each, so at 0 AP the next end of
-            # turn asks the game again instead.
-            setattr(task, UNREAD_HAND, 0)
-            setattr(task, BLIND, Blind(count, None, refused, True))
-            return False
+        # At 0 AP only that one card is tried. Live, the sweep pressed every other key into a hand the points could not pay for, 4s each,
+        # but a run of holographic 0 AP cards went back through end turn once a card.
+        probe = not board.has_action_points(task)
     elif last.key:
         refused |= {last.key}
+        ask_again = last.probe
     key = unread_key([], count, refused)
     if key is None:
         setattr(task, UNREAD_HAND, CALLBACKS)
         return False
+    if ask_again:
+        setattr(task, UNREAD_HAND, 0)
+        setattr(task, BLIND, Blind(count, None, refused, True, False))
+        return False
     task.log_info(f"the game says a card can still be played but none of {count} reads, trying key {key}")
     task.send_key(key)
     task.sleep(AFTER_KEY)
-    setattr(task, BLIND, Blind(count, key, refused, False))
+    setattr(task, BLIND, Blind(count, key, refused, False, probe))
     return True
 
 
