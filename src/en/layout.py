@@ -148,7 +148,7 @@ def size_cards_by_height_for_width():
 
 
 def show_cards_added_to_a_visible_list():
-    """Show a card added to a list the user is already looking at.
+    """Show a card added to a list the user is already looking at, and lay the list out again.
 
     `qfluentwidgets.ExpandLayout.addWidget` never calls `QLayout.addChildWidget`, the function that both reparents
     a new child and shows it, and ok-script's `ExpandCardLayout` adds the reparent back without the show. Measured
@@ -172,11 +172,14 @@ def show_cards_added_to_a_visible_list():
             # explicit show here would override a caller that added it hidden on purpose.
             if view is not None and view.isVisible():
                 widget.show()
+            # `ExpandLayout.addItem` never invalidates. A card that was already on screen does not relayout on show, so it would keep
+            # the spot from the last pass that included it and sit on top of whatever card took that spot since.
+            self.invalidate()
         except Exception as error:
-            logger.warning(f"could not show a card added to the list: {error}")
+            logger.warning(f"could not show or place a card added to the list: {error}")
 
     expand_card_layout.addWidget = patched_add_widget
-    logger.info("cards added to a list already on screen are shown")
+    logger.info("cards added to a list already on screen are shown and placed")
 
 
 def align_card_action_buttons():
