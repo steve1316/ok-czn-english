@@ -600,6 +600,15 @@ msgstr "记忆加成"
 msgid "Enter End of Memory"
 msgstr "进入记忆之末"
 
+msgid "Re-observe"
+msgstr "再次观测"
+
+msgid "Re-observe Bad Modifiers"
+msgstr "再次观测拉黑词条"
+
+msgid "Modifier Blacklist"
+msgstr "拉黑词条"
+
 msgid "(keep)"
 msgstr "(keep)"
 
