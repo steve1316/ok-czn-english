@@ -145,12 +145,12 @@ class TestReporting(unittest.TestCase):
         # Withholding the echo must never withhold the row: the tab reads `info`, not the log.
         task = self.Task()
         self.report(task, [("版本号", "dev")] * 3 + [("是否已逃脱", "False")])
-        self.assertEqual({"Version": "dev", "Escaped": "False"}, task.info)
+        self.assertEqual({"Version": "dev", "Escaped": "No"}, task.info)
 
     def test_the_rows_a_catalog_could_not_reach_are_english(self):
         # These three are composed at runtime, so `og.app.tr` could never have matched them whole.
         log_text._compile_templates()
-        self.assertEqual("floor 2, node 5, Elite Battle Area", log_text.translate("第2层，第5节点，精英"))
+        self.assertEqual("Floor 2, node 5, Elite Battle Area", log_text.translate("第2层，第5节点，精英"))
         self.assertEqual("slot 1 Anchor, slot 2 empty, slot 3 empty",
                          log_text.translate("1号位：Anchor，2号位：空，3号位：空"))
         self.assertEqual("Meditating on Soul Riff", log_text.translate("冥想：Soul Riff"))
@@ -159,7 +159,7 @@ class TestReporting(unittest.TestCase):
         # `node_status` opens with `node_type` empty, so the first status row of every run renders with the
         # last interpolation missing entirely.
         log_text._compile_templates()
-        self.assertEqual("floor 1, node 0, ", log_text.translate("第1层，第0节点，"))
+        self.assertEqual("Floor 1, node 0, ", log_text.translate("第1层，第0节点，"))
 
 
 class TestSayOnce(unittest.TestCase):
@@ -219,17 +219,29 @@ class TestReadingOrder(unittest.TestCase):
         self.assertEqual(expected, list(task.info))
 
 
-class TestWinRate(unittest.TestCase):
-    """The win rate row before and after the first run has finished."""
+class TestRespelledRows(unittest.TestCase):
+    """The Info values reworded for the table, and the once-a-tick echo that rewording would otherwise cause."""
 
-    def test_a_win_rate_with_no_finished_runs_reads_zero_percent(self):
-        # Upstream divides by zero rounds and writes NaN. A run that has finished keeps upstream's figure.
+    def test_rows_read_in_plain_words(self):
+        # Each value is upstream's row as written, so a reworded upstream row fails here.
         task = TestReporting.Task()
-        info_set = dashboard.zeroing_win_rate(TestReporting.Task.info_set)
-        for rounds, shown in (("0/0 NaN", "0/0 (0%)"), ("3/4 (75%)", "3/4 (75%)")):
-            with self.subTest(rounds):
-                info_set(task, MESSAGES["当前胜率"], rounds)
-                self.assertEqual(shown, task.info[MESSAGES["当前胜率"]])
+        info_set = log_text.reporting(TestReporting.Task.info_set)
+        for key, written, shown in ((dashboard.WIN_RATE, "0/0 NaN", dashboard.NO_RUNS),
+                                    (dashboard.WIN_RATE, "3/4 (75%)", "3 of 4 (75%)"),
+                                    (dashboard.FLOOR, "第1层，第0节点，", "Floor 1, node 0"),
+                                    (dashboard.FLOOR, "第2层，第5节点，精英", "Floor 2, node 5, Elite Battle Area"),
+                                    (MESSAGES["是否已逃脱"], "False", "No")):
+            with self.subTest(written):
+                info_set(task, key, written)
+                self.assertEqual(shown, task.info[key])
+
+    def test_an_unchanged_row_is_echoed_once(self):
+        # `log_text` compares upstream's "False" with the stored "No", so it hands the row on every tick.
+        task = TestReporting.Task()
+        info_set = log_text.reporting(TestReporting.Task.info_set)
+        for _ in range(3):
+            info_set(task, MESSAGES["是否已逃脱"], "False")
+        self.assertEqual([MESSAGES["是否已逃脱"]], task.echoed)
 
 
 class TestSeededTable(unittest.TestCase):

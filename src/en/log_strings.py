@@ -49,7 +49,8 @@ MESSAGES = {
 # Lines written as f-strings, keyed on the literal runs with each interpolation collapsed to `{}`.
 TEMPLATES = {
     "冥想：{}": "Meditating on {0}",
-    "第{}层，第{}节点，{}": "floor {0}, node {1}, {2}",
+    "第{}层，第{}节点，{}": "Floor {0}, node {1}, {2}",
+    "已达到配置的停止轮数 {}，当前 total_rounds={}，自动停止任务": "reached the {0}-round stop limit, total_rounds={1}, stopping",
     "{}号位：{}，{}号位：{}，{}号位：{}": "slot {0} {1}, slot {2} {3}, slot {4} {5}",
     "当前生命值: {}/{} = {}%": "health {0}/{1} = {2}%",
     "自动战斗按钮区域白色占比: {}": "auto-battle button area, white share {0}",
