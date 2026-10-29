@@ -890,11 +890,15 @@ def press_unread(task, count):
         task.log_info(f"not enough AP for key {last.key}, so it is not confirmed")
         refused |= {last.key}
     elif last.key and count != last.count:
-        # The last key played, which answers the game's warning. Live, the sweep then pressed every other key into a hand the points
-        # could not pay for, 4s each, so the next end of turn asks the game again. Every card right of the one played slid one key left.
-        setattr(task, UNREAD_HAND, 0)
-        setattr(task, BLIND, Blind(count, None, frozenset(key for key in refused if int(key) < int(last.key)), True))
-        return False
+        # The last key played, and every card right of it slid one key left. With points left, the card now on that key is tried next.
+        # Going back through end turn instead cost 6.5s a card, for the game to say the same thing again.
+        refused = frozenset(key for key in refused if int(key) < int(last.key))
+        if not board.has_action_points(task):
+            # Live, the sweep pressed every other key into a hand the points could not pay for, 4s each, so at 0 AP the next end of
+            # turn asks the game again instead.
+            setattr(task, UNREAD_HAND, 0)
+            setattr(task, BLIND, Blind(count, None, refused, True))
+            return False
     elif last.key:
         refused |= {last.key}
     key = unread_key([], count, refused)

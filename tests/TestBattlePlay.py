@@ -1051,7 +1051,7 @@ class TestCallingBackTheTurn(unittest.TestCase):
 
     def test_a_hand_still_unread_after_a_callback_has_its_keys_tried(self):
         # Live, a 0 AP card never read over its holographic art, so each callback came back to the same empty hand.
-        with upstream([]) as (utils_sortie, task):
+        with upstream([], action_points=False) as (utils_sortie, task):
             task.counter = 3
             battle.install()
             handlers = handlers_of(utils_sortie)
@@ -1059,8 +1059,8 @@ class TestCallingBackTheTurn(unittest.TestCase):
             page(task)
             task.all_texts = list(CARDS_LEFT_PROMPT)
             self.assertTrue(cards_left(task))
-            # A key the game turns down at once is not confirmed, which saves the 2s wait on Enter. Key 2 plays, which answers
-            # the warning: live, the keys after it went on into a hand at 0 AP, 4s each, for 35s.
+            # A key the game turns down at once is not confirmed, which saves the 2s wait on Enter. Key 2 plays and the readout is dark,
+            # which answers the warning: live, the keys after it went on into a hand at 0 AP, 4s each, for 35s.
             toast = [FakeBox("Not enough AP.", 0.5, 0.52)]
             for counter, texts in ((3, []), (3, toast), (3, []), (2, []), (2, [])):
                 task.counter = counter
@@ -1078,6 +1078,22 @@ class TestCallingBackTheTurn(unittest.TestCase):
             # Every key tried, so the game's next check is the end of the turn.
             task.all_texts = list(CARDS_LEFT_PROMPT)
             self.assertFalse(cards_left(task))
+
+    def test_a_blind_key_that_plays_with_points_left_tries_the_card_that_slid_onto_it(self):
+        # Live, each card played this way went back through end turn and the game's warning, 6.5s a card.
+        with upstream([]) as (utils_sortie, task):
+            task.counter = 3
+            battle.install()
+            handlers = handlers_of(utils_sortie)
+            page = handlers["handle_battle_page"]
+            page(task)
+            task.all_texts = list(CARDS_LEFT_PROMPT)
+            self.assertTrue(handlers["handle_cards_left"](task))
+            task.all_texts = []
+            for counter in (3, 3, 2):
+                task.counter = counter
+                page(task)
+            self.assertEqual(task.keys, ["1", battle.CONFIRM_KEY, "1"])
 
     def test_a_blind_key_is_confirmed_over_the_raised_cards_text(self):
         # Live, the card key 1 raised read as a hand of "Incinerate: Create", its Enter was dropped, and `e` did nothing for 20 frames.
