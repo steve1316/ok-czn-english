@@ -1,4 +1,4 @@
-"""Draw the Tasks tab's Info rows in reading order, name the team above its equipment, and show the table while idle.
+"""Draw the Tasks tab's Info rows in reading order and plain wording, title the run plainly, and show the table while idle.
 
 ok-script draws one row per `task.info` entry in insertion order, so upstream's order is simply the order
 `log_credit` and `log_node_status` happen to write in: the version and game language near the top, the win rate
@@ -8,7 +8,7 @@ run and never shown at all.
 
 import types
 
-from ok import Logger
+from ok import Logger, og
 
 from src.en.framework import import_ui
 from src.en.log_strings import MESSAGES, TEMPLATES
@@ -32,7 +32,14 @@ TEAM_GEAR = "_en_team_gear"
 # divides by zero and the row reads `0/0 NaN`. `NO_RUNS` is what it reads as instead.
 WIN_RATE = MESSAGES["当前胜率"]
 UNDIVIDED = " NaN"
-NO_RUNS = " (0%)"
+NO_RUNS = "No runs finished"
+# The floor row, and the tail it is left with while the run's node type is still blank.
+FLOOR = MESSAGES["所处层数，节点，类型"]
+UNTYPED = ", "
+# How upstream writes its yes/no rows, and how they read instead.
+YES_NO = {"True": "Yes", "False": "No"}
+# Where a tab keeps its run's last elapsed time, so a finished run's title holds it.
+ELAPSED = "_en_elapsed"
 # What every meditation row's key starts with once translated. One row per card, so they rank as a group.
 MEDITATING = TEMPLATES["冥想：{}"].split("{0}")[0]
 # Top to bottom: what moves during a run, then the one-way flags, then what never changes. Keys are the translated
@@ -113,21 +120,27 @@ def ordering(original):
     return info_set_in_order
 
 
-def zeroing_win_rate(original):
-    """Wrap `info_set` so a win rate with no finished runs reads 0% rather than upstream's NaN.
+def respell(key, value):
+    """Give one Info row's value the wording the table shows.
+
+    Called by `log_text` ahead of its unchanged-row check. Respelled any later, a value would never equal what upstream
+    wrote, so every row would be logged at INFO on every tick.
 
     Args:
-        original: The unbound `info_set` being replaced.
+        key: The row's key, already in English.
+        value: The value as upstream wrote it, already in English.
 
     Returns:
-        The replacement.
+        The value to draw.
     """
-    def info_set_zeroed(self, key, value):
-        if key == WIN_RATE and value.endswith(UNDIVIDED):
-            value = value.removesuffix(UNDIVIDED) + NO_RUNS
-        return original(self, key, value)
-
-    return info_set_zeroed
+    if not isinstance(value, str):
+        return value
+    if key == WIN_RATE:
+        # Once a run has finished, upstream writes `3/4 (75%)`.
+        return NO_RUNS if value.endswith(UNDIVIDED) else value.replace("/", " of ", 1)
+    if key == FLOOR:
+        return value.removesuffix(UNTYPED)
+    return YES_NO.get(value, value)
 
 
 def showing_what_is_worn(original):
@@ -173,6 +186,48 @@ def seeding_the_table(original):
             self.info[key] = UNREAD
 
     return info_clear_seeded
+
+
+def titling(original):
+    """Wrap `TaskTab.update_task_info` so the title reads `Auto Sortie Mode: running for 3m 2s`.
+
+    Upstream runs the status, the mode and `Time Elapsed` together into one label.
+
+    Args:
+        original: The unbound `update_task_info` being replaced.
+
+    Returns:
+        The replacement.
+    """
+    def update_task_info(self, task):
+        original(self, task)
+        # The idle table draws through here with a nameless stand-in, and titles itself.
+        if task is None or not task.name:
+            return
+        if not task.enabled:
+            state = "finished after"
+        else:
+            setattr(self, ELAPSED, self.time_elapsed(task.start_time).removeprefix("0h "))
+            state = "paused at" if getattr(task, "paused", False) else "running for"
+        self.task_info_container.titleLabel.setText(f"{og.app.tr(task.name)}: {state} {getattr(self, ELAPSED, '')}")
+
+    return update_task_info
+
+
+def headless(original):
+    """Wrap `TaskTab.__init__` to drop the table's `Info` / `Value` column titles, which say nothing the rows do not.
+
+    Args:
+        original: The unbound `__init__` being replaced.
+
+    Returns:
+        The replacement.
+    """
+    def __init__(self, *args, **kwargs):
+        original(self, *args, **kwargs)
+        self.task_info_table.horizontalHeader().hide()
+
+    return __init__
 
 
 def idle_rows(tasks):
@@ -245,11 +300,13 @@ def apply():
     except ImportError:
         logger.warning("could not import BaseTask, the Info rows will stay in upstream's order")
     else:
-        BaseTask.info_set = ordering(zeroing_win_rate(showing_what_is_worn(BaseTask.info_set)))
+        BaseTask.info_set = ordering(showing_what_is_worn(BaseTask.info_set))
         BaseTask.info_clear = seeding_the_table(BaseTask.info_clear)
 
     task_tab = import_ui("tasks.TaskTab", "TaskTab")
     if task_tab is not None:
+        task_tab.__init__ = headless(task_tab.__init__)
+        task_tab.update_task_info = titling(task_tab.update_task_info)
         task_tab.update_info_table = showing_while_idle(task_tab.update_info_table)
         task_tab.close_task_info = dismissing_while_idle(task_tab.close_task_info)
     _patched = True

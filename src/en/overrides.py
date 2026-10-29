@@ -141,6 +141,8 @@ DESCRIPTIONS = {
     "优先移除基础牌": "Clear basic cards out of the deck before anything else.",
     "只打第一层": "Leave after the first floor instead of running the whole map.",
 }
+# Setup a mode needs before its first run, shown behind its Instructions button. A mode with nothing to set up gets no button.
+INSTRUCTIONS = {"ChaosMode": "Turn on the event/dialogue Fast Forward in-game before starting a run."}
 
 _applied = False
 
@@ -209,9 +211,9 @@ def reshape(task):
     task.default_config[VERSION_KEY] = SETTINGS_VERSION
 
     # Upstream leaves ok-script's scaffold placeholder here, a bare link to the framework repo. The button
-    # hides itself when this is empty. Only the modes under `ok_tasks/` are ours to strip.
+    # hides itself when this is empty. Only the modes under `ok_tasks/` are ours to replace.
     if getattr(task, "is_custom", False):
-        task.instructions = None
+        task.instructions = INSTRUCTIONS.get(task.__class__.__name__)
 
 
 def migrate_saved_config(task):

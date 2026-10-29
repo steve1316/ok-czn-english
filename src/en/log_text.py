@@ -11,6 +11,7 @@ import re
 
 from ok import Logger
 
+from src.en.dashboard import respell
 from src.en.log_strings import MESSAGES, TEMPLATES, VALUES
 
 logger = Logger.get_logger(__name__)
@@ -123,7 +124,8 @@ def reporting(original):
         The replacement.
     """
     def info_set_in_english(self, key, value):
-        key, value = translate(key), translate(value)
+        key = translate(key)
+        value = respell(key, translate(value))
         # `log_node_status` reports about thirteen rows every tick whether or not any moved, and the framework
         # logs each at INFO - 80,035 lines of a 243,857-line day. `self.info` is the record of what a row last
         # was, and the framework clears it in `_mark_task_enabled` when a run starts.

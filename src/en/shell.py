@@ -1,11 +1,11 @@
-"""Give the game modes Start buttons, and drop the scaffold tabs.
+"""Give the game modes Start buttons, one usable at a time, drop the scaffold tabs, and link About to this fork.
 
 Upstream ships the modes as trigger tasks, so the framework draws them as a switch in a separate Triggers tab.
 """
 
 import time
 
-from ok import Logger
+from ok import Logger, og
 
 from src.en.framework import import_ui
 
@@ -15,6 +15,8 @@ logger = Logger.get_logger(__name__)
 # `ok_tasks/` stays byte-identical to upstream. Every other trigger task becomes a mode with a Start button,
 # so a mode upstream renames or adds is picked up without editing a list here.
 HIDDEN = ("TestTrigger", "GetMengbian")
+# Upstream's entry in the About tab's Other Projects grid, which the framework hardcodes rather than reading from `links`.
+UPSTREAM_REPO = "https://github.com/baoxin1100/ok-kes"
 
 _patched = False
 
@@ -104,6 +106,61 @@ def to_task(task, executor, communicate):
     logger.info(f"{task.__class__.__name__} now starts from a button rather than a switch")
 
 
+def locking(original):
+    """Wrap `TaskCard.update_buttons` so no other mode can be started while one is running.
+
+    The framework queues a second Start behind the running mode and says so only in a small "Waiting for" note.
+    Every one-time card refreshes on any task's change, so each card can check the others here.
+
+    Args:
+        original: The unbound `update_buttons` being replaced.
+
+    Returns:
+        The replacement.
+    """
+    def update_buttons(self, task):
+        original(self, task)
+        if self.start_button is None:
+            return
+        running = next((other for other in og.executor.onetime_tasks if other is not self.task and other.enabled), None)
+        locked = running is not None and not self.task.enabled
+        self.start_button.setEnabled(not locked)
+        self.start_button.setToolTip(f"Stop {og.app.tr(running.name)} first" if locked else "")
+
+    return update_buttons
+
+
+def show_instructions(card):
+    """Open a mode's Instructions under its English name. Upstream titles the dialog with the raw Chinese `name`.
+
+    Args:
+        card: The `TaskCard` whose Instructions button was clicked.
+    """
+    from qfluentwidgets import Dialog
+
+    dialog = Dialog(og.app.tr(card.task.name), card.task.instructions, card.window())
+    dialog.setContentCopyable(True)
+    dialog.cancelButton.hide()
+    dialog.exec()
+
+
+def to_the_fork(original):
+    """Wrap `ProjectCard.__init__` so the Chaos Zero Nightmare card opens this fork's repo, not upstream's.
+
+    Args:
+        original: The unbound `__init__` being replaced.
+
+    Returns:
+        The replacement.
+    """
+    def __init__(self, name, url, parent=None):
+        if url == UPSTREAM_REPO:
+            url = og.config["links"]["default"]["github"]
+        original(self, name, url, parent)
+
+    return __init__
+
+
 def restructure(executor, task_manager, communicate):
     """Re-shape the task lists before the window builds its tabs from them.
 
@@ -134,6 +191,14 @@ def apply():
     communicate = import_ui("Communicate", "communicate")
     if main_window is None or communicate is None:
         return
+    # Before the window is built, since each card connects its own bound methods as it is made.
+    task_card = import_ui("tasks.TaskCard", "TaskCard")
+    if task_card is not None:
+        task_card.update_buttons = locking(task_card.update_buttons)
+        task_card.show_instructions = show_instructions
+    project_card = import_ui("about.ProjectCard", "ProjectCard")
+    if project_card is not None:
+        project_card.__init__ = to_the_fork(project_card.__init__)
     original_init = main_window.__init__
 
     def patched_init(self, *args, **kwargs):

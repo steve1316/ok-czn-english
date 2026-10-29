@@ -1,8 +1,8 @@
 <div align="center">
   <h1 align="center">
-    <img src="icons/icon.png" width="200" alt="ok-czn logo"/>
+    <img src="icons/icon.png" width="200" alt="ok-czn-english logo"/>
     <br/>
-    ok-czn
+    ok-czn-english
   </h1>
 
   <p>
