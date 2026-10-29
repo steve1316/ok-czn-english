@@ -1,28 +1,44 @@
-"""Pick the best combatant offered at a Sortie draft, and reroll when none of them will do.
+"""Draft the role a Sortie team lacks, and reroll when none of the offers fill it.
 
 Upstream refreshes all three slots whenever no configured name matches, then picks at random - so with no
-priority list it spends both rerolls and still takes whatever it lands on.
+priority list it spends both rerolls and still takes whatever it lands on. A debug run drafts whoever has played least instead, so
+every combatant's kit gets run live.
 """
 
 from ok import Logger
 
-from src.en.handlers import insert_before, loaded, register
+from src.en import quality, tested
+from src.en.battle import PARTY
+from src.en.dashboard import TEAM_GEAR
+from src.en.equipment import EMPTY_TIER
+from src.en.game_quality import COMBATANT_ROLE
+from src.en.handlers import insert_before, loaded, register, wrap
+from src.en.rewards import show_team
+from src.en.screen import centre_of, in_region
 
 logger = Logger.get_logger(__name__)
 
-# The five roles a draft card can carry, best first. `Attack` reaches us as 攻击力, because the catalog
-# rewrites that word for the card type label and the equipment stat row, which share it.
-ROLES = ("Core", "Attack", "Support", "Healing", "Protection")
+# The two damage roles, then the supporting roles in the order a team wants them. Any one of the supporting roles fills the team's one support slot.
+DAMAGE = ("Core", "Attack")
+SUPPORTING = ("Healing", "Protection", "Support")
+# What to settle for once the rerolls are spent and nothing the team lacks is on offer.
+ROLES = DAMAGE + SUPPORTING
+# The team size at which the draft goes back to damage, so the fourth pick wants a Core, then an Attack.
+FOURTH_PICK = 3
+# The badge readings for each role. `Attack` reaches us as 攻击力, because the catalog rewrites that word for the
+# card type label and the equipment stat row, which share it.
 ROLE_READINGS = {"Core": ("core",), "Attack": ("attack", "攻击力"), "Support": ("support",),
                  "Healing": ("healing",), "Protection": ("protection",)}
-# Rerolling is only worth a slot when nothing on offer does damage.
-GOOD_ENOUGH = ("Core", "Attack")
 
 # The band the three cards occupy, and how far a badge may sit from a slot to belong to it.
 CARD_REGION = (0.077, 0.100, 0.946, 0.871)
 SAME_CARD = 0.12
 # The reroll counter reads "1/1" while a slot still has its reroll, and "0/1" once it is spent.
 SPENT_REROLL = "0/"
+# What a drafted combatant joins wearing, until an install or the Combatants screen reads the team again.
+BARE = "/".join([EMPTY_TIER] * 3)
+# Who the draft took on this screen, in `node_status`, which upstream rebuilds when a run or a layer starts.
+DRAFTED = "_en_drafted"
 
 _patched = False
 
@@ -43,16 +59,59 @@ def role_of(text):
     return None
 
 
-def rank(role):
+def wanted(party):
+    """Name the roles a team still lacks, best first.
+
+    A team wants a damage dealer first, then one Healer, Protector or Supporter, then damage again. The fourth pick always wants damage.
+
+    Args:
+        party: Names of the combatants on the team, from `battle.PARTY`.
+
+    Returns:
+        A tuple of roles, best first.
+    """
+    have = {COMBATANT_ROLE.get(name) for name in party}
+    if len(party) >= FOURTH_PICK or not have & set(DAMAGE) or have & set(SUPPORTING):
+        return DAMAGE
+    return SUPPORTING
+
+
+def rank(role, wants=()):
     """Score a role, lowest first.
 
     Args:
-        role: A role name, or None when the card's badge was not read.
+        role: A role name, or None when the card's role was not read.
+        wants: The roles the team lacks, as `wanted` returns them.
 
     Returns:
-        The role's position in `ROLES`, or one past the end when unknown.
+        The wanted roles first in their own order, then the rest of `ROLES`, then an unread role.
     """
-    return ROLES.index(role) if role in ROLES else len(ROLES)
+    order = wants + tuple(other for other in ROLES if other not in wants)
+    return order.index(role) if role in order else len(order)
+
+
+def choose(roles, wants, can_reroll, played=None):
+    """Pick the offer to take, or decide to reroll.
+
+    With play counts, an offer who has never played is taken whatever their role, a reroll goes looking for one, and once the rerolls are
+    spent the least played is taken. The role the team wants only breaks ties.
+
+    Args:
+        roles: The role of each offer, left to right, None where it was not read.
+        wants: The roles the team lacks, as `wanted` returns them.
+        can_reroll: True while any slot still has its reroll.
+        played: How many cards each offer has played across debug runs, from `tested.plays`, or None to draft by role alone.
+
+    Returns:
+        The index of the offer to take, or None when a reroll should be spent first.
+    """
+    if played:
+        best = min(range(len(roles)), key=lambda index: (played[index], rank(roles[index], wants)))
+        lacking = played[best] > 0
+    else:
+        best = min(range(len(roles)), key=lambda index: rank(roles[index], wants))
+        lacking = bool(wants) and roles[best] not in wants
+    return None if lacking and can_reroll else best
 
 
 def badges(task):
@@ -64,16 +123,11 @@ def badges(task):
     Returns:
         A list of `(centre_x, role)` pairs.
     """
-    left, top, right, bottom = CARD_REGION
     found = []
     for box in task.all_texts or []:
         role = role_of(box.name)
-        if role is None:
-            continue
-        center_x = (box.x + box.width / 2) / task.width
-        center_y = (box.y + box.height / 2) / task.height
-        if left <= center_x <= right and top <= center_y <= bottom:
-            found.append((center_x, role))
+        if role is not None and in_region(box, CARD_REGION, task.width, task.height):
+            found.append((centre_of(box, task.width, task.height)[0], role))
     return found
 
 
@@ -105,12 +159,125 @@ def rerollable(task, slot):
     if slot.get("refresh_y") is None:
         return False
     for box in task.all_texts or []:
-        center_x = (box.x + box.width / 2) / task.width
-        center_y = (box.y + box.height / 2) / task.height
+        center_x, center_y = centre_of(box, task.width, task.height)
         if abs(center_x - slot["x"]) <= SAME_CARD and abs(center_y - slot["refresh_y"]) <= 0.03:
             if box.name.strip().startswith(SPENT_REROLL):
                 return False
     return True
+
+
+def offers(task, utils, utils_sortie):
+    """Read what a Sortie draft offers, when the pick is ours to make.
+
+    Args:
+        task: The running task.
+        utils: The loaded `utils` module.
+        utils_sortie: The loaded `utils_sortie` module, which reads the slots.
+
+    Returns:
+        `(name, slot)` pairs, the name in the client's own spelling where the reader could place it. Empty off the
+        draft screen, and when a configured priority makes the pick upstream's to honour.
+    """
+    prompt = utils.find_box_at_point(task, 0.500, 0.931)
+    if not (prompt and utils._get_game_text(task, "主战员") in prompt.name):
+        return []
+    if utils._get_card_list(task, "主战员优先级"):
+        return []
+    slots = [slot for slot in utils_sortie._read_member_slots(task) if slot.get("name")]
+    return [(quality.COMBATANT_INDEX.look_up(slot["name"]) or slot["name"], slot) for slot in slots]
+
+
+def picked(task, offered):
+    """Say whether the combatant the draft took on this screen is still the one picked.
+
+    Args:
+        task: The running task, whose `node_status` holds `DRAFTED`.
+        offered: The `(name, slot)` pairs on offer, as `offers` returns them.
+
+    Returns:
+        True when the drafted name is on offer, or anywhere on the cards. Live, Renoa's card opened a details panel once clicked, which
+        moved her out of the row the slot reader scans, and the next frame drafted Tressa over her.
+    """
+    drafted = task.node_status.get(DRAFTED)
+    if not drafted:
+        return False
+    if drafted in [name for name, _ in offered]:
+        return True
+    return any(in_region(box, CARD_REGION, task.width, task.height) and quality.COMBATANT_INDEX.look_up(box.name) == drafted
+               for box in task.all_texts or [])
+
+
+def confirming_our_pick(confirm, utils, utils_sortie):
+    """Hold upstream's Confirm on a draft screen until the draft has picked one of its offers.
+
+    Upstream's Confirm runs ahead of the draft, so a card still highlighted from before a restart was confirmed
+    without the draft ever seeing it.
+
+    Args:
+        confirm: Upstream's `handle_confirm`.
+        utils: The loaded `utils` module.
+        utils_sortie: The loaded `utils_sortie` module.
+
+    Returns:
+        The wrapped handler.
+    """
+    def handle_confirm(task):
+        offered = offers(task, utils, utils_sortie)
+        if offered and not picked(task, offered):
+            return False
+        return confirm(task)
+
+    return handle_confirm
+
+
+def drafting(utils, utils_sortie):
+    """Build the handler that picks, or rerolls for, the role the team lacks at a Sortie draft.
+
+    Args:
+        utils: The loaded `utils` module.
+        utils_sortie: The loaded `utils_sortie` module.
+
+    Returns:
+        The handler, which claims the frame when it clicks.
+    """
+    def handle_member_draft(task):
+        offered = offers(task, utils, utils_sortie)
+        if not offered or picked(task, offered) and task.node_status[DRAFTED] not in [name for name, _ in offered]:
+            return False
+        names, slots = zip(*offered)
+        found = badges(task)
+        # The data knows every combatant's role, and the badge covers a name the reader could not place.
+        roles = [COMBATANT_ROLE.get(name) or role_for(slot, found) for name, slot in offered]
+        # Whoever is still on offer has not joined, even if an earlier pass picked them and the Confirm did not take.
+        party = getattr(task, PARTY, frozenset()) - set(names)
+        wants = wanted(party)
+        counts = tested.plays()
+        played = None if counts is None else [counts[name] for name in names]
+        labels = [f"{name} ({role or 'role unread'})" for name, role in zip(names, roles)]
+        task.log_info(f"draft offers {', '.join(labels)} to team {sorted(party)}, wanting {'/'.join(wants) or 'nothing'}"
+                      f"{'' if played is None else f', card plays so far {played}'}")
+
+        spendable = [slot for slot in slots if rerollable(task, slot)]
+        pick = choose(roles, wants, bool(spendable), played)
+        if pick is None:
+            task.log_info(f"draft offers {'no one untested' if played else 'no ' + ' or '.join(wants)}, rerolling {len(spendable)} slot(s)")
+            for slot in spendable:
+                utils._move_and_click(task, slot["x"], slot["refresh_y"])
+                task.sleep(1)
+            return True
+
+        task.log_info(f"draft taking {labels[pick]}")
+        utils._move_and_click(task, slots[pick]["x"], slots[pick]["y"])
+        task.sleep(1)
+        task.node_status[DRAFTED] = names[pick]
+        team = [*sorted(party), names[pick]]
+        show_team(task, team)
+        gear = getattr(task, TEAM_GEAR, None)
+        if gear and len(gear.split(", ")) < len(team):
+            setattr(task, TEAM_GEAR, f"{gear}, {BARE}")
+        return True
+
+    return handle_member_draft
 
 
 def apply():
@@ -125,37 +292,8 @@ def apply():
         if utils is None or utils_sortie is None:
             return
 
-        def handle_member_draft(task):
-            prompt = utils.find_box_at_point(task, 0.500, 0.931)
-            if not (prompt and utils._get_game_text(task, "主战员") in prompt.name):
-                return False
-            if utils._get_card_list(task, "主战员优先级"):
-                # A configured priority is upstream's to honour, so stand aside entirely.
-                return False
-
-            slots = [slot for slot in utils_sortie._read_member_slots(task) if slot.get("name")]
-            if not slots:
-                return False
-            found = badges(task)
-            ranked = sorted(((rank(role_for(slot, found)), slot) for slot in slots), key=lambda pair: pair[0])
-            best_rank, best = ranked[0]
-            best_role = ROLES[best_rank] if best_rank < len(ROLES) else None
-
-            if best_role not in GOOD_ENOUGH:
-                spendable = [slot for slot in slots if rerollable(task, slot)]
-                if spendable:
-                    task.log_info(f"draft offers no {' or '.join(GOOD_ENOUGH)}, rerolling {len(spendable)} slot(s)")
-                    for slot in spendable:
-                        utils._move_and_click(task, slot["x"], slot["refresh_y"])
-                        task.sleep(1)
-                    return True
-
-            task.log_info(f"draft taking {best['name']} ({best_role or 'role unread'})")
-            utils._move_and_click(task, best["x"], best["y"])
-            task.sleep(1)
-            return True
-
-        insert_before("handle_member_selection", handle_member_draft)
+        wrap(utils, "handle_confirm", lambda confirm: confirming_our_pick(confirm, utils, utils_sortie), "confirms a draft only once it has picked")
+        insert_before("handle_member_selection", drafting(utils, utils_sortie))
 
     register(install)
     _patched = True

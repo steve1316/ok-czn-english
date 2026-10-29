@@ -12,7 +12,7 @@ from src.en import rewards
 from src.en.dashboard import TEAM_GEAR
 from src.en.handlers import StandIn, loaded, register, standing_in, wrap
 from src.en.rewards import EQUIPMENT_KEYS
-from src.en.screen import (COMBATANT_NAME_POINTS, centre_of, combatant_names, combatant_slot_points,
+from src.en.screen import (COMBATANT_NAME_POINTS, PAGE_CLOSE, centre_of, combatant_names, combatant_slot_points,
                            text_in_region)
 from src.en.state import GEAR, say_once
 
@@ -267,19 +267,20 @@ def report_worn(task, columns):
     return line
 
 
-def team_equipment(task, utils):
+def team_equipment(task, utils, columns=range(len(COMBATANT_NAME_POINTS))):
     """Read every combatant's three equipment slots off the Combatants screen.
 
     Args:
         task: The running task, holding the frame to read.
         utils: The module carrying the colour read.
+        columns: Which columns to read, counted from the left. All three by default, and only the named ones for a smaller team.
 
     Returns:
         One list of three tier names per combatant, left to right, so a list's place is which combatant it
         belongs to.
     """
     return [[slot_tier(task, utils, point) for point in combatant_slot_points(column)]
-            for column in range(len(COMBATANT_NAME_POINTS))]
+            for column in columns]
 
 
 def reading_the_team_gear(handler, utils, utils_chaos):
@@ -305,8 +306,9 @@ def reading_the_team_gear(handler, utils, utils_chaos):
 
         def tapped(task_, x, y):
             names = [] if worn else combatant_names(task_, utils)
-            if names and all(names):
-                worn.append(report_worn(task_, team_equipment(task_, utils)))
+            # A team of fewer than three never fills every column, so the close tap reads the columns that have a name.
+            if names and (all(names) or ((x, y) == PAGE_CLOSE and any(names))):
+                worn.append(report_worn(task_, team_equipment(task_, utils, [column for column, name in enumerate(names) if name])))
             return original(task_, x, y)
 
         with standing_in(utils_chaos, _move_and_click=tapped):
@@ -637,8 +639,9 @@ def buying_on_spree(generate, utils_of):
     Returns:
         The wrapped builder.
     """
-    def generated(task, key, farmed=""):
-        listed = generate(task, key, farmed)
+    # The rest goes straight through, so a parameter `rewards` adds cannot break this wrapper.
+    def generated(task, key, *args):
+        listed = generate(task, key, *args)
         slot = EQUIPMENT_KEYS.get(key)
         # Read after the list, so a slot nothing is offered for costs no reading at all.
         if slot is None or not listed:

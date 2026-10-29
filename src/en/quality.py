@@ -38,17 +38,20 @@ CLASS_NAMES = {
 # the same nothing and matches it.
 INSIGNIFICANT = re.compile(r"[^0-9a-z一-鿿■-◿]+")
 
-# Characters the reader hands back for one another, grouped by what they look like on screen. The first of
-# each group is the spelling the rest fold into. Only what the logs actually show being swapped is here, and
-# a capital I read as a lowercase l is far the commonest of them - `Magic-lnfused Sapphire`, `Instinct
-# lgnition`, `Mutation: lron Wall` are all real readings. Letters that would turn one real word into another
-# are deliberately absent: reading v as m or r as f would quietly match the wrong name, and a wrong match is
-# worse than any number of missed ones.
-CONFUSABLE = {letter: group[0] for group in ("il1", "o0", "s5", "gq9", "b6", "z2") for letter in group}
+# Characters the reader hands back for one another, grouped by what they look like on screen. The first of each group is the spelling the
+# rest fold into. Only what the logs actually show being swapped is here, and a capital I read as a lowercase l is far the commonest of them -
+# `Magic-lnfused Sapphire`, `Instinct lgnition`, `Mutation: lron Wall` are all real readings, and a capital J goes the same way, as `loker`
+# for Joker. Letters that would turn one real word into another are deliberately absent: reading v as m or r as f would quietly match the
+# wrong name, and a wrong match is worse than any number of missed ones.
+CONFUSABLE = {letter: group[0] for group in ("il1j", "o0", "s5", "gq9", "b6", "z2") for letter in group}
 # Below this many characters a single edit is most of the name, and the screen is full of stray glyphs and
 # fragments that would each find something to be one edit from. `Dice`, `Quick` and `+60` are all real
 # readings that stop here.
 SHORTEST_WORTH_GUESSING = 6
+# A long name can lose a letter in this many and still be recognised, as long as the rest stay in order. The client squeezes a
+# long name to fit, and live `Harmonization: Criticism of Discord` came back as `HarmonizationcicimofDicord`, five short of 31.
+# Across 5,018 readings in the logs, one in six named no card wrongly.
+LETTERS_PER_DROP = 6
 
 
 class Lookup(NamedTuple):
@@ -98,10 +101,12 @@ class Lookup(NamedTuple):
         """
         if len(folded) < SHORTEST_WORTH_GUESSING:
             return None
-        found = [name for known, name in self.exact.items() if one_edit_apart(folded, known)]
+        found, how = [name for known, name in self.exact.items() if one_edit_apart(folded, known)], "one edit away"
+        if not found:
+            found, how = [name for known, name in self.exact.items() if letters_dropped(folded, known)], "with letters dropped"
         if len(found) != 1:
             return None
-        logger.info(f"reading 「{folded}」 as {found[0]}, one edit away")
+        logger.info(f"reading 「{folded}」 as {found[0]}, {how}")
         return found[0]
 
 
@@ -167,6 +172,33 @@ def one_edit_apart(left, right):
                 return shorter[position + 1:] == longer[position + 1:]
             return shorter[position:] == longer[position + 1:]
     return len(longer) - len(shorter) == 1
+
+
+def letters_dropped(reading, known):
+    """Report whether a reading is a long name with a few of its letters lost and the rest in order.
+
+    Args:
+        reading: The folded reading.
+        known: A folded real name.
+
+    Returns:
+        True when every letter of the reading appears in the name in order, with at most one in `LETTERS_PER_DROP` missing.
+    """
+    return 0 < len(known) - len(reading) <= len(known) // LETTERS_PER_DROP and in_order(reading, known)
+
+
+def in_order(reading, known):
+    """Report whether every letter of a reading appears in a name in the same order, with any number lost between them.
+
+    Args:
+        reading: The folded reading.
+        known: A folded real name.
+
+    Returns:
+        True when the reading is the name with letters dropped.
+    """
+    letters = iter(known)
+    return all(letter in letters for letter in reading)
 
 
 def index(names):

@@ -92,6 +92,8 @@ REAL_OPTIONS = {
     'I"I let you live.End the event': QUIT_RANK,
     # Lore. Taking it spends a click and leaves the same screen up, so it ranks below quitting.
     MUSHROOM_LORE: DIALOGUE_RANK,
+    # Peregrine's, read with its bracketed name split around the marker and no "on". It tied with a real reward and was taken.
+    "Ask about the gods' intentionsIntentions]Check Information [Their": DIALOGUE_RANK,
 }
 
 # The same option, captured twice with its OCR boxes joined in a different order.

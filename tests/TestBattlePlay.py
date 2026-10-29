@@ -6,6 +6,7 @@ for it, what happens when the game refuses one, and when a turn should just be e
 
 import json
 import sys
+import tempfile
 import types
 import unittest
 from contextlib import contextmanager
@@ -13,6 +14,7 @@ from pathlib import Path
 from unittest import mock
 
 import cv2
+import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
@@ -21,17 +23,27 @@ sys.path.insert(0, str(REPO_ROOT / "ok_tasks"))
 # The real module, for a prompt the fork runs unchanged over a different reading of the screen.
 import utils_sortie as real_sortie  # noqa: E402
 
-from src.en import battle, board, cards, overrides  # noqa: E402
+from src.en import battle, board, cards, ego, overrides  # noqa: E402
+from src.en.game_text import EPIPHANIES  # noqa: E402
 from src.en.handlers import standing_in  # noqa: E402
-from tests.TestBoard import FakeTask, flat, paint, paint_enemy, pasted  # noqa: E402
-from tests.fakes import FakeBox  # noqa: E402
+from tests.TestBoard import EGO_SLOTS_AT, FakeTask, flat, paint, paint_enemy, pasted  # noqa: E402
+from tests.fakes import WIDTH, FakeBox  # noqa: E402
 
 # Haru is Justice and Renoa is Void, and these two cards are otherwise identical: one Action Point, an
 # Attack, exactly "100% Damage". So only a weakness read off the screen can order them.
 ATTACK = "Anchor"
 VOID_ATTACK = "Annihilation Shot"
 BIG_ATTACK = "Charge Launcher"
-CURSE = "Anemia"
+# A Status Ailment that buffs the enemies when played, so the picker neither plays it nor clears it.
+AILMENT = "Horrifying Memory"
+# A neutral 1-point Skill that only shields.
+SHIELD = "Barrier Utilization"
+# One Ego of each kind, as the planner would have read them off their previews.
+GUARD_EGO = ego.Ego("Legato of Faith", frozenset({ego.GUARD}), "")
+STRIKE_EGO = ego.Ego("Execution", frozenset({ego.STRIKE}), "")
+SETUP_EGO = ego.Ego("Tactical Command", frozenset({ego.SETUP}), "")
+HEALING_SETUP_EGO = ego.Ego("Vitality Boosting Potion", frozenset({ego.GUARD, ego.SETUP}), "Heal142% 1 Morale for 1turn")
+EXHAUST_EGO = ego.Ego("Activate Defense Module", frozenset({ego.SETUP}), "For 1 turn, when a card is Exhausted, 1 Weaken to a random enemy")
 
 # Where the painted enemy stands. Anywhere inside the band the counters are looked for in will do.
 ENEMY_AT = (0.50, 0.25)
@@ -115,18 +127,192 @@ class TestChoosing(unittest.TestCase):
         self.assertIsNone(battle.choose(hand(ATTACK), cards.Board(), {ATTACK}))
 
     def test_a_hand_of_curses_ends_the_turn(self):
-        self.assertIsNone(battle.choose(hand(CURSE), cards.Board(), set()))
+        self.assertIsNone(battle.choose(hand(AILMENT), cards.Board(), set()))
 
     def test_spare_points_clear_a_card_that_hurts_while_held(self):
         # Live: three Bleeds sat out turn after turn with all three points unspent. Bleed deals damage, so it goes
-        # ahead of Parasitic Spores, while Abyssal Erosion does its harm when played and is left alone.
-        for held, cleared in ((("Parasitic Spores", "Bleed"), "Bleed"), (("Abyssal Erosion",), None)):
-            with self.subTest(held=held):
-                chosen = battle.choose(hand(*held), cards.Board(), set())
+        # ahead of Parasitic Spores. Abyssal Erosion hurts through its Retain line, but costs 4.
+        # Every Curse goes once points are spare, so two Stickiness no longer sit out a turn the game said they could be played in.
+        for held, points, cleared in ((("Parasitic Spores", "Bleed"), 3, "Bleed"), (("Abyssal Erosion",), 3, None),
+                                      (("Abyssal Erosion",), 4, "Abyssal Erosion"), (("Stickiness", AILMENT), 3, "Stickiness"), (("Overflow",), 2, "Overflow")):
+            with self.subTest(held=held, points=points):
+                chosen = battle.choose(hand(*held), cards.Board(action_points=points), set())
                 self.assertEqual(cleared, chosen and chosen["name"])
 
     def test_an_empty_hand_ends_the_turn(self):
         self.assertIsNone(battle.choose([], cards.Board(), set()))
+
+    def test_an_invulnerable_enemy_is_not_attacked(self):
+        # Damage is wasted while it cannot lose Health, so attacks stay in hand and the turn ends once the shields are played.
+        invulnerable = cards.Board(invulnerable=True)
+        for held, played in (((ATTACK, BIG_ATTACK), None), ((ATTACK, SHIELD), SHIELD)):
+            with self.subTest(held=held):
+                chosen = battle.choose(hand(*held), invulnerable, set())
+                self.assertEqual(played, chosen and chosen["name"])
+
+
+class Previewed:
+    """A task whose screen shows an Ego's preview card once its key is pressed."""
+
+    def __init__(self, boxes):
+        self.boxes = boxes
+        self.all_texts = []
+        self.width, self.height = 1920, 1080
+        self.executor = types.SimpleNamespace(ocr_po_translation=None)
+        self.clicked = []
+
+    def send_key(self, key):
+        pass
+
+    def sleep(self, seconds):
+        pass
+
+    def ocr(self, box=None):
+        return self.boxes
+
+    def click_box(self, box):
+        self.clicked.append(box)
+
+
+class TestEgoPlanner(unittest.TestCase):
+    """Which Ego a turn fires, from what the screen says about the fight."""
+
+    def test_roles_come_from_the_preview_text(self):
+        # Morale's "Damage Amount" is a buff, not damage, which is the misreading that would fire a buff as a strike.
+        for text, roles in (("Heal 140% Activate the Retain effect of all of Orlea's cards in hand", {ego.GUARD}),
+                            ("Gain 2 Morale and 1 Fortitude for 1 turn", {ego.SETUP}),
+                            ("Morale +100% Damage Amount", {ego.SETUP}),
+                            ("Deal 300% Damage to all enemies", {ego.STRIKE}),
+                            ("Gain 120% Shield. Draw 1 card", {ego.GUARD, ego.SETUP})):
+            with self.subTest(text=text):
+                self.assertEqual(ego.roles_of(text), roles)
+
+    def test_a_learnt_ego_is_known_to_the_next_run(self):
+        # The point of saving them: a restart must not preview every Ego again.
+        mark = np.linspace(-1, 1, 128, dtype=np.float32)
+        mark /= np.linalg.norm(mark)
+        with tempfile.TemporaryDirectory() as folder, mock.patch.object(ego, "EGO_FILE", str(Path(folder) / "data" / "egos.json")), \
+                mock.patch.object(ego, "_known", None):
+            ego.learn(mark, ego.Ego("Legato of Faith", ego.roles_of("Heal 140%"), "Heal 140%"))
+            ego._known = None
+            self.assertEqual(ego.recall(ego.known(), mark), GUARD_EGO._replace(text="Heal 140%"))
+
+    def test_both_kinds_of_preview_card_read(self):
+        # Combatant Egos label their card "Ego Skill" where partners say "Partners". Laid out as Legato of Faith's card measured.
+        for label, name in (("Partners", "Legato of Faith"), ("Ego Skil", "Reflection: Zero")):
+            with self.subTest(label=label):
+                task = Previewed([FakeBox(name, 0.480, 0.479, width=300), FakeBox(label, 0.466, 0.517, width=150),
+                                  FakeBox("Heal140%", 0.453, 0.574, width=150), FakeBox("all of Orlea's cards in hand", 0.509, 0.644, width=450),
+                                  FakeBox("Wound", 0.587, 0.857), FakeBox("Cancel", 0.105, 0.728)])
+                read = ego.identify(task, types.SimpleNamespace(), "F1")
+                self.assertEqual((read.name, read.text, read.roles), (name, "Heal140% all of Orlea's cards in hand", {ego.GUARD}))
+
+    def test_a_combatant_card_leaves_out_the_panel_beside_it(self):
+        # Live, Charisma of Resolve sat left beside the Ego panel and read with its EP count and Cancel button in the text.
+        task = Previewed([FakeBox("Charisma of Resolve", 0.249, 0.479, width=300), FakeBox("Ego Skill", 0.21, 0.518, width=150),
+                          FakeBox("450% Defense-Based", 0.237, 0.575, width=250), FakeBox("5", 0.062, 0.634, width=20),
+                          FakeBox("Damage to all enemies", 0.24, 0.611, width=300), FakeBox("Create 1 Vulture Ejection", 0.247, 0.644, width=350),
+                          FakeBox("'Cancel", 0.113, 0.818, width=120)])
+        read = ego.identify(task, types.SimpleNamespace(), "F2")
+        self.assertEqual(read.text, "450% Defense-Based Damage to all enemies Create 1 Vulture Ejection")
+
+    def test_two_silver_haired_portraits_are_told_apart(self):
+        # Live, Owen's Ego in F3 was recalled as Khalipe's Charisma of Resolve in F2, so it was never previewed.
+        frame = pasted("ego_slot_used", *EGO_SLOTS_AT)
+        self.assertIsNone(ego.recall([(ego.signature(frame, "F2"), STRIKE_EGO)], ego.signature(frame, "F3")))
+
+    def test_the_first_rule_that_applies_wins(self):
+        every = [("F1", GUARD_EGO, True), ("F2", STRIKE_EGO, True), ("F3", SETUP_EGO, True)]
+        cases = (
+            # (name, slots, banked, after_hit, invulnerable, attacking, boss, fired)
+            ("a hit the team cannot take", every, 3, 0.2, False, True, False, "F1"),
+            ("a full bar on a healthy team", every, 7, 0.9, False, True, False, "F2"),
+            ("a full bar on a hurt team", every, 7, 0.4, False, True, False, "F1"),
+            ("a full bar into invulnerability", every[1:], 7, 0.9, True, True, False, "F3"),
+            ("invulnerable short of a full bar", every[1:], 3, 0.9, True, True, False, None),
+            ("a set-up ahead of the attacks", every, 3, 0.9, False, True, False, "F3"),
+            ("no attacks to set up", every, 3, 0.9, False, False, False, None),
+            ("a healing set-up on a healthy team", [("F2", HEALING_SETUP_EGO, True)], 3, 0.9, False, True, False, None),
+            ("a healing set-up on a hurt team", [("F2", HEALING_SETUP_EGO, True)], 3, 0.4, False, True, False, "F2"),
+            ("a boss saving for its strike", [("F2", STRIKE_EGO, False), ("F3", SETUP_EGO, True)], 3, 0.9, False, True, True, None),
+            ("an unaffordable guard", [("F1", GUARD_EGO, False), ("F3", SETUP_EGO, True)], 3, 0.2, False, True, False, "F3"),
+            ("an Ego never read", [("F1", None, True)], 7, 0.2, False, True, False, None),
+        )
+        for name, slots, banked, after_hit, invulnerable, attacking, boss, fired in cases:
+            with self.subTest(name):
+                choice = ego.decide(slots, banked, after_hit, invulnerable, attacking, boss, False)
+                self.assertEqual(fired, choice and choice[0])
+
+    def test_a_tinted_badge_fires_only_on_a_bar_that_pays_its_cost(self):
+        # Live, Hugo's 5 and Tiphera's 4 were both tinted the green of a reduced cost on 0 EP, and Last Resort was pressed.
+        badges = {"F2": "5", "F3": "4"}
+
+        def ocr(left, top, right, bottom, frame=None, frame_processor=None):
+            key = next(key for key, at in board.EGO_BADGE_Y.items() if top < at < bottom)
+            return [FakeBox(badges[key], board.EGO_BADGE_X, board.EGO_BADGE_Y[key])] if key in badges else []
+
+        # F1's badge does not read, so it is taken at its tint.
+        for banked, fired in ((0, set()), (4, {"F1", "F3"}), (5, {"F1", "F2", "F3"})):
+            with self.subTest(banked=banked):
+                self.assertEqual(fired, ego.payable(types.SimpleNamespace(ocr=ocr), None, board.EGO_KEYS, banked))
+
+    def test_no_ego_fires_ahead_of_a_breakdown_card(self):
+        def frame_read(**kwargs):
+            raise AssertionError("the Egos were read with a breakdown card still in hand")
+
+        task = types.SimpleNamespace(find_feature=lambda **kwargs: True, box_of_screen=lambda *box: None, frame=None)
+        utils = types.SimpleNamespace(_hand_cards=lambda task: [{"name": "Fear", "key": "1"}, {"name": ATTACK, "key": "2"}])
+        with mock.patch.object(ego, "frame_of", frame_read):
+            self.assertFalse(ego.take_turn(task, utils, types.SimpleNamespace(ego_fires=0)))
+
+    def test_only_a_steady_ego_the_bar_can_pay_for_is_previewed(self):
+        # Live, Rita's 5-cost Hour of Glory was previewed on 2 EP, then the Ego in F2 fired. And a combatant's art sweeping over the panel
+        # was read as a new portrait, so a known Ego was previewed again and the covered look saved.
+        task = types.SimpleNamespace(find_feature=lambda **kwargs: True, box_of_screen=lambda *box: None, log_info=lambda message: None)
+        utils = types.SimpleNamespace(_hand_cards=lambda task: [])
+        portrait, cover = np.array([1.0, 0.0]), np.array([0.0, 1.0])
+        previewed = []
+        for affordable, looks, expected in (({"F2"}, (portrait, portrait), ["F2"]), (set(), (portrait, portrait), []),
+                                            ({"F2"}, (cover, portrait), [])):
+            seen = iter(looks)
+            with self.subTest(affordable=affordable, covered=looks[0] is cover), \
+                    mock.patch.object(ego, "frame_of", lambda task: None), mock.patch.object(board, "banked_points", lambda frame: 2), \
+                    mock.patch.object(board, "affordable_egos", lambda task: []), mock.patch.object(ego, "payable", lambda *args: affordable), \
+                    mock.patch.object(ego, "known", lambda: []), mock.patch.object(ego, "signature", lambda frame, key: next(seen) if key == "F2" else None), \
+                    mock.patch.object(ego, "identify", lambda task, utils, key: previewed.append(key)), \
+                    mock.patch.object(ego, "_unread", []), mock.patch.object(ego, "_sighted", {}), \
+                    mock.patch.object(board, "team_after_hit", lambda frame: 1.0), mock.patch.object(board, "has_action_points", lambda task: False):
+                previewed.clear()
+                for _ in looks:
+                    ego.take_turn(task, utils, types.SimpleNamespace(ego_fires=0, invulnerable=False, ego_held=False))
+                self.assertEqual(expected, previewed)
+
+    def test_an_exhaust_ego_waits_for_a_card_to_exhaust(self):
+        # Live, Activate Defense Module fired ahead of the attacks with no Exhaust card in hand, so its Weaken never landed.
+        for banked in (3, 7):
+            for exhausting, fired in ((False, None), (True, "F1")):
+                with self.subTest(banked=banked, exhausting=exhausting):
+                    choice = ego.decide([("F1", EXHAUST_EGO, True)], banked, 0.9, False, True, False, exhausting)
+                    self.assertEqual(fired, choice and choice[0])
+
+    def test_a_press_the_game_ignored_does_not_use_up_the_turn(self):
+        # Live, F1 pressed while an attack still played left the bar at 3 EP, and the retry that did fire was counted as a second.
+        # Each retry costs the turn ~5s, so a second miss ends the Egos for the turn rather than pressing until the cap.
+        # Live, the first miss left Last Resort selected, and upstream pressed end turn past it for 20s.
+        for ignored, counted, cancels in ((False, [1, 2], 0), (True, [0, ego.FIRES_PER_TURN], 2)):
+            with self.subTest(ignored=ignored):
+                clicked = []
+                task = types.SimpleNamespace(frame=flat(255 if ignored else 0), send_key=lambda key: None, sleep=lambda seconds: None,
+                                             log_info=lambda message: None, executor=types.SimpleNamespace(ocr_po_translation=None),
+                                             ocr=lambda box=None: [FakeBox("Cancel", 0.105, 0.819)], width=1920, height=1080,
+                                             click_box=clicked.append)
+                turn = types.SimpleNamespace(ego_fires=0, ego_missed=False)
+                fires = []
+                for _ in range(2):
+                    ego.fire(task, None, turn, "F1", SETUP_EGO, "ahead of the attacks", 3)
+                    fires.append(turn.ego_fires)
+                self.assertEqual(counted, fires)
+                self.assertEqual(cancels, len(clicked))
 
 
 class TestTurnTracking(unittest.TestCase):
@@ -141,7 +327,7 @@ class TestTurnTracking(unittest.TestCase):
         self.assertFalse(battle.was_refused(ATTACK, 1, [BIG_ATTACK]))
 
     def test_a_card_that_drew_another_is_not_a_refusal(self):
-        self.assertFalse(battle.was_refused(ATTACK, 1, [BIG_ATTACK, CURSE]))
+        self.assertFalse(battle.was_refused(ATTACK, 1, [BIG_ATTACK, AILMENT]))
 
     def test_another_copy_of_the_same_card_is_not_a_refusal(self):
         # A deck holds several copies of a card, so a hand can too. One of three going down to two is the
@@ -151,20 +337,28 @@ class TestTurnTracking(unittest.TestCase):
     def test_the_last_copy_staying_put_is_a_refusal(self):
         self.assertTrue(battle.was_refused(ATTACK, 2, [ATTACK, ATTACK]))
 
+    def test_a_card_that_drew_its_own_copy_was_played(self):
+        """Live, Inferno Rhapsody drew another Rhapsody into the hand, and was left for the turn as refused."""
+        feed = [FakeBox("Draw 1 card(s)", 0.102, 0.249, width=200), FakeBox("Flame Arts + 1", 0.101, 0.305, width=200),
+                FakeBox("Descent +1", 0.093, 0.470, width=200)]
+        task = types.SimpleNamespace(width=1920, height=1080, all_texts=feed)
+        self.assertEqual(1, battle.draws_shown(task), "the toast had climbed above where a draw still on its way is looked for")
+        self.assertFalse(battle.was_refused("Inferno Rhapsody", 1, ["Inferno Rhapsody", "Amp Therapy"], drew=True))
+
     def test_nothing_attempted_is_not_a_refusal(self):
         self.assertFalse(battle.was_refused(None, 0, [ATTACK]))
 
-    def test_a_bigger_hand_means_a_new_turn(self):
-        self.assertTrue(battle.new_turn(before=1, after=5))
-
-    def test_the_same_hand_is_not_a_new_turn(self):
-        self.assertFalse(battle.new_turn(before=5, after=5))
-
-    def test_a_shrinking_hand_is_not_a_new_turn(self):
-        self.assertFalse(battle.new_turn(before=5, after=4))
-
-    def test_the_first_frame_of_a_battle_is_a_new_turn(self):
-        self.assertTrue(battle.new_turn(before=None, after=5))
+    def test_only_a_deal_after_end_turn_is_a_new_turn(self):
+        for description, before, after, ended, expected in (
+                ("a bigger hand after end turn", 1, 5, True, True),
+                ("the same hand", 5, 5, True, False),
+                ("a shrinking hand", 5, 4, True, False),
+                ("the first frame of a battle", None, 5, False, True),
+                # Luke's Stealth Reload adds bullets mid-turn, and Finisher Round counts what the turn has played.
+                ("a hand grown by a card mid-turn", 4, 6, False, False),
+        ):
+            with self.subTest(description):
+                self.assertEqual(battle.new_turn(before, after, ended), expected)
 
 
 class Pressed:
@@ -182,20 +376,39 @@ class Pressed:
         # points remaining and black as none. The badges are painted on by the same helpers `TestBoard` uses.
         self.frame = flat(255 if action_points else 0)
         self.height, self.width = self.frame.shape[:2]
+        # What the Action Point digit reads as when a test gives a count, and nothing otherwise.
+        self.points = [FakeBox(str(action_points), 0.508, 0.923)] if type(action_points) is int else []
         if weakness:
             paint_enemy(self.frame, ENEMY_AT[0], ENEMY_AT[1], board.ATTRIBUTE_HUES[weakness])
         paint(self.frame, egos)
         self.keys = []
         self.logged = []
+        # Where `_move_and_click` tapped, as screen fractions, and what cropped reads of the hand prompt's counter and hand give.
+        self.taps = []
+        self.progress = []
+        self.prompt_hand = []
+        # What each fresh read of the "Not enough AP." toast's region gives, in turn. Nothing once they run out.
+        self.toasts = []
 
     def send_key(self, key):
         self.keys.append(key)
+
+    def ocr(self, *region, **kwargs):
+        if region == battle.POINTS_DIGIT:
+            return self.points
+        if region == battle.NO_POINTS_REGION:
+            return self.toasts.pop(0) if self.toasts else []
+        return self.prompt_hand if region == battle.PROMPT_HAND else self.progress
 
     def box_of_screen(self, *region):
         return region
 
     def find_one(self, feature_name=None, box=None):
         return self.attack_button if feature_name == battle.START_ATTACK else None
+
+    def find_feature(self, feature_name=None, box=None):
+        # The end-turn button is never up, so the Ego planner leaves these frames to the picker and upstream.
+        return []
 
     def click_box(self, box):
         self.clicked.append(box)
@@ -214,7 +427,7 @@ def upstream(hand_cards, smart=True, action_points=True, egos=(), weakness=None)
     Args:
         hand_cards: What `_hand_cards` should report.
         smart: What the Smart Card Play setting reads as.
-        action_points: Whether the Action Point readout should look lit.
+        action_points: Whether the Action Point readout should look lit, or the count its digit reads.
         egos: Slot keys whose cost badge should look affordable.
         weakness: An attribute colour to draw on an enemy's badge, or None for no enemies at all.
 
@@ -228,6 +441,8 @@ def upstream(hand_cards, smart=True, action_points=True, egos=(), weakness=None)
     # The counter, which a test reading the hand short of it sets on the task.
     utils_sortie._read_hand_count = lambda task: getattr(task, "counter", None) or len(task.hand_cards)
     utils_sortie._is_card_name = lambda name: True
+    utils_sortie.find_box_at_point = real_sortie.find_box_at_point
+    utils_sortie._move_and_click = lambda task, x, y: task.taps.append((round(x, 3), round(y, 3)))
     utils_sortie.name_reads = []
     utils_sortie._hand_card_names = lambda task: utils_sortie.name_reads.append(task.all_texts) or []
     utils_sortie.blind_calls = []
@@ -341,8 +556,20 @@ class TestInstalling(unittest.TestCase):
             # Charge Launcher is the better buy, and it is the second card, so key 2 then the confirm.
             self.assertEqual(task.keys, ["2", battle.CONFIRM_KEY])
 
+    def test_an_aimed_card_is_tabbed_onto_the_boss_before_it_is_confirmed(self):
+        # Tapping the boss's HP bar never moved the target. Only TAB moves a raised card's reticle, and an enemy with Taunt holds it.
+        tab, enter = battle.TAB_KEY, battle.CONFIRM_KEY
+        for case, card, rings, keys in (("moved", ATTACK, [0.52, 0.76], ["1", tab, enter]), ("taunt", ATTACK, [0.52, 0.52], ["1", tab, enter]),
+                                        ("no target", SHIELD, [0.52, 0.76], ["1", enter])):
+            reads = iter(rings)
+            with self.subTest(case), upstream(hand(card)) as (utils_sortie, task), \
+                    standing_in(board, boss_x=lambda _: 0.76, reticle_x=lambda _: next(reads)):
+                battle.install()
+                utils_sortie._try_all_card_keys(task, 1)
+                self.assertEqual(task.keys, keys)
+
     def test_a_hand_of_curses_ends_the_turn(self):
-        with upstream(hand(CURSE)) as (utils_sortie, task):
+        with upstream(hand(AILMENT)) as (utils_sortie, task):
             battle.install()
             utils_sortie._try_all_card_keys(task, 1)
             self.assertEqual(task.keys, [battle.END_TURN_KEY])
@@ -419,6 +646,25 @@ class TestInstalling(unittest.TestCase):
             utils_sortie._try_all_card_keys(task, 2)
             self.assertEqual(task.keys, ["2", battle.CONFIRM_KEY])
 
+    def test_the_turn_is_planned_against_the_points_the_digit_shows(self):
+        # Live, 2 AP was planned as 3: Voluntary Control went first and left 1 for a Mealtime lowered to 2.
+        for points, key in ((True, "1"), (2, "2")):
+            with self.subTest(points=points), upstream(hand("Distortion: Gear Bag", BIG_ATTACK), action_points=points) as (utils_sortie, task):
+                battle.install()
+                utils_sortie._try_all_card_keys(task, 2)
+                self.assertEqual(task.keys, [key, battle.CONFIRM_KEY])
+
+    def test_a_count_unread_mid_turn_is_planned_as_one_point_first(self):
+        # Live, 1 AP left read as nothing, was planned as 3, and Cassius's Cards went ahead of Iceberg Cleave and a free Longsword Slash.
+        for cards_in_hand, key in (((ATTACK, BIG_ATTACK), "1"), ((BIG_ATTACK,), "1")):
+            with self.subTest(hand=cards_in_hand), upstream(hand(*cards_in_hand)) as (utils_sortie, task):
+                battle.install()
+                turn = battle.Turn(5)
+                turn.played = [SHIELD]
+                setattr(task, battle.TURN, turn)
+                utils_sortie._try_all_card_keys(task, len(cards_in_hand))
+                self.assertEqual(task.keys, [key, battle.CONFIRM_KEY])
+
     def test_the_attribute_the_enemies_are_weak_to_is_preferred(self):
         with upstream(hand(ATTACK, VOID_ATTACK), weakness="PURPLE") as (utils_sortie, task):
             battle.install()
@@ -442,15 +688,114 @@ class TestInstalling(unittest.TestCase):
                 utils_sortie._try_all_card_keys(task, 2)
             self.assertEqual(len(reads), 1)
 
+    def test_a_turn_that_reads_no_weakness_says_it_opened_once(self):
+        # Live, a turn with no weakness on show logged "turn opens" on every frame, which split one turn into many.
+        with upstream(hand(ATTACK, BIG_ATTACK)) as (utils_sortie, task):
+            battle.install()
+            utils_sortie._try_all_card_keys(task, 2)
+            utils_sortie._try_all_card_keys(task, 2)
+            self.assertEqual(sum(message.startswith("turn opens") for message in task.logged), 1)
+
     def test_a_fresh_hand_reads_the_weakness_again(self):
         # A new turn can be a new fight, so what the last one saw no longer counts.
         with upstream(hand(ATTACK, BIG_ATTACK), weakness="PURPLE") as (utils_sortie, task):
             battle.install()
             with counting(board, "weakness") as reads:
                 utils_sortie._try_all_card_keys(task, 2)
-                task.hand_cards = hand(ATTACK, BIG_ATTACK, CURSE)
+                battle.end_of_turn(task)
+                task.hand_cards = hand(ATTACK, BIG_ATTACK, AILMENT)
                 utils_sortie._try_all_card_keys(task, 3)
             self.assertEqual(len(reads), 2)
+
+    def test_a_hand_grown_mid_turn_keeps_the_turn_and_its_plays(self):
+        with upstream(hand(ATTACK, BIG_ATTACK)) as (utils_sortie, task):
+            battle.install()
+            utils_sortie._try_all_card_keys(task, 2)
+            turn = getattr(task, battle.TURN)
+            task.hand_cards = hand(ATTACK, ATTACK, ATTACK)
+            utils_sortie._try_all_card_keys(task, 3)
+            self.assertIs(getattr(task, battle.TURN), turn)
+            self.assertEqual(turn.played, [BIG_ATTACK])
+
+    def test_an_end_turn_upstream_presses_closes_the_turn(self):
+        # Upstream ends an empty hand itself, so the card tried last left the hand without the picker seeing it go.
+        with upstream(hand(ATTACK)) as (utils_sortie, task):
+            battle.install()
+            utils_sortie._try_all_card_keys(task, 1)
+            battle.noting_end_of_turn(task)(battle.END_TURN_KEY)
+            task.hand_cards = hand(ATTACK, BIG_ATTACK)
+            utils_sortie._try_all_card_keys(task, 2)
+            self.assertEqual(getattr(task, battle.TURN).last_turn, (ATTACK,))
+
+    def test_a_deal_no_bigger_than_the_hand_left_is_a_new_turn_once_the_hand_emptied(self):
+        # Live, a turn ended holding 6 and the next dealt 5, so the deal read as the old turn still going.
+        with upstream(hand(ATTACK, BIG_ATTACK, AILMENT)) as (utils_sortie, task):
+            battle.install()
+            page = handlers_of(utils_sortie)["handle_battle_page"]
+            page(task)
+            ended = getattr(task, battle.TURN)
+            battle.end_of_turn(task)
+            task.hand_cards = []
+            page(task)
+            task.hand_cards = hand(ATTACK, BIG_ATTACK)
+            page(task)
+            self.assertIsNot(getattr(task, battle.TURN), ended)
+
+    def test_only_a_screen_with_text_on_it_ends_the_turn_when_the_counter_is_gone(self):
+        for description, screen, shown, ends in (
+                ("an Ego's cut-in, which blanks the screen", [], [], False),
+                ("a hand prompt rising, which hides only the counter", [FakeBox(ATTACK, 0.4, 0.75)], [ATTACK], False),
+                ("a fight won by a card", [FakeBox("Victory", 0.5, 0.3)], [], True),
+        ):
+            with self.subTest(description), upstream(hand(ATTACK, ATTACK)) as (utils_sortie, task):
+                battle.install()
+                page = handlers_of(utils_sortie)["handle_battle_page"]
+                page(task)
+                before = getattr(task, battle.TURN)
+                counter, names, task.all_texts = utils_sortie._read_hand_count, utils_sortie._hand_card_names, screen
+                utils_sortie._read_hand_count, utils_sortie._hand_card_names = lambda task: None, lambda task: list(shown)
+                page(task)
+                utils_sortie._read_hand_count, utils_sortie._hand_card_names, task.all_texts = counter, names, []
+                task.hand_cards = hand(ATTACK, ATTACK, ATTACK)
+                page(task)
+                self.assertEqual(getattr(task, battle.TURN) is not before, ends)
+
+    def test_a_battle_keeps_every_play_until_the_next_node(self):
+        # Two turns back is still this fight, but upstream counts the next node on leaving the route screen, before its fight opens.
+        with upstream(hand(ATTACK)) as (utils_sortie, task):
+            battle.install()
+            task.node_status = {"node_count": 1}
+            for count in (1, 2):
+                utils_sortie._try_all_card_keys(task, count)
+                battle.end_of_turn(task)
+                task.hand_cards = hand(*[ATTACK] * (count + 1))
+            utils_sortie._try_all_card_keys(task, 3)
+            self.assertEqual((ATTACK, ATTACK), getattr(task, battle.TURN).earlier)
+            task.node_status["node_count"] += 1
+            utils_sortie._try_all_card_keys(task, 3)
+            turn = getattr(task, battle.TURN)
+            self.assertEqual(((), ()), (turn.earlier, turn.last_turn))
+
+    def test_a_turn_spares_its_first_frame_for_the_team_read(self):
+        # Live, a restart mid-battle never read the team: by the time the read could tap, every turn already had a card in flight.
+        with upstream(hand(ATTACK)) as (utils_sortie, task):
+            battle.install()
+            page = handlers_of(utils_sortie)["handle_battle_page"]
+            setattr(task, battle.TEAM_WANTED, True)
+            page(task)
+            self.assertEqual([], utils_sortie.asked)
+            page(task)
+            self.assertEqual(1, len(utils_sortie.asked))
+
+    def test_the_next_turn_knows_what_was_kept(self):
+        # The Attack was pressed after the last read, so only the Curse was still in hand when the turn ended.
+        with upstream(hand(ATTACK, AILMENT)) as (utils_sortie, task):
+            battle.install()
+            utils_sortie._try_all_card_keys(task, 2)
+            battle.end_of_turn(task)
+            task.hand_cards = hand(AILMENT, ATTACK, BIG_ATTACK)
+            utils_sortie._try_all_card_keys(task, 3)
+            self.assertEqual(getattr(task, battle.TURN).kept, (AILMENT,))
 
     def test_every_copy_of_a_card_gets_played(self):
         # Caught live: a hand of three Escapism played one, read the other two as the game refusing it, and
@@ -462,14 +807,90 @@ class TestInstalling(unittest.TestCase):
             utils_sortie._try_all_card_keys(task, 1)
             self.assertEqual(task.keys, ["1", battle.CONFIRM_KEY, "1", battle.CONFIRM_KEY])
 
-    def test_a_card_still_in_hand_is_not_tried_again(self):
+    def test_a_read_that_lost_cards_since_the_last_play_waits_a_frame(self):
+        # Live, Rhythm's hit still played over the hand after its key. The read caught Call & Response alone, which was played, and the
+        # Encore that would have procced the Rhythm was passed by.
+        with upstream(hand("Rhythm", "Encore", "Call & Response", "Rhythm")) as (utils_sortie, task):
+            battle.install()
+            utils_sortie._try_all_card_keys(task, 4)
+            pressed = list(task.keys)
+            task.hand_cards = hand("Call & Response", at=[0.5])
+            for _ in range(battle.SETTLE_WAIT):
+                utils_sortie._try_all_card_keys(task, 3)
+            self.assertEqual(pressed, task.keys)
+            # A read that never fills back in is played on regardless.
+            utils_sortie._try_all_card_keys(task, 3)
+            self.assertEqual(len(pressed) + 2, len(task.keys))
+
+    def test_a_draw_on_its_way_to_the_hand_waits_a_frame(self):
+        # Live, a key pressed under "Draw 2 card(s)" landed after the draw had shifted the hand, and played Multishot for Quiver Reload.
         with upstream(hand(ATTACK, BIG_ATTACK)) as (utils_sortie, task):
+            task.all_texts = [FakeBox("Draw 2 card(s)", 0.104, 0.416)]
+            battle.install()
+            for _ in range(battle.SETTLE_WAIT):
+                utils_sortie._try_all_card_keys(task, 2)
+            self.assertEqual([], task.keys)
+            # A toast that never clears is played on regardless.
+            utils_sortie._try_all_card_keys(task, 2)
+            self.assertEqual(2, len(task.keys))
+
+    def test_a_card_the_game_cannot_afford_is_left_on_its_key(self):
+        # Live, each unaffordable key was confirmed and waited on. The toast on the key is enough to move to the next card.
+        with upstream(hand(ATTACK, BIG_ATTACK)) as (utils_sortie, task):
+            task.toasts = [[FakeBox("Not enough AP.", 0.502, 0.501)]]
             battle.install()
             utils_sortie._try_all_card_keys(task, 2)
-            # The game kept it twice running, so the next frame should reach for the other card instead.
             utils_sortie._try_all_card_keys(task, 2)
-            utils_sortie._try_all_card_keys(task, 2)
-            self.assertEqual(task.keys, ["2", battle.CONFIRM_KEY, "2", battle.CONFIRM_KEY, "1", battle.CONFIRM_KEY])
+            self.assertEqual(task.keys, ["2", "1", battle.CONFIRM_KEY])
+
+    def test_a_lowered_card_costs_what_its_digit_reads(self):
+        # Live, "rbidenEctasyofVolence" took the assumed cost of 1, and so read as lowered to 0 for a card at 8.
+        task = Pressed([])
+        for name, digits, expected in (
+                ("rbidenEctasyofVolence", [FakeBox("8", 0.5, 0.5)], 8),
+                ("rbidenEctasyofVolence", [], cards.ASSUMED_COST),
+                # Live, Mutation's free copy read no digit and was taken for 8.
+                ("Forbidden: Ecstasy of Violence", [], 0),
+        ):
+            box = FakeBox(name, 0.7, 0.75)
+            reader = types.SimpleNamespace(_hand_card_names=lambda task: [box])
+            with self.subTest(name=name, expected=expected), mock.patch.object(board, "cost_lowered", return_value=True):
+                task.progress = digits
+                [card] = battle.priced(task, reader, [{"name": box.name, "key": "1", "left_x": box.x / task.width}])
+                self.assertEqual(expected, cards.price(card))
+
+    def test_a_name_cut_at_the_front_has_its_cost_read_where_the_whole_name_starts(self):
+        # Live, "dden: Dispos" put the digit box 5 letters right of the real one, and a free Forbidden: Disposable Ego was taken for 1 AP.
+        task = Pressed([])
+        box = FakeBox("dden: Dispos", 0.5, 0.75, width=100)
+        reader = types.SimpleNamespace(_hand_card_names=lambda task: [box])
+        with mock.patch.object(board, "cost_digit", wraps=board.cost_digit) as digit, mock.patch.object(board, "cost_lowered", return_value=False):
+            battle.priced(task, reader, [{"name": "Forbidden: Disposable Ego", "key": "1", "left_x": box.x / task.width}])
+        self.assertAlmostEqual((box.x - 100 * 5 / 10) / task.width, digit.call_args.args[0])
+
+    def test_a_reading_too_short_for_the_data_is_the_card_the_turn_last_read(self):
+        # Live, a crowded hand read Void Fragment as "Void" and "foid", and the free card was never played.
+        for name, hand, expected in (
+                ("Void", ["Void Fragment", "Strike"], "Void Fragment"),
+                ("foid", ["Void Fragment", "Strike"], "Void Fragment"),
+                ("Voi", ["Void Fragment"], "Voi"),
+                ("Shar", ["Shard:Light", "Shard:Dark"], "Shar"),
+                ("Void", ["Strike"], "Void"),
+                ("Strike", ["Strike (Cycle)"], "Strike"),
+        ):
+            with self.subTest(name=name):
+                self.assertEqual(expected, battle.remembered(name, hand))
+
+    def test_a_card_still_in_hand_is_not_tried_again(self):
+        # The game kept it twice running, so the next frame should reach for the other card instead. A Retrieve the deck read showed
+        # sends the card back to hand once, which is one stay more before that.
+        for retrieves, frames in ((0, 3), (1, 4)):
+            with self.subTest(retrieves=retrieves), upstream(hand(ATTACK, BIG_ATTACK), action_points=3) as (utils_sortie, task), \
+                    mock.patch.dict(cards.RETRIEVES, {BIG_ATTACK: retrieves}):
+                battle.install()
+                for _ in range(frames):
+                    utils_sortie._try_all_card_keys(task, 2)
+                self.assertEqual(task.keys, ["2", battle.CONFIRM_KEY] * (frames - 1) + ["1", battle.CONFIRM_KEY])
 
     def test_a_refusal_holds_while_ocr_misreads_the_hand(self):
         # Caught live: a lowered hand read as one card spelled a new way each frame, and as one card then two,
@@ -479,9 +900,10 @@ class TestInstalling(unittest.TestCase):
             task.counter = 2
             battle.install()
             utils_sortie._try_all_card_keys(task, 2)
-            task.hand_cards = hand(CURSE, "loming Laser L", at=[0.393, 0.541])
             utils_sortie._try_all_card_keys(task, 2)
-            task.hand_cards = hand(CURSE, "oming Laser L", at=[0.393, 0.541])
+            task.hand_cards = hand(AILMENT, "loming Laser L", at=[0.393, 0.541])
+            utils_sortie._try_all_card_keys(task, 2)
+            task.hand_cards = hand(AILMENT, "oming Laser L", at=[0.393, 0.541])
             utils_sortie._try_all_card_keys(task, 2)
             self.assertEqual(task.keys, ["2", battle.CONFIRM_KEY, "2", battle.CONFIRM_KEY, battle.END_TURN_KEY])
 
@@ -495,6 +917,26 @@ class TestInstalling(unittest.TestCase):
             self.assertEqual([("Magnetic Field", "1"), ("Bleed", "4")],
                              [(card["name"], card["key"]) for card in utils_sortie._hand_cards(task)])
 
+    def test_a_name_on_two_lines_does_not_double_the_keys(self):
+        # Live, as upstream keyed it in a hand of 5: key 5 was pressed for Unity, which sat third.
+        read = [{"name": "Strike", "key": "1", "left_x": 0.2422}, {"name": "Flame Dragon Guardian", "key": "3", "left_x": 0.3542},
+                {"name": "Unity", "key": "5", "left_x": 0.4688}, {"name": "Attack and Defense", "key": "5", "left_x": 0.4948},
+                {"name": "Rapid Fire", "key": "7", "left_x": 0.5786}]
+        with upstream(read) as (utils_sortie, task):
+            task.counter = 5
+            battle.install()
+            self.assertEqual("3", next(card["key"] for card in utils_sortie._hand_cards(task) if card["name"] == "Unity"))
+
+    def test_a_name_cut_at_the_front_is_keyed_from_where_the_whole_name_starts(self):
+        # Live, "sidual Herb" was read 0.268 into a hand of 8 and keyed 2, though Harmonization: Residual Herb sat first.
+        boxes = [FakeBox("sidual Herb", 0.2849, 0.75, width=64), FakeBox("hidden:Guid", 0.6771, 0.75, width=58)]
+        read = [{"name": box.name, "key": key, "left_x": box.x / WIDTH} for box, key in zip(boxes, "17")]
+        with upstream(read) as (utils_sortie, task), mock.patch.dict(cards.DECK, {"Harmonization: Residual Herb": ""}):
+            task.counter = 8
+            utils_sortie._hand_card_names = lambda task: boxes
+            battle.install()
+            self.assertEqual([("sidual Herb", "1"), ("hidden:Guid", "7")], [(card["name"], card["key"]) for card in utils_sortie._hand_cards(task)])
+
     def test_a_hand_read_short_is_keyed_by_where_each_card_sits(self):
         # The same lowered hand: only the raised fourth card was read, and upstream keyed it 1 - Pulse Fire, which
         # cost the point the turn no longer had. Measured off the capture, Homing Laser L's name starts at 0.705.
@@ -502,17 +944,21 @@ class TestInstalling(unittest.TestCase):
             task.counter = 4
             task.all_texts = [FakeBox("Not enough AP.", 0.5, 0.52)]
             battle.install()
+            # Live, a key pressed on the deal's first frame, with 5 of 6 read, played Stealth Reload for Chain Fire.
+            utils_sortie._try_all_card_keys(task, 4)
+            self.assertEqual([], task.keys)
             utils_sortie._try_all_card_keys(task, 4)
             self.assertEqual(task.keys, ["4", battle.CONFIRM_KEY])
 
     def test_a_card_ocr_missed_is_tried_before_the_turn_ends(self):
         # Live: the counter read three, OCR read only two status cards at keys 2 and 3, and the turn was ended
         # with Cobalt Light, the unread first card, still in hand and points to spend.
-        with upstream(hand(CURSE, CURSE, at=[0.468, 0.605])) as (utils_sortie, task):
+        with upstream(hand(AILMENT, AILMENT, at=[0.468, 0.605])) as (utils_sortie, task):
             task.counter = 3
             battle.install()
-            utils_sortie._try_all_card_keys(task, 3)
-            utils_sortie._try_all_card_keys(task, 3)
+            # The turn's first read is short, so it waits a frame for the deal.
+            for _ in range(3):
+                utils_sortie._try_all_card_keys(task, 3)
             self.assertEqual(task.keys, ["1", battle.CONFIRM_KEY, battle.END_TURN_KEY])
 
     def test_the_games_out_of_points_toast_ends_the_turn(self):
@@ -563,6 +1009,17 @@ class TestCallingBackTheTurn(unittest.TestCase):
         task, answers = self.run_frames(names=[], popups=battle.CALLBACKS + 1)
         self.assertEqual(answers, [True] * battle.CALLBACKS + [False])
 
+    def test_a_hand_that_read_cards_is_waited_on_before_a_blank_read_ends_the_turn(self):
+        # Live, a discard prompt closed with the hand still lowered, and the game ended the turn with no warning.
+        with upstream([]) as (utils_sortie, task):
+            task.counter = 2
+            battle.install()
+            battle.turn_of(task, 2).hand = ["Dirge Bullet", "Last-Ditch Assault"]
+            page = handlers_of(utils_sortie)["handle_battle_page"]
+            for _ in range(battle.SETTLE_WAIT + 1):
+                page(task)
+            self.assertEqual(len(utils_sortie.asked), 1)
+
     def test_a_card_passed_over_for_cost_is_tried_once_the_game_says_it_plays(self):
         # Live, Rossweisse's Sword Resonance showed 0 AP against the data's 1, and was held at 0 AP for good.
         with upstream(hand("Sword Resonance"), action_points=False) as (utils_sortie, task):
@@ -578,28 +1035,83 @@ class TestCallingBackTheTurn(unittest.TestCase):
             task.all_texts = list(CARDS_LEFT_PROMPT)
             self.assertFalse(handlers["handle_cards_left"](task))
 
+    def test_cards_the_game_refused_are_tried_again_once_it_says_they_play(self):
+        # Live, a final boss turn refused every card with all three points to spend, then warned that they could still be played.
+        with upstream(hand("Rapid Fire")) as (utils_sortie, task):
+            battle.install()
+            handlers = handlers_of(utils_sortie)
+            for _ in range(battle.REFUSALS + 1):
+                utils_sortie._try_all_card_keys(task, 1)
+            self.assertEqual(task.keys[-1], battle.END_TURN_KEY)
+            task.all_texts = list(CARDS_LEFT_PROMPT)
+            self.assertTrue(handlers["handle_cards_left"](task))
+            task.all_texts, task.keys = [], []
+            utils_sortie._try_all_card_keys(task, 1)
+            self.assertEqual(task.keys, ["1", battle.CONFIRM_KEY])
+
     def test_a_hand_still_unread_after_a_callback_has_its_keys_tried(self):
         # Live, a 0 AP card never read over its holographic art, so each callback came back to the same empty hand.
-        with upstream([]) as (utils_sortie, task):
-            task.counter = 3
+        with upstream([], action_points=False) as (utils_sortie, task):
+            task.counter = 4
             battle.install()
             handlers = handlers_of(utils_sortie)
             page, cards_left = handlers["handle_battle_page"], handlers["handle_cards_left"]
             page(task)
             task.all_texts = list(CARDS_LEFT_PROMPT)
             self.assertTrue(cards_left(task))
-            # Key 2 plays and a card is drawn after it. Live, the draw started the keys over from 1, retrying cards the game had
-            # already refused, while the card right of the one played slid onto its key. A key the game turns down at once
-            # is not confirmed, which saves the 2s wait on Enter.
+            # A key the game turns down at once is not confirmed, which saves the 2s wait on Enter. Key 2 plays with the readout dark,
+            # so only the card that slid onto it is tried before the warning is asked again: live, the keys after it went on into a hand
+            # at 0 AP, 4s each, for 35s.
             toast = [FakeBox("Not enough AP.", 0.5, 0.52)]
-            for counter, texts in ((3, []), (3, toast), (3, []), (2, []), (2, []), (3, []), (3, toast)):
+            for counter, texts in ((4, []), (4, toast), (4, []), (3, []), (3, toast), (3, [])):
                 task.counter = counter
                 task.all_texts = list(texts)
                 page(task)
-            self.assertEqual(task.keys, ["1", "2", battle.CONFIRM_KEY, "2", battle.CONFIRM_KEY, "3"])
+            self.assertEqual(task.keys, ["1", "2", battle.CONFIRM_KEY, "2"])
+            # The next warning picks up where it stopped. Live, a restart from key 1 retried cards the game had already refused.
+            task.all_texts = list(CARDS_LEFT_PROMPT)
+            self.assertTrue(cards_left(task))
+            for texts in ([], toast):
+                task.all_texts = list(texts)
+                page(task)
+            self.assertEqual(task.keys, ["1", "2", battle.CONFIRM_KEY, "2", "3"])
             # Every key tried, so the game's next check is the end of the turn.
             task.all_texts = list(CARDS_LEFT_PROMPT)
             self.assertFalse(cards_left(task))
+
+    def test_a_blind_key_that_plays_with_points_left_tries_the_card_that_slid_onto_it(self):
+        # Live, each card played this way went back through end turn and the game's warning, 6.5s a card. At 0 AP that was a run of
+        # holographic 0 AP Homing Lasers, one round trip each.
+        for points in (True, False):
+            with self.subTest(action_points=points), upstream([], action_points=points) as (utils_sortie, task):
+                task.counter = 3
+                battle.install()
+                handlers = handlers_of(utils_sortie)
+                page = handlers["handle_battle_page"]
+                page(task)
+                task.all_texts = list(CARDS_LEFT_PROMPT)
+                self.assertTrue(handlers["handle_cards_left"](task))
+                task.all_texts = []
+                for counter in (3, 3, 2, 2, 1):
+                    task.counter = counter
+                    page(task)
+                self.assertEqual(task.keys, ["1", battle.CONFIRM_KEY, "1", battle.CONFIRM_KEY, "1"])
+
+    def test_a_blind_key_is_confirmed_over_the_raised_cards_text(self):
+        # Live, the card key 1 raised read as a hand of "Incinerate: Create", its Enter was dropped, and `e` did nothing for 20 frames.
+        with upstream([]) as (utils_sortie, task):
+            task.counter = 3
+            battle.install()
+            handlers = handlers_of(utils_sortie)
+            page = handlers["handle_battle_page"]
+            page(task)
+            task.all_texts = list(CARDS_LEFT_PROMPT)
+            self.assertTrue(handlers["handle_cards_left"](task))
+            task.all_texts = []
+            page(task)
+            utils_sortie._hand_card_names = lambda _: ["Incinerate: Create"]
+            page(task)
+            self.assertEqual(task.keys, ["1", battle.CONFIRM_KEY])
 
 
 class TestEgoChoice(unittest.TestCase):
@@ -684,7 +1196,8 @@ class TestKits(unittest.TestCase):
             battle.install()
             page = handlers_of(utils_sortie)["handle_battle_page"]
             utils_sortie._try_all_card_keys(task, 3)
-            task.hand_cards = hand("Shard:Light", "Shard:Dark")
+            # The Tassels the Shards made sit in hand with them until they fuse.
+            task.hand_cards = hand("Shard:Light", "Sword Tassel", "Shard:Dark")
             # A counter that blanks mid-animation is no reason to wait, and no reason to raise either.
             self.assertFalse(battle.kit_waiting(task, utils_sortie, None))
             page(task)
@@ -692,9 +1205,31 @@ class TestKits(unittest.TestCase):
             for _ in range(battle.KIT_WAIT - 1):
                 page(task)
             self.assertEqual(utils_sortie.asked, [])
-            # A fusion that never comes cannot hold the turn for good.
-            page(task)
+            # A fusion that never comes cannot hold the turn for good, past the frames any blank read gets.
+            for _ in range(battle.SETTLE_WAIT + 1):
+                page(task)
             self.assertEqual(len(utils_sortie.asked), 1)
+
+    def test_a_finale_ends_the_turn_without_the_end_turn_key(self):
+        # Live, Reloading ended Anika's turn, and the next deal was played as the same turn, with its plays and enemy reads.
+        with upstream(hand("Reloading")) as (utils_sortie, task):
+            battle.install()
+            utils_sortie._try_all_card_keys(task, 1)
+            task.hand_cards = hand("Rapid Fire", "Blaster Swing")
+            utils_sortie._try_all_card_keys(task, 2)
+            self.assertEqual(getattr(task, battle.TURN).last_turn, ("Reloading",))
+
+    def test_a_finale_waits_on_cards_a_read_lost(self):
+        # Live, Rapid Fire and Sir Kowalski sat lowered out of the name band for 2s, and Reloading alone ended the turn on two points.
+        with upstream(hand("Reloading", "Rapid Fire", "Sir Kowalski")) as (utils_sortie, task):
+            battle.install()
+            utils_sortie._try_all_card_keys(task, 3)
+            task.hand_cards, task.counter, task.keys = hand("Reloading"), 2, []
+            for _ in range(battle.KIT_WAIT):
+                utils_sortie._try_all_card_keys(task, 2)
+            self.assertEqual(task.keys, [])
+            utils_sortie._try_all_card_keys(task, 2)
+            self.assertEqual(task.keys, ["1", battle.CONFIRM_KEY])
 
     def test_a_hand_prompt_never_gives_up_a_shard(self):
         with upstream(hand(ATTACK)) as (utils_sortie, task):
@@ -716,6 +1251,156 @@ class TestKits(unittest.TestCase):
                 with standing_in(task, all_texts=battle.unheld_texts(task)):
                     self.assertTrue(real_sortie.handle_return_to_draw_pile(task))
                 self.assertEqual([box.name for box in task.clicked], [expected])
+
+
+class TestHandPrompt(unittest.TestCase):
+    """The prompt that takes cards out of the hand mid-fight, answered against its own counter."""
+
+    # Precision Aim's prompt as it stuck live: upstream tapped "Basi", "Fixer's Approach" and "XAttac" while the counter stayed at 0/1.
+    SCREEN = (FakeBox("请选择1张要移动至抽牌堆的卡牌", 0.5, 0.111, width=600), FakeBox("05/10", 0.505, 0.971), FakeBox("Launcher", 0.273, 0.721),
+              FakeBox("Basi", 0.27, 0.80), FakeBox("Opening Found", 0.349, 0.765), FakeBox("Hunting Instincts", 0.603, 0.757), FakeBox(AILMENT, 0.73, 0.776))
+
+    def frames(self, *counters, screens=(), played=None, cropped=()):
+        """Answer the prompt once per counter reading.
+
+        Args:
+            counters: What a cropped read of the prompt's counter gives each frame, empty for nothing read, a tuple for more than one box.
+            screens: What the full-screen pass reads on the first frames, `SCREEN` for every frame after them.
+            played: The card whose key opened the prompt, or None for a turn not tracked.
+            cropped: What a read of the hand alone gives.
+
+        Returns:
+            The task, with every tap it made.
+        """
+        with upstream(hand(ATTACK)) as (utils_sortie, task):
+            battle.install()
+            if played:
+                turn = battle.Turn(5)
+                turn.attempted = played
+                setattr(task, battle.TURN, turn)
+            for index, counter in enumerate(counters):
+                task.all_texts = list(screens[index] if index < len(screens) else self.SCREEN)
+                task.progress = [FakeBox(text, 0.5, 0.17) for text in ((counter,) if isinstance(counter, str) else counter) if text]
+                task.prompt_hand = list(cropped)
+                handlers_of(utils_sortie)["handle_battle_hand_select"](task)
+        return task
+
+    def test_it_gives_up_the_curse_and_confirms_only_once_the_counter_moves(self):
+        # Live, a stray "1" read beside "0/3" ran into it as "0/31", and a count that high would never be met.
+        for counters in (("0/1", "1/1"), (("0/1", "1"), ("1/1", "1"))):
+            with self.subTest(counters=counters):
+                task = self.frames(*counters)
+                self.assertEqual([(0.73, round(0.776 + battle.CARD_BODY, 3)), battle.PROMPT_CONFIRM], task.taps)
+                self.assertEqual([], task.clicked, "upstream's random pick never ran")
+
+    def test_the_top_of_the_draw_pile_takes_the_dearest_card_then_the_best_over_the_curse(self):
+        # The card comes straight back next turn, so a curse put there is drawn again.
+        top = (FakeBox("请选择1张要移动至抽牌堆顶的卡牌", 0.5, 0.111, width=600), *self.SCREEN[1:])
+        task = self.frames("0/1", screens=(top,))
+        self.assertEqual([(0.349, round(0.765 + battle.CARD_BODY, 3))], task.taps, "Opening Found, the best of the 1-cost cards")
+        task = self.frames("0/1", screens=((*top, FakeBox("Android", 0.45, 0.765)),))
+        self.assertEqual([(0.45, round(0.765 + battle.CARD_BODY, 3))], task.taps, "Android, the one 2-cost card, though Opening Found rates higher")
+
+    def test_an_upgrade_or_a_kit_buff_is_never_given_up_on_a_tie(self):
+        prompt = (FakeBox("请选择1张卡牌", 0.5, 0.111, width=600), FakeBox("04/10", 0.505, 0.971))
+        for description, hand, taken in (
+            # Live, Adagio's discard rated Exorcist's Formation level with Stroke and G Chord, and took it for being leftmost.
+            ("an Upgrade", ("Exorcist's Formation", "Mutation: Forbidden Algorithm", "Stroke", "G Chord"), 0.55),
+            # Live, Flower of Devoured Fate's discard rated Strike of Darkness level with the Dark Blade it would boost.
+            ("Rei's Strike of Darkness", ("Strike of Darkness", "Dark Blade", "Annihilation Shot", "Annihilation Shot"), 0.40),
+        ):
+            with self.subTest(description):
+                live = (*prompt, *(FakeBox(name, x, 0.80) for name, x in zip(hand, (0.285, 0.40, 0.55, 0.70))))
+                task = self.frames("0/1", screens=(live,))
+                self.assertEqual([(taken, round(0.80 + battle.CARD_BODY, 3))], task.taps)
+
+    def test_flower_of_devoured_fate_is_fed_a_bullet_first(self):
+        # Live, it gave up Predator's Blade and Annihilation Shot every turn, though a bullet fed to it fires and comes back.
+        live = (FakeBox("请选择2张卡牌", 0.5, 0.111, width=600), FakeBox("04/10", 0.505, 0.971), FakeBox("Annihilation Shot", 0.285, 0.80),
+                FakeBox("Dirge Bullet", 0.40, 0.80), FakeBox("Echo of Sorrow", 0.55, 0.80))
+        task = self.frames("0/2", screens=(live,), played="Flower of Devoured Fate")
+        self.assertEqual([(0.40, round(0.80 + battle.CARD_BODY, 3))], task.taps)
+
+    def test_flower_of_devoured_fate_keeps_the_bullets_for_last_ditch_assault(self):
+        # A bullet fed to it only comes back, while any other card fed to it is one more bullet for Last-Ditch Assault.
+        live = (FakeBox("请选择2张卡牌", 0.5, 0.111, width=600), FakeBox("04/10", 0.505, 0.971), FakeBox("Annihilation Shot", 0.285, 0.80),
+                FakeBox("Dirge Bullet", 0.40, 0.80), FakeBox("Last-Ditch Assault", 0.55, 0.80))
+        task = self.frames("0/2", screens=(live,), played="Flower of Devoured Fate")
+        self.assertEqual([(0.285, round(0.80 + battle.CARD_BODY, 3))], task.taps)
+
+    def test_flower_of_devoured_fate_never_takes_last_ditch_assault(self):
+        # Live, a discard offered two bullets and Last-Ditch Assault, and took a bullet and then the payoff.
+        live = (FakeBox("请选择2张卡牌", 0.5, 0.111, width=600), FakeBox("03/10", 0.505, 0.971), FakeBox("Dirge Bullet", 0.40, 0.80),
+                FakeBox("Last-Ditch Assault", 0.55, 0.80))
+        task = self.frames("1/2", screens=(live,), played="Flower of Devoured Fate")
+        self.assertEqual([(0.40, round(0.80 + battle.CARD_BODY, 3))], task.taps)
+
+    def test_a_pick_to_place_in_hand_takes_the_best_card(self):
+        # Live, Nia's Curiosity offered two Amp Therapy and an Inferno Rhapsody, and sat 11s for the stuck-screen fallback's random click.
+        offered = [{"name": name, "description": "", "x": x, "y": 0.33} for name, x in (("Amp Therapy", 0.26), ("Amp Therapy", 0.51), ("Inferno Rhapsody", 0.76))]
+        for caption in ("请选择1张放入手牌的卡牌", "→ Select 1 card(s) to place in hand."):
+            with self.subTest(caption=caption):
+                taps = []
+                utils = types.SimpleNamespace(recognize_cards=lambda task, page: offered, _move_and_click=lambda task, x, y: taps.append((x, y)))
+                task = types.SimpleNamespace(width=1920, height=1080, all_texts=[FakeBox(caption, 0.50, 0.13, width=600)],
+                                             log_info=lambda message: None, sleep=lambda seconds: None)
+                with mock.patch.object(battle, "frame_of", lambda task: None), mock.patch.object(battle.board, "team_after_hit", lambda frame: 1.0):
+                    self.assertTrue(battle.attribute_handler(utils)(task))
+                self.assertEqual([(0.76, 0.33)], taps)
+
+    def test_a_pile_prompt_takes_the_best_card_and_confirms_on_its_own_button(self):
+        # Live, Joker's grid of the Draw Pile and Discard Pile has no hand counter, so nothing answered it and the fight froze for 80s.
+        pile = (FakeBox("请选择1张卡牌", 0.5, 0.111, width=600), FakeBox("Draw Pile or Discard Pile", 0.15, 0.14), FakeBox("Cards", 0.103, 0.27),
+                FakeBox("Wild Card", 0.29, 0.27), FakeBox("Iceberg Cleave", 0.66, 0.27), FakeBox("Dice Trick", 0.84, 0.27), FakeBox(AILMENT, 0.11, 0.73))
+        task = self.frames("0/1", "1/1", screens=(pile, pile))
+        self.assertEqual([(0.84, round(0.27 + battle.CARD_BODY, 3)), battle.PILE_CONFIRM], task.taps)
+
+    def test_an_up_to_exhaust_takes_only_dealt_cards(self):
+        # Live, Unity of Attack and Defense's Epiphany Exhausted two Strikes a play, until the Draw Pile was empty.
+        caption = FakeBox("请选择至多2张卡牌", 0.5, 0.111, width=600)
+        for screen, taps in (((caption, *self.SCREEN[1:]), [(0.73, round(0.776 + battle.CARD_BODY, 3))]), ((caption, *self.SCREEN[1:-1]), [battle.PROMPT_CONFIRM])):
+            with self.subTest(taps=taps):
+                self.assertEqual(taps, self.frames("0/2", screens=(screen,)).taps)
+
+    def test_a_mental_breakdown_card_is_kept_over_any_other(self):
+        # Live, an "up to 3" discard gave up two Impulses, the free cards that end a combatant's Mental Breakdown when played.
+        screen = (FakeBox("请选择1张卡牌", 0.5, 0.111, width=600), self.SCREEN[1], FakeBox("Impulse", 0.38, 0.765), FakeBox("Dice Trick", 0.50, 0.765))
+        task = self.frames("0/1", screens=(screen,))
+        self.assertEqual([(0.50, round(0.765 + battle.CARD_BODY, 3))], task.taps, "Dice Trick, so Impulse stays to be played")
+
+    def test_a_boost_goes_to_the_best_card_it_fits(self):
+        # Opening Found rates highest, but Growth Acceleration can only pick Orlea's own cards, and the curse is no boost at all.
+        choose = next(text for text in EPIPHANIES["Dark Condensation"] if text.startswith("Choose"))
+        cases = (("Growth Acceleration", (*self.SCREEN, FakeBox("Growing Creature", 0.45, 0.765)), 0.45, {}),
+                 ("Dark Condensation", self.SCREEN, 0.349, {}),
+                 # Live, a deck holding this Epiphany took its prompt for a discard and kept tapping a Skill the prompt would not take.
+                 ("Dark Condensation", self.SCREEN, 0.349, {"Dark Condensation": [choose]}))
+        self.addCleanup(cards.use_deck, {})
+        for played, screen, x, deck in cases:
+            with self.subTest(played=played, epiphany=bool(deck)):
+                cards.use_deck(deck)
+                task = self.frames("0/1", screens=(screen,), played=played)
+                self.assertEqual([(x, round(0.765 + battle.CARD_BODY, 3))], task.taps)
+
+    def test_a_hand_not_read_yet_is_waited_for(self):
+        # Live, the prompt opened on a frame with no card name read, and upstream's random pick gave up an Impulse over the curse.
+        task = self.frames("0/1", "0/1", screens=(self.SCREEN[:2],))
+        self.assertEqual([(0.73, round(0.776 + battle.CARD_BODY, 3))], task.taps)
+        self.assertEqual([], task.clicked, "upstream's random pick never ran")
+
+    def test_a_hand_the_full_screen_pass_misses_is_read_on_its_own(self):
+        # Live, Dark Condensation's prompt glowed over Call & Response, and the full-screen pass read no name for 50s of random taps.
+        task = self.frames("0/1", screens=(self.SCREEN[:2],), cropped=self.SCREEN[2:])
+        self.assertEqual([(0.73, round(0.776 + battle.CARD_BODY, 3))], task.taps)
+        self.assertEqual([], task.clicked, "upstream's random pick never ran")
+
+    def test_upstream_takes_over_from_a_counter_that_never_moves_or_never_reads(self):
+        # A prompt that ignores every tap must not hold the fight for good.
+        for counters, taps in ((("0/1",) * (battle.PROMPT_TAPS + 1), battle.PROMPT_TAPS), (("",), 0)):
+            with self.subTest(counters=counters):
+                task = self.frames(*counters)
+                self.assertEqual(taps, len(task.taps))
+                self.assertEqual(1, len(task.clicked))
 
 
 if __name__ == "__main__":

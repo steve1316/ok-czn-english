@@ -12,10 +12,11 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from src.en.game_battle import (  # noqa: E402
-    ATTRIBUTES, CARD_CATEGORY, CARD_COST, CARD_OWNER, CARD_SPARKABLE, CARD_TARGET,
+    ATTRIBUTES, CARD_CATEGORY, CARD_COST, CARD_EXHAUSTS, CARD_OWNER, CARD_SPARKABLE, CARD_TARGET,
     COMBATANT_ATTRIBUTE, COMBATANT_EGO_CARD, COMBATANT_EGO_COST, COMBATANT_SPARK_CARDS, X_COST,
 )
 from src.en.game_data import COMBATANTS  # noqa: E402
+from src.en.game_text import DIVINE_EPIPHANIES, DIVINE_SHARED, EPIPHANIES  # noqa: E402
 
 # The five attributes a player is shown. The client stores each as a colour and names it in its own table.
 EXPECTED_ATTRIBUTES = {"Instinct", "Justice", "Order", "Passion", "Void"}
@@ -66,6 +67,11 @@ class TestCards(unittest.TestCase):
     def test_categories_are_known(self):
         self.assertEqual(set(CARD_CATEGORY.values()), EXPECTED_CATEGORIES)
 
+    def test_exhausting_cards_are_cards(self):
+        # Contaminated Spore, from a live hand, so a rebuild that loses the talent column cannot pass on an empty set.
+        self.assertIn("Contaminated Spore", CARD_EXHAUSTS)
+        self.assertLessEqual(CARD_EXHAUSTS, set(CARD_COST))
+
     def test_sparkable_cards_are_cards(self):
         self.assertLessEqual(CARD_SPARKABLE, set(CARD_COST))
 
@@ -93,6 +99,18 @@ class TestOwnership(unittest.TestCase):
                 owner = CARD_OWNER.get(card)
                 with self.subTest(card=card):
                     self.assertIn(owner, COMBATANT_ATTRIBUTE)
+
+
+class TestEpiphanyText(unittest.TestCase):
+    """Epiphany text, checked against lines read off the game's own screens."""
+
+    def test_epiphany_lines_match_the_screen(self):
+        # Resolute Blitz's Counterattack sits on an effect its damage links on to, and once read as the damage's 210%.
+        # The Divine pair is the "Epiphany: Diallos" screen, which used to be missing from the data altogether.
+        for lines, line in ((EPIPHANIES["Resolute Blitz"][0], "When Damage is inflicted, add 1 Counterattack"),
+                            (DIVINE_EPIPHANIES["Diallos"], "Create 2 Activation Core"), (DIVINE_SHARED, "Apply Agony 2 to all enemies")):
+            with self.subTest(line=line):
+                self.assertIn(line, lines)
 
 
 class TestEgoSkills(unittest.TestCase):

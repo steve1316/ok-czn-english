@@ -5,11 +5,15 @@ because reading the team off the screen is what fills it - `src/en/dashboard.py`
 its place in the table and what it says before it has been read.
 """
 
+from contextlib import ExitStack
+
 from ok import Logger
 
-from src.en import quality
+from src.en import cards, piles, quality
+from src.en.battle import PARTY
 from src.en.dashboard import COMBATANTS, UNREAD
-from src.en.handlers import insert_before, loaded, register, replace
+from src.en.handlers import insert_before, loaded, register, replace, standing_in
+from src.en.navigation import team_pending
 from src.en.overrides import FARMED_COMBATANT
 from src.en.screen import combatant_names, same_line
 
@@ -26,6 +30,13 @@ EQUIPMENT_KEYS = {"装备1号位优先级": 0, "装备2号位优先级": 1, "装
 # shop's own handler already decided on: without the same list, the shop buys and the purchase screen
 # cancels, forever.
 FILLED_IN = ("handle_shop", "handle_card_reward", "handle_card_assign")
+# The reward screens, Chaos's and Sortie's, where a card costs nothing. The shop shares Chaos's list, so the
+# handler reading it is what tells them apart.
+FREE = ("handle_card_reward", "handle_get_card")
+
+# Upstream's own check for Sortie's Obtain Card screen: its title, and the point it reads it at.
+OBTAIN_TITLE = "获得卡牌"
+OBTAIN_TITLE_AT = (0.502, 0.128)
 
 TEAM = "_en_team"
 
@@ -48,8 +59,28 @@ def remember_team(task, utils):
         utils: The loaded `utils` module.
     """
     names = [name for name in combatant_names(task, utils) if name]
+    if names and task.node_status.get(piles.READ):
+        # The page has three name columns, so a combatant a Sortie draft added is found by their cards in the deck read on the same trip.
+        on_page = set(map(quality.COMBATANT_INDEX.look_up, names))
+        names += sorted({cards.owner(card) for card in cards.COPIES} - on_page - {None})
     if names:
-        task.info_set(COMBATANTS, ", ".join(names))
+        show_team(task, names)
+    else:
+        logger.info("the Combatants screen showed no names, so cards will not be class filtered")
+
+
+def show_team(task, names):
+    """Show the team in the Combatants row and keep it for the card picker and the reward screens.
+
+    Args:
+        task: The running task.
+        names: The whole team, as read off the Combatants screen or grown by a draft.
+    """
+    task.info_set(COMBATANTS, ", ".join(names))
+    party = frozenset(filter(None, map(quality.COMBATANT_INDEX.look_up, names)))
+    if party:
+        # Read off a screen, so it replaces whatever the hand taught the card picker before.
+        setattr(task, PARTY, party)
     classes = quality.team_classes(names)
     if classes:
         setattr(task, TEAM, classes)
@@ -85,6 +116,24 @@ def team_of(task):
         The team's classes, empty when the Combatants screen has not been read yet.
     """
     return getattr(task, TEAM, set())
+
+
+def picked(names, keep):
+    """Pick out the cards on screen that `keep` accepts.
+
+    Args:
+        names: Candidate names as read off the screen.
+        keep: Takes a canonical card name and says whether it is wanted.
+
+    Returns:
+        The canonical names, in screen order, each appearing once.
+    """
+    found = []
+    for name in names:
+        card = quality.CARD_INDEX.look_up(name)
+        if card and keep(card) and card not in found:
+            found.append(card)
+    return found
 
 
 def stacked(upper, lower):
@@ -127,7 +176,7 @@ def on_screen(task):
     return list(names.values())
 
 
-def generated_list(task, key, farmed=""):
+def generated_list(task, key, farmed="", free=False):
     """Build the priority list for a setting the user left empty.
 
     Args:
@@ -135,32 +184,43 @@ def generated_list(task, key, farmed=""):
         key: The config key being read.
         farmed: The combatant whose save data the run is farming, who is the one equipment is bought for.
             Empty leaves equipment in the order rarity alone puts it.
+        free: True on a reward screen, where a team member's own card is worth having at any grade.
 
     Returns:
         The names worth taking, best first, or None when this key is not one we fill in.
     """
     slot = EQUIPMENT_KEYS.get(key)
-    cards = key in (CARD_KEY, SORTIE_CARD_KEY)
-    if slot is None and not cards:
+    card_list = key in (CARD_KEY, SORTIE_CARD_KEY)
+    if slot is None and not card_list:
         return None
     # Only what is on screen. Offering every Legend and Unique name would give upstream's plain-containment
     # matcher 625 chances to pair a short name with a longer one and buy the wrong thing.
     names = on_screen(task)
     classes = team_of(task)
-    if cards:
-        return quality.worth_taking(names, classes)
+    if card_list:
+        taken = quality.worth_taking(names, classes)
+        if free:
+            party = getattr(task, PARTY, frozenset())
+            # Cards that help just by being held, such as Unknown: Mutant Sample, are worth having at any grade.
+            held = picked(names, lambda card: cards.helps_held(card) and quality.usable_by(card, classes))
+            taken += [card for card in held + picked(names, lambda card: cards.owner(card) in party) if card not in taken]
+            # A free Upgrade such as Mutation: Iron Wall still beats skipping the reward.
+            taken = taken or picked(names, lambda card: cards.category(card) == cards.SETUP_CATEGORY and quality.usable_by(card, classes))
+        # A card the deck already holds adds less than one it lacks, so it goes after every card the deck lacks, at any grade.
+        return sorted(taken, key=lambda card: card in cards.DECK)
     # Ordered by who is going to wear it. Rarity still decides, so this only separates pieces that were
     # otherwise going to be picked between on their names.
     return [name for name in quality.worth_taking(names, classes, cards=False, suited_to=farmed)
             if quality.slot_of(name) == slot]
 
 
-def filling_in(original, task_module):
+def filling_in(original, task_module, free=False):
     """Wrap a config reader so an empty priority list is filled in from what is on screen.
 
     Args:
         original: The module's own `_get_config_value`.
         task_module: The module whose copy of it is being replaced, named for the log.
+        free: True when the handler reading it is a reward screen, from `FREE`.
 
     Returns:
         The replacement reader.
@@ -171,7 +231,7 @@ def filling_in(original, task_module):
             return configured
         # Through `original` rather than the module attribute, which is this function for the length of the
         # call - asking through that would come straight back here.
-        generated = generated_list(task, key, original(task, FARMED_COMBATANT, ""))
+        generated = generated_list(task, key, original(task, FARMED_COMBATANT, ""), free)
         if not generated:
             return configured
         logger.info(f"{task_module}: {key} is empty, offering {generated}")
@@ -180,28 +240,76 @@ def filling_in(original, task_module):
     return patched
 
 
+def after_the_team(handler, utils_sortie):
+    """Hold Sortie's Obtain Card pick while the run's first team read still has tries left, so the pick knows the team and the deck.
+
+    A run started on this screen taps for the team as the game window comes to the front, which loses the tap, and upstream picked in the
+    wait before the retry.
+
+    Args:
+        handler: Upstream's `handle_get_card`.
+        utils_sortie: The Sortie module, whose `find_box_at_point` reads the screen title.
+
+    Returns:
+        The wrapped handler, under the original's name.
+    """
+    def handle_get_card(task):
+        title = utils_sortie.find_box_at_point(task, *OBTAIN_TITLE_AT)
+        if title and title.name == OBTAIN_TITLE and team_pending(task):
+            logger.debug("Obtain Card waits for the team and the deck to be read")
+            task.sleep(1)
+            return True
+        return handler(task)
+
+    handle_get_card.__name__ = handler.__name__
+    return handle_get_card
+
+
+def spelled_out(recognise):
+    """Wrap a card reader so each card carries the client's own spelling of its name.
+
+    The filled-in lists hold that spelling, and upstream picks by plain containment in the name it read, so live a
+    Black Dance read as `Back Dance` matched nothing and the reward was skipped.
+
+    Args:
+        recognise: The module's own `recognize_cards`.
+
+    Returns:
+        The replacement reader.
+    """
+    def recognised(*args, **kwargs):
+        found = recognise(*args, **kwargs)
+        for card in found or []:
+            card["name"] = card.get("name") and quality.CARD_INDEX.look_up(card["name"]) or card.get("name")
+        return found
+
+    return recognised
+
+
 def with_generated_lists(handler, modules):
-    """Run a handler with the empty priority lists filled in for the length of the call.
+    """Run a handler with the empty priority lists filled in, and the card names spelled the client's way, for the length of the call.
 
     Scoping it to the call is what keeps this out of the event handler, which prepends the same equipment
     lists when it ranks options - filling them in there would make every event prefer an equipment option.
 
     Args:
         handler: The upstream handler to wrap.
-        modules: The modules whose `_get_config_value` the handler resolves through.
+        modules: The modules whose `_get_config_value` and `recognize_cards` the handler resolves through.
 
     Returns:
         The wrapped handler.
     """
+    free = handler.__name__ in FREE
+
     def wrapped(task):
-        originals = [(module, module._get_config_value) for module in modules]
-        for module, original in originals:
-            module._get_config_value = filling_in(original, module.__name__)
-        try:
+        with ExitStack() as stack:
+            for module in modules:
+                # Read before the stand-ins go up, so each wraps the module's own reader rather than itself.
+                stand_ins = {"_get_config_value": filling_in(module._get_config_value, module.__name__, free)}
+                if "recognize_cards" in vars(module):
+                    stand_ins["recognize_cards"] = spelled_out(module.recognize_cards)
+                stack.enter_context(standing_in(module, **stand_ins))
             return handler(task)
-        finally:
-            for module, original in originals:
-                module._get_config_value = original
 
     # A distinct name is what makes installing twice a no-op: `replace` matches by name, so once the list
     # holds this, nothing named after the original is left for a later install to wrap again.
@@ -234,7 +342,7 @@ def apply():
         if utils_sortie is not None and hasattr(utils_sortie, "handle_get_card"):
             # Sortie imported its own reference to the reader, so that copy is the one it resolves through.
             replace("handle_get_card",
-                    with_generated_lists(utils_sortie.handle_get_card, [utils_sortie, utils]))
+                    with_generated_lists(after_the_team(utils_sortie.handle_get_card, utils_sortie), [utils_sortie, utils]))
 
         if utils_chaos is not None and hasattr(utils_chaos, "handle_archive_target_member"):
             original_archive = utils_chaos.handle_archive_target_member

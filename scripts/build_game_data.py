@@ -72,11 +72,23 @@ EFFECT_TABLES = ("*skill_eff.json", "eff_value")
 RELIC_TABLES = ("*relic.json", "s1_cs_value")
 # Pairs a card's id with the id of each Epiphany version it can turn into.
 EPIPHANY_TABLES = ("*card_r_spark.json", "change_link_card_id")
+# A Divine Epiphany adds lines under a card's own text rather than swapping it for another version. Each row is one line: a god's own,
+# drawn under that god's icon, or one of the shared lines drawn beside it, whose god is `NO_GOD`.
+DIVINE_TABLES = ("*r_spark.json", "god_type")
+DIVINE_LINKS = "add_link_skill_eff_id"
+NO_GOD = "none"
+# The title of a god's Epiphany screen, "Epiphany: Diallos", which spells the god as the client does.
+GOD_TITLE_ID = "fate_god_type_define@interrupt_title_0@{god}"
+GOD_TITLE_PREFIX = "Epiphany: "
 
 # A card addresses its own linked effects by position, so `#result_ev_0#` is the first linked effect's value
 # and `#result_ecv_1#` the second one's count. The prefix varies with where the text is shown and does not
 # change which column is read, so only the `ev` / `ecv` / `damage` part of the name matters.
 CARD_PLACEHOLDER = re.compile(r"#([a-z][a-z0-9_]*)_(\d+)#")
+# `#during_result_ev_0_1#` reads the effect that linked effect 0 links on to through its `during_eff_1_link_skill_eff_id`.
+DURING_PREFIX = "during_"
+DURING_PLACEHOLDER = re.compile(r"#during_([a-z][a-z0-9_]*)_(\d+)_(\d+)#")
+DURING_LINK = "during_eff_{}_link_skill_eff_id"
 VALUE_COLUMN = "eff_value"
 COUNT_COLUMN = "eff_count_value"
 CARD_VALUE_KINDS = {"ecv": COUNT_COLUMN, "ev": VALUE_COLUMN, "damage": VALUE_COLUMN}
@@ -100,6 +112,9 @@ LIST_ENTRY = re.compile(r"[^\[\],\s]+")
 # The game's own markup, unwound in this order. A cross-reference resolves to the referenced card's name, so
 # "Create X ^card@c_30097_cre1^" ends up reading "Create X Homing Laser L".
 CARD_REFERENCE = re.compile(r"\^card@([^^]+)\^")
+# The one trigger the picker reads: an effect that fires when the card is kept in hand at the end of the turn, never when played.
+RETAIN_TRIGGER = "^TRIGGER_RETAIN^"
+RETAIN_LABEL = "Retain:"
 OTHER_REFERENCE = re.compile(r"\^[^^]+\^")
 TERM_MARKER = re.compile(r"\$([^$#]+)(?:#\d+)?\$")
 RUNTIME_VALUE = re.compile(r"#[a-zA-Z0-9_]+#")
@@ -245,18 +260,27 @@ def resolve_card_values(text, card, effects):
     """
     links = LIST_ENTRY.findall(card.get("link_skill_eff_id") or "")
 
-    def replace(match):
-        column = card_value_field(match.group(1))
-        index = int(match.group(2))
-        if column is None or index >= len(links):
-            return match.group(0)
-        effect = effects.get(links[index]) or {}
-        value = effect.get(column)
+    def linked(index):
+        return (effects.get(links[index]) or {}) if index < len(links) else {}
+
+    def value_of(effect, family, match, source):
+        column = card_value_field(family)
+        value = effect.get(column) if column else None
         if not value:
             return match.group(0)
-        return value + "%" if needs_percent(effect, column, text, match.end()) else value
+        return value + "%" if needs_percent(effect, column, source, match.end()) else value
 
-    return CARD_PLACEHOLDER.sub(replace, text)
+    def replace_during(match):
+        effect = effects.get(linked(int(match.group(2))).get(DURING_LINK.format(match.group(3))) or "") or {}
+        return value_of(effect, match.group(1), match, text)
+
+    def replace(match):
+        if match.group(1).startswith(DURING_PREFIX):
+            return match.group(0)
+        return value_of(linked(int(match.group(2))), match.group(1), match, resolved)
+
+    resolved = DURING_PLACEHOLDER.sub(replace_during, text)
+    return CARD_PLACEHOLDER.sub(replace, resolved)
 
 
 def resolve_relic_values(text, relic):
@@ -290,6 +314,7 @@ def clean_description(text, table):
         The cleaned text, with a newline wherever the original had a line break.
     """
     text = CARD_REFERENCE.sub(lambda match: table.get("card@name@" + match.group(1), "that card"), text)
+    text = text.replace(RETAIN_TRIGGER, RETAIN_LABEL)
     text = OTHER_REFERENCE.sub("", text)
     text = text.replace("<br>", "\n")
     text = TERM_MARKER.sub(r"\1", text)
@@ -339,6 +364,9 @@ UNWEIGHTED_TAG = "public"
 # that preference matched nothing at all. Corrected on the way in rather than left for every
 # reader to trip over. `TestHandTags` fails if a future patch introduces another one.
 TAG_TYPOS = {"bulllet": "bullet", "initate": "initiate"}
+# The role badge each combatant wears on a Sortie draft card: a role id per combatant id, and a label per role id.
+ROLE_TABLES = ("chaos_assault@combatant_type.json", "name")
+ROLE_DEFINE_TABLES = ("chaos_assault@combatant_type_define.json", "combatant_type")
 
 # What the client calls each card category, and the short name used here. These are the same five kinds the
 # reader already sees printed under a card in hand, so a category answers "may this be played at all".
@@ -355,6 +383,9 @@ CARD_CATEGORY_COLUMN = "card_category"
 CARD_TARGET_COLUMN = "target_for_ui"
 CARD_SPARK_COLUMN = "battle_r_spark_enable_flag"
 CARD_SORT_COLUMN = "sort"
+CARD_TALENT_COLUMN = "talent"
+# The talent that sends a card to the Exhaust pile the first time it is played. `TALENT_EXHAUST_2` waits for a second play.
+EXHAUST_TALENT = "TALENT_EXHAUST"
 # Kinds of card that share the deck's tables but never reach a hand. A Persona sits in a slot of its own and
 # an Ego skill is fired from the combatant bar, so neither one's `cost` is an Action Point cost. Leaving them
 # in would put an Ego skill's EP price of 5 beside a card that really does cost 5 Action Points.
@@ -467,6 +498,14 @@ def collect_quality(table, dump_dir):
         if name and weights:
             combatant_tag_weights[name] = weights
 
+    labels = {role: table.get(row.get("name")) for role, row in load_data_tables(dump_dir, ROLE_TABLES).items()}
+    combatant_role = {}
+    for row in load_data_tables(dump_dir, ROLE_DEFINE_TABLES).values():
+        name = (table.get(COMBATANT_NAME_ID.format(id=row.get("group"))) or "").strip()
+        role = labels.get(row.get("combatant_type"))
+        if name and role:
+            combatant_role[name] = role
+
     return {
         "CARD_RARITY": card_rarity,
         "CARD_CLASSES": card_classes,
@@ -475,6 +514,7 @@ def collect_quality(table, dump_dir):
         "EQUIPMENT_TAGS": collect_equipment_tags(table, relic_rows),
         "COMBATANT_CLASS": combatant_class,
         "COMBATANT_TAG_WEIGHTS": combatant_tag_weights,
+        "COMBATANT_ROLE": combatant_role,
     }
 
 
@@ -531,6 +571,7 @@ def render_quality(quality):
         "COMBATANT_CLASS": "Each combatant's class, so a team read off the Combatants screen becomes a set of classes.",
         "COMBATANT_TAG_WEIGHTS": "How much each combatant wants each kind of equipment, on the game's own scale."
                                  " Weighed against `EQUIPMENT_TAGS` to say who a piece of equipment suits.",
+        "COMBATANT_ROLE": "The role badge each combatant wears on a Sortie draft card, so a team can be drafted for what it lacks.",
     }
     notes = [
         "Only what the dump actually carries is here. Neither a card nor a piece of equipment names its owner:",
@@ -676,6 +717,30 @@ def collect_epiphanies(table, dump_dir, described):
     return epiphanies
 
 
+def collect_divine(table, dump_dir):
+    """Collect the lines a Divine Epiphany can add under a card's own text, values filled in.
+
+    Args:
+        table: The localization table.
+        dump_dir: Path to the dump's `output` directory.
+
+    Returns:
+        `(gods, shared)`: a dict of god name to the lines that god's Epiphany adds, and the shared lines one of which is drawn beside it.
+    """
+    effects = load_data_tables(dump_dir, EFFECT_TABLES)
+    lines = {}
+    for row in load_data_tables(dump_dir, DIVINE_TABLES).values():
+        raw = table.get(row.get("description") or "")
+        if not raw:
+            continue
+        text = clean_description(resolve_card_values(raw, {"link_skill_eff_id": row.get(DIVINE_LINKS)}, effects), table)
+        god = row["god_type"].lower()
+        name = god if god == NO_GOD else table.get(GOD_TITLE_ID.format(god=god), god.title()).removeprefix(GOD_TITLE_PREFIX)
+        lines.setdefault(name, set()).add(text)
+    shared = tuple(sorted(lines.pop(NO_GOD, ())))
+    return {name: tuple(sorted(texts)) for name, texts in sorted(lines.items())}, shared
+
+
 def render(groups, dump_dir):
     """Build the source of the generated module.
 
@@ -706,12 +771,13 @@ def render(groups, dump_dir):
     return "\n".join(lines)
 
 
-def render_descriptions(described, epiphanies, dump_dir):
+def render_descriptions(described, epiphanies, divine, dump_dir):
     """Build the source of the generated description module.
 
     Args:
         described: A dict of entity name to cleaned description.
         epiphanies: A dict of card name to its Epiphany texts, from `collect_epiphanies`.
+        divine: The god and shared Divine Epiphany lines, from `collect_divine`.
         dump_dir: The dump the text came from, recorded in the header.
 
     Returns:
@@ -737,6 +803,15 @@ def render_descriptions(described, epiphanies, dump_dir):
     lines.append("EPIPHANIES = {")
     lines.extend(f"    {name!r}: {epiphanies[name]!r}," for name in sorted(epiphanies))
     lines.append("}")
+    lines.append("")
+    gods, shared = divine
+    lines.append("# The lines a god's Divine Epiphany adds under a card's own text, drawn under the god's icon. Values as above.")
+    lines.append("DIVINE_EPIPHANIES = {")
+    lines.extend(f"    {name!r}: {gods[name]!r}," for name in gods)
+    lines.append("}")
+    lines.append("")
+    lines.append("# The shared lines a Divine Epiphany draws one of, shown beside its god's line.")
+    lines.append(f"DIVINE_SHARED = {shared!r}")
     lines.append("")
     return "\n".join(lines)
 
@@ -812,6 +887,7 @@ def collect_battle(table, dump_dir):
     card_category = {}
     card_target = {}
     card_sparkable = set()
+    card_exhausts = set()
     for name, row in named.items():
         cost = cost_of(row.get(CARD_COST_COLUMN))
         if cost is not None:
@@ -824,6 +900,8 @@ def collect_battle(table, dump_dir):
             card_target[name] = target
         if row.get(CARD_SPARK_COLUMN) == "YES":
             card_sparkable.add(name)
+        if EXHAUST_TALENT in id_list(row.get(CARD_TALENT_COLUMN)):
+            card_exhausts.add(name)
 
     attributes = collect_attributes(table, dump_dir)
     roster = set(PLAYABLE_COMBATANTS)
@@ -862,6 +940,7 @@ def collect_battle(table, dump_dir):
         "CARD_CATEGORY": card_category,
         "CARD_TARGET": card_target,
         "CARD_SPARKABLE": card_sparkable,
+        "CARD_EXHAUSTS": card_exhausts,
         "CARD_OWNER": card_owner,
         "COMBATANT_ATTRIBUTE": combatant_attribute,
         "COMBATANT_SPARK_CARDS": combatant_spark_cards,
@@ -891,6 +970,8 @@ def render_battle(battle):
                        " all.",
         "CARD_SPARKABLE": "The cards that can take an Epiphany, so a glow read off the screen can be checked"
                           " against the card it appears on.",
+        "CARD_EXHAUSTS": "The cards that go to the Exhaust pile when played, so an Ego that fires on an Exhaust"
+                         " knows whether the hand can set it off.",
         "CARD_OWNER": "The combatant a card belongs to, recovered from the cards each of them starts and sparks."
                       " A card's attribute is its owner's, so this is how a card comes to have one.",
         "COMBATANT_ATTRIBUTE": "Each combatant's attribute, for matching a card against the weakness an enemy"
@@ -927,12 +1008,13 @@ def main():
     groups = [(name, collector(table, args.dump), comment) for name, comment, collector in GROUPS]
     described = collect_descriptions(table, args.dump)
     epiphanies = collect_epiphanies(table, args.dump, described)
+    divine = collect_divine(table, args.dump)
     quality = collect_quality(table, args.dump)
     battle = collect_battle(table, args.dump)
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUT_PATH.write_text(render(groups, args.dump), encoding="utf-8")
-    OUT_TEXT_PATH.write_text(render_descriptions(described, epiphanies, args.dump), encoding="utf-8")
+    OUT_TEXT_PATH.write_text(render_descriptions(described, epiphanies, divine, args.dump), encoding="utf-8")
     OUT_QUALITY_PATH.write_text(render_quality(quality), encoding="utf-8")
     OUT_BATTLE_PATH.write_text(render_battle(battle), encoding="utf-8")
 
@@ -943,7 +1025,8 @@ def main():
         print(f"  {name:12} {len(values):5d}   {with_text:5d} described")
     print(f"wrote {OUT_PATH.relative_to(REPO_ROOT)}")
     print(f"wrote {OUT_TEXT_PATH.relative_to(REPO_ROOT)} with {len(described)} descriptions, "
-          f"{unresolved} of them still holding an unresolved value, and {sum(map(len, epiphanies.values()))} Epiphany texts")
+          f"{unresolved} of them still holding an unresolved value, {sum(map(len, epiphanies.values()))} Epiphany texts, "
+          f"and {sum(map(len, divine[0].values())) + len(divine[1])} Divine Epiphany lines")
     print(f"wrote {OUT_QUALITY_PATH.relative_to(REPO_ROOT)} with "
           + ", ".join(f"{len(values)} {name.lower()}" for name, values in quality.items()))
     print(f"wrote {OUT_BATTLE_PATH.relative_to(REPO_ROOT)} with "

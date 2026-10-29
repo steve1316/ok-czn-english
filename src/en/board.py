@@ -4,17 +4,23 @@
 everything here comes out of that pass or out of raw pixels. Nothing in this module runs OCR.
 """
 
+import re
+from functools import lru_cache
+from pathlib import Path
+
 import cv2
 import numpy as np
+from ok import Logger
 
 from src.en.game_battle import ATTRIBUTES
-from src.en.screen import frame_of, hsv_of, patch_of
+from src.en.screen import centre_of, colour_share, frame_of, hsv_of, in_region, patch_of, white_mask
 
-# The Action Point readout, as a relative box. Read from colour because OCR returns no box for the digit at
-# all - not in a full frame and not on a tight upscaled crop, both checked. The game draws it bright blue with
-# a glow while there are points to spend and a thin grey outline once there are none. Deliberately tight on
-# the digit: the hand counter below it and the decorative line through its middle both sit outside, so neither
-# can be counted as a lit reading.
+logger = Logger.get_logger(__name__)
+
+# The Action Point readout, as a relative box. Read from colour because OCR finds the digit only on a padded crop, and seldom a 1
+# (`battle.points_left` reads the rest). The game draws it bright blue with a glow while there are points to spend and a thin grey
+# outline once there are none. Deliberately tight on the digit: the hand counter below it and the decorative line through its middle
+# both sit outside, so neither can be counted as a lit reading.
 ACTION_POINTS = (0.488, 0.898, 0.528, 0.948)
 # How bright a pixel has to be to count as part of the digit rather than the scene behind it. 200 rather than
 # the obvious 170 because one frame's background sits at exactly 170 across a large flat area, which would
@@ -34,14 +40,47 @@ EGO_KEYS = ("F1", "F2", "F3")
 EGO_BADGE_X = 0.065
 EGO_BADGE_Y = {"F1": 0.7140, "F2": 0.8050, "F3": 0.8960}
 EGO_BADGE_HALF = (0.0090, 0.0150)
-# What the game paints an affordable badge: its own UI blue, well clear of the grey a spent one is drawn in.
-BLUE_HUE = (95, 125)
-BLUE_SATURATION = 80
-BLUE_VALUE = 120
-# How much of a badge has to be that blue before the Ego behind it is treated as one that can be fired. Over
-# 30 badges an affordable one is at least 21% blue and an unaffordable one exactly 0% at every supported
-# resolution - the widest margin anything here is judged on.
-EGO_READY = 0.10
+# The game tints an affordable badge, pale blue or the yellow-green of a reduced cost, and draws one it cannot pay for in grey.
+BADGE_LIT = 120
+TINT_SATURATION = 30
+# How much of a badge's lit pixels have to be tinted before the Ego behind it is treated as one that can be fired. Measured: 1.0 on a
+# blue badge, 0.995 on a reduced one and under 0.01 on a grey one.
+EGO_READY = 0.5
+# A slot draws its cost badge only while it holds an Ego, and a fired partner leaves an empty frame behind. Measured on 171 frames of a run:
+# an empty slot at most 0.08 bright, even under a skill's flash, and a badge at least 0.55, while it is the selected slot's Cancel button.
+EGO_PRESENT = 0.3
+# The EP bar left of the Ego panel: seven segments down from the top, lit pale blue for each point banked and pale yellow for the
+# points a previewed Ego would spend. Upstream's full-bar pixel at 0.947 is the seventh. A segment still filling is lit to about 203.
+EP_SEGMENT_X = (0.020, 0.044)
+EP_SEGMENT_TOP = 0.7806
+EP_SEGMENT_PITCH = 0.0278
+EP_SEGMENT_HALF = 0.0050
+EP_MAX = 7
+EP_LIT = 230
+EP_LIT_ENOUGH = 0.6
+
+# The team HP bar along the top, row 36 to 46 at 1080p. Its green stops where the enemy's next hit would leave the team, and the
+# stretch from there to the HP the readout states flashes red. The readout's digits are drawn over the middle of the bar, so a
+# column counts as green when `GREEN_ROWS` of its rows are.
+TEAM_BAR = (0.0234, 0.0333, 0.4000, 0.0426)
+GREEN_HUE = (40, 85)
+GREEN_SATURATION = 100
+GREEN_VALUE = 120
+GREEN_ROWS = 2
+
+# A hand card's cost digit, as offsets from the left edge of its name box and the middle of its height.
+COST_OFFSET = (-0.026, -0.030, 0.002, 0.040)
+# The game draws a cost an effect has lowered in lit green, and any other cost in white. Green card art sits behind some white digits, so
+# only bright green counts: 0.059 to 0.097 of five lowered digits against at most 0.032 of 17 white ones.
+LOWERED_LOW = np.array([40, 80, 200])
+LOWERED_HIGH = np.array([85, 255, 255])
+LOWERED_ENOUGH = 0.045
+
+# The Absolute Invincibility badge drawn among an enemy's statuses, cut from a 1080p frame and matched on its white strokes.
+INVULNERABLE_IMAGE = Path(__file__).with_name("images") / "absolute_invincibility.png"
+TEMPLATE_HEIGHT = 1080
+# It scores 1.0 on the capture it was cut from and at most 0.49 on 846 others.
+INVULNERABLE_MATCH = 0.7
 
 # Where the enemies' counters and badges are drawn: below the top HUD, above the cards and the combatants.
 ENEMY_BAND = (0.30, 0.12, 1.00, 0.60)
@@ -62,6 +101,8 @@ COUNTER_HEIGHT = (0.045, 0.072)
 WEAKNESS_OFFSET = (0.0185, 0.0225)
 WEAKNESS_HALF = (0.0085, 0.0085)
 WEAKNESS_SATURATION = 150
+# The boss select screen draws its badges paler. Its Order badge sits at a saturation of about 107.
+BOSS_BADGE_SATURATION = 100
 WEAKNESS_VALUE = 130
 # How much of the sampled patch has to be strongly coloured before it is read as a badge rather than scenery.
 WEAKNESS_ENOUGH = 0.20
@@ -73,6 +114,25 @@ WEAKNESS_ENOUGH = 0.20
 ATTRIBUTE_HUES = {"RED": 0, "ORANGE": 15, "GREEN": 78, "BLUE": 110, "PURPLE": 133}
 # How far a badge's hue may sit from the nearest of those before it is treated as not a badge at all.
 HUE_TOLERANCE = 20
+
+# The two statuses the game marks a summoned enemy with, either or both, cut from a 1080p frame and matched on their white strokes.
+SUMMONED_IMAGES = tuple(Path(__file__).with_name("images") / name for name in ("summoned_horns.png", "summoned_ghost.png"))
+# Real ones scored 0.92 to 1.0. Across 197 counters in 851 captures, nothing else scored above 0.60.
+SUMMONED_MATCH = 0.8
+# Wider than `ENEMY_BAND` at the top, which cuts through the counter of a boss standing tall enough to put it there.
+TARGET_BAND = (0.30, 0.05, 1.00, 0.60)
+# The row of statuses below an enemy's HP bar, as offsets from its counter's centre.
+STATUS_ROW = (0.01, 0.005, 0.17, 0.07)
+# Where an enemy's HP number sits, as offsets from its counter's centre. A counter with no number there is scenery in the same magenta.
+HEALTH_NUMBER = (0.03, -0.05, 0.12, 0.0)
+HEALTH_DIGITS = re.compile(r"^\d+$")
+# Where the ring a raised attack card puts over its target can be centred. Below it, the raised card's own art can hold a ring of the same size.
+RETICLE_BAND = (0.30, 0.25, 1.00, 0.60)
+# The ring's radius as a share of the frame height, 74 to 77px at 1080p in both captures, white or cyan by who plays the card.
+RETICLE_RADIUS = (0.059, 0.078)
+# Canny's upper edge threshold and the accumulator votes a ring needs. Across 847 captures the rings found were real ones or scenery.
+RETICLE_EDGES = 120
+RETICLE_VOTES = 40
 
 
 def box_around(centre_x, centre_y, half):
@@ -122,8 +182,35 @@ def has_action_points(task):
     return lit_fraction(patch) >= LIT_ENOUGH
 
 
-def blue_fraction(patch):
-    """Say how much of a lit patch is drawn in the game's own UI blue.
+def cost_digit(left, middle):
+    """Build the relative box around a hand card's cost digit.
+
+    Args:
+        left: The left edge of the card's name box, as a fraction across the frame.
+        middle: The middle of the name box's height, as a fraction down the frame.
+
+    Returns:
+        A `(left, top, right, bottom)` tuple.
+    """
+    return left + COST_OFFSET[0], middle + COST_OFFSET[1], left + COST_OFFSET[2], middle + COST_OFFSET[3]
+
+
+def cost_lowered(frame, box):
+    """Say whether a hand card's cost digit is drawn in the green of a lowered cost.
+
+    Args:
+        frame: The frame to read, from `frame_of`.
+        box: The digit's box, from `cost_digit`.
+
+    Returns:
+        True for a lit green digit. A card the turn cannot afford is drawn dimmed and reads False, which costs nothing since it cannot be
+        played either way.
+    """
+    return colour_share(patch_of(frame, box), LOWERED_LOW, LOWERED_HIGH) >= LOWERED_ENOUGH
+
+
+def tinted_fraction(patch):
+    """Say how much of a lit patch is drawn in colour rather than grey.
 
     Measured against the lit pixels rather than the whole patch, so a badge sitting on a dark background and
     one sitting on a bright scene are judged the same way.
@@ -132,15 +219,14 @@ def blue_fraction(patch):
         patch: The pixels to measure, in BGR.
 
     Returns:
-        The blue share of the lit pixels, from 0 to 1, and 0 for an empty patch.
+        The tinted share of the lit pixels, from 0 to 1, and 0 for an empty patch.
     """
     hsv = hsv_of(patch)
     if hsv is None:
         return 0.0
-    hue, saturation, value = cv2.split(hsv)
-    lit = value > BLUE_VALUE
-    blue = lit & (saturation > BLUE_SATURATION) & (hue > BLUE_HUE[0]) & (hue < BLUE_HUE[1])
-    return float(np.count_nonzero(blue)) / max(int(np.count_nonzero(lit)), 1)
+    _, saturation, value = cv2.split(hsv)
+    lit = value > BADGE_LIT
+    return float(np.count_nonzero(lit & (saturation > TINT_SATURATION))) / max(int(np.count_nonzero(lit)), 1)
 
 
 def affordable_egos(task):
@@ -157,9 +243,117 @@ def affordable_egos(task):
     ready = []
     for key in EGO_KEYS:
         box = box_around(EGO_BADGE_X, EGO_BADGE_Y[key], EGO_BADGE_HALF)
-        if blue_fraction(patch_of(frame, box)) > EGO_READY:
+        if tinted_fraction(patch_of(frame, box)) > EGO_READY:
             ready.append(key)
     return ready
+
+
+def ego_in_slot(frame, key):
+    """Say whether a slot holds an Ego, which the slot of a partner already fired no longer does.
+
+    Args:
+        frame: The frame to read, or None when there is none.
+        key: The slot's key, one of `EGO_KEYS`.
+
+    Returns:
+        True while the slot shows its cost badge, and False when there is no frame.
+    """
+    patch = patch_of(frame, box_around(EGO_BADGE_X, EGO_BADGE_Y[key], EGO_BADGE_HALF))
+    if patch is None or patch.size == 0:
+        return False
+    return float(np.count_nonzero(cv2.cvtColor(patch, cv2.COLOR_BGR2GRAY) >= BADGE_LIT)) / patch.shape[0] / patch.shape[1] >= EGO_PRESENT
+
+
+def banked_points(frame):
+    """Count the EP the bar has banked.
+
+    Args:
+        frame: The frame to read, or None when there is none.
+
+    Returns:
+        How many segments are lit from the top, 0 to `EP_MAX`, and 0 when there is no frame.
+    """
+    banked = 0
+    for index in range(EP_MAX):
+        middle = EP_SEGMENT_TOP + index * EP_SEGMENT_PITCH
+        patch = patch_of(frame, (EP_SEGMENT_X[0], middle - EP_SEGMENT_HALF, EP_SEGMENT_X[1], middle + EP_SEGMENT_HALF))
+        if patch is None or patch.size == 0 or np.count_nonzero(patch.max(axis=2) > EP_LIT) < EP_LIT_ENOUGH * patch.shape[0] * patch.shape[1]:
+            break
+        banked += 1
+    return banked
+
+
+def team_after_hit(frame):
+    """Say how much of the team's HP will be left once the enemy's next hit lands.
+
+    Args:
+        frame: The frame to read, or None when there is none.
+
+    Returns:
+        The share of the team's maximum HP the bar's green reaches, or None when no green is on the bar or there is no frame.
+    """
+    hsv = hsv_of(patch_of(frame, TEAM_BAR))
+    if hsv is None:
+        return None
+    hue, saturation, value = cv2.split(hsv)
+    green = (hue > GREEN_HUE[0]) & (hue < GREEN_HUE[1]) & (saturation > GREEN_SATURATION) & (value > GREEN_VALUE)
+    columns = np.flatnonzero(np.count_nonzero(green, axis=0) >= GREEN_ROWS)
+    if not columns.size:
+        return None
+    return float(columns[-1] + 1) / green.shape[1]
+
+
+@lru_cache(maxsize=8)
+def icon_template(path, height):
+    """Load a status icon cut from a 1080p frame, scaled to a frame's size.
+
+    Args:
+        path: The icon's image file, such as `INVULNERABLE_IMAGE`.
+        height: The frame height in pixels.
+
+    Returns:
+        The icon's white mask, or None when the image cannot be read.
+    """
+    image = cv2.imread(str(path))
+    if image is None:
+        logger.warning(f"could not read the status icon from {path}")
+        return None
+    scale = height / TEMPLATE_HEIGHT
+    if scale != 1:
+        image = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+    return white_mask(image)
+
+
+def enemy_invulnerable(frame):
+    """Say whether an enemy is showing Absolute Invincibility, which stops it losing Health for the turn.
+
+    Args:
+        frame: The frame to read, or None when there is none.
+
+    Returns:
+        True when the badge is among the enemy statuses. False when it is not, or there is no frame.
+    """
+    patch = patch_of(frame, ENEMY_BAND)
+    if patch is None or patch.size == 0:
+        return False
+    return icon_match(patch, INVULNERABLE_IMAGE, frame.shape[0]) >= INVULNERABLE_MATCH
+
+
+def icon_match(patch, path, height):
+    """Score how well a status icon matches anywhere in a patch.
+
+    Args:
+        patch: The pixels to search, in BGR.
+        path: The icon's image file.
+        height: The frame height in pixels, which the icon is scaled to.
+
+    Returns:
+        The best match, from -1 to 1, or 0 when the icon cannot be read or does not fit in the patch.
+    """
+    template = icon_template(path, height)
+    if template is None or patch is None or patch.shape[0] < template.shape[0] or patch.shape[1] < template.shape[1]:
+        return 0.0
+    return float(cv2.matchTemplate(white_mask(patch), template, cv2.TM_CCOEFF_NORMED).max())
 
 
 def hue_distance(one, other):
@@ -176,15 +370,17 @@ def hue_distance(one, other):
     return min(gap, 180 - gap)
 
 
-def attribute_of(patch):
+def attribute_of(patch, beside_counter=True, saturation_floor=WEAKNESS_SATURATION):
     """Say which attribute a badge is drawn for.
 
-    Assumes a battle screen, the only place this is reached from: swept over `captures/`, the 22 battle frames
-    read Instinct or nothing, but red artwork elsewhere - a Card Epiphany screen, a full-screen portrait -
-    throws up shapes that pass for counters and reads as Passion.
+    Assumes a battle or boss select screen: swept over `captures/`, the 22 battle frames read Instinct or nothing,
+    but red artwork elsewhere - a Card Epiphany screen, a full-screen portrait - throws up shapes that pass for counters and reads as Passion.
 
     Args:
         patch: The pixels the badge was sampled from, in BGR.
+        beside_counter: Whether the badge sits beside an enemy's action counter, as it does in battle. The boss
+            select screen has no counter, and its Passion badge is drawn at a hue of 176, inside the counter's band.
+        saturation_floor: How saturated a pixel has to be to count as badge colour.
 
     Returns:
         The attribute's name, or None when the patch holds no badge worth reading.
@@ -193,14 +389,14 @@ def attribute_of(patch):
     if hsv is None:
         return None
     hue, saturation, value = cv2.split(hsv)
-    strong = (saturation > WEAKNESS_SATURATION) & (value > WEAKNESS_VALUE)
+    strong = (saturation > saturation_floor) & (value > WEAKNESS_VALUE)
     if np.count_nonzero(strong) < WEAKNESS_ENOUGH * strong.size:
         return None
     middle = int(np.median(hue[strong]))
     # The counter sitting beside the badge is magenta, which is red's neighbour on the hue wheel, so its own
     # colour would otherwise read as a confident Passion. Anything in that band is the counter, or one of the
     # effects the game draws in the same colour, rather than a badge.
-    if COUNTER_HUE[0] < middle < COUNTER_HUE[1]:
+    if beside_counter and COUNTER_HUE[0] < middle < COUNTER_HUE[1]:
         return None
     colour = min(ATTRIBUTE_HUES, key=lambda name: hue_distance(middle, ATTRIBUTE_HUES[name]))
     if hue_distance(middle, ATTRIBUTE_HUES[colour]) > HUE_TOLERANCE:
@@ -208,16 +404,17 @@ def attribute_of(patch):
     return ATTRIBUTES.get(colour)
 
 
-def enemy_counters(frame):
+def enemy_counters(frame, band=ENEMY_BAND):
     """Find the action counter of every enemy on screen.
 
     Args:
         frame: The frame to read, or None when there is none.
+        band: Where to look, `ENEMY_BAND` unless a caller needs the top of the screen too.
 
     Returns:
         A list of `(x, y)` centres in fractions of the frame, left to right.
     """
-    hsv = hsv_of(patch_of(frame, ENEMY_BAND))
+    hsv = hsv_of(patch_of(frame, band))
     if hsv is None:
         return []
     height, width = frame.shape[:2]
@@ -226,7 +423,7 @@ def enemy_counters(frame):
     mask = cv2.inRange(hsv, (COUNTER_HUE[0] + 1, COUNTER_SATURATION + 1, COUNTER_VALUE + 1),
                        (COUNTER_HUE[1] - 1, 255, 255))
     count, _, stats, centres = cv2.connectedComponentsWithStats(mask, 8)
-    left, top = ENEMY_BAND[0], ENEMY_BAND[1]
+    left, top = band[0], band[1]
     found = []
     for index in range(1, count):
         _, _, box_width, box_height, area = stats[index]
@@ -261,3 +458,50 @@ def weakness(task):
         if attribute:
             seen.add(attribute)
     return seen.pop() if len(seen) == 1 else None
+
+
+def boss_x(task):
+    """Find where the boss stands, so attacks go to it rather than to the minions it summons again each turn.
+
+    Args:
+        task: The running task, whose `all_texts` holds each enemy's HP number.
+
+    Returns:
+        The x of the HP number of the one enemy on screen not marked as summoned, or None unless at least one is and exactly one is not.
+    """
+    frame = frame_of(task)
+    height = frame.shape[0] if frame is not None else 0
+    numbers = [box for box in getattr(task, "all_texts", None) or [] if HEALTH_DIGITS.match(box.name)]
+    summoned, unsummoned = 0, []
+    for centre_x, centre_y in enemy_counters(frame, TARGET_BAND):
+        region = (centre_x + HEALTH_NUMBER[0], centre_y + HEALTH_NUMBER[1], centre_x + HEALTH_NUMBER[2], centre_y + HEALTH_NUMBER[3])
+        number = next((box for box in numbers if in_region(box, region, task.width, task.height)), None)
+        if number is None:
+            continue
+        row = patch_of(frame, (centre_x + STATUS_ROW[0], centre_y + STATUS_ROW[1], min(1.0, centre_x + STATUS_ROW[2]), centre_y + STATUS_ROW[3]))
+        if any(icon_match(row, path, height) >= SUMMONED_MATCH for path in SUMMONED_IMAGES):
+            summoned += 1
+        else:
+            unsummoned.append(centre_of(number, task.width, task.height)[0])
+    return unsummoned[0] if summoned and len(unsummoned) == 1 else None
+
+
+def reticle_x(frame):
+    """Find which enemy a raised attack card is aimed at, by the ring it puts over that enemy's body.
+
+    Args:
+        frame: The frame to read, taken after the card's key was pressed.
+
+    Returns:
+        The ring's x, which lines up with its enemy's HP number. None for no ring, or several, as an all-enemy card or scenery draws.
+    """
+    patch = patch_of(frame, RETICLE_BAND)
+    if patch is None or patch.size == 0:
+        return None
+    height, width = frame.shape[:2]
+    grey = cv2.medianBlur(cv2.cvtColor(patch, cv2.COLOR_BGR2GRAY), 3)
+    rings = cv2.HoughCircles(grey, cv2.HOUGH_GRADIENT, dp=1, minDist=height * RETICLE_RADIUS[1], param1=RETICLE_EDGES, param2=RETICLE_VOTES,
+                             minRadius=round(height * RETICLE_RADIUS[0]), maxRadius=round(height * RETICLE_RADIUS[1]))
+    if rings is None or len(rings[0]) != 1:
+        return None
+    return RETICLE_BAND[0] + float(rings[0][0][0]) / width

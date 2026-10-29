@@ -26,8 +26,8 @@ UPSTREAM_NAMES = {
     "utils": (
         "_current_equipment_for_slot", "_equipment_info", "_equipment_priority", "_equipment_quality_at", "_equipment_state", "_rgb_is_close",
         "_find_member_level_tags", "_find_target_member_index",
-        "_get_card_list", "_get_config_value", "_get_current_credit", "_get_game_text", "_get_region_text", "_member_deck_state",
-        "_member_equipment_qualities", "_move_and_click", "_should_install_equipment", "find_box_at_point",
+        "_get_card_list", "_get_config_value", "_get_current_credit", "_get_current_hp_percent", "_get_game_text", "_get_region_text", "_member_deck_state",
+        "_member_equipment_qualities", "_move_and_click", "_scroll_card_page", "_should_install_equipment", "find_box_at_point",
         "handle_card_assign", "handle_card_reward", "handle_confirm", "handle_equipment", "handle_event_task",
         "handle_expedition_result", "handle_negotiation", "handle_shop", "handle_stuck_log",
         "handle_view_original", "is_button_active", "is_frame_stuck", "is_subsequence", "log_node_status", "random",
@@ -38,8 +38,9 @@ UPSTREAM_NAMES = {
         "handle_save_target_member",
     ),
     "utils_sortie": (
-        "_hand_card_names", "_hand_cards", "_is_card_name", "_read_hand_count", "_read_member_slots",
-        "_try_all_card_keys", "handle_battle_hand_select", "handle_battle_page", "handle_get_card", "handle_return_to_draw_pile", "random",
+        "_get_config_value", "_hand_card_names", "_hand_cards", "_is_card_name", "_move_and_click", "_read_hand_count", "_read_member_slots",
+        "_try_all_card_keys", "handle_battle_hand_select", "handle_battle_page", "handle_get_card", "handle_rational_supply", "handle_return_to_draw_pile",
+        "handle_sortie_reward_settlement", "random",
     ),
 }
 
@@ -63,6 +64,7 @@ ANCHORS_IN_LISTS = {
     "handle_member_selection": ("utils_sortie",),
     "handle_negotiation": ("utils_chaos", "utils_sortie"),
     "handle_return_to_draw_pile": ("utils_sortie",),
+    "handle_route_selection": ("utils_sortie",),
     "handle_save_target_member": ("utils_chaos",),
     "handle_shop": ("utils_chaos", "utils_sortie"),
     "handle_stuck_log": ("utils_chaos", "utils_sortie"),
@@ -97,6 +99,13 @@ class TestUpstreamManifest(unittest.TestCase):
                 with self.subTest(anchor=anchor, mode=module_name):
                     registered = [handler.__name__ for handler in MODULES[module_name].PAGE_HANDLERS]
                     self.assertIn(anchor, registered, f"{module_name} no longer registers {anchor}")
+
+    def test_confirm_still_runs_ahead_of_the_event_handler(self):
+        # summary.py holds the run summary ahead of `handle_event_task` until Confirm draws, and leaves the press to `handle_confirm`.
+        for module_name in ANCHORS_IN_LISTS["handle_event_task"]:
+            with self.subTest(mode=module_name):
+                registered = [handler.__name__ for handler in MODULES[module_name].PAGE_HANDLERS]
+                self.assertLess(registered.index("handle_confirm"), registered.index("handle_event_task"))
 
     def test_the_framework_still_offers_the_hooks_every_install_rides(self):
         # `handlers.register` applies every list edit from `after_init`, and `load_config` carries the run-start

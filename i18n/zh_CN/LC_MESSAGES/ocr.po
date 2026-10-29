@@ -70,6 +70,10 @@ msgstr "营救"
 msgid "Ark City"
 msgstr "方舟城市"
 
+# From handle_rational_supply: "补充理性" in the title band (0.438, 0.101)-(0.561, 0.250) of the dialog that spends Aether on Reason
+msgid "Charge Reason"
+msgstr "补充理性"
+
 # From handle_cancel: "取消" in box.name
 msgid "Cancel"
 msgstr "取消"
@@ -368,6 +372,10 @@ msgstr "主战员配置"
 # From handle_copy: "复制" in box.name
 msgid "Duplicate Card"
 msgstr "复制卡牌"
+
+# From handle_copy: _clean_match(box.name, "复制"). The button on "Select 1 card(s) to Duplicate." reads Copy.
+msgid "Copy"
+msgstr "复制"
 
 # From handle_battle_member_selection: _get_game_text(task, "甄别主战员") in right_hint.name.
 # The OCR puts this box at (0.527, 0.045) and the handler reads (0.562, 0.044), which is the same box.

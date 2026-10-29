@@ -18,7 +18,9 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.en import board  # noqa: E402
+from src.en import board, boss  # noqa: E402
+from src.en.battle import PARTY  # noqa: E402
+from tests.fakes import FakeBox  # noqa: E402
 
 IMAGES = REPO_ROOT / "tests" / "images"
 WIDTH, HEIGHT = 1920, 1080
@@ -29,6 +31,21 @@ WIDTH, HEIGHT = 1920, 1080
 # by a hit landing in `battle_003`, which is square enough and large enough to pass everything but the height.
 ENEMY_AT = (1238, 203)
 FLASH_AT = (1000, 454)
+# The Sortie battle panels, cut from the user's 1080p captures: the EP bar holding 6 of 7, the team HP bar with the next hit
+# taking it to about 36%, and the band of enemy statuses with and without the Absolute Invincibility badge.
+EP_BAR_AT = (30, 830)
+EGO_SLOTS_AT = (100, 740)
+TEAM_BAR_AT = (40, 30)
+STATUSES_AT = (1270, 190)
+# A boss with two summoned minions, their HP numbers where OCR reads them, and a magenta tentacle that passes for a counter.
+SUMMONED_AT = (820, 80)
+SUMMONED_HEALTH = (("1179", 0.725, 0.108), ("253", 0.535, 0.444), ("206", 0.910, 0.444))
+# A raised attack card's reticle in each of its two colours, cut with the enemy behind it, and the x of that enemy's HP number.
+RETICLES = (("reticle_white", (894, 395), 0.522), ("reticle_cyan", (1128, 402), 0.642))
+# The two Weakness badges on the Sortie boss select screen, Shadow Collector's Passion and Cold, Sweet Dream's Void.
+BOSS_BADGES_AT = (820, 785)
+# Upstream's boss entries for that screen, at the points it reads each name from.
+BOSSES = [{"name": "Shadow Collector", "x": 0.358, "y": 0.706}, {"name": "Cold, Sweet Dream", "x": 0.641, "y": 0.706}]
 
 
 def fixture(name):
@@ -134,11 +151,11 @@ def paint(frame, slots):
 class TestEgoBadges(unittest.TestCase):
     """Which Ego skills the EP bar can actually pay for, read off the badge beside each one."""
 
-    def test_an_affordable_badge_reads_blue(self):
-        self.assertGreater(board.blue_fraction(fixture("ego_badge_ready")), board.EGO_READY)
-
-    def test_a_badge_that_cannot_be_paid_for_has_no_blue_at_all(self):
-        self.assertEqual(board.blue_fraction(fixture("ego_badge_spent")), 0.0)
+    def test_a_badge_reads_affordable_only_when_tinted(self):
+        # A reduced cost draws the badge yellow-green rather than blue, and that Ego can still be paid for.
+        for name, affordable in (("ego_badge_ready", True), ("ego_badge_reduced", True), ("ego_badge_spent", False)):
+            with self.subTest(name):
+                self.assertEqual(affordable, board.tinted_fraction(fixture(name)) > board.EGO_READY)
 
     def test_the_slots_that_are_lit_are_the_ones_offered(self):
         task = FakeTask(paint(flat(0), ("F1", "F3")))
@@ -154,6 +171,16 @@ class TestEgoBadges(unittest.TestCase):
     def test_no_frame_offers_nothing(self):
         # Firing an Ego blind is what this replaces, so an unreadable frame has to decline rather than guess.
         self.assertEqual(board.affordable_egos(FakeTask.__new__(FakeTask)), [])
+
+
+class TestHandCosts(unittest.TestCase):
+    """The cost a hand card shows once an effect has lowered it."""
+
+    def test_a_hand_card_reads_lowered_only_when_its_digit_is_lit_green(self):
+        # The lowest lit green seen, against white digits over the water and the green card frame that most look like one.
+        for name, lowered in (("cost_lowered", True), ("cost_white_on_water", False), ("cost_white_on_green", False)):
+            with self.subTest(name):
+                self.assertEqual(lowered, board.cost_lowered(fixture(name), (0, 0, 1, 1)))
 
 
 def in_hue(hue, saturation=220, value=220):
@@ -261,10 +288,69 @@ class TestRealEnemies(unittest.TestCase):
     def test_a_real_enemy_reads_its_weakness(self):
         self.assertEqual(board.weakness(FakeTask(pasted("enemy_instinct", *ENEMY_AT))), "Instinct")
 
+    def test_the_boss_is_targeted_over_its_summons(self):
+        # Live, a fight was lost attacking minions the boss summoned again every turn.
+        task = FakeTask(pasted("summoned_minions", *SUMMONED_AT))
+        task.all_texts = [FakeBox(text, x, y) for text, x, y in SUMMONED_HEALTH]
+        self.assertEqual(0.725, round(board.boss_x(task), 3))
+
+    def test_a_reticle_lines_up_with_its_enemys_health(self):
+        for name, at, health in RETICLES:
+            with self.subTest(name):
+                self.assertAlmostEqual(board.reticle_x(pasted(name, *at)), health, delta=0.01)
+        # The same enemies with no card raised.
+        self.assertIsNone(board.reticle_x(pasted("summoned_minions", *SUMMONED_AT)))
+
     def test_a_real_attack_flash_is_not_an_enemy(self):
         # It is the right colour, well over the minimum area and within the squareness band, so the height is
         # the only thing keeping a hit landing from being counted as another enemy.
         self.assertEqual(board.enemy_counters(pasted("attack_flash", *FLASH_AT)), [])
+
+
+class TestBossWeakness(unittest.TestCase):
+    """The Sortie boss pick, against the boss select screen's own badges."""
+
+    def test_each_boss_reads_its_weakness(self):
+        # The Passion badge is drawn inside the battle counter's magenta band, so a read that keeps that check loses it.
+        # Live, the Order badge was paler than any battle badge and read as no weakness at all.
+        for name, expected in (("boss_weakness", ["Passion", "Void"]), ("boss_weakness_order", ["Passion", "Order"])):
+            with self.subTest(name=name):
+                frame = pasted(name, *BOSS_BADGES_AT)
+                self.assertEqual([boss.weakness(frame, entry) for entry in BOSSES], expected)
+
+    def test_the_pick_follows_the_damage_dealers(self):
+        frame = pasted("boss_weakness", *BOSS_BADGES_AT)
+        # Rei is a Void healer, so does not pull the pick towards the Void boss.
+        cases = {("Owen", "Khalipe", "Chizuru"): ["Shadow Collector", "Cold, Sweet Dream"], ("Khalipe", "Chizuru"): ["Cold, Sweet Dream"],
+                 ("Owen", "Rei"): ["Shadow Collector"], ("Khalipe",): ["Shadow Collector", "Cold, Sweet Dream"]}
+        for party, expected in cases.items():
+            with self.subTest(party=party):
+                task = FakeTask(frame)
+                setattr(task, PARTY, frozenset(party))
+                # Handing the candidates straight back shows which bosses the random pick is left choosing between.
+                chosen = boss.WeakBoss(type("Candidates", (), {"choice": staticmethod(list)}), task).choice(BOSSES)
+                self.assertEqual([entry["name"] for entry in chosen], expected)
+
+
+class TestFightState(unittest.TestCase):
+    """The reads the Ego planner judges a turn on, against the game's own rendering."""
+
+    def test_a_fired_partner_leaves_its_slot_empty(self):
+        # Live, the empty frame a fired partner left in F1 was previewed every turn as an Ego that would not read.
+        frame = pasted("ego_slot_used", *EGO_SLOTS_AT)
+        self.assertEqual([board.ego_in_slot(frame, key) for key in board.EGO_KEYS], [False, True, True])
+
+    def test_the_ep_bar_counts_its_lit_segments(self):
+        # The seventh segment is still filling, so this also holds the line between lit and filling.
+        self.assertEqual(board.banked_points(pasted("ep_bar_six", *EP_BAR_AT)), 6)
+
+    def test_the_team_bar_says_where_the_next_hit_leaves_it(self):
+        self.assertAlmostEqual(board.team_after_hit(pasted("team_bar_hit", *TEAM_BAR_AT)), 0.36, delta=0.02)
+
+    def test_the_invulnerability_badge_is_told_from_other_statuses(self):
+        for name, invulnerable in (("enemy_invulnerable", True), ("enemy_statuses", False)):
+            with self.subTest(name=name):
+                self.assertEqual(board.enemy_invulnerable(pasted(name, *STATUSES_AT)), invulnerable)
 
 
 if __name__ == "__main__":

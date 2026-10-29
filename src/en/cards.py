@@ -7,14 +7,18 @@ hoping. This module replaces the hoping.
 """
 
 import re
-from collections import namedtuple
+from collections import Counter, namedtuple
+from difflib import SequenceMatcher
 from functools import lru_cache
+from itertools import combinations
 
-from src.en.game_battle import CARD_CATEGORY, CARD_COST, CARD_OWNER, COMBATANT_ATTRIBUTE, X_COST
+from src.en.game_battle import CARD_CATEGORY, CARD_COST, CARD_EXHAUSTS, CARD_OWNER, COMBATANT_ATTRIBUTE, X_COST
+from src.en.game_quality import COMBATANT_ROLE
 from src.en import kits
 from src.en.game_text import DESCRIPTIONS
-from src.en.kits.kit import base_name
-from src.en.quality import fold, index, one_edit_apart
+from src.en.kits.kit import (ATTACK_CATEGORY, PHASE_ATTACK, PHASE_EPIPHANY, PHASE_ESCAPE, PHASE_FREE, PHASE_OTHER, PHASE_PRIME, PHASE_SETUP,
+                             PHASE_SPENDS_EVERYTHING, PHASE_UPGRADE, base_name)
+from src.en.quality import fold, in_order, index, one_edit_apart, unconfused
 
 # Action Points a turn starts with, before anything in a run changes the figure.
 BASE_ACTION_POINTS = 3
@@ -24,36 +28,47 @@ BASE_ACTION_POINTS = 3
 # Ailment is damage waiting to happen, so neither is ever part of a plan.
 DEALT_TO_YOU = frozenset({"ABNORM", "CURSE"})
 # One of those that does its harm only while held - "If in hand, at the end of the turn", "If this card is in hand",
-# "When this card is Retained" - so playing it is how to be rid of it. Others, like Abyssal Erosion, hurt when played.
-HELD_HARM = re.compile(r"\b(?:if|when) (?:this card is )?in hand|if the turn ends when in hand|when this card is retained", re.I)
+# a "Retain:" line - so playing it is how to be rid of it.
+HELD_HARM = re.compile(r"\b(?:if|when) (?:this card is )?in hand|if the turn ends when in hand|when this card is retained|^Retain:", re.I | re.M)
+# The points clearing one of those leaves for the rest of the hand, since it is only bought ahead of the hand's own cards.
+CLEARING_RESERVE = 1
+# The most one of those may cost to be cleared. A dearer one, as Cursed Mace at 3, tends to have a way to get cheaper as the turn goes.
+CLEARING_MAX_COST = 1
+# A card that gets cheaper for each card Exhausted this turn, as Brand of Annihilation does. The screen never reads it lowered.
+EXHAUST_DISCOUNT = re.compile(r"When a card is Exhausted, decrease Cost of this card by (\d+)", re.I)
+# Any effect a card's text can carry names a number, so a text without one - blank, or flavour - does nothing when played.
+INERT_EFFECT = re.compile(r"\d")
+# A card of your own that works just by being held, as Unknown: Mutant Sample's "If in hand, +40% Damage Amount".
+# It shows no cost and cannot be played.
+HELD_HELP = re.compile(r"^If (?:this card is )?in hand,", re.I)
+# A line the generator marks as firing when the card is kept in hand at the end of the turn, which playing it never does.
+RETAIN_LINE = re.compile(r"^Retain:.*\n?", re.M)
 # A card that only makes other cards better, so it wants to land before them.
 SETUP_CATEGORY = "POWER"
-ATTACK_CATEGORY = "ATK"
 # What a card the data has never heard of is assumed to cost. One is both the commonest price and the
 # forgiving guess: too low only risks a card that will not play, while too high would refuse it outright.
 ASSUMED_COST = 1
 
-# Cards whose "unexpected result" can end the fight outright, so they are tried before anything else is spent.
-ESCAPE_CARDS = frozenset({"Fear"})
-
-# Where a card sits in a turn, lowest first.
-PHASE_ESCAPE = 0
-PHASE_EPIPHANY = 1
-PHASE_FREE = 2
-PHASE_SETUP = 3
-PHASE_PRIME = 4
-PHASE_ATTACK = 5
-PHASE_OTHER = 6
-PHASE_SPENDS_EVERYTHING = 7
+# What a combatant's cards turn into on a Mental Breakdown at max Stress. They are free, playing them is how the combatant recovers, and
+# Fear's unexpected result can end the fight outright, so they are tried before anything else is spent.
+BREAKDOWN_CARDS = frozenset({"Confusion", "Impulse", "Guilt", "Daze", "Escapism", "Gloom", "Charm", "Trance", "Fear", "Despair"})
 
 # Roughly what one drawn card is worth, said in damage. A card drawn is about one more card played, and the
 # ordinary card costing one point does 100% damage, so that is the exchange rate the data itself suggests.
 DRAW_VALUE = 100
-# Shield keeps a combatant standing but does not end the fight, so the same number is worth less than damage.
+# Shield and heal keep a combatant standing but do not end the fight, so the same number is worth less than damage.
 SHIELD_WEIGHT = 0.6
 # What matching the attribute an enemy is weak to is worth. The game pays a match in extra damage and in
 # extra Tenacity damage both, so a matching card is worth more than the figure printed on it.
 WEAKNESS_BONUS = 1.5
+# What a Healer's or a Protector's damage is worth against the figure printed on it. Their stats are low, so the same 100% hits for less than
+# a Core's or an Attacker's, and their attacks should not take their points.
+SUPPORT_DAMAGE = 0.5
+SUPPORT_ROLES = frozenset({"Healing", "Protection"})
+# What a role's own specialty is worth against the figure printed on it, over damage: a Healer's heal and a Protector's shield.
+SPECIALTY_WEIGHT = 1.5
+# The share of the team's HP left after the enemy's next hit at which a heal has nothing to restore, so it is worth nothing.
+HEALTHY = 0.9
 # What a card is worth when its effect text says nothing measurable - an Immunity, a Morale, a status with no
 # figure on it. Rating those zero would mean a buff never got played at all, which is worse than the guess.
 # The ordinary card costing one point does 100% damage, so an unreadable effect is priced at the same rate.
@@ -65,17 +80,44 @@ EPIPHANY_BONUS = 1000
 # A damage figure is a percentage followed shortly by the word Damage. "Damage Amount" is excluded on purpose:
 # that phrasing is always a modifier on some other card's damage, as in "Increases Damage Amount by 20%", and
 # counting it would rate a card that does nothing by itself as though it hit hard. A hit count after it, as in
-# "40% Damage x 3", multiplies the figure. The client mostly writes a multiplication sign, and a few cards a plain x.
-DAMAGE = re.compile(r"(\d+)%[^\n]{0,24}?Damage(?!\s+Amount)(?:\s*[×x]\s*(\d+))?")
+# "40% Damage x 3", or right after the percentage, as in "60% x 3 Damage", multiplies the figure. The client mostly
+# writes a multiplication sign, and a few cards a plain x.
+DAMAGE = re.compile(r"(\d+)%(?:\s*[×x]\s*(\d+))?[^\n]{0,24}?Damage(?!\s+Amount)(?:\s*[×x]\s*(\d+))?")
 SHIELD = re.compile(r"(\d+)%[^\n]{0,20}?Shield")
 DRAW = re.compile(r"\bDraw (\d+)")
+# A line that gains Action Points outright, as Source of Water's "Gain 1 AP". Seven Arms' "If ..., gain 2 AP" has a condition, so it does not count.
+AP_GAIN = re.compile(r"^(?:Draw \d+,? and )?gain \d+ AP\b", re.I | re.M)
+# A heal the card makes when played, as in "Heal 100%". Mid-line ones are triggers, as in "At the end of the turn, Fixed Heal 30%".
+HEAL = re.compile(r"^Heal (\d+)%", re.MULTILINE)
+# A line of damage that lands on every enemy, as in Vulture Ejection's "120% Defense-Based Damage to all enemies". The data's own target
+# misses some, Diagonal Slash among them. "To random enemies" spreads its hits instead, so that stays one target's worth.
+ALL_ENEMIES = re.compile(r"\bto all enemies\b")
 # A card that makes the next attack hit harder, or the target take more - "Add 1 Hit(s) to the next Attack Card", "+X% Damage
 # Amount to the next Bullet card", "2 Vulnerable". Played after the attacks, as its category alone left it, it lands on nothing.
 PRIME = re.compile(r"(?:Damage Amount|Hit\(s\)|Proc)[^|\n]*?\bnext\b[^|\n]*?\b(?:Attack|Bullet|Bind) Card"
                    r"|(?:\b\d+ Vulnerable|Vulnerable \d+)(?! to (?:allies|self))|Damage Amount taken by the target", re.I)
 
+# How many copies of each version of a card the deck holds, by canonical name: the last `piles` read, and every change `piles` saw since.
+COPIES = {}
+# The effect text of every card in `COPIES`, by canonical name: the Epiphany it carries, the weakest where copies differ.
+# Mutated in place, never rebound, and empty until a read, so every card falls back to its base text.
+DECK = {}
+# How many times a battle a card comes back to hand after it is played, by canonical name, summed over its copies, from the deck read.
+RETRIEVES = {}
+
 # What a card does, in the terms the ordering cares about.
-Features = namedtuple("Features", ["damage", "shield", "draw"])
+Features = namedtuple("Features", [
+    # Damage to one enemy, as a percentage with every hit added up.
+    "damage",
+    # Shield, as a percentage.
+    "shield",
+    # Cards drawn.
+    "draw",
+    # The part of `damage` that lands on every enemy rather than one.
+    "spread",
+    # Heal, as a percentage.
+    "heal",
+], defaults=[0, 0])
 # What the picker knows about the moment it is choosing in.
 Board = namedtuple("Board", [
     # Action Points to plan against.
@@ -86,13 +128,33 @@ Board = namedtuple("Board", [
     "epiphany",
     # Every card in hand as canonical names, for the kits. Empty means `plan` fills it from the hand it is given.
     "hand",
-], defaults=[BASE_ACTION_POINTS, None, None, ()])
+    # Canonical names of the cards the game took this turn, oldest first, for kits that count what has been played.
+    "played",
+    # The same for the turn before, which is empty on a battle's first turn.
+    "last_turn",
+    # The same for the whole battle, this turn's last. Where a mode counts no map nodes to tell fights apart, it reaches back one turn.
+    "battle",
+    # The hand size the hand counter reads, which is more than `hand` when OCR missed a card. 0 when not known.
+    "hand_size",
+    # Canonical names of the cards still in hand when the turn before ended, so their Retain effects have fired.
+    "kept",
+    # Canonical card name to the text of the version the deck holds, for kits whose rule rests on one Epiphany. `DECK` itself, so it sees every read.
+    "deck",
+    # Whether an enemy shows Absolute Invincibility, from `board.enemy_invulnerable`, so damage is worth nothing this turn.
+    "invulnerable",
+    # How many enemies are on screen, from `board.enemy_counters`, so damage to all enemies counts once for each. 1 when not known.
+    "enemies",
+    # The share of the team's HP left after the enemy's next hit, from `board.team_after_hit`. None when not read.
+    "health",
+], defaults=[BASE_ACTION_POINTS, None, None, (), (), (), (), 0, (), DECK, False, 1, None])
 
 # How many distinct readings to remember the folding of. OCR invents new misspellings all session, so this
 # is bounded rather than unlimited, and it is far larger than the ten names one frame ever asks about.
 CACHED_READINGS = 1024
 # Folded card name to the client's own spelling, so a reading run together or in the wrong case still lands.
 CARD_INDEX = index(CARD_COST)
+# Every card that gains AP outright, which a copy falls back to when nothing on the user's list is on offer.
+AP_CARDS = tuple(sorted(name for name in CARD_COST if AP_GAIN.search(DESCRIPTIONS.get(name, ""))))
 
 # The type label the game prints under every card, in both the English the Global client draws and the
 # Chinese `ocr.po` rewrites some of them into. Upstream's own filter lists only Chinese, so every English
@@ -102,6 +164,9 @@ CARD_INDEX = index(CARD_COST)
 TYPE_LABELS = ("basic attack", "basic skill", "status ailment", "attack", "skill", "curse", "power",
                "upgrade", "defense", "攻击力", "防御力", "状态异常", "lv", "等级")
 FOLDED_LABELS = tuple(fold(label) for label in TYPE_LABELS)
+# The label under every Mental Breakdown card, matched only on a run of 7 of its letters. The rules for the short labels would eat real
+# cards cut short: "Accent" is Mute Accent and one edit from "Ment", and "Down" is Downward Cut. No card name holds any of these runs.
+BREAKDOWN_PIECES = frozenset(fold("Mental Breakdown")[start:start + 7] for start in range(len(fold("Mental Breakdown")) - 6))
 # The type icon shares the label's OCR box and is read as a stray letter or two in front of it, which is why
 # `XBasic A` occurs. `src/en/ocr_text.py` trims the same way for the same reason.
 LABEL_PREFIX = 2
@@ -113,6 +178,9 @@ MIN_STUB = 5
 # How many letters at the end of a name cut short may be wrong. The reader mangles the letter it cut at, as in "Quantun",
 # "Barrier Der" and "Fairy's Prc", so a stub that fits nothing is retried with up to this many dropped.
 GARBLED_TAIL = 2
+# How much of a name a reading checked against the deck has to keep, as a share of its letters. Live, Annihilation came back as
+# "DarkMistSecretAil", 17 of 29, far past what the whole roster can risk but the only Dark Mist card those letters fit in that deck.
+DECK_SHARE = 0.5
 # Tiphera's three Archetype cards differ only by a glyph the reader seldom keeps - "Archetype:O", "Archetyp", "rchetype:".
 # Matched on folded text, on a piece of the word, with a real glyph or the O, C or 0 the reader takes the circle for at the end.
 ARCHETYPE_READ = re.compile(r"(?:rchet|het[yv]p)[a-z]*?([○△□oc0]?)$|^arche$")
@@ -133,6 +201,8 @@ def looks_like_label(folded):
     Returns:
         True when it is a label, the start of one or a piece from inside one, give or take one letter.
     """
+    if any(piece in folded for piece in BREAKDOWN_PIECES):
+        return True
     for trimmed in (folded[cut:] for cut in range(LABEL_PREFIX + 1)):
         if not trimmed:
             continue
@@ -143,18 +213,34 @@ def looks_like_label(folded):
     return False
 
 
-def stub_card(stub):
+def owner(name):
+    """Name the combatant a card belongs to.
+
+    Args:
+        name: A card name the data knows, in any Epiphany.
+
+    Returns:
+        The combatant, or None for a card no combatant owns.
+    """
+    return CARD_OWNER.get(base_name(name))
+
+
+def stub_card(stub, party=frozenset()):
     """Find the one card a name cut short can be.
 
     The reader cuts from either end - "Knife Tos" and "rrier Der" are both real readings - so a stub is tried as the start
     of a name and then as a piece of one. Two cards that fit means the reading cannot say which, and a shorter stub only fits more.
     A reading that looks like a label only gets the first try, so "Quant" is still Quantum Seed but "XAttacl" finds no card.
+    Since we know who is in the party, a fit owned by any other combatant cannot be in hand, which narrows the lookup to the cards
+    this party can hold - "ord Slas" fits Rossweisse's Sword Slash and Yuki's Longsword Slash, and only one of them is in a party.
 
     Args:
         stub: A folded reading the index has no spelling for.
+        party: The combatants known to be in the party. Empty when none are known yet, which leaves every card in play.
 
     Returns:
-        The card, or None when nothing or more than one card fits. A card and its Epiphanies count as one card, the plainest of them.
+        The card, or None when nothing or more than one card fits. A card and its Epiphanies count as one card, the plainest of them, as do
+        names that only add to it at the same cost.
     """
     tries = [(cut, fits) for cut in range(GARBLED_TAIL + 1) for fits in (str.startswith, str.__contains__)]
     for cut, fits in tries[:1] if looks_like_label(stub) else tries:
@@ -163,17 +249,25 @@ def stub_card(stub):
             return None
         # Over the exact spellings only: the fallback spellings in the index rearrange or rewrite letters, so a piece of one means nothing.
         matches = [real for folded, real in CARD_INDEX.exact.items() if fits(folded, piece)]
+        # Kept whole when no fit is the party's, so a member whose cards have not been read yet still gets the old answer.
+        if party:
+            matches = [real for real in matches if owner(real) in (None, *party)] or matches
         if matches:
-            return min(matches, key=len) if len({base_name(real) for real in matches}) == 1 else None
+            plainest = min(matches, key=len)
+            # A longer name built on the plainest at its price is played the same: "Inferno" fits Inferno Rhapsody and Inferno Rhapsody: Heaven.
+            alike = all(fold(real).startswith(fold(plainest)) and cost(real) == cost(plainest) for real in matches)
+            return plainest if alike or len({base_name(real) for real in matches}) == 1 else None
     return None
 
 
 @lru_cache(maxsize=CACHED_READINGS)
-def canonical(name):
+def canonical(name, party=frozenset(), deck=frozenset()):
     """Turn a name as read off the screen into the one the data is keyed by.
 
     Args:
         name: The card name the reader produced.
+        party: The combatants known to be in the party, which settles a name cut short that fits cards of several combatants.
+        deck: The canonical names of the cards the deck holds, from `DECK`, for a hand card too garbled for the whole roster.
 
     Returns:
         The client's spelling, or the name unchanged when nothing matches it.
@@ -184,18 +278,60 @@ def canonical(name):
     # looser spellings read a 1 as a letter and would land "1Homing Laser" on "Homing Laser L".
     stub = fold(name).lstrip("0123456789")
     known = CARD_INDEX.look_up(stub)
+    if known and deck and known not in deck and stub not in CARD_INDEX.exact:
+        # The index guesses at a reading it cannot spell, and a deck card the reading sits inside beats that guess. Live, "sidual Herb"
+        # went to Residual Herb with Harmonization: Residual Herb in the deck.
+        held = [real for real in deck if stub in fold(real)]
+        known = held[0] if len(held) == 1 else known
     if known:
         return known
     # The reader also cuts a name short while the hand animates, so "Knife Tos" arrives for "Knife Toss".
     # Only an unambiguous stub is repaired: two cards start "Attac", and guessing between them would be
     # worse than leaving the reading alone for the label test to deal with.
-    known = stub_card(stub)
+    known = stub_card(stub, party) or deck_card(stub, deck)
     if known:
         return known
     archetype = ARCHETYPE_READ.search(stub)
     if archetype:
         return ARCHETYPES.get(archetype.group(1) or "", ARCHETYPE_UNREAD)
     return name
+
+
+def described(name, description):
+    """Tell apart cards whose names differ only by the glyph after a colon, by the effect text read under the name.
+
+    Args:
+        name: The card name the reader produced.
+        description: The effect text the reader produced, from upstream's `recognize_cards`.
+
+    Returns:
+        The card of that family whose text the description is closest to, else the canonical name.
+    """
+    named = canonical(name)
+    family, colon, _ = named.partition(":")
+    kin = [card for card in DESCRIPTIONS if card.startswith(family + ":")] if colon and description else []
+    read = fold(description)
+    return max(kin, key=lambda card: SequenceMatcher(None, fold(text_of(card)), read).ratio(), default=named)
+
+
+def deck_card(stub, deck):
+    """Find the one card the deck holds whose letters a garbled reading keeps in order.
+
+    Args:
+        stub: A folded reading neither the index nor `stub_card` could place.
+        deck: The canonical names of the cards the deck holds. Empty before the piles are read, which finds nothing.
+
+    Returns:
+        The card, or None when no card or more than one fits, or the reading keeps less than `DECK_SHARE` of the name.
+    """
+    if len(stub) < MIN_STUB or looks_like_label(stub):
+        return None
+    # Lookalikes folded on both sides, since "Mutation:Forbidden AIgorthm" keeps every letter in order but one capital I. One wrong letter
+    # is let through too, which the roster refuses a name this short: live, Joker came back as "Jokel" and "lokel" 14 times in 116.
+    reading = unconfused(stub)
+    matches = [real for real in deck if len(stub) >= len(fold(real)) * DECK_SHARE
+               and (in_order(reading, unconfused(fold(real))) or one_edit_apart(reading, unconfused(fold(real))))]
+    return min(matches, key=len) if matches and len({base_name(real) for real in matches}) == 1 else None
 
 
 def is_card_name(reading):
@@ -257,11 +393,37 @@ def parsed(name):
     Returns:
         The `Features` the text states.
     """
-    text = DESCRIPTIONS.get(name) or ""
+    return figures(text_of(name))
+
+
+def damage_in(text):
+    """Add up the damage figures in an effect text, every hit counted.
+
+    Args:
+        text: The effect text, or one line of it.
+
+    Returns:
+        The total, as a percentage.
+    """
+    return sum(int(share) * int(before or after or 1) for share, before, after in DAMAGE.findall(text))
+
+
+def figures(text):
+    """Pull the damage, shield and draw figures out of what an effect text does when played.
+
+    Args:
+        text: The effect text, as the generated data writes it.
+
+    Returns:
+        The `Features` the text states, leaving out its "Retain:" lines.
+    """
+    text = RETAIN_LINE.sub("", text)
     return Features(
-        damage=sum(int(share) * int(hits or 1) for share, hits in DAMAGE.findall(text)),
+        damage=damage_in(text),
         shield=sum(int(found) for found in SHIELD.findall(text)),
         draw=sum(int(found) for found in DRAW.findall(text)),
+        spread=sum(damage_in(line) for line in text.splitlines() if ALL_ENEMIES.search(line)),
+        heal=sum(int(found) for found in HEAL.findall(text)),
     )
 
 
@@ -278,6 +440,35 @@ def cost(name):
     return CARD_COST.get(canonical(name), ASSUMED_COST)
 
 
+def price(card):
+    """Say what a hand card costs to play, as it shows on screen when an effect has lowered it.
+
+    Args:
+        card: A hand card, carrying a `cost` only when `battle.py` read a lowered one off it.
+
+    Returns:
+        The Action Point cost, from the card when it carries one and from `cost` otherwise.
+    """
+    return card.get("cost", cost(card["name"]))
+
+
+def discounted(card, board):
+    """Take off a card's price what this turn's Exhausts have lowered it by, when the screen did not read it lowered.
+
+    Args:
+        card: A hand card, as `_hand_cards` reads it.
+        board: The `Board` it would be played into, whose `played` holds this turn's cards.
+
+    Returns:
+        The card, carrying its lowered `cost` when an Exhaust took some off.
+    """
+    found = EXHAUST_DISCOUNT.search(description(card["name"]))
+    exhausted = sum(name in CARD_EXHAUSTS for name in board.played)
+    if not found or not exhausted or "cost" in card or cost(card["name"]) == X_COST:
+        return card
+    return {**card, "cost": max(0, cost(card["name"]) - int(found.group(1)) * exhausted)}
+
+
 def attribute_of(name):
     """Say which attribute a card attacks with.
 
@@ -290,7 +481,7 @@ def attribute_of(name):
     Returns:
         The attribute name, or None when the card has no known owner.
     """
-    return COMBATANT_ATTRIBUTE.get(CARD_OWNER.get(canonical(name)))
+    return COMBATANT_ATTRIBUTE.get(owner(canonical(name)))
 
 
 def category(name):
@@ -314,7 +505,70 @@ def description(name):
     Returns:
         The text, or an empty string for a card the data does not carry.
     """
-    return DESCRIPTIONS.get(canonical(name)) or ""
+    return text_of(canonical(name))
+
+
+def text_of(name):
+    """Give a card's effect text, as the version of it the deck holds when the deck has been read.
+
+    Args:
+        name: The canonical card name.
+
+    Returns:
+        The deck's text, else the base text, or an empty string for a card the data does not carry.
+    """
+    return DECK.get(name) or DESCRIPTIONS.get(name) or ""
+
+
+def on_play(name):
+    """Give the part of a card's effect text that happens when it is played.
+
+    Args:
+        name: The card name, in any spelling.
+
+    Returns:
+        The text without its "Retain:" lines.
+    """
+    return RETAIN_LINE.sub("", description(name))
+
+
+def settle_deck():
+    """Value every card by the version of it `COPIES` holds, the weakest where its copies differ."""
+    DECK.clear()
+    DECK.update({name: min(texts, key=lambda text: strength(figures(text))) for name, texts in COPIES.items()})
+    parsed.cache_clear()
+
+
+def use_deck(copies, retrieves=None):
+    """Take a fresh read of the deck in place of everything known about it.
+
+    Args:
+        copies: Canonical card name to the effect texts its copies were matched to, from `piles`. A `Counter` of copies per text, or
+            any collection of texts, each then counted once.
+        retrieves: Canonical card name to the Retrieve counts its copies showed, summed, from `piles`. None when no card showed one.
+    """
+    COPIES.clear()
+    COPIES.update({name: Counter(texts) for name, texts in copies.items()})
+    RETRIEVES.clear()
+    RETRIEVES.update(retrieves or {})
+    settle_deck()
+
+
+def change_deck(name, text, by):
+    """Add or take away one copy of a card, in one version.
+
+    Args:
+        name: The canonical card name.
+        text: The version's effect text, from `piles.version_of`.
+        by: 1 for a copy gained, -1 for one removed.
+    """
+    held = COPIES.setdefault(name, Counter())
+    held[text] += by
+    if held[text] <= 0:
+        del held[text]
+    if not held:
+        del COPIES[name]
+    settle_deck()
 
 
 def worth_clearing(name):
@@ -324,7 +578,21 @@ def worth_clearing(name):
         name: The card name, in any spelling.
 
     Returns:
-        True for a Curse or Status Ailment that only hurts while it sits in hand and has a fixed cost.
+        True for any Curse with a fixed cost, since a Curse left in hand only clogs it. A Status Ailment counts when it only hurts
+        while it sits in hand, or when its text does nothing on play.
+    """
+    kind, text = category(name), description(name)
+    return kind in DEALT_TO_YOU and cost(name) != X_COST and (kind == "CURSE" or bool(HELD_HARM.search(text)) or not INERT_EFFECT.search(text))
+
+
+def hurts_held(name):
+    """Say whether a card dealt to you does its harm while it sits in hand, and so is cleared ahead of the hand's own cards.
+
+    Args:
+        name: The card name, in any spelling.
+
+    Returns:
+        True for a Curse or Status Ailment with a fixed cost whose text says it acts from the hand, as Shackles does.
     """
     return category(name) in DEALT_TO_YOU and cost(name) != X_COST and bool(HELD_HARM.search(description(name)))
 
@@ -348,9 +616,21 @@ def worth_playing(name):
         name: The card name, in any spelling.
 
     Returns:
-        False for a Curse or a Status Ailment, True for anything else, including a card not in the data.
+        False for a Curse, a Status Ailment or a card that helps by being held, True for anything else, including a card not in the data.
     """
-    return category(name) not in DEALT_TO_YOU
+    return category(name) not in DEALT_TO_YOU and not helps_held(name)
+
+
+def helps_held(name):
+    """Say whether a card does its good while it sits in hand, and so is worth keeping rather than playing.
+
+    Args:
+        name: The card name, in any spelling.
+
+    Returns:
+        True for a card of your own whose text opens with "If in hand".
+    """
+    return category(name) not in DEALT_TO_YOU and bool(HELD_HELP.match(description(name)))
 
 
 def value(name, board):
@@ -363,7 +643,7 @@ def value(name, board):
     Returns:
         The generic `rated` figure, adjusted by every kit the hand switches on.
     """
-    return kits.worth(canonical(name), board.hand, rated(name, board), lambda other: rated(other, board))
+    return kits.worth(canonical(name), board, rated(name, board), lambda other: rated(other, board))
 
 
 def rated(name, board):
@@ -379,13 +659,46 @@ def rated(name, board):
     """
     doing = features(name)
     matched = board.weakness is not None and attribute_of(name) == board.weakness
-    damage = doing.damage * (WEAKNESS_BONUS if matched else 1)
-    worth = damage + SHIELD_WEIGHT * doing.shield + DRAW_VALUE * doing.draw
-    if not worth:
+    if wasted(name, board):
+        return 0
+    hit = doing.damage + doing.spread * (board.enemies - 1)
+    heal = 0 if board.health is not None and board.health >= HEALTHY else doing.heal
+    worth = strength(doing._replace(damage=0 if board.invulnerable else hit * (WEAKNESS_BONUS if matched else 1), heal=heal), COMBATANT_ROLE.get(owner(name)))
+    if not worth and not doing.heal:
         worth = UNREAD_VALUE * max(cost(name), 1)
     if lit_up(name, board):
         worth += EPIPHANY_BONUS
     return worth
+
+
+def wasted(name, board):
+    """Say whether a card would do nothing, being all damage while an enemy cannot lose Health.
+
+    Args:
+        name: The card name, in any spelling.
+        board: The `Board` it would be played into.
+
+    Returns:
+        True for a card with damage and nothing else on an invulnerable turn.
+    """
+    doing = features(name)
+    return board.invulnerable and doing.damage > 0 and not strength(doing._replace(damage=0))
+
+
+def strength(doing, role=None):
+    """Say what a card's figures are worth together, in damage terms.
+
+    Args:
+        doing: The card's `Features`.
+        role: The owner's role from `COMBATANT_ROLE`, which weighs a Healer's or Protector's damage down and their specialty up.
+
+    Returns:
+        The damage, plus the shield, heal and draw at their exchange rates.
+    """
+    damage = doing.damage * (SUPPORT_DAMAGE if role in SUPPORT_ROLES else 1)
+    shield = doing.shield * (SPECIALTY_WEIGHT if role == "Protection" else SHIELD_WEIGHT)
+    heal = doing.heal * (SPECIALTY_WEIGHT if role == "Healing" else SHIELD_WEIGHT)
+    return damage + shield + heal + DRAW_VALUE * doing.draw
 
 
 def lit_up(name, board):
@@ -409,28 +722,42 @@ def phase(name, board):
         board: The `Board` it would be played into.
 
     Returns:
-        One of the `PHASE_` values, lowest being earliest in the turn.
+        One of the `PHASE_` values, or a kit's place between two of them, lowest being earliest in the turn.
     """
-    if canonical(name) in ESCAPE_CARDS:
+    if canonical(name) in BREAKDOWN_CARDS:
         return PHASE_ESCAPE
     if lit_up(name, board):
         return PHASE_EPIPHANY
+    return kits.phase(canonical(name), board, generic_phase(name))
+
+
+def generic_phase(name):
+    """Say when in a turn a card belongs by its cost and text alone.
+
+    Args:
+        name: The card name, in any spelling.
+
+    Returns:
+        One of the `PHASE_` values from `PHASE_UPGRADE` on.
+    """
     price = cost(name)
     if price == X_COST:
         return PHASE_SPENDS_EVERYTHING
+    kind = category(name)
+    if kind == SETUP_CATEGORY:
+        return PHASE_UPGRADE
     if price == 0:
         return PHASE_FREE
-    kind = category(name)
-    if kind == SETUP_CATEGORY or features(name).draw:
+    if features(name).draw:
         return PHASE_SETUP
-    if kind not in DEALT_TO_YOU and PRIME.search(description(name)):
+    if kind not in DEALT_TO_YOU and PRIME.search(on_play(name)):
         return PHASE_PRIME
     if kind == ATTACK_CATEGORY:
         return PHASE_ATTACK
     return PHASE_OTHER
 
 
-def buying_order(name, board):
+def buying_order(card, board):
     """Build the sort key that decides which cards a turn can afford.
 
     Value per Action Point, rather than value alone, because the question is what to spend a limited budget
@@ -438,22 +765,47 @@ def buying_order(name, board):
     and so can only ever be the turn's final play.
 
     Args:
-        name: The card name, in any spelling.
+        card: The hand card, as `_hand_cards` reads it.
         board: The `Board` it would be played into.
 
     Returns:
         A sort key putting the best buy first.
     """
-    price = cost(name)
-    return price == X_COST, -value(name, board) / max(price, 1)
+    points = price(card)
+    return points == X_COST, -value(card["name"], board) / max(points, 1)
+
+
+def best_buy(ranked, budget, board):
+    """Pick the cards with a fixed price that are worth the most together within the turn's Action Points.
+
+    Buying the best value per point first can strand points: a 1-point Basic attack bought ahead of a 3-point attack leaves 2 points and
+    nothing to spend them on.
+
+    Args:
+        ranked: The playable hand cards with a fixed price, best buy first.
+        budget: The Action Points to spend.
+        board: The `Board` they would be played into.
+
+    Returns:
+        The cards to buy, best buy first. A tie goes to the set spending more points, then to the set of more cards.
+    """
+    worth = [value(card["name"], board) for card in ranked]
+    prices = [price(card) for card in ranked]
+    best, best_key = (), (0, 0, 0)
+    for size in range(1, len(ranked) + 1):
+        for picked in combinations(range(len(ranked)), size):
+            spent = sum(prices[index] for index in picked)
+            key = (sum(worth[index] for index in picked), spent, size)
+            if spent <= budget and key > best_key:
+                best, best_key = picked, key
+    return [ranked[index] for index in best]
 
 
 def plan(hand, board):
     """Choose the cards to play this turn, in the order to play them.
 
     Two questions, answered in order, because answering them together gets both wrong. What the budget buys is
-    settled on value per Action Point, so 220% damage for two points is bought ahead of 100% for one and a cheap
-    card cannot crowd out a dear one that wins the fight. Only then are the survivors put into phase order, and
+    settled on the most value the points can buy, so a cheap card cannot crowd out a dear one that wins the fight. Only then are the survivors put into phase order, and
     cards that tie keep the order the hand had.
 
     Args:
@@ -465,20 +817,25 @@ def plan(hand, board):
     """
     if not board.hand:
         board = board._replace(hand=tuple(canonical(card["name"]) for card in hand))
-    playable = (card for card in hand if worth_playing(card["name"]) and not kits.held(canonical(card["name"]), board.hand))
+    hand = [discounted(card, board) for card in hand]
+    playable = (card for card in hand if worth_playing(card["name"]) and not kits.held(canonical(card["name"]), board)
+                and not wasted(card["name"], board))
     budget = board.action_points
-    chosen = []
-    for card in sorted(playable, key=lambda held: buying_order(held["name"], board)):
-        price = cost(card["name"])
-        if price == X_COST:
-            # It takes the rest of the turn's points, so it is worth playing only while some remain, and
-            # nothing can follow it.
-            if budget > 0:
-                chosen.append(card)
-                budget = 0
-            continue
-        if price > budget:
-            continue
-        budget -= price
-        chosen.append(card)
+    ranked = sorted(playable, key=lambda held: buying_order(held, board))
+    fixed = [card for card in ranked if price(card) != X_COST]
+    # An Upgrade pays off every turn left in the battle, so its first copy is bought first and the rest of the hand shares what is left.
+    first = [category(card["name"]) == SETUP_CATEGORY and canonical(card["name"]) not in board.battle for card in fixed]
+    upgrades = best_buy([card for card, new in zip(fixed, first) if new], budget, board)
+    left = budget - sum(price(card) for card in upgrades)
+    # A cheap card that hurts while held goes next, as long as a point stays for the rest of the hand.
+    cleared = []
+    for card in sorted((card for card in hand if hurts_held(card["name"])), key=lambda held: clearing_order(held["name"])):
+        if price(card) <= CLEARING_MAX_COST and left - price(card) >= CLEARING_RESERVE:
+            cleared.append(card)
+            left -= price(card)
+    chosen = upgrades + cleared + best_buy([card for card, new in zip(fixed, first) if not new], left, board)
+    spenders = [card for card in ranked if price(card) == X_COST]
+    if spenders and sum(price(card) for card in chosen) < budget:
+        # It takes the rest of the turn's points, so it is worth playing only while some remain, and nothing can follow it.
+        chosen.append(spenders[0])
     return sorted(chosen, key=lambda held: phase(held["name"], board))

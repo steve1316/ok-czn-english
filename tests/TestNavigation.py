@@ -1,14 +1,20 @@
-"""Check that a run starting on the Combatants tab reads it instead of tapping its way back to it."""
+"""Check that a run starting on the Combatants tab reads it instead of tapping its way back to it, that Sortie goes there once a run, and
+that the deck read off All Piles on the way values each card by its Epiphany, and that a Sortie Epiphany goes on the card that read found without one."""
 
 import sys
 import types
 import unittest
+from unittest import mock
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.en import navigation  # noqa: E402
+from src.en import battle, cards, epiphany, navigation, piles, rewards  # noqa: E402
+from src.en.handlers import standing_in  # noqa: E402
+from src.en.battle import PARTY, TURN  # noqa: E402
+from src.en.game_text import DESCRIPTIONS, EPIPHANIES  # noqa: E402
+from tests.fakes import HEIGHT, WIDTH, FakeBox  # noqa: E402
 
 TARGET = "Arabella"
 # What the log shows on the Combatants tab, at the three points upstream reads names from.
@@ -17,6 +23,27 @@ ON_THE_TAB = {(0.159, 0.368): "Arabella", (0.432, 0.368): "Veronica", (0.705, 0.
 ANOTHER_TAB = {(0.159, 0.368): "Whisper", (0.432, 0.368): "Ember", (0.705, 0.369): "Tallow"}
 # The taps upstream's capture makes: the 3-person icon, the Combatants tab, then the one that closes the page.
 CLOSE_PAGE = (0.960, 0.054)
+# Columns one and four of an All Piles page as the reader returned them, as (text, centre x, centre y, width, height) in pixels. The two
+# Experienced Strikes carry different versions, Hew's text names a card, and the last row runs off the bottom.
+PILES_PAGE = (
+    ("Slash", 707, 159, 70, 28), ("XBasic Attack", 756, 184, 164, 26), ("143% Defense-Based", 749, 364, 214, 26), ("Damage", 749, 392, 96, 30),
+    ("Increase Damage", 747, 417, 178, 28), ("Amount of Exhaust", 749, 443, 186, 20), ("cards by 15% for1 turn", 751, 468, 234, 30),
+    ("(max2 stacks)", 748, 494, 148, 28),
+    ("Experienced Strike", 773, 612, 218, 31), ("XAttack", 723, 640, 110, 33), ("168% Defense-Based", 750, 817, 216, 26), ("Damage", 751, 846, 88, 29),
+    ("20% DMG-Based Shield", 756, 869, 248, 30), ("Increase Damage", 748, 895, 176, 24), ("Amount of Exhaust", 749, 920, 190, 26),
+    ("cards by 20% for 1 turn", 752, 948, 232, 26),
+    ("QVulture Ejection", 748, 1060, 240, 37),
+    ("Hew", 1647, 158, 62, 30), ("Attack", 1690, 187, 68, 20), ("[Unique/lnitiation/", 1706, 364, 212, 26), ("Exhaust / Ephemeral]", 1701, 391, 222, 32),
+    ("420% Defense-Based", 1701, 416, 222, 26), ("Damage", 1701, 444, 90, 27), ("Incinerate: Create", 1702, 468, 176, 19), ("1HewLv.1", 1704, 495, 112, 26),
+    ("Experienced Strike", 1727, 612, 210, 25), ("Attack", 1676, 640, 108, 33), ("252%Defense-Based", 1699, 818, 214, 20), ("Damage", 1702, 846, 90, 29),
+    ("20% DMG-Based Shield", 1707, 869, 250, 30), ("Increase Shield Gain", 1701, 895, 202, 20), ("Amount of Skill Cards", 1700, 921, 212, 20),
+    ("by 30%for1turn", 1704, 947, 172, 20),
+    ("Absolute Protection", 1725, 1062, 214, 32),
+    # A card named inside another card's text, with a text line as close below it as a type label would be. From the next page.
+    ("Contaminated Spore", 1282, 433, 210, 30), ("Retain:Create", 1316, 465, 146, 19),
+)
+# The Experienced Strike Epiphany the second copy above carries.
+SHIELD_GAIN = next(text for text in EPIPHANIES["Experienced Strike"] if "Shield Gain" in text)
 
 
 class FakeTask:
@@ -144,10 +171,11 @@ class TestReadingInPlace(unittest.TestCase):
         self.assertEqual([CLOSE_PAGE], task.clicks)
         self.assertTrue(handled)
 
-    def test_a_run_starting_elsewhere_navigates_as_upstream_does(self):
+    def test_a_run_starting_elsewhere_taps_only_the_icon(self):
+        """The 3-person icon already lands on the Combatants tab, so the tab tap after it would do nothing."""
         task, handled = self.capture(ANOTHER_TAB)
         self.assertEqual(["memberinfo"], task.boxes)
-        self.assertEqual([navigation.COMBATANTS_TAB, CLOSE_PAGE], task.clicks)
+        self.assertEqual([CLOSE_PAGE], task.clicks)
         self.assertTrue(handled)
 
     def test_a_capture_that_throws_still_puts_them_back(self):
@@ -206,6 +234,18 @@ class TestTheTallyNoticesARebase(unittest.TestCase):
     def test_the_shape_upstream_has_today_says_nothing(self):
         self.assertEqual([], self.warnings())
 
+    def test_a_frame_upstream_declines_says_nothing(self):
+        """Off the page upstream returns before tapping, and a live run logged the warning on every such frame."""
+        install(ANOTHER_TAB)
+        said = []
+        original_warning = navigation.logger.warning
+        navigation.logger.warning = lambda message, *args, **kwargs: said.append(message)
+        try:
+            navigation.reading_in_place(lambda task: False)(FakeTask())
+        finally:
+            navigation.logger.warning = original_warning
+        self.assertEqual([], said)
+
     def test_a_moved_tab_tap_is_reported(self):
         """The skip would quietly stop saving anything, which is the failure nobody would notice."""
         said = self.warnings(tab=(0.250, 0.056))
@@ -217,6 +257,175 @@ class TestTheTallyNoticesARebase(unittest.TestCase):
         said = self.warnings(extra_boxes=1)
         self.assertEqual(1, len(said))
         self.assertIn("dropped 1 and 2", said[0])
+
+
+class TestSortieTeamTrip(unittest.TestCase):
+    """Sortie taps through to the team once a run, and the new run's roster replaces the old party."""
+
+    def tearDown(self):
+        for name in ("utils", "utils_chaos"):
+            sys.modules.pop(name, None)
+
+    def test_each_run_taps_through_once_and_reads_its_own_party(self):
+        install(ON_THE_TAB)
+        utils = sys.modules["utils"]
+        on_map = [False]
+        utils._get_current_hp_percent = lambda task: 100 if on_map[0] else False
+        utils._move_and_click = lambda task, x, y: task.clicks.append((x, y))
+        task = FakeTask()
+        task.sleep = lambda seconds: None
+        task.info_set = lambda key, value: None
+        task.node_status = {}
+        clock = [0.0]
+
+        task.width, task.height = WIDTH, HEIGHT
+
+        with mock.patch.object(navigation.time, "monotonic", lambda: clock[0]):
+            self.assertFalse(navigation.handle_open_team(task), "off the map there is nothing to tap")
+            on_map[0] = True
+            # Live, the portraits were tapped over the end turn prompt, which ended a turn with a card still playable.
+            task.all_texts = [FakeBox("取消", 0.34, 0.60)]
+            self.assertFalse(navigation.handle_open_team(task))
+            # A restart on a battle screen still reads the team, but once the turn has pressed anything it asks the next turn for a frame.
+            task.all_texts = [FakeBox("04/10", 0.5, 0.97)]
+            setattr(task, TURN, battle.Turn(4))
+            getattr(task, TURN).ended = True
+            self.assertFalse(navigation.handle_open_team(task))
+            self.assertTrue(getattr(task, battle.TEAM_WANTED))
+            delattr(task, TURN)
+            # Live, the health bar read as "1728 /1728", which upstream's own read fails on.
+            on_map[0] = False
+            self.assertTrue(navigation.handle_open_team(task))
+            on_map[0] = True
+            # A pending dialog swallowed the tap, and its own handler needs the next frames to clear it.
+            self.assertFalse(navigation.handle_open_team(task))
+            # Once it has, the team is tapped for again, but not past `TEAM_TRIES`.
+            for _ in range(navigation.TEAM_TRIES - 1):
+                clock[0] += navigation.TEAM_RETRY_SECONDS
+                self.assertTrue(navigation.handle_open_team(task))
+            clock[0] += navigation.TEAM_RETRY_SECONDS
+            self.assertFalse(navigation.handle_open_team(task))
+            self.assertEqual([navigation.TEAM_PORTRAITS] * navigation.TEAM_TRIES, task.clicks)
+            task.clicks.clear()
+
+            # Upstream rebuilds `node_status` for the next run, and the last run's party must not outlive it.
+            task.node_status = {}
+            setattr(task, PARTY, frozenset({"Yuki"}))
+            self.assertTrue(navigation.handle_open_team(task))
+            self.assertEqual(frozenset(), getattr(task, PARTY))
+            self.assertEqual([navigation.TEAM_PORTRAITS], task.clicks)
+
+            rewards.remember_team(task, utils)
+            self.assertEqual({"Arabella", "Veronica", "Mika"}, getattr(task, PARTY))
+            # The page shows three names, so after a restart a drafted fourth comes from their cards in the deck read on the same trip.
+            task.node_status[piles.READ] = True
+            with mock.patch.dict(cards.COPIES, {"Hunting Instincts": {}, "Arcane Rush": {}}, clear=True):
+                rewards.remember_team(task, utils)
+            self.assertEqual({"Arabella", "Veronica", "Mika", "Hugo"}, getattr(task, PARTY))
+            clock[0] += navigation.TEAM_RETRY_SECONDS
+            self.assertFalse(navigation.handle_open_team(task), "a team read stops the retries")
+
+    def test_the_deck_is_read_just_before_the_page_closes(self):
+        # Live, the read opened All Piles first and needed a tap back to the Combatants tab before the team could be read.
+        utils_chaos = install(ON_THE_TAB)
+        capture = piles.reading_the_deck(upstream_capture(utils_chaos), utils_chaos)
+        sortie, chaos = type("SortieMode", (FakeTask,), {})(), FakeTask()
+        for task in (sortie, chaos):
+            task.node_status, task.all_texts = {}, ["Owen"]
+
+        def read_deck(task, utils):
+            task.clicks.append("deck")
+            task.all_texts = ["All Piles"]
+
+        with standing_in(piles, read_deck=read_deck):
+            for task in (sortie, sortie, chaos):
+                capture(task)
+        self.assertEqual([navigation.COMBATANTS_TAB, "deck", CLOSE_PAGE] + [navigation.COMBATANTS_TAB, CLOSE_PAGE], sortie.clicks)
+        self.assertEqual(["Owen"], sortie.all_texts, "the team read after the capture takes its names from the Combatants pass")
+        self.assertNotIn("deck", chaos.clicks)
+
+
+class TestDeckRead(unittest.TestCase):
+    """All Piles is read card by card, each card is taken for the version its text matches, and a card is valued by its weakest copy."""
+
+    def tearDown(self):
+        cards.use_deck({})
+
+    def test_each_whole_card_is_taken_for_its_version(self):
+        task = types.SimpleNamespace(width=WIDTH, height=HEIGHT, all_texts=[FakeBox(text, x, y, width=w, height=h, units="pixels")
+                                                                           for text, x, y, w, h in PILES_PAGE])
+        # A named card inside a text, or a card cut off at the bottom, would add a fifth. A broken match would land a copy on the base.
+        self.assertEqual({
+            ("Slash", next(iter(EPIPHANIES["Slash"]))),
+            ("Experienced Strike", DESCRIPTIONS["Experienced Strike"]),
+            ("Experienced Strike", SHIELD_GAIN),
+            ("Hew", DESCRIPTIONS["Hew"]),
+        }, {(name, piles.version_of(name, text)) for name, text, _ in piles.cards_on_page(task)})
+
+    def test_a_card_is_valued_by_its_weakest_copy(self):
+        base, stronger = cards.figures(DESCRIPTIONS["Experienced Strike"]), cards.figures(SHIELD_GAIN)
+        self.assertLess(base.damage, stronger.damage)
+        cards.use_deck({"Experienced Strike": {SHIELD_GAIN}})
+        self.assertEqual(stronger, cards.features("Experienced Strike"))
+        # A second read replaces the first, which a stale cache of the figures would hide.
+        cards.use_deck({"Experienced Strike": {SHIELD_GAIN, DESCRIPTIONS["Experienced Strike"]}})
+        self.assertEqual(base, cards.features("Experienced Strike"))
+
+    def test_only_a_retrieve_tag_counts(self):
+        # The first two were read live off All Piles. The others apply Retrieve to other cards, which leaves the card itself without one.
+        for text, expected in (("[Retrieve 2/Exhaust 396%ShieldIncinerate", "2"), ("[Retrieve] 100% Damage", ""),
+                               (DESCRIPTIONS["Harmonization: Spirit Kefox"], None), (DESCRIPTIONS["Spirit Kefox"], None)):
+            with self.subTest(text):
+                found = piles.RETRIEVE.search(text)
+                self.assertEqual(expected, found and found.group(1))
+
+    def test_each_copy_keeps_its_own_retrieves(self):
+        # Two copies on one page are 4 returns, not 2. The next page shows the lower copy again, which must not make it 6.
+        herb, text = "Harmonization: Residual Herb", "[Retrieve 2/Exhaust 3]96% Shield"
+        pages = iter([[(herb, text, 100), (herb, text, 300)], [(herb, text, 50)], [(herb, text, 50)]])
+        with standing_in(piles, raw_ocr=lambda task: None, cards_on_page=lambda task: next(pages)):
+            _, retrieves = piles.read_piles(None, types.SimpleNamespace(_scroll_card_page=lambda *args: None))
+        self.assertEqual({herb: 4}, retrieves)
+
+    def test_a_divine_epiphany_keeps_its_lines(self):
+        # Read live off a card holding Diallos's Epiphany, its lines out of order. Without them the deck stored the plain base.
+        text = ("Exhaust ]higher non-Unique DellangCreate 1 random 1-Cost orFor 1 turn, change Cost ofShop card(s)those cards to 0Morale 1"
+                "*Create 2. Activation Core")
+        base = DESCRIPTIONS["Mutation: Prepare for Battle"]
+        self.assertEqual(f"{base}\nMorale 1\nCreate 2 Activation Core", piles.version_of("Mutation: Prepare for Battle", text))
+
+
+
+class TestEpiphanyChoice(unittest.TestCase):
+    """A Sortie Epiphany goes on a card even when the user listed none, and every other choice is left to the pins and the user's lists."""
+
+    def tearDown(self):
+        cards.use_deck({})
+
+    def test_the_card_without_an_epiphany_goes_first(self):
+        # The three cards a Sortie run offered, where the deck read had found Epiphanies on the first two.
+        cards.use_deck({name: {next(iter(EPIPHANIES[name]))} for name in ("Sacred Censer", "Growing Creature")} | {"Annoying": {DESCRIPTIONS["Annoying"]}})
+        self.assertEqual("Annoying", epiphany.ranked([{"name": "Sacred Censer"}, {"name": "Growing Creature"}, {"name": "Annoying"}])[0])
+
+    def test_only_a_sortie_epiphany_is_chosen(self):
+        utils = types.SimpleNamespace(recognize_cards_in_deck=lambda task, page="": [{"name": "Annoying"}])
+        passed = []
+
+        def select_card(task, names, count=1, action=""):
+            # Upstream reads the page before matching the names, so the names are taken after the read.
+            utils.recognize_cards_in_deck(task)
+            passed.append(list(names))
+
+        choose = epiphany.choosing(select_card, utils)
+        for mode, action, expected in (
+            (epiphany.SORTIE_MODE, epiphany.ACTIONS[0], ["Slash", "Annoying"]),
+            ("ChaosMode", epiphany.ACTIONS[0], ["Slash"]),
+            (epiphany.SORTIE_MODE, "", ["Slash"]),
+        ):
+            with self.subTest(mode=mode, action=action):
+                passed.clear()
+                choose(type(mode, (), {})(), ["Slash"], action=action)
+                self.assertEqual([expected], passed)
 
 
 if __name__ == "__main__":

@@ -30,13 +30,23 @@ TRAILING_PUNCTUATION = ".,;:!?。，；：！？"
 # ships more than fifty "Select {0} card(s) to X." strings, and the count varies per screen. These rewrite the
 # whole family at once. The action is spelled out only where a handler keys on it. Every other card caption gets
 # a neutral literal with no action word, so no handler can mistake it for a screen it acts on.
-SELECT_CARDS = r"^select (?:up to )?(\d+) cards? ?\(?s?\)? to "
+# OCR sometimes glues the count to "Select", as in "Select1 card(s) to Discard.", and "to" to the action. Live, a caption read
+# "Select 1 card(s) toExhaust." for 20s, and the prompt sat unanswered.
+SELECT_CARDS = r"^select ?(?:up to )?(\d+) ?cards? ?\(?s?\)? ?to ?"
 PATTERNS = (
     (re.compile(SELECT_CARDS + r"remove.*$", re.I), "请选择{0}张要移除的卡牌"),
     (re.compile(SELECT_CARDS + r"convert.*$", re.I), "请选择{0}张转换的卡牌"),
     (re.compile(SELECT_CARDS + r"duplicate.*$", re.I), "请选择{0}张复制的卡牌"),
     (re.compile(SELECT_CARDS + r"(?:spark|trigger).*epiphany.*$", re.I), "请选择{0}张闪光的卡牌"),
+    # The top of the Draw Pile keeps its own word, since the card picked there is drawn again next turn rather than given up.
+    # Matched on "top" alone, since a voice line's bubble can cover the end: "to move to top of Dra8".
+    (re.compile(SELECT_CARDS + r"move.*\btop\b.*$", re.I), "请选择{0}张要移动至抽牌堆顶的卡牌"),
     (re.compile(SELECT_CARDS + r"move.*draw pile.*$", re.I), "请选择{0}张要移动至抽牌堆的卡牌"),
+    # Nia's Curiosity's pick among cards checked in the Draw Pile, which upstream's hand picker cannot answer without a hand counter.
+    (re.compile(SELECT_CARDS + r"place in hand.*$", re.I), "请选择{0}张放入手牌的卡牌"),
+    # An Exhaust that asks for "up to" keeps saying so, since a card it takes is gone for the fight and it can take none.
+    # Matched on "exha", since OCR has read it "Exhaqst".
+    (re.compile(r"^select ?up to (\d+) ?cards? ?\(?s?\)? ?to ?exha.*$", re.I), "请选择至多{0}张卡牌"),
     # Must stay below every rule above, or it swallows them. Upstream's in-battle hand picker reads only the count,
     # and freezes the turn on any caption left in English.
     (re.compile(SELECT_CARDS + r".*$", re.I), "请选择{0}张卡牌"),

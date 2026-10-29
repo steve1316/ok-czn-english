@@ -17,9 +17,9 @@ class Globals(QObject):
         super().__init__()
         # Everything English-only lives under src/en/ so upstream's files stay untouched and merges stay clean.
         from src.en import (  # noqa: E501
-            analysis, battle, claims, dashboard, deck, desire, devices, dialogue, dice, draft, enter, equipment, etched_memory, events, frame_log, layout,
-            log_text, memory_limit, monitors, navigation, observe, ocr_text, overrides, persona, picker, pins, remote, rest, rewards, sections,
-            shell, shop, shutdown, templates, notify, stuck, upload,
+            analysis, battle, boss, claims, dashboard, deck, desire, devices, dialogue, dice, draft, enter, epiphany, equipment, etched_memory, events, frame_log, layout,
+            log_text, memory_limit, monitors, navigation, observe, ocr_text, overrides, persona, picker, piles, pins, remote, rest, rewards, sections,
+            reason, shell, shop, shutdown, summary, templates, notify, stuck, upload,
         )
 
         # Neither does anything outside a debug run, and nothing else depends on when they start.
@@ -36,6 +36,8 @@ class Globals(QObject):
         templates.apply()
         # These edit the mode handler lists, so they must run after the task modules are importable.
         navigation.apply()
+        # Ahead of pins, so the pinned-card wrappers sit outside this one and every page it ranks is already narrowed to the pinned cards.
+        epiphany.apply()
         events.apply()
         enter.apply()
         pins.apply()
@@ -45,7 +47,11 @@ class Globals(QObject):
         persona.apply()
         dice.apply()
         draft.apply()
+        boss.apply()
+        reason.apply()
         equipment.apply()
+        # After equipment: both read on the capture's close tap, and the gear has to be read before the deck read leaves the Combatants tab.
+        piles.apply()
         # Anything wrapping a handler in `rewards.FILLED_IN` goes before rewards, which renames the
         # list entry it builds - after that rename, a later wrapper looking for the original name finds
         # nothing. Order does not otherwise matter: `handlers.wrap` composes rather than replaces.
@@ -60,6 +66,7 @@ class Globals(QObject):
         stuck.apply()
         rest.apply()
         memory_limit.apply()
+        summary.apply()
         shutdown.apply()
         devices.apply()
         monitors.apply()

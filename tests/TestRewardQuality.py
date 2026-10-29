@@ -1,23 +1,33 @@
 """Check what the bot decides is worth buying and keeping."""
 
 import sys
+import types
 import unittest
 from collections import Counter
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(REPO_ROOT / "ok_tasks"))
 
-from src.en import dashboard, rewards  # noqa: E402
+# The real module, so the Settlement check fails if upstream stops reading the claim setting the way the fork stands in for it.
+import utils_sortie  # noqa: E402
+# Held here rather than looked up by name, since other modules in the same run stand stubs in for it.
+import utils  # noqa: E402
+
+from src.en import cards, dashboard, navigation, piles, reason, rewards  # noqa: E402
+from src.en.battle import PARTY  # noqa: E402
 from src.en.dashboard import COMBATANTS as COMBATANTS_ROW  # noqa: E402
 from src.en.game_data import COMBATANTS  # noqa: E402
+from src.en.game_text import DESCRIPTIONS, EPIPHANIES  # noqa: E402
 from src.en.overrides import FARMED_COMBATANT  # noqa: E402
 from src.en.game_quality import (  # noqa: E402
     CARD_CLASSES, CARD_RARITY, COMBATANT_CLASS, EQUIPMENT_RARITY, EQUIPMENT_SLOT,
 )
 from src.en.game_quality import COMBATANT_TAG_WEIGHTS, EQUIPMENT_TAGS  # noqa: E402
 from src.en.hand_tags import HAND_TAGS  # noqa: E402
-from tests.fakes import FakeBox  # noqa: E402
+from src.en.handlers import standing_in  # noqa: E402
+from tests.fakes import HEIGHT, WIDTH, FakeBox  # noqa: E402
 from src.en.quality import (  # noqa: E402
     CLASS_NAMES, TAGS, WORTH_TAKING, fold, index, named, one_edit_apart, slot_of, sorted_letters, suits,
     team_classes, unconfused, usable_by, worth_taking,
@@ -138,6 +148,137 @@ class TestRewardQuality(unittest.TestCase):
         self.assertEqual(["Prepare for Battle"], generated)
         self.assertLess(len(generated), 10)
 
+    def test_a_free_upgrade_beats_skipping(self):
+        # Live, a reward of Overpower, Mutation: Iron Wall and Distortion: Protective Shout was skipped whole.
+        offer = ["Overpower", "Mutation: Iron Wall", "Distortion: Protective Shout"]
+        for free, expected in ((True, ["Mutation: Iron Wall"]), (False, [])):
+            with self.subTest(free=free):
+                self.assertEqual(expected, rewards.generated_list(FakeTask(offer, set()), rewards.SORTIE_CARD_KEY, free=free))
+
+    def test_a_reward_that_helps_while_held_is_taken_at_any_grade(self):
+        # Live, a Rare Unknown: Mutant Sample was left out of the list, so a reward screen could never pick it.
+        offer = ["Unknown: Mutant Sample", "Gale Strike", "Distortion: Hand-to-Hand Combat"]
+        for free, expected in ((True, ["Gale Strike", "Unknown: Mutant Sample"]), (False, ["Gale Strike"])):
+            with self.subTest(free=free):
+                self.assertEqual(expected, rewards.generated_list(FakeTask(offer, set()), rewards.SORTIE_CARD_KEY, free=free))
+
+    def test_a_card_the_deck_holds_ranks_after_one_it_lacks(self):
+        # Live, a second Gale Strike was taken over Unknown: Mutant Sample because its rarity ranked it first.
+        offer = ["Unknown: Mutant Sample", "Gale Strike", "Distortion: Hand-to-Hand Combat"]
+        cards.use_deck({"Gale Strike": {""}})
+        self.addCleanup(cards.use_deck, {})
+        self.assertEqual(["Unknown: Mutant Sample", "Gale Strike"], rewards.generated_list(FakeTask(offer, set()), rewards.SORTIE_CARD_KEY, free=True))
+
+    def test_obtain_card_waits_for_the_first_team_read(self):
+        # Live, a run started on Obtain Card lost its first team tap and picked before the retry, knowing neither the team nor the deck.
+        title = types.SimpleNamespace(name=rewards.OBTAIN_TITLE)
+        picked = []
+        handler = rewards.after_the_team(lambda task: picked.append(task) or True, utils_sortie)
+        cases = {"tapped, unread": (1, frozenset(), False), "tapped, read": (1, frozenset({"Owen"}), True),
+                 "tries spent": (navigation.TEAM_TRIES, frozenset(), True)}
+        with standing_in(utils_sortie, find_box_at_point=lambda task, x, y: title):
+            for case, (tries, party, picks) in cases.items():
+                with self.subTest(case):
+                    picked.clear()
+                    task = types.SimpleNamespace(node_status={navigation.TEAM_TAPPED: (tries, 0.0)}, sleep=lambda seconds: None, **{PARTY: party})
+                    self.assertTrue(handler(task))
+                    self.assertEqual(picks, bool(picked))
+
+    def test_a_misread_reward_is_still_picked(self):
+        # Live, Black Dance was read as `Back Dance`, so upstream found no listed name in it and skipped the reward.
+        offer = [{"name": "Dark Mist Secret Art: Back Dance", "x": 0.7375, "y": 0.3472}]
+        boxes = {rewards.OBTAIN_TITLE_AT: rewards.OBTAIN_TITLE, (0.883, 0.131): "请选择1张要获得的卡牌"}
+        clicks = []
+        task = types.SimpleNamespace(sleep=lambda seconds: None, log_info=lambda *args, **kwargs: None)
+        with standing_in(utils_sortie, find_box_at_point=lambda task, x, y: types.SimpleNamespace(name=boxes.get((x, y), "")),
+                         recognize_cards=lambda task, page: [dict(card) for card in offer], _move_and_click=lambda task, x, y: clicks.append((x, y)),
+                         _get_config_value=lambda task, key, default: ["Dark Mist Secret Art: Black Dance"]):
+            rewards.with_generated_lists(utils_sortie.handle_get_card, [utils_sortie])(task)
+        self.assertEqual((0.7375, 0.3472), clicks[0])
+
+    def test_a_picked_reward_joins_the_deck(self):
+        # Live, an Annoying taken mid-layer was valued by its base text until the next layer's read, though the screen showed its Epiphany.
+        sparked = EPIPHANIES["Annoying"][-1]
+        boxes = {rewards.OBTAIN_TITLE_AT: rewards.OBTAIN_TITLE, (0.883, 0.131): "请选择1张要获得的卡牌"}
+        task = type("SortieMode", (), {"sleep": lambda self, seconds: None, "log_info": lambda self, *args, **kwargs: None,
+                                       "move_relative": lambda self, x, y: None, "click": lambda self, x, y: None})()
+        self.addCleanup(cards.use_deck, {})
+        # Live, the first tap and its Confirm did not take, the screen came back with the same offer, and the card was counted twice.
+        # An Epiphany screen came back the same way with its cards moved and one name misread. A second pick that takes another card is no
+        # retry: live, Photo Time was undone when Gear Bag followed it, though both took.
+        for second, misread, expected in (("Annoying", "Ice Frao", {"Annoying": 1}), ("Ice Fragment", "Ice Fragment", {"Annoying": 1, "Ice Fragment": 1})):
+            with self.subTest(second=second):
+                cards.use_deck({})
+                offer = [{"name": "Annoying", "description": sparked, "x": 0.7375, "y": 0.3472}, {"name": "Ice Fragment", "description": "", "x": 0.5, "y": 0.3472}]
+                priority = ["Annoying"]
+                # The real `_move_and_click`, so the deck still follows if upstream stops tapping a card at the point its reader returned.
+                with standing_in(utils_sortie, find_box_at_point=lambda task, x, y: types.SimpleNamespace(name=boxes.get((x, y), "")),
+                                 recognize_cards=lambda task, page: offer, _get_config_value=lambda task, key, default: priority),                         standing_in(piles, _last_pick=None):
+                    obtain = piles.following(utils_sortie.handle_get_card, utils_sortie, piles.GAINED)
+                    obtain(task)
+                    offer[1] = {**offer[1], "name": misread, "x": 0.2}
+                    priority[:] = [second]
+                    obtain(task)
+                self.assertEqual(expected, {name: sum(copies.values()) for name, copies in cards.COPIES.items()})
+
+    def test_two_cards_taken_on_one_visit_both_count(self):
+        # A screen that removes two cards taps both on one visit, which must not pass for a retry of the first.
+        base = DESCRIPTIONS["Experienced Strike"]
+        offer = [{"name": "Experienced Strike", "description": base, "x": 0.3, "y": 0.4}, {"name": "Experienced Strike", "description": base, "x": 0.5, "y": 0.4}]
+        module = types.SimpleNamespace(recognize_cards=lambda task: offer)
+        task = type("SortieMode", (), {"click": lambda self, x, y: None})()
+
+        def remove_two(task):
+            for card in module.recognize_cards(task):
+                task.click(card["x"], card["y"])
+
+        cards.use_deck({"Experienced Strike": [base, base, base]})
+        self.addCleanup(cards.use_deck, {})
+        piles.following(remove_two, module, piles.REMOVED)(task)
+        self.assertEqual({"Experienced Strike": Counter({base: 1})}, cards.COPIES)
+
+    def test_a_card_assigned_to_a_combatant_joins_the_deck(self):
+        # Live, a Wanderer Arbitum handed out on Card Assign never reached the deck, since the pick taps the combatant, not the card.
+        card = {"name": "Annoying", "description": DESCRIPTIONS["Annoying"], "x": 0.17, "y": 0.31}
+        title = types.SimpleNamespace(name="请选择要接受卡牌的主战员")
+        level = types.SimpleNamespace(x=0, y=HEIGHT * 0.4, width=10, height=10)
+        task = type("SortieMode", (), {"sleep": lambda self, seconds: None, "log_info": lambda self, *args, **kwargs: None, "all_texts": [],
+                                       "width": WIDTH, "height": HEIGHT, "move_relative": lambda self, x, y: None, "click": lambda self, x, y: None})()
+        self.addCleanup(cards.use_deck, {})
+        # The real handler and `_move_and_click`, so the deck still follows if upstream moves the combatant column.
+        with standing_in(utils, find_box_at_point=lambda task, x, y: title if (x, y) == (0.863, 0.133) else None, _get_game_text=lambda task, text: text,
+                         recognize_cards=lambda task, region, page: [card], _get_card_list=lambda task, key: [],
+                         _get_card_reward_priority=lambda task: ["Annoying"], _find_member_level_tags=lambda task, region, page: [level],
+                         _find_target_member_index=lambda task, levels, region: 0, _member_deck_state=lambda task: {},
+                         _record_neutral_card=lambda task: None):
+            piles.following(utils.handle_card_assign, utils, piles.GAINED, next(column for *_, column in piles.FOLLOWED if column))(task)
+        self.assertEqual({"Annoying": DESCRIPTIONS["Annoying"]}, cards.DECK)
+
+    def test_every_screen_that_changes_the_deck_is_still_there(self):
+        for module_name, name, *_ in piles.FOLLOWED:
+            with self.subTest(name):
+                module = {"utils": utils, "utils_sortie": utils_sortie}[module_name]
+                self.assertTrue(callable(getattr(module, name, None)))
+                self.assertTrue(any(reader in vars(module) for reader in piles.READERS))
+
+    def test_each_change_lands_on_its_own_copy(self):
+        base, shield = DESCRIPTIONS["Experienced Strike"], EPIPHANIES["Experienced Strike"][0]
+        annoying = EPIPHANIES["Annoying"][-1]
+        for description, deck, taps, expected in (
+            # The deck shows the weaker base copy, so taking the wrong copy away would leave the base on show.
+            ("a removal takes the copy tapped", {"Experienced Strike": {base, shield}}, [(piles.REMOVED, "Experienced Strike", base)],
+             {"Experienced Strike": shield}),
+            # Keeping the base copy beside the Epiphany would leave the deck showing the base.
+            ("an Epiphany replaces the version it was chosen in", {"Annoying": {DESCRIPTIONS["Annoying"]}},
+             [(piles.SPARKED, "Annoying", DESCRIPTIONS["Annoying"]), (piles.EPIPHANY, "Annoying", annoying)], {"Annoying": annoying}),
+        ):
+            with self.subTest(description):
+                cards.use_deck(deck)
+                self.addCleanup(cards.use_deck, {})
+                for change, name, text in taps:
+                    piles.follow(change, {"name": name, "description": text})
+                self.assertEqual(expected, cards.DECK)
+
     def test_equipment_is_offered_to_its_own_slot_only(self):
         task = FakeTask(SHOP_EQUIPMENT, {"vanguard", "controller"})
         by_slot = {slot: rewards.generated_list(task, key) for key, slot in rewards.EQUIPMENT_KEYS.items()}
@@ -176,6 +317,23 @@ class TestRewardQuality(unittest.TestCase):
         """A shop of Commons must stay a shop of Commons, not become one it buys from."""
         reader = rewards.filling_in(lambda task, key, default: [], "utils")
         self.assertEqual([], reader(FakeTask(["Shock", "Multishot"], {"vanguard"}), rewards.CARD_KEY, []))
+
+    def test_a_free_reward_takes_the_teams_own_card(self):
+        """A run skipping every Common and Rare reward leaves the team's lineup too weak, and the shop must not start buying them."""
+        task = FakeTask(["Harmonization: Hidden Bullet", "Harmonization: Moon of Destruction", "Opening Found"], {"ranger"})
+        setattr(task, rewards.PARTY, frozenset({"Hugo", "Beryl"}))
+        module = types.ModuleType("utils")
+        module._get_config_value = lambda task, key, default: default
+        cases = [("handle_get_card", rewards.SORTIE_CARD_KEY, ["Opening Found"]), ("handle_card_reward", rewards.CARD_KEY, ["Opening Found"]),
+                 ("handle_shop", rewards.CARD_KEY, []), ("handle_card_assign", rewards.CARD_KEY, [])]
+        for name, key, expected in cases:
+            with self.subTest(handler=name):
+                def handler(task, key=key):
+                    return module._get_config_value(task, key, [])
+
+                # The handler's name is what marks a reward screen, so the stand-in borrows upstream's.
+                handler.__name__ = name
+                self.assertEqual(expected, rewards.with_generated_lists(handler, [module])(task))
 
 
 if __name__ == "__main__":
@@ -477,6 +635,15 @@ class TestNearestName(unittest.TestCase):
             with self.subTest(reading=reading):
                 self.assertEqual(real, self.lookup.look_up(reading))
 
+    def test_a_long_name_survives_a_few_lost_letters(self):
+        # Live, two readings of Rin's Destruction three and two letters short, so her kit could not place it first. A squeezed
+        # Criticism of Discord lost five, so the reward screen never offered it.
+        for reading, name in (("DarkMistSecretAr:Destuctio", "Dark Mist Secret Art: Destruction"),
+                              ("DarkMistSecretArtDestction", "Dark Mist Secret Art: Destruction"),
+                              ("HarmonizationcicimofDicord", "Harmonization: Criticism of Discord")):
+            with self.subTest(reading=reading):
+                self.assertEqual(name, self.lookup.look_up(reading))
+
     def test_two_candidates_are_refused(self):
         # `Daze` and `Dice` are both real cards, so a reading of `Dace` belongs to neither.
         self.assertIsNone(self.lookup.look_up("Dace"))
@@ -540,3 +707,23 @@ class TestCombatantsRowHoldsItsPlace(unittest.TestCase):
         task.info.clear()  # What upstream's info_clear does at the start of every run.
         rewards.hold_the_combatants_row(task)
         self.assertEqual({COMBATANTS_ROW: dashboard.UNREAD}, task.info)
+
+
+class TestObtainNeedsReason(unittest.TestCase):
+    """Obtain spends 1 Reason, so with none left it only opens a Charge Reason dialog there is nothing to charge from."""
+
+    def test_obtain_is_pressed_only_with_reason_left(self):
+        for counter, obtains in (("0/9", False), ("3/9", True)):
+            with self.subTest(counter=counter):
+                pressed = []
+                # The Settlement page, placed the way the run's capture read it.
+                task = types.SimpleNamespace(
+                    all_texts=[FakeBox("结算", 0.590, 0.065, width=259, height=54, units="fraction"), FakeBox(counter, 0.880, 0.051, units="fraction"),
+                               FakeBox("获得", 0.857, 0.386, width=108, height=36, units="fraction")],
+                    width=WIDTH, height=HEIGHT, config={"领取奖励": True}, node_status={},
+                    click_box=lambda box: pressed.append(box.name), log_info=lambda message: None, sleep=lambda seconds: None,
+                )
+                with standing_in(utils_sortie, _finish_only_first_layer=lambda task: True):
+                    reason.skipping_obtain(utils_sortie.handle_sortie_reward_settlement, utils_sortie)(task)
+                self.assertEqual(["获得"] if obtains else [], pressed)
+                self.assertTrue(task.config["领取奖励"])

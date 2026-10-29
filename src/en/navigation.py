@@ -1,19 +1,22 @@
-"""Skip the trip to the Combatants screen when the run already starts there.
+"""Take Sortie to the Combatants screen once a run, and skip the trip when a run already starts there.
 
 Capturing the target combatant's portrait takes two handlers, and both tap their way to a page that may already
 be open. `handle_save_target_member` taps the menu icon and waits two seconds, guarded only by a "have I done
 this yet" flag, and `handle_archive_target_member` then taps the 3-person icon and the Combatants tab before
-reading anything, which on a run started there shuts the page and reopens it.
+reading anything, which on a run started there shuts the page and reopens it. Sortie never makes the trip at all.
 """
 
+import contextlib
 import dataclasses
 import re
+import time
 
 from ok import Logger
 
-from src.en.handlers import loaded, register, replace, standing_in, wrap
+from src.en.battle import CANCEL, CANCEL_REGION, PARTY, TEAM_WANTED, TURN
+from src.en.handlers import insert_before, loaded, register, replace, standing_in, wrap
 from src.en.game_data import COMBATANTS
-from src.en.screen import combatant_names
+from src.en.screen import combatant_names, text_in_region
 
 logger = Logger.get_logger(__name__)
 
@@ -23,10 +26,23 @@ MEMBER_INFO_REGION = (0.005, 0.018, 0.080, 0.343)
 MEMBER_INFO_FEATURES = ["memberinfo", "memberinfo2"]
 
 # Where upstream taps to select the Combatants tab, read off the capture. Check this if a rebase moves it.
+# The 3-person icon already lands on this tab, so the tap is dropped on every read.
 COMBATANTS_TAB = (0.201, 0.056)
 # Any combatant on the roster, as a whole word, so a read with a level stuck on still counts and a short name
 # like "Nia" cannot match inside a longer one. The sibling tabs list Partners, who are not on this roster.
 ROSTER_NAME = re.compile(r"\b(?:" + "|".join(re.escape(name) for name in COMBATANTS) + r")\b")
+# Where the map draws the team's portraits. Tapping one opens the information page - the tap Chaos makes in `handle_save_target_member`.
+TEAM_PORTRAITS = (0.182, 0.081)
+# Holds in `node_status` how many taps Sortie has made towards the team and when the last one was, so a page that never opens costs a few
+# tries rather than every frame. Upstream rebuilds `node_status` when a run or a layer starts, which is what clears it.
+TEAM_TAPPED = "_en_team_tapped"
+TEAM_TRIES = 5
+# Seconds between tries. A pending dialog, like the rest screen's, swallows the tap, and the gap lets its own handler clear it first.
+TEAM_RETRY_SECONDS = 5
+# Where a battle's hand counter reads, like "04/10". The map has none, and a restart mid-battle tapped the portraits over the end turn prompt.
+HAND_COUNTER_REGION = (0.45, 0.94, 0.56, 1.0)
+# The handler Sortie's trip runs ahead of, the same place Chaos lists its own.
+SORTIE_ANCHOR = "handle_route_selection"
 
 _patched = False
 
@@ -131,29 +147,84 @@ def reading_in_place(original):
     """
     def handle_archive_target_member(task):
         utils_chaos = loaded("utils_chaos")
-        if utils_chaos is None or not on_combatants_tab(task):
+        if utils_chaos is None:
             return original(task)
-        logger.info("already on the Combatants tab, reading the three names without tapping back to it")
+        in_place = on_combatants_tab(task)
+        if in_place:
+            logger.info("already on the Combatants tab, reading the three names without tapping back to it")
         dropped = Dropped()
         # Stood in for rather than reimplemented: everything the capture does after the two taps - the OCR,
         # the name match and the six portrait crops - is upstream's, and none of it changes.
         tab_tap = without_the_tab_tap(utils_chaos._move_and_click, dropped)
-        with standing_in(utils_chaos, _move_and_click=tab_tap), \
-                standing_in(task, click_box=without_the_icon_tap(dropped)):
+        icon_tap = standing_in(task, click_box=without_the_icon_tap(dropped)) if in_place else contextlib.nullcontext()
+        with standing_in(utils_chaos, _move_and_click=tab_tap), icon_tap:
             handled = original(task)
-        if (dropped.tab, dropped.icon) != (1, 1):
+        # Only a frame upstream handled has made its taps - on any other it declined before tapping anything.
+        if handled and (dropped.tab, dropped.icon) != (1, int(in_place)):
             # Loud on purpose. Both taps are recognised by shape rather than by name, so upstream changing
             # either is invisible until someone reads the log - either a tap it still needed was swallowed,
             # or the skip quietly stopped saving anything.
-            logger.warning(f"expected to drop one tab tap and one icon tap, dropped {dropped.tab} and "
+            logger.warning(f"expected to drop one tab tap and {int(in_place)} icon tap, dropped {dropped.tab} and "
                            f"{dropped.icon}: upstream's capture has changed shape, so this skip needs a look")
         return handled
 
     return handle_archive_target_member
 
 
+def team_pending(task):
+    """Say whether Sortie has started tapping towards the team, has tries left, and has not read it yet.
+
+    Args:
+        task: The running Sortie task.
+
+    Returns:
+        True while a retry of `handle_open_team` is still due.
+    """
+    tries, _ = task.node_status.get(TEAM_TAPPED, (0, 0.0))
+    return 0 < tries < TEAM_TRIES and not getattr(task, PARTY, None)
+
+
+def handle_open_team(task):
+    """Open the information page as a Sortie run or layer starts, or on the first battle frame after a restart, so the team is read.
+
+    `handle_archive_target_member` then reads the names and closes the page, as it does for Chaos. A tap that reads no team is tried again
+    after `TEAM_RETRY_SECONDS`, up to `TEAM_TRIES` times.
+
+    Args:
+        task: The running Sortie task.
+
+    Returns:
+        True when the tap was made this frame.
+    """
+    utils = loaded("utils")
+    tries, last = task.node_status.get(TEAM_TAPPED, (0, 0.0))
+    if utils is None or tries >= TEAM_TRIES or (tries and getattr(task, PARTY, None)):
+        return False
+    now = time.monotonic()
+    if tries and now - last < TEAM_RETRY_SECONDS:
+        return False
+    # Upstream's health read fails on a bar read with a space in it, as "1728 /1728" was, so a battle frame goes by its hand counter.
+    in_battle = text_in_region(task, "/10", HAND_COUNTER_REGION)
+    if not (in_battle or utils._get_current_hp_percent(task)) or text_in_region(task, CANCEL, CANCEL_REGION):
+        # A prompt would take the tap.
+        return False
+    turn = getattr(task, TURN, None)
+    if in_battle and turn and (turn.played or turn.ended or turn.attempted):
+        # The page opens in battle too, but a card or end turn in flight can still raise a prompt, so the next turn spares a frame.
+        setattr(task, TEAM_WANTED, True)
+        return False
+    task.node_status[TEAM_TAPPED] = (tries + 1, now)
+    if not tries:
+        # A new run may field a new team, and an empty party leaves every card in play until the read below replaces it.
+        setattr(task, PARTY, frozenset())
+    logger.info(f"opening the information page to read the team, try {tries + 1} of {TEAM_TRIES}")
+    utils._move_and_click(task, *TEAM_PORTRAITS)
+    task.sleep(2)
+    return True
+
+
 def apply():
-    """Stop the bot navigating to a screen it is already on."""
+    """Take Sortie to the team once a run, and stop the bot navigating to a screen it is already on."""
     global _patched
     if _patched:
         return
@@ -167,6 +238,8 @@ def apply():
         # Composed through `wrap` rather than `replace` because the install runs once per task load and the
         # wrapper carries the handler's own name, which `replace` matches on and would stack a layer per load.
         wrap(utils_chaos, "handle_archive_target_member", reading_in_place, "reading in place")
+        # Sortie's list alone, since Chaos makes this trip already.
+        insert_before(SORTIE_ANCHOR, handle_open_team, only=("utils_sortie",))
 
         original = utils_chaos.handle_save_target_member
         if getattr(original, "_en_skips_when_present", False):

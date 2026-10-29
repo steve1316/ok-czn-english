@@ -194,7 +194,7 @@ def replace(original_name, replacement):
     return changed
 
 
-def insert_before(anchor_name, handler):
+def insert_before(anchor_name, handler, only=None):
     """Register a handler to run just ahead of an existing one.
 
     Immediately before the anchor, not at the front: everything above keeps its precedence, and the anchor
@@ -203,12 +203,15 @@ def insert_before(anchor_name, handler):
     Args:
         anchor_name: `__name__` of the upstream handler to sit in front of.
         handler: The function to insert.
+        only: The modules whose lists it goes in, for an anchor several modes share. None for every list holding the anchor.
 
     Returns:
         The number of lists changed.
     """
     changed = 0
     for module_name, handlers in each_list():
+        if only is not None and module_name not in only:
+            continue
         # Matched by name, not identity: `install` builds a fresh function each time it runs, and it runs
         # once per task load, so an identity test would insert a duplicate every time.
         if any(getattr(existing, "__name__", None) == handler.__name__ for existing in handlers):
