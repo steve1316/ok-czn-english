@@ -168,6 +168,18 @@ class TestOptionPicker(unittest.TestCase):
             with self.subTest(list=name):
                 self.assertEqual(0, view.style().styleHint(QStyle.SH_ToolTip_WakeUpDelay, None, view))
 
+    def test_no_bare_stylesheet_reaches_the_available_tooltips(self):
+        """Qt styles a tooltip from its owner's stylesheets, and upstream's selector-less transparent background drew them see-through."""
+        for name, roster in (("cards", CARDS), ("route nodes", ROUTE_NODES)):
+            dialog, bare = self.open_picker(roster), []
+            widget = dialog._options_container
+            while widget is not dialog:
+                if widget.styleSheet() and "{" not in widget.styleSheet():
+                    bare.append(widget.styleSheet())
+                widget = widget.parentWidget()
+            with self.subTest(roster=name):
+                self.assertEqual([], bare)
+
     def option_row(self, dialog):
         """Find the layout holding the Available and Selected columns.
 

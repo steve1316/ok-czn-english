@@ -133,6 +133,25 @@ def balance_dialog_columns(dialog):
             return
 
 
+def keep_tooltips_opaque(dialog):
+    """Scope upstream's selector-less stylesheets in the Available column to their own widgets.
+
+    Qt styles a tooltip from its owner's stylesheets, so the bare `background-color: transparent;` on that column's scroll area
+    and grid made every tooltip under them transparent, unlike the Selected column's. Scoped, the rule no longer reaches them.
+
+    Args:
+        dialog: The `ModifyListDialog` being set up, with its Available column already in place.
+    """
+    widget = getattr(dialog, "_options_container", None)
+    while widget is not None and widget is not dialog:
+        sheet = widget.styleSheet()
+        if sheet and "{" not in sheet:
+            name = widget.objectName() or "availableOptions"
+            widget.setObjectName(name)
+            widget.setStyleSheet(f"#{name} {{ {sheet} }}")
+        widget = widget.parentWidget()
+
+
 def use_instant_tooltips(view):
     """Take the tooltip delay off one view.
 
@@ -242,6 +261,7 @@ def apply():
             if self.option_effects:
                 for option, button in self.option_buttons.items():
                     button.setToolTip(tooltip_for(option, og.app.tr(option), self.option_effects))
+                    use_instant_tooltips(button)
                 use_instant_tooltips(self.list_widget)
             return widget
         if self.option_effects is None:
@@ -281,6 +301,7 @@ def apply():
         # Every dialog with a roster gets it, not only the virtualized ones, so the shape stays consistent.
         if self.options_available is not None:
             balance_dialog_columns(self)
+            keep_tooltips_opaque(self)
 
     dialog_class._create_available_options_widget = patched_create
     dialog_class.update_option_buttons = patched_update
