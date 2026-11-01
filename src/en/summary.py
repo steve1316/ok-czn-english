@@ -1,7 +1,8 @@
-"""Leave the end-of-run summary by its Confirm button, and close the deck view if a stray tap opened it.
+"""Leave the end-of-run screens by their own buttons, and close the detail view a stray tap opened on one.
 
-The summary lists the run's deck before its Confirm button has drawn, and upstream's `handle_event_task` reads one of those cards as an
-event option and taps it. That opens the Cards Owned view, which nothing closes until `handle_stuck_log` gives up 10 seconds later.
+The summary and the Save Data screens draw their cards before their Confirm or Next button, and upstream's `handle_event_task` reads a
+card as an event option and taps it. On the summary that opens Cards Owned until `handle_stuck_log` gives up. On Save Data it opens a
+save's details, whose "Can Apply Mutation" reads as an option too and is tapped forever, since upstream closes them below the event handler.
 """
 
 from src.en.handlers import insert_before, register
@@ -14,6 +15,12 @@ WHOLE_SCREEN = (0.0, 0.0, 1.0, 1.0)
 TITLE_REGION = (0.3, 0.0, 0.7, 0.12)
 # Where the deck view draws its X, the same box `handle_stuck_log` searches for it.
 CLOSE_REGION = (0.921, 0.003, 0.998, 0.100)
+# The Save Data screens: the deck flying in, then the saves, whose title `ocr.po` rewrites to upstream's literal.
+SAVE_DATA_SCREENS = ("Saving battle data", "存储数据收集完成")
+# A save's details, titled in English at its top left, and the X upstream's `handle_stage_end_data_details` taps to close it.
+SAVE_DETAILS = "Save Data"
+SAVE_DETAILS_REGION = (0.111, 0.103, 0.338, 0.243)
+SAVE_DETAILS_CLOSE = (0.883, 0.156)
 # How long a summary frame waits for its Confirm button, which `handle_confirm` ahead of this then presses.
 WAIT_SECONDS = 0.5
 # The handler these run ahead of, so it never sees the summary's cards.
@@ -46,10 +53,32 @@ def handle_run_summary(task):
     return True
 
 
+def handle_save_data(task):
+    """Close a save's details, or hold the Save Data screens until `handle_next_step` ahead of this has its Next.
+
+    Args:
+        task: The running task, whose `all_texts` is the current screen.
+
+    Returns:
+        True when this frame was claimed.
+    """
+    if text_in_region(task, SAVE_DETAILS, SAVE_DETAILS_REGION):
+        task.log_info("Save Data details are open, closing them")
+        task.click(*SAVE_DETAILS_CLOSE)
+        task.sleep(1)
+        return True
+    if not any(text_in_region(task, screen, WHOLE_SCREEN) for screen in SAVE_DATA_SCREENS):
+        return False
+    task.log_info("Save Data on screen, waiting for its Next button")
+    task.sleep(WAIT_SECONDS)
+    return True
+
+
 def apply():
-    """Run the summary handler ahead of the event handler in every mode that has one."""
+    """Run the end-of-run handlers ahead of the event handler in every mode that has one."""
     global _patched
     if _patched:
         return
     register(lambda: insert_before(ANCHOR, handle_run_summary))
+    register(lambda: insert_before(ANCHOR, handle_save_data))
     _patched = True

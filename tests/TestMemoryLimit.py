@@ -12,7 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from src.en.memory_limit import STATE, handle_divine_epiphany, handle_memory_limit  # noqa: E402
-from src.en.summary import handle_run_summary  # noqa: E402
+from src.en.summary import handle_run_summary, handle_save_data  # noqa: E402
 from tests.fakes import HEIGHT, WIDTH, FakeBox  # noqa: E402
 
 SKIP_BUTTON = FakeBox("跳过", 0.951, 0.930, units="fraction")
@@ -46,6 +46,11 @@ RUN_SUMMARY = [
     FakeBox("Knife Toss", 0.239, 0.750, width=180, units="fraction"),
 ]
 DECK_VIEW = [FakeBox("Cards Owned", 0.500, 0.054, width=260, units="fraction"), FakeBox("Knife Toss", 0.130, 0.165, width=180, units="fraction")]
+# The Save Data screens as OCR read them at 16:16:55 to 16:17:02 on 2026-10-29, before Next drew and after a save card was tapped.
+SAVING = [FakeBox("Saving battle data", 0.500, 0.060, width=300, units="fraction"), FakeBox("5208 TB", 0.642, 0.816, units="fraction")]
+COLLECTED = [FakeBox("存储数据收集完成", 0.505, 0.111, width=500, units="fraction"), FakeBox("42060TB", 0.559, 0.785, units="fraction")]
+SAVE_DETAILS = [FakeBox("Save Data", 0.230, 0.170, width=150, units="fraction"), FakeBox("42060 TB", 0.320, 0.405, units="fraction"),
+                FakeBox("Can Apply Mutation", 0.243, 0.819, width=230, units="fraction")]
 DIVINE_CONFIRM_BUTTON = FakeBox("确认", 0.666, 0.690, units="fraction")
 # The Divine Epiphany notice, as OCR read it on the Global client. It shares the warning's Faint Memory row and buttons.
 DIVINE_NOTICE = [
@@ -67,6 +72,9 @@ class FakeTask:
 
     def click_box(self, box, *args, **kwargs):
         self.clicked.append(box)
+
+    def click(self, x, y):
+        self.clicked.append(f"at ({x}, {y})")
 
     def move_relative(self, x, y):
         pass
@@ -133,6 +141,18 @@ class TestRunSummary(unittest.TestCase):
                 task = FakeTask(screen)
                 self.assertEqual(claimed, handle_run_summary(task))
                 self.assertEqual(clicked, [box.split(" ")[0] for box in task.clicked])
+
+
+class TestSaveData(unittest.TestCase):
+    """The Save Data cards must not be tapped as event options, and a save's details opened anyway are closed."""
+
+    def test_each_screen(self):
+        for name, screen, claimed, clicked in (("saving", SAVING, True, []), ("collected", COLLECTED, True, []),
+                                               ("details", SAVE_DETAILS, True, ["at (0.883, 0.156)"]), ("anything else", REWARD_SCREEN, False, [])):
+            with self.subTest(screen=name):
+                task = FakeTask(screen)
+                self.assertEqual(claimed, handle_save_data(task))
+                self.assertEqual(clicked, task.clicked)
 
 
 if __name__ == "__main__":
