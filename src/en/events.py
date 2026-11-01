@@ -13,8 +13,8 @@ import cv2
 from ok import Logger
 
 from src.en import desire
-from src.en.handlers import StandIn, loaded, register, standing_in, wrap
-from src.en.screen import frame_of, patch_of, white_mask
+from src.en.handlers import StandIn, insert_before, loaded, register, standing_in, wrap
+from src.en.screen import centre_of, frame_of, lines_in, patch_of, text_in_region, white_mask
 
 logger = Logger.get_logger(__name__)
 
@@ -44,7 +44,8 @@ CURSE = ("obtain curse",)
 # An option whose reward is credits. A pattern rather than the plain containment the other markers use,
 # because the count sits inside the second wording and so leaves no fixed substring to look for. Both wordings
 # come from the 221 options logged off this client: "Increase Credits by N", and "Add N Credits".
-CREDIT = re.compile(r"increasecredits|add\d+credits")
+# The groups hold the amount, empty when OCR split it off into a box of its own.
+CREDIT = re.compile(r"increasecredits(?:by)?(\d*)|add(\d+)credits")
 # What makes an option worth more than the credits riding along with it. The client does pair them - "Ask
 # about the corpse: Obtain Equipment [Psionic Combat Suit], Increase Credits" - and that option is worth the
 # equipment. Ranked before this, a spark or a Desire card already stands the credit check down on its own.
@@ -107,6 +108,25 @@ LEAVE_MARKERS = ("离开", *QUIT)
 REFINED = "precision_memory_visited"
 # Seconds between the tap that selects an event option and the one that confirms it.
 CONFIRM_GAP = 0.2
+# The dialog raised when a picked option's reward can no longer be had, such as an Epiphany past its limit, and
+# the line under it naming what is handed out instead: "Alternative Reward: Increase Credits by 150".
+SUBSTITUTE_NOTICE = "Unavailable rewards will be substituted"
+ALTERNATIVE = "Alternative Reward"
+ALTERNATIVE_PREFIX = re.compile(r"^.*?alternative\s*reward\s*:?\s*", re.IGNORECASE)
+NOTICE_REGION = (0.1, 0.3, 0.9, 0.55)
+# Half the height of the band read for the alternative line, so a reward OCR boxed apart from its label is kept.
+LINE_HALF_HEIGHT = 0.015
+# The dialog's Cancel button, which OCR reads as 取消 with its centre near (0.347, 0.632).
+CANCEL = "取消"
+CANCEL_REGION = (0.15, 0.55, 0.5, 0.72)
+# Options sit at least 0.207 apart across the screen, so anything nearer than this is the same slot.
+SAME_SLOT = 0.1
+# The last option tapped, as `(others, picked, target)`: the options beside it, it, and the Desire faction then chased.
+PICKED = "_en_event_picked"
+# Options turned down for their substitute, as `{slot x: alternative reward}`, until another option is tapped.
+SUBSTITUTES = "_en_event_substitutes"
+# The handler the substitute dialog is answered ahead of, so its Confirm is not pressed blindly.
+ANCHOR = "handle_center_confirm"
 
 _patched = False
 
@@ -179,6 +199,132 @@ def rank(description, target=None):
     # Anything unrecognised counts as a reward. Most options naming no known marker still hand something over,
     # and ranking them below a battle would trade a real gain for a fight.
     return REWARD_RANK
+
+
+def credits(description):
+    """Read how many credits an option hands out.
+
+    Args:
+        description: The option text, or an alternative reward read off the substitute dialog.
+
+    Returns:
+        The amount, or 0 when it names no credits or OCR lost the number.
+    """
+    match = CREDIT.search(fold(description))
+    return int(next((group for group in match.groups() if group), 0)) if match else 0
+
+
+def slot_of(option):
+    """Place an option across the screen, the one thing about it that holds still between frames.
+
+    Args:
+        option: One option from `recognize_event_options`.
+
+    Returns:
+        The middle of its description, as a share of the screen width.
+    """
+    return center_of(option)[0]
+
+
+def substituted(task, options):
+    """Rank an option already turned down for its substitute as that substitute, so it is not picked again.
+
+    Args:
+        task: The running task, holding the options turned down under `SUBSTITUTES`.
+        options: Every recognised option.
+
+    Returns:
+        The options, with each turned-down one carrying its alternative reward as its description.
+    """
+    turned_down = getattr(task, SUBSTITUTES, None) or {}
+    result = []
+    for option in options:
+        alternative = next((text for x, text in turned_down.items() if abs(x - slot_of(option)) < SAME_SLOT), None)
+        result.append({**option, "description": alternative} if alternative else option)
+    return result
+
+
+def take_substitute(alternative, others, target=None):
+    """Decide whether an unavailable option's substitute is worth more than every other option on offer.
+
+    A tie goes to the substitute, since turning it down costs a round trip for nothing. Credits against credits
+    is the one tie worth breaking, by the amount.
+
+    Args:
+        alternative: The alternative reward read off the dialog.
+        others: The other options on the event screen.
+        target: The Desire faction the run is chasing, or None.
+
+    Returns:
+        True to take the substitute, False to go back and pick another option.
+    """
+    if not others:
+        return True
+    alternative_rank = rank(alternative, target)
+    best = min(rank(option.get("description", ""), target) for option in others)
+    if alternative_rank != best:
+        return alternative_rank < best
+    if best != CREDIT_RANK:
+        return True
+    return credits(alternative) >= max(credits(option.get("description", "")) for option in others)
+
+
+def remember_pick(task, options, picked, target):
+    """Note which option was tapped and what it was up against, for the substitute dialog it may raise.
+
+    Args:
+        task: The running task, where the pick is kept under `PICKED`.
+        options: Every option read this pass, the picked one included.
+        picked: The option tapped.
+        target: The Desire faction the run is chasing, or None.
+    """
+    others = [option for option in options if abs(slot_of(option) - slot_of(picked)) >= SAME_SLOT]
+    setattr(task, PICKED, (others, picked, target))
+    # Tapping anything but a turned-down option moves the event on, so what was turned down no longer applies.
+    if not any(abs(x - slot_of(picked)) < SAME_SLOT for x in getattr(task, SUBSTITUTES, None) or {}):
+        setattr(task, SUBSTITUTES, {})
+
+
+def handle_unavailable_reward(task):
+    """Weigh the reward offered in place of an unavailable one against the other options, and cancel if it loses.
+
+    Upstream's `handle_center_confirm` confirms the dialog outright, which once swapped a 140-credit option for
+    100 credits. A substitute worth taking is left to it.
+
+    Args:
+        task: The running task, whose `all_texts` is the current screen.
+
+    Returns:
+        True when this frame was claimed.
+    """
+    if not text_in_region(task, SUBSTITUTE_NOTICE, NOTICE_REGION):
+        return False
+    line = text_in_region(task, ALTERNATIVE, NOTICE_REGION)
+    picked = getattr(task, PICKED, None)
+    if line is None or picked is None:
+        task.log_info("Unavailable reward dialog on screen, but its alternative or the option picked is unknown, confirming")
+        return False
+    middle = centre_of(line, task.width, task.height)[1]
+    alternative = ALTERNATIVE_PREFIX.sub("", lines_in(task, (0.0, middle - LINE_HALF_HEIGHT, 1.0, middle + LINE_HALF_HEIGHT)))
+    others, option, target = picked
+    if take_substitute(alternative, others, target):
+        task.log_info(f"Reward unavailable, taking the alternative: {alternative}")
+        setattr(task, PICKED, None)
+        setattr(task, SUBSTITUTES, {})
+        return False
+    cancel = text_in_region(task, CANCEL, CANCEL_REGION)
+    # Claimed even without a Cancel to click, so the Confirm below this handler never gets the frame.
+    if cancel is None:
+        task.log_info("Unavailable reward's alternative loses to another option, but no Cancel button was read")
+        return True
+    task.log_info(f"Reward unavailable and its alternative ({alternative}) loses to another option, clicking Cancel")
+    turned_down = dict(getattr(task, SUBSTITUTES, None) or {})
+    turned_down[slot_of(option)] = alternative
+    setattr(task, SUBSTITUTES, turned_down)
+    setattr(task, PICKED, None)
+    task.click_box(cancel)
+    task.sleep(1)
+    return True
 
 
 def drop_unwanted(options, target=None):
@@ -352,7 +498,7 @@ def center_of(option):
     return (left + right) / 2, (top + bottom) / 2
 
 
-def double_clicking(original, centers):
+def double_clicking(original, centers, target=None):
     """Build a `_move_and_click` that taps an event option twice, so it is selected and confirmed in one pass.
 
     Upstream taps an option once to select it and leaves the confirming tap to the next frame. Every other tap,
@@ -360,7 +506,8 @@ def double_clicking(original, centers):
 
     Args:
         original: The real `_move_and_click`.
-        centers: The set of option centers read this pass, filled in as options are recognized.
+        centers: The options read this pass by their centers, filled in as options are recognized.
+        target: The Desire faction the run is chasing, or None, kept with the pick for the substitute dialog.
 
     Returns:
         The replacement.
@@ -369,6 +516,7 @@ def double_clicking(original, centers):
     def handle_event_task(task, x, y):
         original(task, x, y)
         if (x, y) in centers:
+            remember_pick(task, list(centers.values()), centers[(x, y)], target)
             task.sleep(CONFIRM_GAP)
             task.click(x, y)
 
@@ -440,6 +588,7 @@ def ranking(utils):
             options = original_recognize(task, *args, **kwargs)
             if not options:
                 return options
+            options = substituted(task, options)
             leave = leave_after_refinement(task, options)
             if leave:
                 return leave
@@ -454,7 +603,7 @@ def ranking(utils):
             if open_a_chest(task, utils):
                 return True
             original_find_feature = task.find_feature
-            centers = set()
+            centers = {}
 
             def find_feature(feature_name=None, *args, **kwargs):
                 # Hiding this one feature stops combat being clicked before anything is ranked. Set on the
@@ -465,12 +614,12 @@ def ranking(utils):
 
             def recognize(task, *args, **kwargs):
                 options = ranked_recognize(task, *args, **kwargs)
-                centers.update(center_of(option) for option in options or [])
+                centers.update((center_of(option), option) for option in options or [])
                 return options
 
             target = desire.target_faction(task, utils)
             with (standing_in(utils, random=RankingChoice(utils.random, target), recognize_event_options=recognize,
-                              _move_and_click=double_clicking(utils._move_and_click, centers)),
+                              _move_and_click=double_clicking(utils._move_and_click, centers, target)),
                   standing_in(task, find_feature=find_feature)):
                 return original_handle_event_task(task)
 
@@ -496,4 +645,5 @@ def apply():
     if _patched:
         return
     register(lambda: install(loaded("utils")))
+    register(lambda: insert_before(ANCHOR, handle_unavailable_reward))
     _patched = True

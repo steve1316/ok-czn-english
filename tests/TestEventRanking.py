@@ -30,7 +30,7 @@ from src.en.events import (  # noqa: E402
     ATTACK, ATTACK_RANK, BESIDES_CREDITS, CREDIT_RANK, CURSE_RANK, DESIRE_RANK, DIALOGUE, DIALOGUE_RANK, ENCOUNTER, ENCOUNTER_RANK, HEALTH_COST,
     HEALTH_COST_RANK, MIN_LATIN_MARKER_LENGTH, MIN_MARKER_LENGTH, OFF_FACTION_RANK, QUIT, QUIT_RANK,
     REFINED, REWARD_RANK, RankingChoice, SPARK, SPARK_RANK, center_of, double_clicking, drop_unwanted, find_chests, fold,
-    leave_after_refinement, open_a_chest, order, rank,
+    handle_unavailable_reward, leave_after_refinement, open_a_chest, order, rank, substituted, take_substitute,
 )
 from src.en.enter import OPTION_TEMPLATES, on_the_button  # noqa: E402
 from src.en.etched_memory import (  # noqa: E402
@@ -430,12 +430,72 @@ class TestOptionDoubleClick(unittest.TestCase):
         option = {"description_region": (0.44, 0.36, 0.90, 0.44)}
         taps, clicks = [], []
         task = SimpleNamespace(sleep=lambda seconds: None, click=lambda x, y: clicks.append((x, y)))
-        tap = double_clicking(lambda _, x, y: taps.append((x, y)), {center_of(option)})
+        tap = double_clicking(lambda _, x, y: taps.append((x, y)), {center_of(option): option})
         left, top, right, bottom = option["description_region"]
         tap(task, (left + right) / 2, (top + bottom) / 2)
         tap(task, 0.959, 0.053)
         self.assertEqual(2, len(taps))
         self.assertEqual(taps[:1], clicks)
+
+
+class TestUnavailableReward(unittest.TestCase):
+    """An Epiphany past its limit is swapped for credits, which are only taken when nothing else on offer beats them.
+
+    The Obelisk options and dialog are the OCR from the 2026-10-25 Chaos run, where upstream confirmed 100 credits
+    over an option paying 140. The Sphere ones are from a 2026-10-29 capture, where the 150 credits were worth it.
+    """
+
+    CANCEL_BUTTON = FakeBox("取消", 0.347, 0.632, units="fraction")
+    OBELISK = ["Pray togetherIncrease Credits by140", "Say it's brokenEpiphany 1 timeA selected combatant gains",
+               "Attack the ObeliskSelect and obtain 1 among 3random Neutral RareCard."]
+    SPHERE = ["Analyze the SphereSelect Cards 1 card(s)Epiphany", "Collect the bodyIncrease Credits by140"]
+
+    def options(self, descriptions):
+        return [{"description": text, "description_region": (0.25 * slot + 0.13, 0.66, 0.25 * slot + 0.37, 0.82)}
+                for slot, text in enumerate(descriptions)]
+
+    def dialog(self, alternative):
+        return [FakeBox("Unavailable rewards will be substituted. Do you still want to proceed?", 0.500, 0.374, width=1080, units="fraction"),
+                FakeBox("Unavailable Reward: Select Cards 1 card(s) Epiphany", 0.500, 0.452, width=820, units="fraction"),
+                FakeBox(f"Alternative Reward: {alternative}", 0.500, 0.492, width=680, units="fraction"),
+                self.CANCEL_BUTTON, FakeBox("确认", 0.666, 0.632, units="fraction")]
+
+    def pick(self, options, picked):
+        """Tap one option the way the event pass does, and return the task holding the pick."""
+        task = SimpleNamespace(width=WIDTH, height=HEIGHT, clicked=[], sleep=lambda seconds: None, click=lambda x, y: None,
+                               log_info=lambda message: None)
+        task.click_box = task.clicked.append
+        double_clicking(lambda *_: None, {center_of(option): option for option in options})(task, *center_of(options[picked]))
+        return task
+
+    def test_the_substitute_is_weighed_against_what_else_is_on_offer(self):
+        cases = (("more credits than the other option", "Increase Credits by 150", self.SPHERE[1:], True),
+                 ("fewer credits than the other option", "Increase Credits by 100", self.OBELISK[:1], False),
+                 ("a card beats credits", "Increase Credits by 100", self.OBELISK[::2], False),
+                 ("credits beat a battle", "Increase Credits by 120", ["Destroy the mining machineInitiate Battle"], True),
+                 ("nothing else to take", "Increase Credits by 100", [], True))
+        for label, alternative, others, taken in cases:
+            with self.subTest(label):
+                self.assertEqual(taken, take_substitute(alternative, [{"description": text} for text in others]))
+
+    def test_a_worthwhile_substitute_is_left_for_upstream_to_confirm(self):
+        options = self.options(self.SPHERE)
+        task = self.pick(options, 0)
+        task.all_texts = self.dialog("Increase Credits by 150")
+        self.assertFalse(handle_unavailable_reward(task))
+        self.assertEqual([], task.clicked)
+
+    def test_a_losing_substitute_is_cancelled_and_its_option_not_picked_again(self):
+        """Confirming here is the 2026-10-25 loss, and re-ranking the option as an Epiphany would raise the dialog forever."""
+        options = self.options(self.OBELISK)
+        task = self.pick(options, 1)
+        task.all_texts = self.dialog("Increase Credits by 100")
+        self.assertTrue(handle_unavailable_reward(task))
+        self.assertEqual([self.CANCEL_BUTTON], task.clicked)
+
+        ranked = order(substituted(task, options), [], utils.is_subsequence)
+        self.assertEqual(self.OBELISK[2], ranked[0]["description"])
+        self.assertEqual(CREDIT_RANK, rank(next(o for o in ranked if center_of(o) == center_of(options[1]))["description"]))
 
 
 class TestEnterButton(unittest.TestCase):
