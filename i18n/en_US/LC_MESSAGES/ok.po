@@ -538,10 +538,10 @@ msgstr ""
 "The starting task must include Remove 2 Cards, otherwise the run restarts. "
 "Cannot be used together with Farm Starting Card."
 
-msgid "自动模式仅在内存不少于12GB的Intel设备上使用OpenVINO，其他设备使用ONNX Runtime。修改后重启程序生效。"
+msgid "自动模式使用ONNX Runtime。Intel设备可手动选择OpenVINO。修改后重启程序生效。"
 msgstr ""
-"Auto only uses OpenVINO on Intel machines with at least 12 GB of RAM, and "
-"ONNX Runtime everywhere else. Restart the app after changing this."
+"Auto uses ONNX Runtime. On Intel machines you can pick OpenVINO instead. "
+"Restart the app after changing this."
 
 msgid ""
 "开启后每5分钟自动上传匿名的配置信息和胜率，帮助统计热门配置。\n"
