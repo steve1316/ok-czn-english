@@ -13,6 +13,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from ok.task.exceptions import TaskDisabledException  # noqa: E402
 
+from src import config as src_config  # noqa: E402
 from src.config import config  # noqa: E402
 from src.en import dashboard, devices, layout, monitors, shell, shutdown  # noqa: E402
 from src.en.framework import import_ui  # noqa: E402
@@ -254,6 +255,13 @@ class TestAppShell(unittest.TestCase):
     def test_a_fresh_install_sends_keys_by_post_message(self):
         # The first method is the default, and Genshin sends every key as A, so no card or Ego hotkey ever lands.
         self.assertEqual("PostMessage", config["windows"]["interaction"][0])
+
+    def test_auto_ocr_never_picks_openvino(self):
+        # OpenVINO crashed the app at startup on an Intel machine, so it must stay opt-in.
+        with mock.patch.object(src_config, "_read_ocr_backend", return_value=src_config.OCR_BACKEND_AUTO), \
+                mock.patch.object(src_config, "_openvino_is_available", return_value=True), \
+                mock.patch.dict(os.environ, {"PROCESSOR_IDENTIFIER": "GenuineIntel"}):
+            self.assertFalse(src_config.resolve_use_openvino())
 
 
 class TestOneModeAtATime(unittest.TestCase):

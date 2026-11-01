@@ -573,8 +573,8 @@ msgstr "卡牌名称和描述无需完整填写，输入几个关键字即可，
 msgid "初始任务必须包含“移除2张”，否则重新开始；不能与“刷初始卡牌”同时使用。"
 msgstr "初始任务必须包含“移除2张”，否则重新开始；不能与“刷初始卡牌”同时使用。"
 
-msgid "自动模式仅在内存不少于12GB的Intel设备上使用OpenVINO，其他设备使用ONNX Runtime。修改后重启程序生效。"
-msgstr "自动模式仅在内存不少于12GB的Intel设备上使用OpenVINO，其他设备使用ONNX Runtime。修改后重启程序生效。"
+msgid "自动模式使用ONNX Runtime。Intel设备可手动选择OpenVINO。修改后重启程序生效。"
+msgstr "自动模式使用ONNX Runtime。Intel设备可手动选择OpenVINO。修改后重启程序生效。"
 
 msgid "自动"
 msgstr "自动"

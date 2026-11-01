@@ -1,6 +1,5 @@
 import json
 import os
-import platform
 import sys
 
 import numpy as np
@@ -42,23 +41,6 @@ def _openvino_is_available():
         return False
 
 
-def _auto_use_openvino():
-    """自动模式保持保守：仅在资源充足的 Intel 设备上启用 OpenVINO。"""
-    processor = " ".join(filter(None, (
-        platform.processor(),
-        os.environ.get("PROCESSOR_IDENTIFIER", ""),
-    ))).lower()
-    if "intel" not in processor:
-        return False
-    try:
-        import psutil
-        if psutil.virtual_memory().total < 12 * 1024 ** 3:
-            return False
-    except (ImportError, OSError):
-        return False
-    return _openvino_is_available()
-
-
 def resolve_use_openvino():
     backend = _read_ocr_backend()
     if backend == OCR_BACKEND_OPENVINO:
@@ -67,12 +49,8 @@ def resolve_use_openvino():
             return True
         print("OpenVINO is not available, so the OCR backend falls back to ONNX Runtime")
         return False
-    if backend == OCR_BACKEND_AUTO:
-        use_openvino = _auto_use_openvino()
-        selected_backend = OCR_BACKEND_OPENVINO if use_openvino else OCR_BACKEND_ONNX
-        print(f"OCR backend: {selected_backend} (chosen automatically)")
-        return use_openvino
-    print("OCR backend: ONNX Runtime (chosen by you)")
+    # OpenVINO crashes natively (0xc0000005) on some Intel machines, so Auto never picks it.
+    print(f"OCR backend: ONNX Runtime (chosen {'automatically' if backend == OCR_BACKEND_AUTO else 'by you'})")
     return False
 
 ocr_backend_option = ConfigOption('OCR设置', {
@@ -82,7 +60,7 @@ ocr_backend_option = ConfigOption('OCR设置', {
         'type': 'drop_down',
         'options': [OCR_BACKEND_AUTO, OCR_BACKEND_ONNX, OCR_BACKEND_OPENVINO],
     },
-}, description='自动模式仅在内存不少于12GB的Intel设备上使用OpenVINO，其他设备使用ONNX Runtime。修改后重启程序生效。')
+}, description='自动模式使用ONNX Runtime。Intel设备可手动选择OpenVINO。修改后重启程序生效。')
 
 
 def make_bottom_right_black(frame): #可选. 某些游戏截图时遮挡UID使用
