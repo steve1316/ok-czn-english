@@ -1,9 +1,8 @@
-"""Stop the Dellang shop spending refreshes it cannot use, and let it read a shelf name the client wraps.
+"""Keep the Dellang shop from wasting time it cannot spend credits on, and let it read a shelf name the client wraps.
 
-The shop's refresh is free, so `handle_shop` takes it whenever nothing on the shelf matches the user's
-priority lists - dead time when no reroll could produce something the run can pay for. The shelf also wraps
-long names onto two lines, which upstream glues in OCR order ("JudgmentInstant"), so no name ever matched them.
-Upstream pays for a reroll above any threshold, so a negative one is read as "never".
+Upstream walks into the shop however few credits the run holds, and its free refresh rerolls whenever nothing on
+the shelf matches - dead time when nothing could be paid for. The shelf also wraps long names onto two lines, which
+upstream glues in OCR order ("JudgmentInstant"), so no name ever matched them. A negative paid threshold reads as "never".
 """
 
 import sys
@@ -11,25 +10,29 @@ import sys
 from ok import Logger
 
 from src.en.handlers import answering, loaded, register, standing_in, wrap
+from src.en.rest import GATED_ON_FLAG as SAFE_ZONES
 from src.en.screen import lines_in, text_in_region
 from src.en.state import GEAR, say_once
 
 logger = Logger.get_logger(__name__)
 
-# The fewest credits still worth rerolling the shelf for. Inclusive: holding exactly this much, the run
-# rerolls. Below it every refresh is dead time, because nothing a reroll produces can be paid for.
-# Where the run is asked to give up, rather than where a purchase becomes possible, since rerolling costs
-# nothing but time. A captured run sat in front of a 96 / 96 / 200 shelf holding almost nothing and refreshed
-# until the counter ran out.
-SHOP_FLOOR = 29
+# The fewest credits the shop is worth entering or rerolling with. Inclusive: holding exactly this much, the run
+# shops. The cheapest thing it sells - a card, a removal or a paid reroll - costs 35, so below it nothing can be bought.
+SHOP_FLOOR = 35
 # The bottom-left band `handle_shop` scans for its refresh button, as (x1, y1, x2, y2).
 REFRESH_REGION = (0.012, 0.892, 0.258, 0.979)
 # The caption on that button. `ocr.po` already rewrites the client's "Free" into this literal.
 FREE = "免费"
+# The Safe Zone's way into the shop, where upstream's `handle_rest` reads and clicks it.
+SHOP_ENTRY = "德朗商店"
+SHOP_ENTRY_POINT = (0.360, 0.138)
+# Where upstream's `_get_current_credit` reads the run's credits along the top bar.
+CREDIT_POINTS = ((0.794, 0.054), (0.734, 0.053))
 # Name each change in the shared record of what a function already carries.
 TAG = "shop floor"
 NAMES_TAG = "whole shelf names"
 NEVER_PAID_TAG = "never paid"
+ENTRY_TAG = "shop entry floor"
 # The paid-refresh threshold. Upstream pays while credits are above it, so -1 would pay on every frame.
 PAID_THRESHOLD = "商店刷新信用点阈值"
 
@@ -76,6 +79,49 @@ def refusing_free_refresh(handler, credit_of):
                              f"so the free refresh is withheld and the shop is left")
         with standing_in(task, all_texts=[box for box in task.all_texts if box is not free]):
             return handler(task)
+
+    return wrapped
+
+
+def credits_read(task, utils):
+    """Read the run's credits off the top bar, telling an unread count apart from zero.
+
+    Args:
+        task: The running task, whose `all_texts` holds the current OCR pass.
+        utils: The loaded `utils` module, for its `find_box_at_point`.
+
+    Returns:
+        The larger count read at either spot, or None when neither held a number.
+    """
+    counts = [int(box.name) for box in (utils.find_box_at_point(task, *point) for point in CREDIT_POINTS) if box and box.name.isdigit()]
+    return max(counts, default=None)
+
+
+def skipping_poor_shop(handler, utils):
+    """Wrap a Safe Zone handler so it does not walk into the shop holding less than the cheapest thing it sells.
+
+    Upstream enters whenever `node_status["shop"]` is set, which happens on every route page. Clearing it only for
+    this call's shop branch leaves resting and meditating as they were. An unread count enters as before.
+
+    Args:
+        handler: The handler to wrap, upstream's or another patch's.
+        utils: The loaded `utils` module, for its `find_box_at_point`.
+
+    Returns:
+        The wrapped handler.
+    """
+    def wrapped(task):
+        status = getattr(task, "node_status", None)
+        if not isinstance(status, dict) or not status.get("shop"):
+            return handler(task)
+        entry = utils.find_box_at_point(task, *SHOP_ENTRY_POINT)
+        if entry is None or SHOP_ENTRY not in entry.name:
+            return handler(task)
+        credit = credits_read(task, utils)
+        if credit is not None and credit < SHOP_FLOOR:
+            say_once(task, GEAR, f"{credit} credits is under the {SHOP_FLOOR} the shop's cheapest item costs, so the shop is skipped")
+            status["shop"] = False
+        return handler(task)
 
     return wrapped
 
@@ -134,10 +180,12 @@ def install(utils):
     wrap(utils, "handle_shop", lambda handler: refusing_free_refresh(handler, utils._get_current_credit), TAG)
     wrap(utils, "handle_shop", lambda handler: reading_names_whole(handler, utils), NAMES_TAG)
     wrap(utils, "handle_shop", lambda handler: never_paying(handler, utils), NEVER_PAID_TAG)
+    for module_name, handler_name in SAFE_ZONES.items():
+        wrap(loaded(module_name), handler_name, lambda handler: skipping_poor_shop(handler, utils), ENTRY_TAG)
 
 
 def apply():
-    """Withhold the shop's free refresh when the credits cannot use it, and read wrapped shelf names whole.
+    """Skip or cut short the shop when the credits cannot buy anything, and read wrapped shelf names whole.
 
     Runs before `src/en/rewards.py`, which renames the list entry it builds - that ordering is why
     `src/globals.py` applies the two in the order it does.

@@ -24,7 +24,9 @@ import utils  # noqa: E402
 
 from tests.fakes import FakeBox as Box  # noqa: E402
 
-from src.en.shop import PAID_THRESHOLD, SHOP_FLOOR, free_refresh_box, never_paying, reading_names_whole, refusing_free_refresh  # noqa: E402
+from src.en.shop import (  # noqa: E402
+    PAID_THRESHOLD, SHOP_FLOOR, free_refresh_box, never_paying, reading_names_whole, refusing_free_refresh, skipping_poor_shop,
+)
 
 WIDTH, HEIGHT = 1920, 1080
 # Where the shop draws its free-refresh button, measured off the captured screen.
@@ -194,6 +196,22 @@ class TestReadingNamesWhole(unittest.TestCase):
                 wrapped = reading_names_whole(lambda task: seen.append(utils._get_region_text(task, (0, 0, 1, 1))), utils)
                 wrapped(FakeTask(boxes))
                 self.assertEqual(seen, [expected])
+
+
+
+class TestSkippingPoorShop(unittest.TestCase):
+    """The Safe Zone walks past the shop when the run cannot afford its cheapest item, which costs 35."""
+
+    def test_the_shop_is_entered_only_from_the_floor_up(self):
+        # An unread count is not zero: skipping on a misread would cost a shop the run could have used.
+        for why, credit, entered in (("one credit short", "34", False), ("exactly the floor", "35", True), ("count unread", None, True)):
+            with self.subTest(why):
+                boxes = [FakeBox("德朗商店", 0.360, 0.138)] + ([FakeBox(credit, CREDIT_X, CREDIT_Y)] if credit else [])
+                task = FakeTask(boxes)
+                task.node_status = {"shop": True}
+                seen = []
+                skipping_poor_shop(lambda task: seen.append(task.node_status["shop"]), utils)(task)
+                self.assertEqual([entered], seen)
 
 
 if __name__ == "__main__":
