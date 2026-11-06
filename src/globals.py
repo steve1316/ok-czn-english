@@ -18,7 +18,7 @@ class Globals(QObject):
         # Everything English-only lives under src/en/ so upstream's files stay untouched and merges stay clean.
         from src.en import (  # noqa: E501
             analysis, battle, boss, claims, cursor, dashboard, deck, desire, devices, dialogue, dice, draft, enter, epiphany, equipment, etched_memory, events, frame_log, layout,
-            log_text, memory_limit, monitors, navigation, obtain, observe, ocr_text, overrides, persona, picker, piles, pins, reobserve, remote, rest, rewards, sections,
+            log_text, memory_limit, monitors, navigation, obtain, observe, ocr_text, overrides, persona, picker, piles, pins, placement, reobserve, remote, rest, rewards, sections,
             reason, shell, shop, shutdown, summary, templates, notify, stuck, upload,
         )
 
@@ -73,6 +73,7 @@ class Globals(QObject):
         devices.apply()
         cursor.apply()
         monitors.apply()
+        placement.apply()
         # Last of the handler-list edits, so it wraps the lists every other module has finished shaping.
         claims.apply()
         # Re-shapes the task lists, so it hooks the window rather than the tasks.

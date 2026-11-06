@@ -12,10 +12,11 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from ok.task.exceptions import TaskDisabledException  # noqa: E402
+from PySide6.QtCore import QRect  # noqa: E402
 
 from src import config as src_config  # noqa: E402
 from src.config import config  # noqa: E402
-from src.en import dashboard, devices, layout, monitors, shell, shutdown  # noqa: E402
+from src.en import dashboard, devices, layout, monitors, placement, shell, shutdown  # noqa: E402
 from src.en.framework import import_ui  # noqa: E402
 from tests.fakes import EchoApp  # noqa: E402
 
@@ -349,6 +350,75 @@ class TestMonitorLeftOfTheMain(unittest.TestCase):
         window = self.window(frame_aspect_ratio=16 / 9)
         monitors.take_geometry(window, (-1938, 135, 1936, 1239, 1920, 1200, 1.0), minimized=False)
         self.assertEqual((1920, 1080, 1200), (window.width, window.height, window.client_height))
+
+
+class TestWindowCanBeReached(unittest.TestCase):
+    """Where the main window opens, through upstream's real `set_window_size` on the offscreen platform's 800x800 screen."""
+
+    @classmethod
+    def setUpClass(cls):
+        # Offscreen has to be chosen before `QApplication` exists.
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PySide6.QtWidgets import QApplication
+
+        cls.qt_app = QApplication.instance() or QApplication([])
+
+    def opened(self, saved, default=(700, 500), maximized=False, before=None):
+        """Place a window the way the app does at startup.
+
+        Args:
+            saved: The x, y, width and height held in `_ok.json`.
+            default: The width and height from the app's `window_size` config.
+            maximized: The `window_maximized` value held in `_ok.json`.
+            before: A position to give the window first, for a case that has to start off-screen.
+
+        Returns:
+            The placed window.
+        """
+        from PySide6.QtWidgets import QWidget
+
+        class Window(QWidget):
+            ok_config = dict(zip(("window_x", "window_y", "window_width", "window_height"), saved), window_maximized=maximized)
+            set_window_size = placement.reachable(import_ui("MainWindow", "MainWindow").set_window_size)
+
+            def apply_navigation_state(self):
+                pass
+
+        window = Window()
+        if before:
+            window.setGeometry(*before)
+        window.set_window_size(*default, 100, 100)
+        return window
+
+    def test_where_the_window_opens(self):
+        cases = (
+            ("saved on an unplugged monitor is centred at the default size", (3000, 300, 1200, 800), (700, 500), (50, 150, 700, 500)),
+            ("saved on the screen is left alone", (100, 100, 300, 200), (700, 500), (100, 100, 300, 200)),
+            ("a default taller than the screen is shrunk to fit", (-1, -1, -1, -1), (1000, 1000), (0, 0, 800, 800)),
+        )
+        for name, saved, default, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(expected, self.opened(saved, default).geometry().getRect())
+
+    def test_a_maximized_window_stays_maximized(self):
+        window = self.opened((3000, 300, 1200, 800), maximized=True, before=(3000, 300, 300, 200))
+        self.assertTrue(window.isMaximized())
+
+    def test_only_a_reachable_title_bar_counts(self):
+        laptop = QRect(0, 0, 1920, 1040)
+        second = QRect(1920, 0, 2560, 1400)
+        cases = (
+            ("on a second monitor that is still connected", (2100, 300, 1200, 800), (laptop, second), True),
+            ("on a second monitor that is gone", (2100, 300, 1200, 800), (laptop,), False),
+            ("title bar above the screen with the body on it", (100, -40, 1200, 800), (laptop,), False),
+            ("title bar behind the taskbar", (100, 1030, 1200, 800), (laptop,), False),
+        )
+        for name, geometry, screens, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(expected, placement.can_grab(QRect(*geometry), screens))
+
+    def test_centring_counts_the_space_a_taskbar_takes(self):
+        self.assertEqual((360, 144, 1200, 800), placement.fitted(1200, 800, QRect(0, 48, 1920, 992)).getRect())
 
 
 class TestIdleDashboard(unittest.TestCase):
