@@ -121,7 +121,7 @@ LINE_HALF_HEIGHT = 0.015
 SAME_SLOT = 0.1
 # The last option tapped, as `(others, picked, target)`: the options beside it, it, and the Desire faction then chased.
 PICKED = "_en_event_picked"
-# Options turned down for their substitute, as `{slot x: alternative reward}`, until another option is tapped.
+# The slot x of each option turned down for its substitute, until another option is tapped.
 SUBSTITUTES = "_en_event_substitutes"
 # The handler the substitute dialog is answered ahead of, so its Confirm is not pressed blindly.
 ANCHOR = "handle_center_confirm"
@@ -212,35 +212,33 @@ def credits(description):
     return int(next((group for group in match.groups() if group), 0)) if match else 0
 
 
-def turned_down_for(task, option):
-    """Find what an option was turned down for, matched by its place across the screen since that holds still between frames.
+def is_turned_down(task, option):
+    """Check whether an option was turned down for its substitute, matched by its place across the screen since that holds still between frames.
 
     Args:
         task: The running task, holding the options turned down under `SUBSTITUTES`.
         option: One option from `recognize_event_options`.
 
     Returns:
-        The alternative reward it was turned down for, or None.
+        True when it was turned down.
     """
     x = center_of(option)[0]
-    return next((text for slot, text in (getattr(task, SUBSTITUTES, None) or {}).items() if abs(slot - x) < SAME_SLOT), None)
+    return any(abs(slot - x) < SAME_SLOT for slot in getattr(task, SUBSTITUTES, None) or ())
 
 
-def substituted(task, options):
-    """Rank an option already turned down for its substitute as that substitute, so it is not picked again.
+def still_on_offer(task, options):
+    """Drop the options already turned down for their substitute, so they are not picked again.
+
+    Ranking one lower is not enough: the game leaves a cancelled option raised, and upstream takes a raised option before anything is ranked.
 
     Args:
         task: The running task, holding the options turned down under `SUBSTITUTES`.
         options: Every recognised option.
 
     Returns:
-        The options, with each turned-down one carrying its alternative reward as its description.
+        The options not turned down, or all of them when nothing else is left.
     """
-    result = []
-    for option in options:
-        alternative = turned_down_for(task, option)
-        result.append({**option, "description": alternative} if alternative else option)
-    return result
+    return [option for option in options if not is_turned_down(task, option)] or options
 
 
 def take_substitute(alternative, others, target=None):
@@ -281,8 +279,8 @@ def remember_pick(task, options, picked, target):
     others = [option for option in options if abs(center_of(option)[0] - center_of(picked)[0]) >= SAME_SLOT]
     setattr(task, PICKED, (others, picked, target))
     # Tapping anything but a turned-down option moves the event on, so what was turned down no longer applies.
-    if turned_down_for(task, picked) is None:
-        setattr(task, SUBSTITUTES, {})
+    if not is_turned_down(task, picked):
+        setattr(task, SUBSTITUTES, set())
 
 
 def handle_unavailable_reward(task):
@@ -310,7 +308,7 @@ def handle_unavailable_reward(task):
     if take_substitute(alternative, others, target):
         task.log_info(f"Reward unavailable, taking the alternative: {alternative}")
         setattr(task, PICKED, None)
-        setattr(task, SUBSTITUTES, {})
+        setattr(task, SUBSTITUTES, set())
         return False
     cancel = text_in_region(task, CANCEL, CANCEL_REGION)
     # Claimed even without a Cancel to click, so the Confirm below this handler never gets the frame.
@@ -318,9 +316,7 @@ def handle_unavailable_reward(task):
         task.log_info("Unavailable reward's alternative loses to another option, but no Cancel button was read")
         return True
     task.log_info(f"Reward unavailable and its alternative ({alternative}) loses to another option, clicking Cancel")
-    turned_down = dict(getattr(task, SUBSTITUTES, None) or {})
-    turned_down[center_of(option)[0]] = alternative
-    setattr(task, SUBSTITUTES, turned_down)
+    setattr(task, SUBSTITUTES, {*(getattr(task, SUBSTITUTES, None) or ()), center_of(option)[0]})
     setattr(task, PICKED, None)
     task.click_box(cancel)
     task.sleep(1)
@@ -588,7 +584,7 @@ def ranking(utils):
             options = original_recognize(task, *args, **kwargs)
             if not options:
                 return options
-            options = substituted(task, options)
+            options = still_on_offer(task, options)
             leave = leave_after_refinement(task, options)
             if leave:
                 return leave
