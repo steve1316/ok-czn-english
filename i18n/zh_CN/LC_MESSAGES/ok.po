@@ -644,3 +644,75 @@ msgstr "自动分析"
 
 msgid "Record what the game's Auto plays in Chaos battles, for offline study. Costs extra OCR on every battle frame."
 msgstr "记录游戏自动战斗在混沌战斗中的出牌，用于离线分析。每个战斗帧都会额外消耗一次 OCR。"
+
+msgid "Input Variance"
+msgstr "输入随机化"
+
+msgid "Make clicks, keys and pacing less mechanical."
+msgstr "让点击、按键和操作节奏不那么机械。"
+
+msgid "Spread Clicks"
+msgstr "分散点击"
+
+msgid "Click a random spot near the middle of each button instead of its exact centre."
+msgstr "点击每个按钮中部附近的随机位置，而不是正中心。"
+
+msgid "Fixed-Point Spread (px)"
+msgstr "固定位置偏移（像素）"
+
+msgid "How far a click aimed at a fixed spot, not a read button, may drift. Measured at 1080p and scaled to the window."
+msgstr "点击固定位置（而非识别到的按钮）时可偏移的最大距离。以 1080p 为基准，并按窗口大小缩放。"
+
+msgid "Vary Press Length"
+msgstr "随机按压时长"
+
+msgid "Hold each click and key for a varied 50-140ms instead of a fixed 10-20ms."
+msgstr "每次点击和按键按住 50-140 毫秒不等，而不是固定的 10-20 毫秒。"
+
+msgid "Reaction Delay"
+msgstr "反应延迟"
+
+msgid "Wait a moment before acting on a new screen, as a person reading it would."
+msgstr "在新画面上操作前稍等片刻，就像人在阅读画面一样。"
+
+msgid "Reaction Delay Min (ms)"
+msgstr "最短反应延迟（毫秒）"
+
+msgid "Shortest reaction delay."
+msgstr "反应延迟的下限。"
+
+msgid "Reaction Delay Max (ms)"
+msgstr "最长反应延迟（毫秒）"
+
+msgid "Longest reaction delay."
+msgstr "反应延迟的上限。"
+
+msgid "Take Breaks"
+msgstr "定时休息"
+
+msgid "Stop for a few minutes every so often. Any idle spell at least as long as the shortest break counts as one."
+msgstr "每隔一段时间停止几分钟。空闲时间达到最短休息时长也算一次休息。"
+
+msgid "Play Between Breaks Min (min)"
+msgstr "两次休息间最短运行时长（分钟）"
+
+msgid "Shortest stretch of play before a break."
+msgstr "休息前连续运行的最短时长。"
+
+msgid "Play Between Breaks Max (min)"
+msgstr "两次休息间最长运行时长（分钟）"
+
+msgid "Longest stretch of play before a break."
+msgstr "休息前连续运行的最长时长。"
+
+msgid "Break Length Min (min)"
+msgstr "最短休息时长（分钟）"
+
+msgid "Shortest break."
+msgstr "休息时长的下限。"
+
+msgid "Break Length Max (min)"
+msgstr "最长休息时长（分钟）"
+
+msgid "Longest break."
+msgstr "休息时长的上限。"

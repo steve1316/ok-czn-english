@@ -1,0 +1,179 @@
+"""Check the Input Variance settings on the real settings form, and what they do to clicks, keys and pacing.
+
+The patch is applied to upstream's real `Box` and `PostMessageInteraction`, so a rename upstream fails here. Outside a live run it changes
+nothing, which is why `tests/TestCursor.py` keeps its exact points in the same process.
+"""
+
+import os
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
+
+import polib
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT))
+
+from ok.feature.Box import Box  # noqa: E402
+
+from src.en import humanize, shell, stuck  # noqa: E402
+from src.en.framework import import_ui  # noqa: E402
+from tests.fakes import HEIGHT, WIDTH, EchoApp  # noqa: E402
+
+DRAWS = 500
+# Settings with the reaction delay off, so tests that are not about pacing never sleep.
+QUIET = {**humanize.DEFAULTS, humanize.REACT: False}
+OPTION = humanize.human_input_option
+# A 1080p frame, the height `SPREAD_PX` is measured at, so a reach in settings is a reach in pixels.
+INTERACTION = SimpleNamespace(capture=SimpleNamespace(width=WIDTH, height=HEIGHT))
+
+
+class TestHumanize(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        humanize.apply()
+
+    def setUp(self):
+        humanize._last_input = float("-inf")
+        humanize._next_break = None
+        humanize._aimed = False
+
+    def test_box_clicks_spread_but_stay_inside_the_middle_of_the_box(self):
+        box = Box(100, 200, 200, 40)
+        with mock.patch.object(humanize, "settings", return_value=QUIET):
+            points = [box.relative_with_variance() for _ in range(DRAWS)]
+        # Upstream's variance rounds away, so every click would hit the one centre pixel.
+        self.assertGreater(len(set(points)), DRAWS // 10)
+        for x, y in points:
+            self.assertTrue(130 <= x <= 270 and 206 <= y <= 234, (x, y))
+
+    def test_a_fixed_click_drifts_within_reach_but_a_box_click_is_not_spread_twice(self):
+        landed = []
+        click = humanize.humanizing_click(lambda self, x, y, **kwargs: landed.append((x, y)))
+        with mock.patch.object(humanize, "settings", return_value=QUIET):
+            for _ in range(DRAWS):
+                click(INTERACTION, 300, 400)
+            drifted = list(landed)
+            landed.clear()
+            Box(100, 200, 200, 40).relative_with_variance()
+            click(INTERACTION, 300, 400)
+        self.assertGreater(len(set(drifted)), 1)
+        reach = QUIET[humanize.SPREAD_PX]
+        self.assertTrue(all(abs(x - 300) <= reach and abs(y - 400) <= reach for x, y in drifted))
+        self.assertEqual(landed, [(300, 400)])
+
+    def test_short_presses_vary_but_a_deliberate_hold_keeps_its_length(self):
+        pressed = []
+        click = humanize.humanizing_click(lambda self, x, y, **kwargs: pressed.append(kwargs["down_time"]))
+        with mock.patch.object(humanize, "settings", return_value=QUIET):
+            for _ in range(DRAWS):
+                click(INTERACTION, 300, 400, down_time=0.02)
+            click(INTERACTION, 300, 400, down_time=1)
+        held, short = pressed[-1], pressed[:-1]
+        self.assertEqual(held, 1)
+        self.assertGreater(len(set(short)), 1)
+        self.assertTrue(all(humanize.CLICK_PRESS[0] <= press <= humanize.CLICK_PRESS[1] for press in short))
+
+    def test_the_first_input_after_a_pause_waits_but_a_burst_does_not(self):
+        tuned = humanize.DEFAULTS
+        key = humanize.humanizing_key(lambda self, key, down_time: None)
+        with mock.patch.object(humanize, "settings", return_value=tuned), mock.patch.object(humanize.time, "sleep") as sleep:
+            key(None, "1")
+            key(None, "tab")
+        # An immediate follow-up has no new screen to read.
+        sleep.assert_called_once()
+        (wait,), _ = sleep.call_args
+        self.assertTrue(tuned[humanize.REACT_MIN] / 1000 <= wait <= tuned[humanize.REACT_MAX] / 1000)
+
+    def test_a_due_break_waits_for_the_next_pass_then_forgets_the_stuck_clock(self):
+        clock = [1000.0]
+        task = SimpleNamespace(**{stuck.CLOCK: 0, stuck.PICTURE: "frame"}, sleep=mock.Mock())
+        tuned = {**QUIET, humanize.BREAKS: True}
+        key = humanize.humanizing_key(lambda self, key, down_time: None)
+        with mock.patch.object(humanize, "settings", return_value=tuned), mock.patch.object(humanize.time, "monotonic", side_effect=lambda: clock[0]):
+            humanize.rest_if_due(task)
+            clock[0] = humanize._next_break
+            # A break inside an input could leave a raised card waiting on its Enter.
+            key(None, "enter")
+            task.sleep.assert_not_called()
+            humanize.rest_if_due(task)
+        task.sleep.assert_called_once()
+        (length,), _ = task.sleep.call_args
+        self.assertTrue(tuned[humanize.BREAK_MIN] * 60 <= length <= tuned[humanize.BREAK_MAX] * 60)
+        self.assertFalse(hasattr(task, stuck.CLOCK) or hasattr(task, stuck.PICTURE))
+        self.assertGreater(humanize._next_break, clock[0])
+
+    def test_an_idle_spell_counts_as_a_break(self):
+        clock = [1000.0]
+        task = SimpleNamespace(sleep=mock.Mock())
+        tuned = {**QUIET, humanize.BREAKS: True}
+        key = humanize.humanizing_key(lambda self, key, down_time: None)
+        with mock.patch.object(humanize, "settings", return_value=tuned), mock.patch.object(humanize.time, "monotonic", side_effect=lambda: clock[0]):
+            key(None, "1")
+            humanize.rest_if_due(task)
+            # The app sat stopped past the due time for longer than the shortest break.
+            clock[0] = humanize._next_break + tuned[humanize.BREAK_MIN] * 60
+            humanize.rest_if_due(task)
+        task.sleep.assert_not_called()
+        self.assertGreater(humanize._next_break, clock[0])
+
+    def test_the_mode_loop_offers_a_break_between_passes(self):
+        # Without this call in the loop, the Take Breaks switch would silently do nothing.
+        task = SimpleNamespace(enabled=True, enable=mock.Mock(), trigger_interval=0, executor=mock.Mock(), sleep=mock.Mock())
+        passes = [True, False]
+
+        def one_pass():
+            task.enabled = passes.pop(0)
+
+        task.run = one_pass
+        with mock.patch.object(humanize, "rest_if_due") as rest:
+            shell.looping(task)()
+        rest.assert_called_once_with(task)
+
+
+class TestHumanInputSettings(unittest.TestCase):
+    """The section on the real settings form, where a mistyped key would silently lose its row."""
+
+    @classmethod
+    def setUpClass(cls):
+        # Offscreen has to be chosen before `QApplication` exists.
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PySide6.QtWidgets import QApplication
+        from ok import og
+        from ok.util.config import Config
+
+        cls.qt_app = QApplication.instance() or QApplication([])
+        og.app = EchoApp()
+        cls.folder = tempfile.TemporaryDirectory()
+        config = Config(OPTION.name, OPTION.default_config, folder=cls.folder.name)
+        config_form = import_ui("tasks.config_form", "ConfigForm")
+        cls.form = config_form(None, config, OPTION.default_config, OPTION.config_description, OPTION.config_type)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.folder.cleanup()
+
+    def test_a_number_row_only_shows_while_its_switch_is_on(self):
+        rows = self.form.config_widget_by_key
+        self.assertEqual(set(rows), set(humanize.DEFAULTS))
+        switches = {key: kind["sub_configs"][True] for key, kind in OPTION.config_type.items() if "sub_configs" in kind}
+        self.assertTrue(switches)
+        for switch, children in switches.items():
+            for on in (True, False):
+                with self.subTest(switch=switch, on=on):
+                    rows[switch].update_config(on)
+                    self.assertEqual([rows[child].isHidden() for child in children], [not on] * len(children))
+
+    def test_every_label_is_in_the_chinese_catalog(self):
+        msgids = {entry.msgid for entry in polib.pofile(str(REPO_ROOT / "i18n" / "zh_CN" / "LC_MESSAGES" / "ok.po"))}
+        for text in (OPTION.name, OPTION.description, *humanize.DEFAULTS, *OPTION.config_description.values()):
+            with self.subTest(text=text):
+                self.assertIn(text, msgids)
+
+
+if __name__ == "__main__":
+    unittest.main()
