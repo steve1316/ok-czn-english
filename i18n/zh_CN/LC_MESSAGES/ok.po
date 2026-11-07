@@ -644,3 +644,21 @@ msgstr "自动分析"
 
 msgid "Record what the game's Auto plays in Chaos battles, for offline study. Costs extra OCR on every battle frame."
 msgstr "记录游戏自动战斗在混沌战斗中的出牌，用于离线分析。每个战斗帧都会额外消耗一次 OCR。"
+
+msgid "Input Variance"
+msgstr "输入随机化"
+
+msgid "Make clicks, keys and pacing less mechanical."
+msgstr "让点击、按键和操作节奏不那么机械。"
+
+msgid "Spread Clicks"
+msgstr "分散点击"
+
+msgid "Click a random spot near the middle of each button instead of its exact centre."
+msgstr "点击每个按钮中部附近的随机位置，而不是正中心。"
+
+msgid "Fixed-Point Spread (px)"
+msgstr "固定位置偏移（像素）"
+
+msgid "How far a click aimed at a fixed spot, not a read button, may drift. Measured at 1080p and scaled to the window."
+msgstr "点击固定位置（而非识别到的按钮）时可偏移的最大距离。以 1080p 为基准，并按窗口大小缩放。"

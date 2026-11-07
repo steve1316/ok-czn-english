@@ -6,6 +6,7 @@ import numpy as np
 from ok import ConfigOption
 
 from src.en.analysis import analysis_option
+from src.en.humanize import human_input_option
 
 version = "dev"
 #不需要修改version, Github Action打包会自动修改
@@ -103,7 +104,7 @@ config = {
     'debug': False,  # Optional, default: False
     'use_gui': True, # 目前只支持True
     'config_folder': 'configs', #最好不要修改
-    'global_configs': [ocr_backend_option, analysis_option],
+    'global_configs': [ocr_backend_option, analysis_option, human_input_option],
     'screenshot_processor': make_bottom_right_black, # 在截图的时候对frame进行修改, 可选
     'gui_icon': 'icons/icon.png', #窗口图标, 最好不需要修改文件名
     'wait_until_before_delay': 0,

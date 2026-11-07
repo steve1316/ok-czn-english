@@ -87,7 +87,7 @@ class TestNoUpload(unittest.TestCase):
         """Leaving it there would be the wrong fix anyway: the gates below it default to on when it is absent."""
         names = [option.name for option in config["global_configs"]]
         self.assertNotIn("配置上传", names)
-        self.assertEqual(["OCR设置", "auto_analysis"], names)
+        self.assertEqual(["OCR设置", "auto_analysis", "Input Variance"], names)
 
 
 if __name__ == "__main__":
