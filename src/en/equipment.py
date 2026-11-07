@@ -10,7 +10,9 @@ from ok import Logger
 
 from src.en import rewards
 from src.en.dashboard import TEAM_GEAR
+from src.en.game_quality import EQUIPMENT_RARITY
 from src.en.handlers import StandIn, loaded, register, standing_in, wrap
+from src.en.quality import EQUIPMENT_INDEX, grade
 from src.en.rewards import EQUIPMENT_KEYS
 from src.en.screen import (COMBATANT_NAME_POINTS, PAGE_CLOSE, centre_of, combatant_names, combatant_slot_points,
                            text_in_region)
@@ -47,6 +49,10 @@ MYTHIC_TAG = "mythic equipment"
 SLOT_TAG = "every combatant's slots"
 PLACEMENT_TAG = "mythic placement"
 TEAM_GEAR_TAG = "team equipment"
+PICK_TAG = "mythic pick"
+SELECTED_TAG = "recommended already selected"
+# The client's own grade for a Mythic piece, in `EQUIPMENT_RARITY`.
+MYTHIC_GRADE = "UNIQUE"
 
 
 # Where the run keeps what it last saw of every combatant's three equipment slots, as a list per combatant.
@@ -490,6 +496,100 @@ def preferring_recommended(handler, utils):
     return wrapped
 
 
+def game_grade(piece):
+    """Look up the client's own grade for a piece, since the choice screen's colour read samples one point for both pieces.
+
+    Args:
+        piece: A piece as `_equipment_info` reports it.
+
+    Returns:
+        The grade, such as `MYTHIC_GRADE`, or None for a name the client's table does not hold.
+    """
+    found = grade(piece.get("ocr_name") or piece.get("name") or "", EQUIPMENT_RARITY, EQUIPMENT_INDEX)
+    return found[1] if found else None
+
+
+def picking_mythic(handler, utils):
+    """Wrap `handle_equipment` so the two-piece choice screen takes a Mythic over the other piece.
+
+    Upstream picks by its priority list, then by an empty slot, then at random, and a live run took a Legend for an empty slot over a
+    Mythic. The tap is redirected rather than the choice rewritten, so all three of upstream's branches are covered.
+
+    Args:
+        handler: The handler to wrap, upstream's or another patch's.
+        utils: The module holding `_equipment_info` and `_move_and_click`, the seams this reads through.
+
+    Returns:
+        The wrapped handler.
+    """
+    def wrapped(task):
+        read_info, tap = utils._equipment_info, utils._move_and_click
+        offered = []
+
+        def noted(task_, *args, **kwargs):
+            info = read_info(task_, *args, **kwargs)
+            if info:
+                offered.append(info)
+            return info
+
+        def mythic_first(task_, x, y):
+            # Upstream sets `click_position` on each piece after reading it, so only the choice screen's pieces carry one.
+            picked = next((piece for piece in offered if piece.get("click_position") == (x, y)), None)
+            mythic = next((piece for piece in offered if piece.get("click_position") and game_grade(piece) == MYTHIC_GRADE), None)
+            if picked is not None and mythic is not None and game_grade(picked) != MYTHIC_GRADE:
+                logger.info(f"taking the Mythic {mythic['name']} over {picked['name']}")
+                x, y = mythic["click_position"]
+            return tap(task_, x, y)
+
+        with standing_in(utils, _equipment_info=noted, _move_and_click=mythic_first):
+            return handler(task)
+
+    return wrapped
+
+
+def leaving_recommended_selected(handler, utils):
+    """Wrap `handle_equipment` so a handover to the recommended row is not tapped when the client has already selected it.
+
+    The client selects the recommended combatant itself when its slot for the piece is open, which leaves only Confirm to press.
+
+    Args:
+        handler: The handler to wrap, upstream's or another patch's.
+        utils: The module holding the row reader, `_equipment_info` and `_move_and_click`, the seams this reads through.
+
+    Returns:
+        The wrapped handler.
+    """
+    def wrapped(task):
+        find_rows, read_info, tap = utils._find_member_level_tags, utils._equipment_info, utils._move_and_click
+        banner_tag, offered = [], []
+
+        def found(task_, *args, **kwargs):
+            tags = find_rows(task_, *args, **kwargs)
+            row = recommended_row(task_, recommended_banner(task_), tags)
+            if not banner_tag and row is not None:
+                banner_tag.append(tags[row])
+            return tags
+
+        def noted(task_, *args, **kwargs):
+            info = read_info(task_, *args, **kwargs)
+            if info:
+                offered.append(info)
+            return info
+
+        def handed_over(task_, x, y):
+            if x == HANDOVER_X and banner_tag and offered and abs(centre_of(banner_tag[0], task_.width, task_.height)[1] - y) < ROW_PITCH / 2:
+                qualities, _ = row_readings(task_, utils, banner_tag)
+                if qualities[0][offered[-1]["slot"]] == EMPTY_SLOT:
+                    logger.info(f"the client already selected the recommended combatant, whose slot {offered[-1]['slot'] + 1} is open, so it is not tapped")
+                    return None
+            return tap(task_, x, y)
+
+        with standing_in(utils, _find_member_level_tags=found, _equipment_info=noted, _move_and_click=handed_over):
+            return handler(task)
+
+    return wrapped
+
+
 def bare_slots(task):
     """Say which equipment slots are still empty on somebody.
 
@@ -679,6 +779,9 @@ def install(utils, utils_chaos=None):
     wrap(utils, "handle_equipment", lambda handler: preferring_recommended(handler, utils), RECOMMENDED_TAG)
     wrap(utils, "handle_equipment", lambda handler: insisting_on_mythic(handler, utils), MYTHIC_TAG)
     wrap(utils, "handle_equipment", lambda handler: remembering_slots(handler, utils), SLOT_TAG)
+    # After it, so their taps are the last stand-ins called and `remembering_slots` still sees a handover that is skipped.
+    wrap(utils, "handle_equipment", lambda handler: picking_mythic(handler, utils), PICK_TAG)
+    wrap(utils, "handle_equipment", lambda handler: leaving_recommended_selected(handler, utils), SELECTED_TAG)
 
 
 def apply():
