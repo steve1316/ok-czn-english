@@ -24,7 +24,8 @@ from src.en.framework import import_ui  # noqa: E402
 from tests.fakes import HEIGHT, WIDTH, EchoApp  # noqa: E402
 
 DRAWS = 500
-QUIET = humanize.DEFAULTS
+# Settings with the reaction delay off, so tests that are not about pacing never sleep.
+QUIET = {**humanize.DEFAULTS, humanize.REACT: False}
 OPTION = humanize.human_input_option
 # A 1080p frame, the height `SPREAD_PX` is measured at, so a reach in settings is a reach in pixels.
 INTERACTION = SimpleNamespace(capture=SimpleNamespace(width=WIDTH, height=HEIGHT))
@@ -37,6 +38,7 @@ class TestHumanize(unittest.TestCase):
         humanize.apply()
 
     def setUp(self):
+        humanize._last_input = float("-inf")
         humanize._aimed = False
 
     def test_box_clicks_spread_but_stay_inside_the_middle_of_the_box(self):
@@ -74,6 +76,17 @@ class TestHumanize(unittest.TestCase):
         self.assertEqual(held, 1)
         self.assertGreater(len(set(short)), 1)
         self.assertTrue(all(humanize.CLICK_PRESS[0] <= press <= humanize.CLICK_PRESS[1] for press in short))
+
+    def test_the_first_input_after_a_pause_waits_but_a_burst_does_not(self):
+        tuned = humanize.DEFAULTS
+        key = humanize.humanizing_key(lambda self, key, down_time: None)
+        with mock.patch.object(humanize, "settings", return_value=tuned), mock.patch.object(humanize.time, "sleep") as sleep:
+            key(None, "1")
+            key(None, "tab")
+        # An immediate follow-up has no new screen to read.
+        sleep.assert_called_once()
+        (wait,), _ = sleep.call_args
+        self.assertTrue(tuned[humanize.REACT_MIN] / 1000 <= wait <= tuned[humanize.REACT_MAX] / 1000)
 
 
 class TestHumanInputSettings(unittest.TestCase):
