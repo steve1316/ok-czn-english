@@ -271,13 +271,13 @@ msgstr ""
 "auto-battle fights."
 
 msgid "自动卡厄思模式"
-msgstr "Auto Chaos Manifestation"
+msgstr "Chaos"
 
 msgid "自动出击模式"
-msgstr "Auto Sortie Mode"
+msgstr "Sortie"
 
 msgid "半自动剧情模式"
-msgstr "Semi-Auto Story Mode"
+msgstr "Story"
 
 msgid "刷梦边"
 msgstr "Farm Dream's Edge"
@@ -562,3 +562,21 @@ msgstr ""
 
 msgid "自动"
 msgstr "Auto"
+
+msgid "auto_analysis"
+msgstr "Auto Analysis"
+
+msgid "赞赏支持"
+msgstr "Sponsor"
+
+msgid "如果喜欢这个工具，可以赞赏up主持续开发~感谢"
+msgstr "If you like this tool, you can tip the author to support development. Thank you!"
+
+msgid "微信赞赏"
+msgstr "WeChat"
+
+msgid "支付宝赞赏"
+msgstr "Alipay"
+
+msgid "德朗商店免费刷新次数用完后，仅当信用点大于该值且足够支付刷新价格时才付费刷新。"
+msgstr "Once the Dellang Shop's free refreshes run out, pay to refresh only when credits are above this value and cover the price."

@@ -1,6 +1,7 @@
-"""Stop the fork sending anything to upstream's shared config pool.
+"""Stop the fork sending anything to upstream's shared config pool, and remove the modes' Configuration row.
 
-The pool is the upstream CN community's, so a Global client's entries are noise in it either way.
+Upstream's modes post their config to a CN community pool and show a row of buttons that share and swap configs.
+A Global client's entries are noise in that pool, and this fork does not offer the row.
 """
 
 from ok import Logger
@@ -8,13 +9,12 @@ from ok import Logger
 logger = Logger.get_logger(__name__)
 
 # The module in `ok_tasks/` that does the uploading, and the one function in it that reaches the network to
-# send. `fetch_popular_configs` also reaches the network, but only the browser button calls it.
+# send. `fetch_popular_configs` also reaches the network, but only the Configuration row calls it.
 SYNC_MODULE = "config_sync"
 UPLOAD = "upload_config"
 
-# The settings row of buttons each mode shows, and the one that opens the popular-config browser.
-BUTTONS_KEY = "配置操作"
-HOT_CONFIGS = "热门配置"
+# The Configuration row, declared by Chaos and Sortie. A saved config holding this key loses it the next time it loads.
+ROW_KEY = "配置操作"
 
 _patched = False
 _upload_stopped = False
@@ -58,30 +58,18 @@ def stop_uploading():
     return True
 
 
-def drop_hot_config_button(task):
-    """Take the popular-config button out of a mode's settings.
-
-    It downloads other players' configs, which are written against the CN client and name Chinese cards that
-    this fork's OCR can never read. It also refuses to open at all unless uploading is switched on.
+def remove_config_row(task):
+    """Take the Configuration row out of a mode's settings.
 
     Args:
-        task: The task whose settings are being built.
-
-    Returns:
-        True when a button was removed.
+        task: The task whose settings are being built, before its saved config is read.
     """
-    buttons = (task.config_type or {}).get(BUTTONS_KEY, {}).get("buttons")
-    if not buttons:
-        return False
-    kept = [button for button in buttons if button.get("text") != HOT_CONFIGS]
-    if len(kept) == len(buttons):
-        return False
-    task.config_type[BUTTONS_KEY]["buttons"] = kept
-    return True
+    task.default_config.pop(ROW_KEY, None)
+    task.config_type.pop(ROW_KEY, None)
 
 
 def apply():
-    """Refuse the upload and drop the button that depends on it, as each task is set up."""
+    """Refuse the upload and remove the Configuration row, as each task is set up."""
     global _patched
     if _patched:
         return
@@ -99,10 +87,9 @@ def apply():
         try:
             if stop_uploading():
                 logger.info("config upload refused, nothing is sent to the upstream pool")
-            if drop_hot_config_button(self):
-                logger.info(f"removed the popular-config button from {self.__class__.__name__}")
+            remove_config_row(self)
         except Exception as error:
-            logger.warning(f"could not turn off the config upload for {self.__class__.__name__}: {error}")
+            logger.warning(f"could not turn off the config upload or row for {self.__class__.__name__}: {error}")
         original_load_config(self)
 
     BaseTask.load_config = patched_load_config

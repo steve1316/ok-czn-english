@@ -38,9 +38,9 @@ QUALITY = 90
 DEFAULT_TASK = "ChaosMode"
 # The functions below a request may name, so a path can never reach anything else in the module.
 COMMANDS = ("status", "screenshot", "texts", "click", "press_key", "hold", "settings", "set_setting", "set_running")
-# Seconds since the last request before the window title stops saying the MCP bridge is connected.
+# Seconds since the last request before the title bar stops saying the MCP bridge is connected.
 STALE = 15
-# How often, in milliseconds, the window title is brought up to date.
+# How often, in milliseconds, the title bar is brought up to date.
 TITLE_CHECK = 2000
 
 # Actions waiting for the bot's thread, as `(action, future)` pairs.
@@ -301,7 +301,7 @@ def set_running(task, running):
 
 
 def show_connection():
-    """Add "MCP connected" to the main window's title while the MCP bridge is pinging."""
+    """Add "MCP connected" to the main window's title bar while the MCP bridge is pinging."""
     main_window = import_ui("MainWindow", "MainWindow")
     if main_window is None:
         return
@@ -309,11 +309,12 @@ def show_connection():
 
     def patched_init(self, *args, **kwargs):
         original_init(self, *args, **kwargs)
-        title = self.windowTitle().rstrip()
+        title = self.title_bar.title_label.text()
 
         def update():
             connected = _last_contact is not None and time.monotonic() - _last_contact < STALE
-            self.setWindowTitle(f"{title}  MCP connected" if connected else title)
+            # Not `setWindowTitle`, which writes the version into the bar as well, right beside the badge that already shows it.
+            self.title_bar.set_title(f"{title}  MCP connected" if connected else title)
 
         # Parented to the window, so it stops when the window goes.
         timer = QTimer(self)

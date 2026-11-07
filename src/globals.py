@@ -15,19 +15,21 @@ class Globals(QObject):
 
     def __init__(self, exit_event):
         super().__init__()
-        # Everything English-only lives under src/en/ so upstream's files stay untouched and merges stay clean.
+        # Everything English-only lives under src/en/ so upstream's files stay untouched.
+        from src.ui.SponsorDialog import install_sponsor_dialog
         from src.en import (  # noqa: E501
-            analysis, battle, boss, claims, cursor, dashboard, deck, desire, devices, dialogue, dice, draft, enter, epiphany, equipment, etched_memory, events, frame_log, layout,
-            log_text, memory_limit, monitors, navigation, obtain, observe, ocr_text, overrides, persona, picker, piles, pins, placement, reobserve, remote, rest, rewards, sections,
-            reason, shell, shop, shutdown, summary, templates, notify, stuck, upload,
+            battle, boss, claims, cursor, dashboard, deck, desire, devices, dialogue, dice, draft, enter, epiphany, equipment, etched_memory, events, forms, frame_log, kept_forms,
+            log_text, memory_limit, monitors, navigation, obtain, observe, ocr_text, overrides, persona, picker, piles, pins, reobserve, remote, rest, rewards, sections,
+            reason, shell, shop, shutdown, summary, task_list, templates, notify, stuck, upload,
         )
 
         # Neither does anything outside a debug run, and nothing else depends on when they start.
         frame_log.apply()
         remote.apply()
-        layout.apply()
         sections.apply()
-        analysis.apply()
+        forms.apply()
+        task_list.apply()
+        kept_forms.apply()
         picker.apply()
         ocr_text.apply()
         # Before log_text, so its translation wraps this ordering and the keys arrive here already in English.
@@ -73,8 +75,8 @@ class Globals(QObject):
         devices.apply()
         cursor.apply()
         monitors.apply()
-        placement.apply()
         # Last of the handler-list edits, so it wraps the lists every other module has finished shaping.
         claims.apply()
         # Re-shapes the task lists, so it hooks the window rather than the tasks.
         shell.apply()
+        install_sponsor_dialog()

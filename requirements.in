@@ -1,6 +1,6 @@
-ok-script-kes==1.0.2
+ok-script[default,adb,ocr,qt]==3.0.4
 onnxocr-ppocrv5==0.0.18
 onnxruntime==1.28.0
 openvino==2026.0.0
-opencv-python
+opencv-python==4.12.0.88
 requests # 用于配置同步上传/下载

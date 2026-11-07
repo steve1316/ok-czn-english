@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <path d="M29.8 16A13.8 13.8 0 1 1 2.2 16A13.8 13.8 0 1 1 29.8 16Z" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M5.2 8.9Q16 7.2 26.8 8.9" fill="none" stroke="#FFFFFF" stroke-width="1.05" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M2.6 14.6Q16 17.6 29.4 14.6" fill="none" stroke="#FFFFFF" stroke-width="1.05" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M4.9 23Q16 24.6 27.1 23" fill="none" stroke="#FFFFFF" stroke-width="1.05" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M16 8.4L11 16.2L16 23.6L21 16.2Z" fill="none" stroke="#FFFFFF" stroke-width="1.05" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M16 8.4L13.4 2.8M16 8.4L18.6 2.8" fill="none" stroke="#FFFFFF" stroke-width="1.05" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M16 23.6L13.4 29.2M16 23.6L18.6 29.2" fill="none" stroke="#FFFFFF" stroke-width="1.05" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M11 16.2L8.2 5.6M11 16.2L6.8 25.2" fill="none" stroke="#FFFFFF" stroke-width="1.05" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M21 16.2L23.8 5.6M21 16.2L25.2 25.2" fill="none" stroke="#FFFFFF" stroke-width="1.05" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

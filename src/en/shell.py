@@ -1,12 +1,13 @@
-"""Give the game modes Start buttons, one usable at a time, drop the scaffold tabs, and link About to this fork.
+"""Give the game modes Start buttons, one usable at a time, drop the scaffold pages, and link About to this fork.
 
-Upstream ships the modes as trigger tasks, so the framework draws them as a switch in a separate Triggers tab.
+Upstream ships the modes as trigger tasks, so the framework draws them as switches in a separate Triggers section.
 """
 
 import time
 
 from ok import Logger, og
 
+from src.en import task_list
 from src.en.framework import import_ui
 
 logger = Logger.get_logger(__name__)
@@ -15,7 +16,7 @@ logger = Logger.get_logger(__name__)
 # `ok_tasks/` stays byte-identical to upstream. Every other trigger task becomes a mode with a Start button,
 # so a mode upstream renames or adds is picked up without editing a list here.
 HIDDEN = ("TestTrigger", "GetMengbian")
-# Upstream's entry in the About tab's Other Projects grid, which the framework hardcodes rather than reading from `links`.
+# Upstream's entry in the About page's Other Projects grid, which the framework hardcodes rather than reading from `links`.
 UPSTREAM_REPO = "https://github.com/baoxin1100/ok-kes"
 
 _patched = False
@@ -66,12 +67,12 @@ def pausing(task, communicate):
     """Build the pause for a mode that now lives in the one-time list.
 
     `BaseTask.pause` pauses the whole executor for a trigger task, which is what makes the frame the mode
-    reads block, and that is kept. What it does not do is record the pause on the task itself, and `TaskCard`
-    reads `task.paused` to decide whether to offer Resume. `BaseTask.unpause` is already correct as it stands.
+    reads block, and that is kept. What it does not do is record the pause on the task itself, and the Tasks
+    page reads `task.paused` to decide whether to offer Resume. `BaseTask.unpause` is already correct as it stands.
 
     Args:
         task: The mode being moved.
-        communicate: The framework's signal hub, used to refresh the card.
+        communicate: The framework's signal hub, used to refresh the row.
 
     Returns:
         The replacement `pause`.
@@ -85,7 +86,7 @@ def pausing(task, communicate):
 
 
 def to_task(task, executor, communicate):
-    """Move one mode from the Triggers tab to the Tasks tab.
+    """Move one mode from the page's Triggers section to its On-demand section.
 
     Args:
         task: The mode to move.
@@ -96,52 +97,83 @@ def to_task(task, executor, communicate):
     executor.onetime_tasks.append(task)
     task.run = looping(task)
     task.pause = pausing(task, communicate)
-    # `TaskCard` offers an Edit button for anything loaded out of `ok_tasks/`, and it opens the Script tab,
+    # `TaskDetail` offers an Edit button for anything loaded out of `ok_tasks/`, and it opens the Script page,
     # which is gone. Clearing this drops the button. The cost is that the modes now count as built-in to the
     # debug file watcher, which only matters while editing `ok_tasks/` with the app running.
     task.is_custom = False
+    task_list.set_mode_icon(task)
     # `on_create` restored this from the saved config. A run that ended in a crash leaves it set, and the
     # executor starts any enabled one-time task on its own, so a launch would silently resume the mode.
     task._enabled = False
     logger.info(f"{task.__class__.__name__} now starts from a button rather than a switch")
 
 
-def locking(original):
-    """Wrap `TaskCard.update_buttons` so no other mode can be started while one is running.
-
-    The framework queues a second Start behind the running mode and says so only in a small "Waiting for" note.
-    Every one-time card refreshes on any task's change, so each card can check the others here.
+def lock_start(button, task, unlocked_tooltip):
+    """Grey out a mode's Start while another mode holds the executor, and make sure it is clickable otherwise.
 
     Args:
-        original: The unbound `update_buttons` being replaced.
+        button: The row's action button or the detail pane's Run button.
+        task: The mode `button` starts.
+        unlocked_tooltip: The tooltip to show when `button` is not locked.
+    """
+    # A mode that is itself running or paused shows Stop or Resume here, and those must stay clickable.
+    running = None if task.enabled else next((other for other in og.executor.onetime_tasks if other is not task and other.enabled), None)
+    button.setEnabled(running is None)
+    button.setToolTip(f"Stop {og.app.tr(running.name)} first" if running else unlocked_tooltip)
+
+
+def locking_row(original):
+    """Wrap `TaskRow.refresh` so no other mode can be started from the list while one is running.
+
+    Args:
+        original: The unbound `refresh` being replaced.
 
     Returns:
         The replacement.
     """
-    def update_buttons(self, task):
-        original(self, task)
-        if self.start_button is None:
-            return
-        running = next((other for other in og.executor.onetime_tasks if other is not self.task and other.enabled), None)
-        locked = running is not None and not self.task.enabled
-        self.start_button.setEnabled(not locked)
-        self.start_button.setToolTip(f"Stop {og.app.tr(running.name)} first" if locked else "")
+    def refresh(self):
+        original(self)
+        # Trigger rows have a switch and no button.
+        if not self.is_trigger:
+            # The framework has just set the button's own tooltip, so that is the one to keep when unlocked.
+            lock_start(self.action_button, self.task, self.action_button.toolTip())
 
-    return update_buttons
+    return refresh
 
 
-def show_instructions(card):
-    """Open a mode's Instructions under its English name. Upstream titles the dialog with the raw Chinese `name`.
+def locking_detail(original):
+    """Wrap `TaskDetail.refresh` so no other mode can be started from its pane while one is running.
 
     Args:
-        card: The `TaskCard` whose Instructions button was clicked.
-    """
-    from qfluentwidgets import Dialog
+        original: The unbound `refresh` being replaced.
 
-    dialog = Dialog(og.app.tr(card.task.name), card.task.instructions, card.window())
-    dialog.setContentCopyable(True)
-    dialog.cancelButton.hide()
-    dialog.exec()
+    Returns:
+        The replacement.
+    """
+    def refresh(self):
+        original(self)
+        # The pane starts with no task, and its Run button is hidden for a trigger task.
+        if self.task is not None and not self.is_trigger:
+            lock_start(self.run_button, self.task, "")
+
+    return refresh
+
+
+def redrawing_every_row(original):
+    """Wrap `TasksPage._on_task_event` so every row redraws when any mode changes, which unlocks them at once.
+
+    The framework redraws the changed row and leaves the rest to a timer that only runs while the page is on screen.
+
+    Args:
+        original: The unbound `_on_task_event` being replaced.
+
+    Returns:
+        The replacement, which drops the task because that is how the framework asks for every row.
+    """
+    def on_task_event(self, task=None):
+        original(self)
+
+    return on_task_event
 
 
 def to_the_fork(original):
@@ -153,23 +185,23 @@ def to_the_fork(original):
     Returns:
         The replacement.
     """
-    def __init__(self, name, url, parent=None):
+    def __init__(self, name, url, website=None, parent=None):
         if url == UPSTREAM_REPO:
-            url = og.config["links"]["default"]["github"]
-        original(self, name, url, parent)
+            url, website = og.config["links"]["default"]["github"], None
+        original(self, name, url, website, parent)
 
     return __init__
 
 
 def restructure(executor, task_manager, communicate):
-    """Re-shape the task lists before the window builds its tabs from them.
+    """Re-shape the task lists before the window builds its pages from them.
 
     Args:
         executor: The task executor holding both task lists.
-        task_manager: The task manager, whose `has_custom` gates the Script and Templates tabs.
+        task_manager: The task manager, whose `has_custom` gates the Script and Templates pages.
         communicate: The framework's signal hub.
     """
-    # The Script and Templates tabs record and edit tasks, which this fork does not do. Turning off the
+    # The Script and Templates pages record and edit tasks, which this fork does not do. Turning off the
     # `custom_tasks` config cannot stand in for this, because that is also what makes the manager load
     # `ok_tasks/` in the first place.
     task_manager.has_custom = False
@@ -183,7 +215,7 @@ def restructure(executor, task_manager, communicate):
 
 
 def apply():
-    """Re-shape the task lists and tabs when the main window is built."""
+    """Re-shape the task lists and pages when the main window is built."""
     global _patched
     if _patched:
         return
@@ -191,12 +223,15 @@ def apply():
     communicate = import_ui("Communicate", "communicate")
     if main_window is None or communicate is None:
         return
-    # Before the window is built, since each card connects its own bound methods as it is made.
-    task_card = import_ui("tasks.TaskCard", "TaskCard")
-    if task_card is not None:
-        task_card.update_buttons = locking(task_card.update_buttons)
-        task_card.show_instructions = show_instructions
-    project_card = import_ui("about.ProjectCard", "ProjectCard")
+    # Before the window is built, since the page connects its own bound methods as it is made.
+    task_row = import_ui("tasks.tasks_page", "TaskRow")
+    task_detail = import_ui("tasks.tasks_page", "TaskDetail")
+    tasks_page = import_ui("tasks.tasks_page", "TasksPage")
+    if task_row is not None and task_detail is not None and tasks_page is not None:
+        task_row.refresh = locking_row(task_row.refresh)
+        task_detail.refresh = locking_detail(task_detail.refresh)
+        tasks_page._on_task_event = redrawing_every_row(tasks_page._on_task_event)
+    project_card = import_ui("about.AboutTab", "ProjectCard")
     if project_card is not None:
         project_card.__init__ = to_the_fork(project_card.__init__)
     original_init = main_window.__init__
@@ -204,12 +239,12 @@ def apply():
     def patched_init(self, *args, **kwargs):
         from ok import og
 
-        # The window reads both task lists to decide which tabs exist, so this has to run first. By now every
+        # The window reads both task lists to decide which pages exist, so this has to run first. By now every
         # task is loaded and constructed, which is not true when this module is imported.
         try:
             restructure(og.executor, og.task_manager, communicate)
         except Exception as error:
-            logger.warning(f"could not finish re-shaping the task list, the tabs may be half changed: {error}")
+            logger.warning(f"could not finish re-shaping the task list, the pages may be half changed: {error}")
         original_init(self, *args, **kwargs)
 
     main_window.__init__ = patched_init

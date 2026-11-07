@@ -1,20 +1,17 @@
 """Make the option picker open instantly on the Global client's long rosters.
 
-ok-script builds the "Available Options" pane of `ModifyListDialog` as one real `PushButton` per option in a
+ok-script builds the "Available Options" pane of `ModifyListDialog` as one real `Button` per option in a
 `FlowLayout`, with no virtualization. Upstream's Chinese rosters are short enough for that to pass unnoticed,
-the Global client's are not. One thing is knowingly given up: upstream wires touch drag-scrolling to the
-`QScrollArea` the list now sits in, and that outer area no longer scrolls - the framework's helper cannot be
-pointed at the list instead, because it calls `.widget()`, which a `QListWidget` does not have. The wheel and
-the scrollbar both work, and the Selected Options list beside it has never had touch scrolling either.
+the Global client's are not.
 """
 
 from html import escape
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QListWidgetItem, QProxyStyle, QStyle
-from qfluentwidgets import BodyLabel, ListWidget, ToolTipFilter
+from PySide6.QtWidgets import QListWidget, QListWidgetItem, QProxyStyle, QStyle
 
 from ok import Logger, og
+from ok.ui.qt.kit.labels import Label
 
 from src.en.framework import import_ui
 from src.en.game_text import DESCRIPTIONS
@@ -33,13 +30,11 @@ ENABLED_FLAGS = Qt.ItemIsEnabled | Qt.ItemIsSelectable
 FALLBACK_THRESHOLD = 20
 # The dialog's two option columns, Available and Selected.
 COLUMN_COUNT = 2
-# The hover delay qfluentwidgets gives its own list rows, so the button grid's tooltips arrive as quickly.
-LIST_TOOLTIP_DELAY_MS = 100
 # Settings whose options are not cards, keyed to their own effect text. A modifier named Plague is not the card Plague.
 OPTION_EFFECTS = {MODIFIER_BLACKLIST: MODIFIER_HELP}
 
 _patched = False
-# The row's help text, handed to the dialog it is about to open. `ModifyListItem` knows which setting it is
+# The row's help text, handed to the dialog it is about to open. `ListEditor` knows which setting it is
 # for and the dialog never does, so the text is parked here for the length of one constructor call. Qt widgets
 # only ever run on the GUI thread, so nothing else can be opening a dialog in between.
 _pending_help = None
@@ -120,13 +115,13 @@ def balance_dialog_columns(dialog):
 
     Upstream splits that row two to one, which suits its short Chinese option names but leaves English card
     names holding a list plus its buttons in a third of the dialog. The row is found by shape rather than
-    position - it is the only child of the view layout whose own two children are both layouts.
+    position - it is the only child of the body layout whose own two children are both layouts.
 
     Args:
         dialog: The `ModifyListDialog` being set up.
     """
-    for index in range(dialog.viewLayout.count()):
-        row = dialog.viewLayout.itemAt(index).layout()
+    for index in range(dialog.body.count()):
+        row = dialog.body.itemAt(index).layout()
         if row is None or row.count() != COLUMN_COUNT:
             continue
         if all(row.itemAt(column).layout() is not None for column in range(COLUMN_COUNT)):
@@ -166,7 +161,7 @@ def label_selected_rows(dialog):
 def show_setting_help(dialog):
     """Put the setting's own description at the top of its Modify dialog.
 
-    The row already explains the setting, but that text is off screen once the dialog covers it. `viewLayout`
+    The row already explains the setting, but that text is off screen once the dialog covers it. `body`
     is the one place both dialog shapes share - a setting with a roster has two columns inside it and a
     free-text setting has a single list, so anything anchored to the Available column would miss half of them.
 
@@ -175,25 +170,23 @@ def show_setting_help(dialog):
     """
     if not _pending_help:
         return
-    label = BodyLabel(_pending_help, dialog)
-    label.setWordWrap(True)
-    dialog.viewLayout.insertWidget(0, label)
+    dialog.body.insertWidget(0, Label(_pending_help, parent=dialog, word_wrap=True))
 
 
 def build_option_list(dialog):
     """Build the virtualized replacement for one dialog's option grid.
 
     Upstream's grid costs about 2.6 seconds to open Cards to Remove and another 2.9 on the first search
-    keystroke, because filtering calls `setVisible` on all 1,472 widgets. A `ListWidget` builds delegates only
+    keystroke, because filtering calls `setVisible` on all 1,472 widgets. A `QListWidget` builds delegates only
     for rows on screen, so the same roster is ready in about 2 ms, filters in about 3 ms, and spans the pane.
 
     Args:
         dialog: The `ModifyListDialog` being set up.
 
     Returns:
-        A `ListWidget` holding every available option.
+        A `QListWidget` holding every available option.
     """
-    view = ListWidget()
+    view = QListWidget()
     # Every row is the same size, so the view lays itself out from the first one rather than measuring all of
     # them. Rows then span the pane, and a name too long for it elides with the full text left in the tooltip.
     view.setUniformItemSizes(True)
@@ -230,7 +223,7 @@ def apply():
     original_create = dialog_class._create_available_options_widget
     original_update = dialog_class.update_option_buttons
     original_filter = dialog_class.filter_available_options
-    original_wrap = dialog_class._wrap_dialog_buttons
+    original_init = dialog_class.__init__
 
     def virtualized(dialog):
         """Whether this dialog shows the list. All three patches route on this one rule."""
@@ -241,11 +234,9 @@ def apply():
         if not virtualized(self):
             widget = original_create(self)
             # A short grid only gets tooltips from a setting's own effects. Route Priority's node names are not cards.
-            # The filter draws the themed tooltip the lists use, where a bare `setToolTip` would get Qt's unthemed one.
             if self.option_effects:
                 for option, button in self.option_buttons.items():
                     button.setToolTip(tooltip_for(option, og.app.tr(option), self.option_effects))
-                    button.installEventFilter(ToolTipFilter(button, LIST_TOOLTIP_DELAY_MS))
                 use_instant_tooltips(self.list_widget)
             return widget
         if self.option_effects is None:
@@ -278,10 +269,9 @@ def apply():
             hidden = bool(keyword) and keyword not in self.option_list.item(row).data(SEARCH_ROLE)
             self.option_list.setRowHidden(row, hidden)
 
-    def patched_wrap(self):
-        original_wrap(self)
+    def patched_init(self, *args, **kwargs):
+        original_init(self, *args, **kwargs)
         show_setting_help(self)
-        # The last call `__init__` makes after installing the two-column row, so the row exists to rebalance.
         # Every dialog with a roster gets it, not only the virtualized ones, so the shape stays consistent.
         if self.options_available is not None:
             balance_dialog_columns(self)
@@ -289,7 +279,7 @@ def apply():
     dialog_class._create_available_options_widget = patched_create
     dialog_class.update_option_buttons = patched_update
     dialog_class.filter_available_options = patched_filter
-    dialog_class._wrap_dialog_buttons = patched_wrap
+    dialog_class.__init__ = patched_init
     remember_help_text()
     logger.info("long option lists virtualized")
 
@@ -297,28 +287,26 @@ def apply():
 def remember_help_text():
     """Have each settings row hand its help text to the dialog it opens.
 
-    `ModifyListItem.clicked` builds the dialog without passing the config key, so the dialog cannot look its own
-    description up. The row can: `ConfigLabelAndWidget` keeps `self.key`, and `LabelAndWidget` builds
-    `contentLabel` from the already-translated description. Parking the text for the length of that one call is
-    less code than re-implementing the dialog construction just to pass an argument.
+    `ListEditor.open_dialog` builds the dialog without passing the config key, so the dialog cannot look its own
+    description up. The row can: it keeps `self.key`, and `description_label` holds the already-translated
+    description. Parking the text for the length of that one call is less code than re-implementing the dialog
+    construction just to pass an argument.
 
-    This has to run before any settings row is built, because `ModifyListItem.__init__` binds `self.clicked`
+    This has to run before any settings row is built, because `ListEditor.__init__` binds `self.open_dialog`
     when it connects the button. `apply()` runs from `src/globals.py` at startup, well before the GUI exists.
     """
-    item_class = import_ui("tasks.ModifyListItem", "ModifyListItem")
-    if item_class is None:
+    editor_class = import_ui("tasks.config_editors", "ListEditor")
+    if editor_class is None:
         return
-    original_clicked = item_class.clicked
+    original_open = editor_class.open_dialog
 
-    def patched_clicked(self):
+    def patched_open(self, *args):
         global _pending_help, _pending_effects
-        # `contentLabel` only exists when the setting has a description at all.
-        label = getattr(self, "contentLabel", None)
-        _pending_help = label.text() if label is not None else None
+        _pending_help = self.description_label.text() or None
         _pending_effects = OPTION_EFFECTS.get(self.key)
         try:
-            original_clicked(self)
+            original_open(self)
         finally:
             _pending_help = _pending_effects = None
 
-    item_class.clicked = patched_clicked
+    editor_class.open_dialog = patched_open

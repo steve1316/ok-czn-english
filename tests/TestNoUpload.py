@@ -11,23 +11,13 @@ sys.path.insert(0, str(REPO_ROOT))
 from src.config import config  # noqa: E402
 from src.en import upload  # noqa: E402
 
-# The settings row as the two modes declare it, in upstream's order.
-BUTTONS = ["导入配置码", "导出配置码", "热门配置", "保存配置", "切换配置"]
-
 
 class FakeTask:
     """A mode, holding only the settings the patch edits."""
 
-    def __init__(self, buttons=None):
-        if buttons is None:
-            buttons = BUTTONS
-        self.config_type = {
-            upload.BUTTONS_KEY: {"type": "button", "buttons": [{"text": text} for text in buttons]},
-            "游戏语言": {"type": "drop_down", "options": ["简体中文"]},
-        }
-
-    def button_texts(self):
-        return [button["text"] for button in self.config_type[upload.BUTTONS_KEY]["buttons"]]
+    def __init__(self):
+        self.default_config = {upload.ROW_KEY: "", "游戏语言": ""}
+        self.config_type = {upload.ROW_KEY: {"type": "button"}, "游戏语言": {"type": "drop_down"}}
 
 
 def fake_sync_module():
@@ -87,32 +77,17 @@ class TestNoUpload(unittest.TestCase):
         sys.modules.pop(upload.SYNC_MODULE, None)
         self.assertFalse(upload.stop_uploading())
 
-    def test_the_popular_config_button_is_removed(self):
+    def test_the_configuration_row_is_removed(self):
+        # Popping only the form's half would leave the key in every saved config, and only the default's half would leave the buttons.
         task = FakeTask()
-        self.assertTrue(upload.drop_hot_config_button(task))
-        self.assertNotIn("热门配置", task.button_texts())
-
-    def test_the_other_config_buttons_are_left_alone(self):
-        """Import, export, save and switch are all local, so they stay."""
-        task = FakeTask()
-        upload.drop_hot_config_button(task)
-        self.assertEqual(["导入配置码", "导出配置码", "保存配置", "切换配置"], task.button_texts())
-
-    def test_a_task_with_no_buttons_is_left_alone(self):
-        task = FakeTask(buttons=[])
-        self.assertFalse(upload.drop_hot_config_button(task))
-
-    def test_removing_twice_changes_nothing(self):
-        task = FakeTask()
-        upload.drop_hot_config_button(task)
-        self.assertFalse(upload.drop_hot_config_button(task))
-        self.assertEqual(4, len(task.button_texts()))
+        upload.remove_config_row(task)
+        self.assertEqual(({"游戏语言": ""}, ["游戏语言"]), (task.default_config, list(task.config_type)))
 
     def test_the_upload_setting_is_gone_from_the_settings_tab(self):
         """Leaving it there would be the wrong fix anyway: the gates below it default to on when it is absent."""
         names = [option.name for option in config["global_configs"]]
         self.assertNotIn("配置上传", names)
-        self.assertEqual(["OCR设置"], names)
+        self.assertEqual(["OCR设置", "auto_analysis"], names)
 
 
 if __name__ == "__main__":

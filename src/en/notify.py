@@ -150,7 +150,7 @@ def apply():
 
     def patched_load_config(self):
         # Wrapping here is what puts this ahead of the run loop, which takes its own reference to `enable`
-        # when the mode moves to the Tasks tab. Only the modes have a run to announce.
+        # when the mode moves to the Tasks page. Only the modes have a run to announce.
         if isinstance(self, TriggerTask):
             self.enable = starting(self.enable, self)
         original_load_config(self)

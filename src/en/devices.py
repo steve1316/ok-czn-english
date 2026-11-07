@@ -1,4 +1,4 @@
-"""Keep the Start tab's Refresh from waiting on Android emulators that are not running.
+"""Keep the device list's Refresh from waiting on Android emulators that are not running.
 
 Upstream's Refresh dials every installed emulator over adb to see whether it is up, and finds which ones run by
 reading every process's command line. A closed emulator is dialled anyway and the scan reads hundreds of processes,
