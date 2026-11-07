@@ -20,7 +20,7 @@ sys.path.insert(0, str(REPO_ROOT / "ok_tasks"))
 import utils  # noqa: E402
 
 from src.en.deck import (  # noqa: E402
-    COPY_LIST, GAP_KEY, PORTRAIT, ROW_TOLERANCE, choosing_ap_copies, copying_ap_cards, portrait_of, preferring_target_row, row_of, rows_first,
+    COPY_LIST, GAP_KEY, PORTRAIT, ROW_TOLERANCE, choosing_ap_copies, copying_ap_cards, portrait_of, preferring_target_row, reading_bottom_right_first, row_of, rows_first,
 )
 from src.en.handlers import standing_in  # noqa: E402
 from tests.fakes import FakeBox  # noqa: E402
@@ -122,6 +122,24 @@ class TestRowsFirst(unittest.TestCase):
         # A card exactly at the edge of the band still counts as being on the row.
         cards = [card("far", 0.10), card("edge", 0.10 + ROW_TOLERANCE)]
         self.assertEqual(["edge", "far"], [c["name"] for c in rows_first(cards, 0.10 + 2 * ROW_TOLERANCE)])
+
+
+class TestBottomRightFirst(unittest.TestCase):
+    """Which copy of a card a pick takes when the page shows more than one."""
+
+    def test_upstream_takes_the_bottom_right_copy(self):
+        """Real upstream `select_card` over a one-page grid, its cards in the x order its recognizer returns them."""
+        page = [dict(card("Sword Slash", y), x=x, selected=False, feature_name="attack_in_deck", type="", description="")
+                for x, y in ((0.33, 0.1736), (0.33, 0.5935), (0.66, 0.1740), (0.66, 0.5931))]
+        clicks = []
+        task = types.SimpleNamespace(ocr=lambda: [], box_of_screen=lambda *a: None, log_info=lambda m: None,
+                                     sleep=lambda s: None, feature_exists=lambda n: False, all_texts=[])
+        with standing_in(utils, recognize_cards_in_deck=lambda *a, **k: [dict(c) for c in page],
+                         _simplify_texts=lambda texts: texts, region_white_ratio=lambda *a: 0.0,
+                         _move_and_click=lambda task_, x, y: clicks.append((x, y)),
+                         _get_config_value=lambda task_, key, default: default, _get_game_text=lambda task_, key: key):
+            self.assertTrue(reading_bottom_right_first(utils.select_card, utils)(task, ["Sword Slash"], count=2, action="复制"))
+        self.assertEqual([(0.66, 0.5931), (0.33, 0.5935)], clicks)
 
 
 class TestPreferringTargetRow(unittest.TestCase):

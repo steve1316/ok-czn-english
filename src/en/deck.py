@@ -30,6 +30,9 @@ TAG = "kept combatant's row"
 COPY = "复制"
 COPY_LIST = "复制卡牌列表"
 COPY_TAG = "AP cards copied by default"
+ORDER_TAG = "bottom right first"
+# How finely a card's height is rounded into a row. Cards on one row read a few thousandths apart and rows sit ~0.4 apart.
+ROW_DIGITS = 1
 
 _patched = False
 
@@ -82,6 +85,40 @@ def rows_first(cards, row_y):
     # A stable sort on the boolean keeps the grid's own order within each group, which is what upstream's
     # bottom-up fallbacks expect to be handed.
     return sorted(cards, key=lambda card: abs(card["y"] - row_y) > ROW_TOLERANCE)
+
+
+def bottom_right_first(cards):
+    """Order the deck grid's cards bottom row first, right to left along each row.
+
+    Args:
+        cards: The cards the deck recognizer found, which upstream sorts by x alone.
+
+    Returns:
+        The cards, reordered.
+    """
+    return sorted(cards, key=lambda card: (round(card["y"], ROW_DIGITS), card["x"]), reverse=True)
+
+
+def reading_bottom_right_first(select_card, utils):
+    """Wrap `select_card` so every pick on a page starts at its bottom right card.
+
+    Args:
+        select_card: The function to wrap, upstream's or another patch's.
+        utils: The module holding `recognize_cards_in_deck`.
+
+    Returns:
+        The wrapped function.
+    """
+    def wrapped(task, card_names, count=1, action=""):
+        original = utils.recognize_cards_in_deck
+
+        def ordered(*args, **kwargs):
+            return bottom_right_first(original(*args, **kwargs))
+
+        with standing_in(utils, recognize_cards_in_deck=ordered):
+            return select_card(task, card_names, count=count, action=action)
+
+    return wrapped
 
 
 def preferring_target_row(select_card, utils):
@@ -185,6 +222,8 @@ def install(utils):
     if utils is None:
         return
     wrap(utils, "select_card", lambda select_card: preferring_target_row(select_card, utils), TAG)
+    # After it, so its order is applied first and the kept row is then moved ahead without changing order within it.
+    wrap(utils, "select_card", lambda select_card: reading_bottom_right_first(select_card, utils), ORDER_TAG)
     wrap(utils, "select_card", copying_ap_cards, COPY_TAG)
     wrap(utils, "handle_copy_card_choice", lambda choice: choosing_ap_copies(choice, utils), COPY_TAG)
 
