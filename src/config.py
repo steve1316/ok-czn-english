@@ -5,6 +5,8 @@ import sys
 import numpy as np
 from ok import ConfigOption
 
+from src.en.analysis import analysis_option
+
 version = "dev"
 #不需要修改version, Github Action打包会自动修改
 
@@ -101,7 +103,7 @@ config = {
     'debug': False,  # Optional, default: False
     'use_gui': True, # 目前只支持True
     'config_folder': 'configs', #最好不要修改
-    'global_configs': [ocr_backend_option],
+    'global_configs': [ocr_backend_option, analysis_option],
     'screenshot_processor': make_bottom_right_black, # 在截图的时候对frame进行修改, 可选
     'gui_icon': 'icons/icon.png', #窗口图标, 最好不需要修改文件名
     'wait_until_before_delay': 0,
@@ -138,8 +140,8 @@ config = {
     'window_size': { #ok-script窗口大小
         'width': 1200,
         'height': 800,
-        'min_width': 600,
-        'min_height': 450,
+        'min_width': 1000,
+        'min_height': 600,
     },
     'supported_resolution': {
         'ratio': '16:9', #支持的游戏分辨率
@@ -157,6 +159,7 @@ config = {
         },
     'screenshots_folder': "screenshots", #截图存放目录, 每次重新启动会清空目录
     'gui_title': 'ok-czn-english',  #窗口名
+    'game_name': 'Chaos Zero Nightmare',  # Shown on the run bar
     'template_matching': { # 可选, 如使用OpenCV的模板匹配
         'coco_feature_json': os.path.join('ok_tasks/assets', 'coco_annotations.json'), #coco格式标记, 需要png图片, 在debug模式运行后, 会对进行切图仅保留被标记部分以减少图片大小
         'default_horizontal_variance': 0.002, #默认x偏移, 查找不传box的时候, 会根据coco坐标, match偏移box内的

@@ -635,3 +635,12 @@ msgstr "Control"
 
 msgid "Survival"
 msgstr "Survival"
+
+msgid "auto_analysis"
+msgstr "自动分析"
+
+msgid "Auto Analysis"
+msgstr "自动分析"
+
+msgid "Record what the game's Auto plays in Chaos battles, for offline study. Costs extra OCR on every battle frame."
+msgstr "记录游戏自动战斗在混沌战斗中的出牌，用于离线分析。每个战斗帧都会额外消耗一次 OCR。"
