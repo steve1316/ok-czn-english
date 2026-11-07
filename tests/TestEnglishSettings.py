@@ -21,7 +21,7 @@ import polib
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.en import etched_memory, overrides, picker, reobserve, sections, upload  # noqa: E402
+from src.en import etched_memory, forms, overrides, picker, reobserve, sections, upload  # noqa: E402
 from src.en.game_data import CARDS, COMBATANTS, EQUIPMENT, NODE_TYPES  # noqa: E402
 from src.en.game_text import DESCRIPTIONS  # noqa: E402
 from src.en.framework import import_ui  # noqa: E402
@@ -312,6 +312,78 @@ class TestSeasonSections(unittest.TestCase):
         layout = self.card.viewLayout
         self.assertEqual(layout.indexOf(section.header) + 1, layout.indexOf(section.rows[0]))
         self.assertTrue(all(row.isHidden() for row in section.rows))
+
+
+class TestSettingsForm(unittest.TestCase):
+    """The patches on the real settings form and Settings page, whose squeezed rows a stand-in could not show."""
+
+    @classmethod
+    def setUpClass(cls):
+        # Offscreen has to be chosen before `QApplication` exists.
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PySide6.QtWidgets import QApplication
+        from ok import og
+        from ok.util.config import Config
+        from ok.util.GlobalConfig import GlobalConfig, register_basic_options, register_notification_options
+
+        cls.qt_app = QApplication.instance() or QApplication([])
+        og.app = EchoApp()
+        cls.config_class = Config
+        cls.folder = tempfile.TemporaryDirectory()
+        cls.config_form = import_ui("tasks.config_form", "ConfigForm")
+        cls.list_editor = import_ui("tasks.config_editors", "ListEditor")
+        with mock.patch.object(Config, "config_folder", cls.folder.name):
+            cls.global_config = GlobalConfig(None)
+            register_basic_options(cls.global_config)
+            register_notification_options(cls.global_config)
+            for section, keys in forms.HIDDEN_SETTINGS.items():
+                for key in keys:
+                    cls.global_config.get_config(section)[key] = True
+            with mock.patch.object(og, "global_config", cls.global_config, create=True):
+                forms.apply()
+            forms.hide_settings(cls.global_config)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.folder.cleanup()
+
+    def test_a_long_description_gets_its_full_height_and_no_more(self):
+        # Too short cuts the text off, which is what the form's alignment did. Too tall would spread a short form down the page.
+        default = {"long": False, "short": False}
+        config = self.config_class("rows", default, folder=self.folder.name)
+        form = self.config_form(None, config, default, {"long": "word " * 150, "short": "A line."}, {})
+        form.resize(480, 3000)
+        form.show()
+        self.qt_app.processEvents()
+        for row in form.config_widgets:
+            with self.subTest(row.key):
+                self.assertEqual(row.layout().totalHeightForWidth(row.width()), row.height())
+
+    def test_a_list_row_keeps_its_value_under_the_text_and_only_a_button_on_the_right(self):
+        # The wide value column is what left a list row's description a sliver of the row.
+        config = self.config_class("lists", {"items": []}, folder=self.folder.name)
+        row = self.list_editor({}, config, "items")
+        row.resize(640, 200)
+        row.show()
+        self.qt_app.processEvents()
+        self.assertTrue(row.list_label.isHidden(), "an empty list leaves a blank line")
+        self.assertEqual(row.modify_button.width(), row.control.width())
+        config["items"] = ["Strike"]
+        row.update_value()
+        self.assertFalse(row.list_label.isHidden())
+        self.assertGreater(row._row_layout.itemAt(0).layout().indexOf(row.list_label), 0)
+
+    def test_hidden_settings_are_off_and_gone_from_the_page(self):
+        # A hidden switch saved on would keep messaging an app, or serving MCP, with nothing on screen to stop it.
+        for section, keys in forms.HIDDEN_SETTINGS.items():
+            option, saved = self.global_config.config_options[section], self.global_config.get_config(section)
+            form = self.config_form(None, saved, option.default_config, option.config_description, option.config_type)
+            shown = {row.key for row in form.config_widgets}
+            self.assertTrue(shown, section)
+            for key in keys:
+                with self.subTest(key):
+                    self.assertFalse(saved[key])
+                    self.assertNotIn(key, shown)
 
 
 class TestReshape(unittest.TestCase):
