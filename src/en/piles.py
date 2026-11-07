@@ -107,16 +107,15 @@ def signature(text):
     return NOT_A_LETTER.sub("", KEYWORD_TAGS.sub("", text).lower())
 
 
-def version_of(name, text):
-    """Find which version of a card a text read off the screen is.
+def closest_version(name, text):
+    """Find which version of a card a text read off the screen is, leaving out any Divine Epiphany lines.
 
     Args:
         name: The canonical card name.
         text: The card's effect text as read.
 
     Returns:
-        The data's text for the closest version: the base, or one of its `EPIPHANIES`. The base when nothing comes close. Any Divine
-        Epiphany lines the card holds follow it.
+        The data's text for the closest version: the base, or one of its `EPIPHANIES`. The base when nothing comes close.
     """
     base = DESCRIPTIONS.get(name) or ""
     read = signature(text)
@@ -125,7 +124,34 @@ def version_of(name, text):
         score = difflib.SequenceMatcher(None, read, signature(version)).ratio()
         if score > best_score:
             best, best_score = version, score
+    return best
+
+
+def version_of(name, text):
+    """Find which version of a card a text read off the screen is, with any Divine Epiphany lines it holds.
+
+    Args:
+        name: The canonical card name.
+        text: The card's effect text as read.
+
+    Returns:
+        The closest version's text, from `closest_version`, followed by the Divine Epiphany lines the card holds.
+    """
+    best = closest_version(name, text)
     return "\n".join((best, *divine_lines(text, best)))
+
+
+def is_divine(name, text):
+    """Say whether a card's text holds a Divine Epiphany line under its own wording.
+
+    Args:
+        name: The canonical card name.
+        text: The card's effect text as read.
+
+    Returns:
+        True when `divine_lines` finds one past the closest version.
+    """
+    return bool(divine_lines(text, closest_version(name, text)))
 
 
 def divine_lines(text, version):

@@ -23,6 +23,7 @@ sys.path.insert(0, str(REPO_ROOT / "ok_tasks"))
 
 import utils  # noqa: E402
 
+from src.en import epiphany  # noqa: E402
 from src.en.handlers import standing_in  # noqa: E402
 
 from src.en.pins import (  # noqa: E402
@@ -273,7 +274,7 @@ class TestNarrowing(unittest.TestCase):
 
     def test_only_the_choosing_sites_narrow(self):
         # The counting callers - handle_mask_card above all - must not be on this list.
-        self.assertEqual({"select_card", "handle_card_reward", "handle_view_original"}, set(CHOOSERS))
+        self.assertEqual({"select_card", "handle_card_reward"}, set(CHOOSERS))
 
 
 class TestTakingOnSight(unittest.TestCase):
@@ -381,6 +382,30 @@ class TestInstall(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertEqual([], getattr(self.utils, name)(FakeTask()))
                 self.assertIsNot(getattr(self.utils, name), self.recognizers[name])
+
+
+class TestEpiphanyVariant(unittest.TestCase):
+    """Which variant an Epiphany takes, where a Divine Epiphany outranks the pin."""
+
+    def test_a_divine_variant_beats_a_pin_and_the_most_ap_beats_a_random_pick(self):
+        # Real upstream `handle_view_original`, so this breaks if it stops reading through `recognize_cards` or falling back on `random`.
+        # The first case is the 10:31 Chaos screen, whose middle card carried Vytor's "Draw 1 card(s) of this unit".
+        divine = ("Tactical Analysis", ("+50% Heal Amount for2Waveturn", "Heal164%+50% Heal Amount for1Wave2 turns* Draw 1 card(s) of thisunit",
+                                        "of this unit is activated,For 1 turn, when a card1 Wave"), (True, False, False))
+        ap = ("Ignition Slash", ("500% Damage2 Tenacity Damage", "400% DamageGain 1 APDraw 1 2-Cost or higher card(s)", "450% Damage2 Tenacity DamageGain 2 AP"),
+              (False, False, False))
+        caption = FakeBox("查看原件", 0.890, 0.051)
+        for case, (name, texts, pinned), expected in (("divine over pinned", divine, 0.5), ("most AP", ap, 0.7)):
+            with self.subTest(case=case):
+                offer = [{"name": name, "description": text, "pinned": pin, "x": x, "y": 0.3} for text, pin, x in zip(texts, pinned, (0.2, 0.5, 0.7))]
+                clicks = []
+                with standing_in(utils, find_box_at_point=lambda *a: caption, _get_game_text=lambda task_, text: text,
+                                 recognize_cards=lambda *a, **k: [dict(card) for card in offer], _get_card_list=lambda *a: [],
+                                 find_target_card=lambda task_: ([], []), _matching_meditation_card_names=lambda *a: [],
+                                 _move_and_click=lambda task_, x, y: clicks.append(x)):
+                    epiphany.choosing_variant(utils.handle_view_original, utils)(types.SimpleNamespace(log_info=lambda message: None))
+                self.assertEqual([expected], clicks)
+
 
 if __name__ == "__main__":
     unittest.main()

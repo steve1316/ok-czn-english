@@ -36,12 +36,11 @@ RECOGNIZERS = {
     "recognize_cards": PICK_OFFSET,
     "recognize_cards_in_deck": DECK_OFFSET,
 }
-# The places a card is actually chosen, and the recognizer each one narrows. `select_card` covers the removal
-# and Epiphany grids; the other two are the screens that offer three cards at once.
+# The places a card is actually chosen, and the recognizer each one narrows. `select_card` covers the removal and Epiphany grids, and
+# `handle_card_reward` the three-card pick. The Epiphany variant pick is left to `epiphany`, where a Divine Epiphany outranks a pin.
 CHOOSERS = {
     "select_card": "recognize_cards_in_deck",
     "handle_card_reward": "recognize_cards",
-    "handle_view_original": "recognize_cards",
 }
 # The `select_card` action for a removal, where a pinned card is the one to keep rather than the one to take.
 REMOVE = "移除"
