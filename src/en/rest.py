@@ -3,13 +3,15 @@
 Upstream rests, meditates or buys a Sortie Epiphany only while `node_status["flash_or_rest"]` is set, and enters
 the Dellang shop only while `node_status["shop"]` is. It sets both on the route selection screen and clears each
 once it is spent - but every fresh status starts with both off, so a run started anywhere else walks past them.
+Its Sortie copy of the rest handler also never looks for the free Epiphany icon that the Chaos one clicks.
 """
 
 import re
 
 from ok import Logger
 
-from src.en.handlers import loaded, register, wrap
+from src.en.handlers import insert_before, loaded, register, wrap
+from src.en.screen import centre_of
 
 logger = Logger.get_logger(__name__)
 
@@ -35,6 +37,9 @@ INTERACTIONS = re.compile(r"safe\s*zone\s*interactions\D*(\d+)", re.I)
 GATED_ON_FLAG = {"utils": "handle_rest", "utils_sortie": "handle_rest_sortie"}
 # Every handler that reads `SHOP`: the two safe zone screens that offer the shop, and the shop itself.
 READS_SHOP = (*GATED_ON_FLAG.items(), ("utils", "handle_shop"))
+# The camp's free Epiphany icon and where to look for it, as `handle_rest` searches.
+FREE_EPIPHANY = ["special_flash_luosi", "special_flash_luosi2"]
+FREE_EPIPHANY_REGION = (0.219, 0.208, 0.786, 0.814)
 
 _patched = False
 
@@ -148,8 +153,31 @@ def taking_the_offered_interaction(original):
     return handler
 
 
+def free_epiphany_handler(utils):
+    """Build the handler for Sortie's list that clicks the camp's free Epiphany icon, as `handle_rest` does.
+
+    Args:
+        utils: Upstream's `utils` module, for the `_move_and_click` that `handle_rest` clicks the icon with.
+
+    Returns:
+        The handler.
+    """
+    def handle_free_epiphany(task):
+        # Battle frames reach this too, and a search that misses costs ~90ms at 1080p against ~2us for this read. A count of 0 still searches.
+        if interactions_left(task) is None:
+            return False
+        icon = task.find_one(feature_name=FREE_EPIPHANY, box=task.box_of_screen(*FREE_EPIPHANY_REGION))
+        if not icon:
+            return False
+        utils._move_and_click(task, *centre_of(icon, task.width, task.height))
+        task.sleep(1)
+        return True
+
+    return handle_free_epiphany
+
+
 def install(utils):
-    """Start every fresh run status ready to rest and shop, and take an interaction the game is still offering.
+    """Start every fresh run status ready to rest and shop, take an interaction the game is still offering, and take Sortie's free Epiphany.
 
     Args:
         utils: Upstream's `utils` module, or None when it has not been imported yet.
@@ -164,6 +192,7 @@ def install(utils):
         wrap(loaded(module_name), handler_name, taking_the_offered_interaction, OFFERED_TAG)
     for module_name, handler_name in READS_SHOP:
         wrap(loaded(module_name), handler_name, lambda handler: deciding_the_shop(handler, utils), SHOP_DECIDED_TAG)
+    insert_before("handle_rest_sortie", free_epiphany_handler(utils), only=("utils_sortie",))
 
 
 def apply():

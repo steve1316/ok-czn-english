@@ -21,6 +21,8 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "ok_tasks"))
 
 import utils  # noqa: E402
+import utils_chaos  # noqa: E402
+import utils_sortie  # noqa: E402
 
 from src.en import notify, obtain, rest, stuck  # noqa: E402
 from tests.fakes import FakeBox  # noqa: E402
@@ -329,6 +331,59 @@ class TestQuickObtain(unittest.TestCase):
         self.assertEqual(["获得"], clicks)
         self.assertTrue(waits)
         self.assertLessEqual(max(waits), obtain.SETTLE)
+
+
+class TestSortieFreeEpiphany(unittest.TestCase):
+    """Sortie's rest handler never looked for the icon, so its camps walked past a free Epiphany."""
+
+    OFFERED = "Available Safe Zone Interactions: 1"
+    SPENT = "Available Safe Zone Interactions: 0"
+    ICON = FakeBox("special_flash_luosi", 0.343, 0.5)
+
+    @classmethod
+    def setUpClass(cls):
+        rest.install(utils)
+
+    def seeing(self, icon, line=OFFERED):
+        """Build a task whose icon search finds the given box.
+
+        Args:
+            icon: What `find_one` returns, or None.
+            line: The safe zone line on screen, or None.
+
+        Returns:
+            A `(task, searched, clicked)` trio, where the two lists collect each search and click.
+        """
+        searched, clicked = [], []
+        task = SimpleNamespace(
+            width=1920, height=1080, all_texts=[FakeBox(line, 0.842, 0.771)] if line else [], log_info=lambda message: None,
+            sleep=lambda seconds: None, move_relative=lambda x, y: None, click=lambda x, y: clicked.append((x, y)),
+            box_of_screen=lambda *region: region, find_one=lambda feature_name, box: searched.append((feature_name, box)) or icon)
+        return task, searched, clicked
+
+    def test_it_runs_just_ahead_of_sorties_rest_handler_and_only_there(self):
+        # Off the list, the handler would be correct and never run.
+        names = [handler.__name__ for handler in utils_sortie.PAGE_HANDLERS]
+        self.assertEqual(names.index("handle_rest_sortie") - 1, names.index("handle_free_epiphany"))
+        self.assertNotIn("handle_free_epiphany", [handler.__name__ for handler in utils_chaos.PAGE_HANDLERS])
+
+    def test_sortie_takes_the_icon_exactly_as_chaos_does(self):
+        # Against the real Chaos handler, so upstream's search moving away from the copy in `rest.py` fails here.
+        chaos, chaos_searched, chaos_clicked = self.seeing(self.ICON)
+        sortie, sortie_searched, sortie_clicked = self.seeing(self.ICON)
+        self.assertIs(True, utils.handle_rest(chaos))
+        self.assertIs(True, rest.free_epiphany_handler(utils)(sortie))
+        self.assertEqual(chaos_searched, sortie_searched)
+        self.assertEqual(chaos_clicked, sortie_clicked)
+        self.assertEqual(1, len(sortie_clicked))
+
+    def test_the_search_runs_only_at_a_safe_zone_and_a_miss_falls_through(self):
+        # A count of 0 still searches, since the line is there to say this is a safe zone.
+        for line, searches in ((None, 0), (self.OFFERED, 1), (self.SPENT, 1)):
+            with self.subTest(line=line):
+                task, searched, _ = self.seeing(None, line)
+                self.assertFalse(rest.free_epiphany_handler(utils)(task))
+                self.assertEqual(searches, len(searched))
 
 
 if __name__ == "__main__":

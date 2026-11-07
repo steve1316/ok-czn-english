@@ -67,6 +67,7 @@ ANCHORS_IN_LISTS = {
     "handle_mask_card": ("utils_chaos",),
     "handle_member_selection": ("utils_sortie",),
     "handle_negotiation": ("utils_chaos", "utils_sortie"),
+    "handle_rest_sortie": ("utils_sortie",),
     "handle_return_to_draw_pile": ("utils_sortie",),
     "handle_route_selection": ("utils_sortie",),
     "handle_save_target_member": ("utils_chaos",),
