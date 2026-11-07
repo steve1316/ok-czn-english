@@ -142,6 +142,7 @@ class TestUpstreamManifest(unittest.TestCase):
             ("tasks.config_form", "ConfigForm", "_adjust_config_content_size"),
             ("tasks.config_form", "ConfigContentMixin", "_ConfigContentMixin__apply_sub_config_visibility"),
             ("tasks.config_editors", "ListEditor", "open_dialog"),
+            ("kit.window", "TitleBar", "set_title"),
             ("tasks.ModifyListDialog", "ModifyListDialog", "_create_available_options_widget"),
             ("tasks.ModifyListDialog", "ModifyListDialog", "update_option_buttons"),
             ("tasks.ModifyListDialog", "ModifyListDialog", "filter_available_options"),
