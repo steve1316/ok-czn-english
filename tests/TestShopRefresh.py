@@ -25,7 +25,7 @@ import utils  # noqa: E402
 from tests.fakes import FakeBox as Box  # noqa: E402
 
 from src.en.shop import (  # noqa: E402
-    PAID_THRESHOLD, SHOP_FLOOR, free_refresh_box, never_paying, reading_names_whole, refusing_free_refresh, skipping_poor_shop,
+    PAID_THRESHOLD, SHOP_FLOOR, credits_read, free_refresh_box, never_paying, reading_names_whole, refusing_free_refresh, skipping_poor_shop,
 )
 
 WIDTH, HEIGHT = 1920, 1080
@@ -212,6 +212,22 @@ class TestSkippingPoorShop(unittest.TestCase):
                 seen = []
                 skipping_poor_shop(lambda task: seen.append(task.node_status["shop"]), utils)(task)
                 self.assertEqual([entered], seen)
+
+
+class TestCreditsRead(unittest.TestCase):
+    """Chaos draws the credits left of where upstream looks, so a fixed-point read saw 0 and the shop never paid for a removal."""
+
+    CASES = (
+        # Measured off a Chaos equipment screen: the Faint Memory shard count sits left of the credits and must not be taken.
+        ("Chaos top bar", [FakeBox("1543/1543", 0.212, 0.052), FakeBox("9", 0.565, 0.052), FakeBox("1140", 0.647, 0.052)], 1140),
+        ("Sortie top bar", [FakeBox("K", 0.684, 0.052), FakeBox("113", 0.734, 0.051)], 113),
+        ("nothing read", [FakeBox("1543/1543", 0.212, 0.052)], None),
+    )
+
+    def test_the_credits_are_read_wherever_the_bar_puts_them(self):
+        for why, boxes, expected in self.CASES:
+            with self.subTest(why):
+                self.assertEqual(credits_read(FakeTask(boxes)), expected)
 
 
 if __name__ == "__main__":
