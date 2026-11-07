@@ -5,6 +5,9 @@ nothing and logs nothing above INFO, and the patch simply stops existing. The ru
 upstream, which on the Global client means the fork's whole reason for existing is gone.
 """
 
+import ast
+import importlib
+import inspect
 import sys
 import unittest
 from pathlib import Path
@@ -18,7 +21,9 @@ import utils_chaos  # noqa: E402
 import utils_sortie  # noqa: E402
 import utils_story  # noqa: E402
 
+from src.en import shell  # noqa: E402
 from src.en.battle import BATTLE_SCREENS  # noqa: E402
+from src.en.framework import import_ui  # noqa: E402
 
 # Every name the fork reaches for, and the module that has to carry it. Handlers it wraps or replaces, helpers
 # it swaps with `standing_in`, and the few it calls outright.
@@ -116,24 +121,48 @@ class TestUpstreamManifest(unittest.TestCase):
         self.assertTrue(hasattr(BaseTask, "after_init"))
         self.assertTrue(hasattr(BaseTask, "load_config"))
 
-    def test_the_framework_still_offers_the_tasks_tab_seams(self):
-        # dashboard.py and shell.py replace these by name. A rename puts back upstream's run-on title and unlocked Starts in silence.
-        from ok.gui.tasks.TaskCard import TaskCard
-        from ok.gui.tasks.TaskTab import TaskTab
+    def test_every_ui_class_the_patches_look_up_still_exists(self):
+        # `import_ui` skips a patch when a class is gone and only logs it, so the feature vanishes with no error to see.
+        lookups = set()
+        for path in (REPO_ROOT / "src" / "en").glob("*.py"):
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "import_ui":
+                    lookups.add(tuple(argument.value for argument in node.args))
+        self.assertTrue(lookups)
+        for module, name in sorted(lookups):
+            with self.subTest(module=module, name=name):
+                self.assertIsNotNone(import_ui(module, name))
 
-        for owner, name in ((TaskCard, "update_buttons"), (TaskCard, "show_instructions"), (TaskTab, "update_task_info"), (TaskTab, "time_elapsed")):
+    def test_the_framework_still_offers_the_ui_seams(self):
+        # The patches replace these by name. A rename puts back the stock dialogs, flat settings and unlocked Starts in silence.
+        seams = (
+            ("tasks.tasks_page", "TaskRow", "refresh"),
+            ("tasks.tasks_page", "TaskDetail", "refresh"),
+            ("tasks.tasks_page", "TasksPage", "_on_task_event"),
+            ("tasks.config_form", "ConfigForm", "add_buttons"),
+            ("tasks.config_form", "ConfigForm", "_adjust_config_content_size"),
+            ("tasks.config_form", "ConfigContentMixin", "_ConfigContentMixin__apply_sub_config_visibility"),
+            ("tasks.config_editors", "ListEditor", "open_dialog"),
+            ("tasks.ModifyListDialog", "ModifyListDialog", "_create_available_options_widget"),
+            ("tasks.ModifyListDialog", "ModifyListDialog", "update_option_buttons"),
+            ("tasks.ModifyListDialog", "ModifyListDialog", "filter_available_options"),
+            ("about.AboutTab", "AboutTab", "open_link"),
+            ("MainWindow", "MainWindow", "set_window_size"),
+            ("MainWindow", "MainWindow", "show_notification"),
+        )
+        for module, owner, name in seams:
+            with self.subTest(owner=owner, name=name):
+                self.assertTrue(hasattr(import_ui(module, owner), name), f"{owner}.{name} is gone")
+
+    def test_upstream_still_refreshes_configs_through_the_replaced_name(self):
+        # shell.py swaps this module attribute. A rename leaves imported configs saved while the form shows old values.
+        for name in shell.CONFIG_REFRESH_CALLERS:
             with self.subTest(name):
-                self.assertTrue(hasattr(owner, name), f"{owner.__name__}.{name} is gone")
+                self.assertTrue(hasattr(importlib.import_module(name), "refresh_task_config_widgets"))
 
     def test_the_about_tab_still_lists_upstream_by_its_url(self):
         # shell.py swaps the Chaos Zero Nightmare card by this exact URL. A moved repo puts upstream's link back in silence.
-        import inspect
-
-        from ok.gui.about import AboutTab
-
-        from src.en.shell import UPSTREAM_REPO
-
-        self.assertIn(f'"url": "{UPSTREAM_REPO}"', inspect.getsource(AboutTab))
+        self.assertIn(f'"url": "{shell.UPSTREAM_REPO}"', inspect.getsource(import_ui("about.AboutTab", "AboutTab")))
 
     def test_the_framework_still_offers_the_emulator_seams(self):
         # `devices.py` replaces the running-emulator scan and classifies by name with `is_emulator`. A rename leaves the

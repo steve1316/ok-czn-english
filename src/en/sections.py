@@ -8,11 +8,10 @@ turning the feature off, which it does not. These headers are display only.
 from dataclasses import dataclass, field
 from functools import partial
 
-from PySide6.QtCore import QMargins
 from PySide6.QtWidgets import QHBoxLayout, QWidget
-from qfluentwidgets import FluentIcon, TransparentPushButton
 
 from ok import Logger, og
+from ok.ui.qt.kit.buttons import Button
 
 from src.en.framework import import_ui
 from src.en.etched_memory import ENTER_MEMORY_END, ETCHED_MEMORY, MEMORY_BONUS, MEMORY_CARD
@@ -31,10 +30,9 @@ SECTIONS = [
 ]
 # Where a card keeps its built sections, as a list of `Section`.
 SECTIONS_ATTR = "_en_sections"
+# A header's chevron while its section is open and while it is folded.
+OPEN_ICON, FOLDED_ICON = "chevron-down", "chevron-right"
 
-# ok-script's row styling and sub-config indent, resolved once in `apply`.
-_configure_row = None
-_indent = 0
 _applied = False
 
 
@@ -45,7 +43,7 @@ class Section:
     # The row widget holding the button, placed directly above the first folded row.
     header: QWidget
     # The chevron button the user clicks, whose icon shows the open state.
-    button: TransparentPushButton
+    button: Button
     # The settings row widgets under this header, in display order.
     rows: list = field(default_factory=list)
     # Whether the rows are currently shown. Always starts collapsed.
@@ -63,9 +61,7 @@ def _build_header(title):
     """
     header = QWidget()
     layout = QHBoxLayout(header)
-    if _configure_row is not None:
-        _configure_row(header, layout)
-    button = TransparentPushButton(FluentIcon.CHEVRON_RIGHT, og.app.tr(title))
+    button = Button(og.app.tr(title), FOLDED_ICON, "subtle")
     layout.addWidget(button)
     layout.addStretch(1)
     return header, button
@@ -77,7 +73,7 @@ def _show_state(section):
     Args:
         section: The `Section` to update.
     """
-    section.button.setIcon(FluentIcon.CHEVRON_DOWN_MED if section.expanded else FluentIcon.CHEVRON_RIGHT)
+    section.button.set_icon(OPEN_ICON if section.expanded else FOLDED_ICON)
     for row in section.rows:
         row.setVisible(section.expanded)
 
@@ -115,7 +111,7 @@ def add_sections(card):
     """Give a freshly built settings card its collapsible sections.
 
     Args:
-        card: The card whose rows were just built, before its Operation row is added and it is measured.
+        card: The card whose rows were just built, before it is measured.
     """
     sections = []
     for title, keys in SECTIONS:
@@ -129,7 +125,7 @@ def add_sections(card):
             card.config_keys.remove(key)
             card.config_keys.append(key)
             row = card.config_widget_by_key[key]
-            row.layout.setContentsMargins(row.layout.contentsMargins() + QMargins(_indent, 0, 0, 0))
+            row.set_indent(True)
             section.rows.append(row)
         button.clicked.connect(partial(toggle, card, section))
         sections.append(section)
@@ -152,18 +148,18 @@ def toggle(card, section, *_):
 
 def apply():
     """Hook the settings cards so seasonal settings are built into collapsible sections."""
-    global _applied, _configure_row, _indent
+    global _applied
     if _applied:
         return
-    mixin = import_ui("tasks.ConfigCard", "ConfigContentMixin")
+    form = import_ui("tasks.config_form", "ConfigForm")
+    mixin = import_ui("tasks.config_form", "ConfigContentMixin")
     # Private and name-mangled, so looked up rather than referenced: a rename skips the patch instead of raising.
     original_apply_visibility = getattr(mixin, "_ConfigContentMixin__apply_sub_config_visibility", None)
-    if mixin is None or original_apply_visibility is None:
-        logger.warning("settings cards have changed shape, leaving seasonal settings unfolded")
+    if form is None or original_apply_visibility is None:
+        logger.warning("settings forms have changed shape, leaving seasonal settings unfolded")
         return
-    _configure_row = import_ui("common.design_system", "configure_row")
-    _indent = getattr(import_ui("common.design_system", "DesignToken"), "SUBCONFIG_INDENT", 0)
-    original_add_buttons = mixin.add_buttons
+    # On the form itself, which overrides the mixin's hook. The Settings page uses it too, and its keys match no section.
+    original_add_buttons = form.add_buttons
 
     def patched_add_buttons(self):
         # The last step before the card measures itself, so the folded rows are never measured as shown.
@@ -183,7 +179,7 @@ def apply():
         except Exception as error:
             logger.warning(f"could not re-fold seasonal settings: {error}")
 
-    mixin.add_buttons = patched_add_buttons
+    form.add_buttons = patched_add_buttons
     mixin._ConfigContentMixin__apply_sub_config_visibility = patched_apply_visibility
     _applied = True
     logger.info("seasonal settings folded into sections")

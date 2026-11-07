@@ -1,6 +1,6 @@
 """Decide who gets a piece of equipment, what is worth buying, and refuse to pass over a Mythic one.
 
-Six narrow changes inside `handle_equipment`, the shop and the Tasks tab. None copies a handler. The Equipment
+Six narrow changes inside `handle_equipment`, the shop and the Tasks page. None copies a handler. The Equipment
 screen marks the row with a free slot of the right kind "Recommended", and upstream never reads it - it picks
 by the save-scum target instead, or by whoever is listed first on every Sortie run, since only Chaos carries
 that setting.
@@ -62,7 +62,7 @@ SPREE = "_en_spree"
 # What the colour read hands back for a slot with nothing in it. `None` means it could not see, which is a
 # different thing and must not be read as room to spare.
 EMPTY_SLOT = ""
-# What a slot with nothing in it is called in the Tasks tab's row. A dash rather than a word, because most of
+# What a slot with nothing in it is called in the Tasks page's row. A dash rather than a word, because most of
 # the nine slots read this way early in a run and the row scans better when only what is worn carries a name.
 EMPTY_TIER = "-"
 # What the top bucket is called once a colour has confirmed it, and what an unconfirmed one is called instead.
@@ -248,7 +248,7 @@ def worn_line(columns):
 
 
 def report_worn(task, columns):
-    """Leave what the team is wearing where the Tasks tab's Equipment row reads it.
+    """Leave what the team is wearing where the Tasks page's Equipment row reads it.
 
     Both screens that show all three combatants report through here, so the row's wording and its
     leave-it-alone rule are written once.

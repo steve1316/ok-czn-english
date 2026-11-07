@@ -21,7 +21,6 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from PySide6.QtCore import Qt  # noqa: E402
 from PySide6.QtWidgets import QApplication, QStyle, QWidget  # noqa: E402
-from qfluentwidgets import ToolTipFilter  # noqa: E402
 
 from ok import og  # noqa: E402
 
@@ -34,7 +33,7 @@ from src.en.reobserve import MODIFIER_BLACKLIST, MODIFIER_HELP, MODIFIERS  # noq
 from tests.fakes import EchoApp  # noqa: E402
 
 ModifyListDialog = import_ui("tasks.ModifyListDialog", "ModifyListDialog")
-ModifyListItem = import_ui("tasks.ModifyListItem", "ModifyListItem")
+ListEditor = import_ui("tasks.config_editors", "ListEditor")
 
 
 class TestOptionPicker(unittest.TestCase):
@@ -76,7 +75,7 @@ class TestOptionPicker(unittest.TestCase):
         return [view.item(row).text() for row in range(view.count()) if not view.isRowHidden(row)]
 
     def test_a_long_roster_builds_the_list_and_no_buttons(self):
-        """One real PushButton per option is what makes the stock dialog take seconds to open."""
+        """One real `Button` per option is what makes the stock dialog take seconds to open."""
         dialog = self.open_picker(CARDS)
         self.assertEqual(len(CARDS), dialog.option_list.count())
         self.assertEqual({}, dialog.option_buttons)
@@ -146,10 +145,6 @@ class TestOptionPicker(unittest.TestCase):
         """The style is set on the one view, so hovering anything else in the app behaves as it always did."""
         self.assertGreater(self.parent.style().styleHint(QStyle.SH_ToolTip_WakeUpDelay, None, self.parent), 0)
 
-    def test_the_list_keeps_its_fluent_styling(self):
-        """A widget-level style can knock out a stylesheet, which would leave the list unthemed."""
-        self.assertTrue(self.open_picker(CARDS).option_list.styleSheet())
-
     def test_saved_rows_carry_their_effect_on_the_selected_side(self):
         """Upstream fills that list inside `__init__`, so the rows are labelled from the update pass instead."""
         dialog = self.open_picker(CARDS, selected=["Absolute Zero"])
@@ -178,8 +173,8 @@ class TestOptionPicker(unittest.TestCase):
         Returns:
             The two-column layout, or None when the dialog has no roster and so no such row.
         """
-        for index in range(dialog.viewLayout.count()):
-            row = dialog.viewLayout.itemAt(index).layout()
+        for index in range(dialog.body.count()):
+            row = dialog.body.itemAt(index).layout()
             if row is not None and row.count() == 2 and all(row.itemAt(c).layout() is not None for c in range(2)):
                 return row
         return None
@@ -199,7 +194,7 @@ class TestOptionPicker(unittest.TestCase):
     def open_from_row(self, key, description, options=None, selected=()):
         """Open a picker the way clicking Modify on a settings row does.
 
-        Going through `ModifyListItem` is the whole point - it is what hands the dialog its help text, and a
+        Going through `ListEditor` is the whole point - it is what hands the dialog its help text, and a
         dialog built directly would never receive any.
 
         Args:
@@ -213,12 +208,11 @@ class TestOptionPicker(unittest.TestCase):
         """
         opened = {}
         original_exec = ModifyListDialog.exec
-        # The real `clicked` builds the dialog and then blocks on exec, so catch it there.
+        # The real `open_dialog` builds the dialog and then blocks on exec, so catch it there.
         ModifyListDialog.exec = lambda dialog: opened.setdefault("dialog", dialog)
         try:
-            row = ModifyListItem({key: description} if description else {}, {key: list(selected)}, key,
-                                 options_available=options)
-            row.clicked()
+            row = ListEditor({key: description} if description else {}, {key: list(selected)}, key, options_available=options)
+            row.open_dialog()
         finally:
             ModifyListDialog.exec = original_exec
         dialog = opened["dialog"]
@@ -236,7 +230,7 @@ class TestOptionPicker(unittest.TestCase):
         Returns:
             The text, or None when no help label was inserted.
         """
-        item = dialog.viewLayout.itemAt(0)
+        item = dialog.body.itemAt(0)
         widget = item.widget() if item is not None else None
         return widget.text() if widget is not None and hasattr(widget, "text") else None
 
@@ -261,14 +255,13 @@ class TestOptionPicker(unittest.TestCase):
         self.assertIsNone(picker._pending_effects)
 
     def test_a_modifier_shows_its_own_effect_not_the_card_of_the_same_name(self):
-        """Plague and Anxiety are also cards, and a short roster's buttons have no tooltips upstream, let alone themed ones."""
+        """Plague and Anxiety are also cards, and a short roster's buttons have no tooltips upstream."""
         dialog = self.open_from_row(MODIFIER_BLACKLIST, None, MODIFIERS, selected=["Plague"])
         expected = escape(MODIFIER_HELP["Plague"])
         for side, tooltip in (("available", dialog.option_buttons["Plague"].toolTip()), ("selected", dialog.list_widget.item(0).toolTip())):
             with self.subTest(side):
                 self.assertIn(expected, tooltip)
                 self.assertNotIn(escape(DESCRIPTIONS["Plague"].splitlines()[0]), tooltip)
-        self.assertTrue(dialog.option_buttons["Tyrant"].findChildren(ToolTipFilter))
 
     def test_confirm_returns_canonical_values_in_order(self):
         """The config stores the canonical value, so handing back display text would stop OCR matching."""

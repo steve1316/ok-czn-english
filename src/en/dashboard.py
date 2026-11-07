@@ -1,4 +1,4 @@
-"""Draw the Tasks tab's Info rows in reading order and plain wording, title the run plainly, and show the table while idle.
+"""Draw the Tasks page's Info rows in reading order and plain wording.
 
 ok-script draws one row per `task.info` entry in insertion order, so upstream's order is simply the order
 `log_credit` and `log_node_status` happen to write in: the version and game language near the top, the win rate
@@ -6,9 +6,7 @@ at the very bottom, and the run's position buried under five yes/no flags. The t
 run and never shown at all.
 """
 
-import types
-
-from ok import Logger, og
+from ok import Logger
 
 from src.en.framework import import_ui
 from src.en.log_strings import MESSAGES, TEMPLATES
@@ -38,8 +36,6 @@ FLOOR = MESSAGES["所处层数，节点，类型"]
 UNTYPED = ", "
 # How upstream writes its yes/no rows, and how they read instead.
 YES_NO = {"True": "Yes", "False": "No"}
-# Where a tab keeps its run's last elapsed time, so a finished run's title holds it.
-ELAPSED = "_en_elapsed"
 # What every meditation row's key starts with once translated. One row per card, so they rank as a group.
 MEDITATING = TEMPLATES["冥想：{}"].split("{0}")[0]
 # Top to bottom: what moves during a run, then the one-way flags, then what never changes. Keys are the translated
@@ -65,12 +61,6 @@ ORDER = (
 # The rows a run fills in once it is under way. Every key `ORDER` ranks except the meditation group, which is
 # one row per configured card rather than a key, and is left to arrive with the first status report.
 STARTED = tuple(key for key in ORDER if key != MEDITATING)
-# The mode setting the Game Language row reads, the same one `log_node_status` reports.
-GAME_LANGUAGE = "游戏语言"
-# The table's title before any task has run.
-IDLE = "Idle"
-# Where a tab remembers its X was clicked before any run, when upstream's own dismissal has no run to key on.
-IDLE_DISMISSED = "_en_idle_dismissed"
 # Each ranked row's position in `ORDER`.
 RANKS = {key: position for position, key in enumerate(ORDER)}
 
@@ -188,34 +178,8 @@ def seeding_the_table(original):
     return info_clear_seeded
 
 
-def titling(original):
-    """Wrap `TaskTab.update_task_info` so the title reads `Auto Sortie Mode: running for 3m 2s`.
-
-    Upstream runs the status, the mode and `Time Elapsed` together into one label.
-
-    Args:
-        original: The unbound `update_task_info` being replaced.
-
-    Returns:
-        The replacement.
-    """
-    def update_task_info(self, task):
-        original(self, task)
-        # The idle table draws through here with a nameless stand-in, and titles itself.
-        if task is None or not task.name:
-            return
-        if not task.enabled:
-            state = "finished after"
-        else:
-            setattr(self, ELAPSED, self.time_elapsed(task.start_time).removeprefix("0h "))
-            state = "paused at" if getattr(task, "paused", False) else "running for"
-        self.task_info_container.titleLabel.setText(f"{og.app.tr(task.name)}: {state} {getattr(self, ELAPSED, '')}")
-
-    return update_task_info
-
-
 def headless(original):
-    """Wrap `TaskTab.__init__` to drop the table's `Info` / `Value` column titles, which say nothing the rows do not.
+    """Wrap `TaskDetail.__init__` to drop the table's `Info` / `Value` column titles, which say nothing the rows do not.
 
     Args:
         original: The unbound `__init__` being replaced.
@@ -225,72 +189,13 @@ def headless(original):
     """
     def __init__(self, *args, **kwargs):
         original(self, *args, **kwargs)
-        self.task_info_table.horizontalHeader().hide()
+        self.info_table.horizontalHeader().hide()
 
     return __init__
 
 
-def idle_rows(tasks):
-    """Build the rows that are known before any run, in reading order.
-
-    Args:
-        tasks: The tab's tasks. The first one carrying a game language setting supplies that row.
-
-    Returns:
-        The rows, as the dict `update_task_info` draws.
-    """
-    from src.config import version
-
-    rows = {COMBATANTS: UNREAD, MESSAGES["版本号"]: str(version).strip() or "dev"}
-    for task in tasks:
-        language = (getattr(task, "config", None) or {}).get(GAME_LANGUAGE)
-        if language:
-            rows[MESSAGES[GAME_LANGUAGE]] = language
-            break
-    return in_order(rows)
-
-
-def showing_while_idle(original):
-    """Wrap `TaskTab.update_info_table` so the table is on screen before any task has run.
-
-    Args:
-        original: The unbound `update_info_table` being replaced.
-
-    Returns:
-        The replacement.
-    """
-    def update_info_table(self):
-        original(self)
-        if self.last_task is not None or getattr(self, IDLE_DISMISSED, False):
-            return
-        tasks = getattr(self, "tasks", None)
-        if not tasks:
-            return
-        self.update_task_info(types.SimpleNamespace(info=idle_rows(tasks), enabled=False, start_time=0, name=""))
-        self.task_info_container.titleLabel.setText(IDLE)
-
-    return update_info_table
-
-
-def dismissing_while_idle(original):
-    """Wrap `TaskTab.close_task_info` so the X also hides the idle table, which has no run to remember it by.
-
-    Args:
-        original: The unbound `close_task_info` being replaced.
-
-    Returns:
-        The replacement.
-    """
-    def close_task_info(self):
-        if self.last_task is None:
-            setattr(self, IDLE_DISMISSED, True)
-        return original(self)
-
-    return close_task_info
-
-
 def apply():
-    """Draw the Info rows in reading order, and keep the table on screen while idle."""
+    """Draw the Info rows in reading order."""
     global _patched
     if _patched:
         return
@@ -303,10 +208,7 @@ def apply():
         BaseTask.info_set = ordering(showing_what_is_worn(BaseTask.info_set))
         BaseTask.info_clear = seeding_the_table(BaseTask.info_clear)
 
-    task_tab = import_ui("tasks.TaskTab", "TaskTab")
-    if task_tab is not None:
-        task_tab.__init__ = headless(task_tab.__init__)
-        task_tab.update_task_info = titling(task_tab.update_task_info)
-        task_tab.update_info_table = showing_while_idle(task_tab.update_info_table)
-        task_tab.close_task_info = dismissing_while_idle(task_tab.close_task_info)
+    task_detail = import_ui("tasks.tasks_page", "TaskDetail")
+    if task_detail is not None:
+        task_detail.__init__ = headless(task_detail.__init__)
     _patched = True

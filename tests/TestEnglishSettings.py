@@ -279,12 +279,12 @@ class TestSeasonSections(unittest.TestCase):
         cls.qt_app = QApplication.instance() or QApplication([])
         og.app = EchoApp()
         sections.apply()
-        config_card = import_ui("tasks.ConfigCard", "ConfigCard")
-        assert config_card is not None, "ok-script no longer provides ConfigCard"
+        config_form = import_ui("tasks.config_form", "ConfigForm")
+        assert config_form is not None, "ok-script no longer provides ConfigForm"
         default = {"进入商店": False, "指定面具卡牌": "", "面具卡牌刻印": "", "几轮后停止(0为不停止)": 0}
         cls.folder = tempfile.TemporaryDirectory()
         config = Config("ChaosMode", default, folder=cls.folder.name)
-        cls.card = config_card(None, "ChaosMode", config, "", default, {}, {}, None)
+        cls.card = config_form(None, config, default, {}, {})
 
     @classmethod
     def tearDownClass(cls):

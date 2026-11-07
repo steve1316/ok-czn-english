@@ -2,9 +2,9 @@
 
 import os
 import sys
+import tempfile
 import types
 import unittest
-from functools import partial
 from pathlib import Path
 from unittest import mock
 
@@ -12,11 +12,11 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from ok.task.exceptions import TaskDisabledException  # noqa: E402
-from PySide6.QtCore import QRect  # noqa: E402
+from ok.util.config import Config  # noqa: E402
 
 from src import config as src_config  # noqa: E402
 from src.config import config  # noqa: E402
-from src.en import dashboard, devices, layout, monitors, placement, shell, shutdown  # noqa: E402
+from src.en import devices, monitors, shell, shutdown  # noqa: E402
 from src.en.framework import import_ui  # noqa: E402
 from tests.fakes import EchoApp  # noqa: E402
 
@@ -145,8 +145,8 @@ def moved(*task_classes, interval=1):
 
 class TestAppShell(unittest.TestCase):
 
-    def test_the_modes_move_to_the_tab_that_has_start_buttons(self):
-        """`TaskCard` draws a switch for anything left in the trigger list, and buttons for this one."""
+    def test_the_modes_move_to_the_list_that_has_start_buttons(self):
+        """`TaskRow` draws a switch for anything left in the trigger list, and buttons for this one."""
         executor, _, tasks = moved(ChaosMode, SortieMode, StoryMode)
         self.assertEqual([], executor.trigger_tasks)
         self.assertEqual(tasks, executor.onetime_tasks)
@@ -166,12 +166,12 @@ class TestAppShell(unittest.TestCase):
         executor, _, tasks = moved(SomeNewMode)
         self.assertEqual(tasks, executor.onetime_tasks)
 
-    def test_the_script_and_template_tabs_are_turned_off(self):
+    def test_the_script_and_template_pages_are_turned_off(self):
         _, task_manager, _ = moved(ChaosMode)
         self.assertFalse(task_manager.has_custom)
 
-    def test_the_edit_button_is_dropped_with_the_tab_it_opens(self):
-        """`TaskCard` builds it from `is_custom`, and it opens a Script tab that no longer exists."""
+    def test_the_edit_button_is_dropped_with_the_page_it_opens(self):
+        """`TaskDetail` shows it from `is_custom`, and it opens a Script page that no longer exists."""
         _, _, tasks = moved(ChaosMode)
         self.assertFalse(tasks[0].is_custom)
 
@@ -237,8 +237,8 @@ class TestAppShell(unittest.TestCase):
             tasks[0].run()
         self.assertEqual([], executor.sleeps)
 
-    def test_pausing_records_itself_so_the_card_can_offer_resume(self):
-        """`TaskCard` reads `task.paused`, which upstream's trigger branch never sets."""
+    def test_pausing_records_itself_so_the_page_can_offer_resume(self):
+        """The Tasks page reads `task.paused`, which upstream's trigger branch never sets."""
         executor, _, tasks = moved(ChaosMode)
         task = tasks[0]
         task.pause()
@@ -246,10 +246,10 @@ class TestAppShell(unittest.TestCase):
         self.assertTrue(task._paused)
 
     def test_the_scaffold_tasks_are_no_longer_registered(self):
-        """Configuration Demo Task and Diagnosis Performance Test are gone from the Tasks tab."""
+        """Configuration Demo Task and Diagnosis Performance Test are gone from the Tasks page."""
         self.assertEqual([], config["onetime_tasks"])
 
-    def test_the_demo_hotkey_setting_is_gone_from_the_settings_tab(self):
+    def test_the_demo_hotkey_setting_is_gone_from_the_settings_page(self):
         names = [option.name for option in config["global_configs"]]
         self.assertNotIn("Game Hotkey Config", names)
 
@@ -265,28 +265,88 @@ class TestAppShell(unittest.TestCase):
             self.assertFalse(src_config.resolve_use_openvino())
 
 
-class TestOneModeAtATime(unittest.TestCase):
-    """The Start buttons while a mode runs, which upstream leaves pressable to queue a second mode silently."""
+class TestTasksPage(unittest.TestCase):
+    """The patches on the real Tasks page, whose rows and pane a stand-in could not catch being renamed."""
+
+    @classmethod
+    def setUpClass(cls):
+        # Offscreen has to be chosen before `QApplication` exists.
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PySide6.QtWidgets import QApplication
+
+        cls.qt_app = QApplication.instance() or QApplication([])
+        cls.task_row = import_ui("tasks.tasks_page", "TaskRow")
+        cls.task_detail = import_ui("tasks.tasks_page", "TaskDetail")
+        cls.folder = tempfile.TemporaryDirectory()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.folder.cleanup()
+
+    def mode(self, executor, name, enabled):
+        """Build a mode carrying what the page draws.
+
+        Args:
+            executor: The executor whose one-time list holds it.
+            name: The mode's name.
+            enabled: Whether it is running.
+
+        Returns:
+            The mode.
+        """
+        task = FakeTask(executor)
+        task.name, task._enabled = name, enabled
+        task.description, task.instructions, task.first_run_alert = "", "", None
+        task.icon, task.group_name, task.is_custom = None, None, False
+        task.running, task.paused, task.start_time = enabled, False, 0
+        task.show_create_shortcut = False
+        task.info = {}
+        task.default_config = {"count": 1}
+        task.config = Config(name, task.default_config, folder=self.folder.name)
+        task.config_description, task.config_type = {}, {}
+        return task
 
     def test_the_other_starts_lock_until_the_run_stops(self):
         # Locking alone is half of it. A Start that stays disabled after the run would strand every other mode.
         from ok import og
 
         executor = FakeExecutor()
-        running, other = FakeTask(executor), FakeTask(executor)
-        running.name, other._enabled = "Auto Sortie Mode", False
+        running, other = self.mode(executor, "Auto Sortie Mode", True), self.mode(executor, "Auto Chaos Mode", False)
         executor.onetime_tasks = [running, other]
-        button = types.SimpleNamespace(enabled=True, tip="")
-        button.setEnabled = lambda value: setattr(button, "enabled", value)
-        button.setToolTip = lambda text: setattr(button, "tip", text)
-        card = types.SimpleNamespace(task=other, start_button=button)
-        with mock.patch.object(og, "executor", executor, create=True), mock.patch.object(og, "app", EchoApp(), create=True):
-            update_buttons = shell.locking(lambda card, task: None)
-            update_buttons(card, running)
-            self.assertEqual((False, "Stop Auto Sortie Mode first"), (button.enabled, button.tip))
+        executor.waiting_for_task = lambda task: None
+        with mock.patch.object(og, "executor", executor, create=True), mock.patch.object(og, "app", EchoApp(), create=True), \
+                mock.patch.object(self.task_row, "refresh", shell.locking_row(self.task_row.refresh)), \
+                mock.patch.object(self.task_detail, "refresh", shell.locking_detail(self.task_detail.refresh)):
+            row = self.task_row(other, False)
+            detail = self.task_detail()
+            detail.show_task(other, False)
+            for name, button in (("row", row.action_button), ("pane", detail.run_button)):
+                with self.subTest(name):
+                    self.assertEqual((False, "Stop Auto Sortie Mode first"), (button.isEnabled(), button.toolTip()))
             running._enabled = False
-            update_buttons(card, running)
-            self.assertEqual((True, ""), (button.enabled, button.tip))
+            row.refresh()
+            detail.refresh()
+            for name, button in (("row", row.action_button), ("pane", detail.run_button)):
+                with self.subTest(name):
+                    self.assertTrue(button.isEnabled())
+                    self.assertNotIn("first", button.toolTip())
+
+    def test_a_config_import_shows_on_the_open_form(self):
+        # Upstream's refresh looks for a tab that is gone, so an imported config would save and the form would show old values.
+        from ok import og
+
+        executor = FakeExecutor()
+        task = self.mode(executor, "Auto Chaos Mode", False)
+        executor.onetime_tasks = [task]
+        executor.waiting_for_task = lambda task: None
+        with mock.patch.object(og, "executor", executor, create=True), mock.patch.object(og, "app", EchoApp(), create=True):
+            detail = self.task_detail()
+            detail.show_task(task, False)
+            window = types.SimpleNamespace(tasks_page=types.SimpleNamespace(detail=detail))
+            with mock.patch.object(og, "main_window", window, create=True):
+                task.config["count"] = 7
+                shell.refresh_open_form(task)
+            self.assertEqual(7, detail.form.config_widget_by_key["count"].spin_box.value())
 
 
 class TestEmulatorConnect(unittest.TestCase):
@@ -353,7 +413,7 @@ class TestMonitorLeftOfTheMain(unittest.TestCase):
 
 
 class TestWindowCanBeReached(unittest.TestCase):
-    """Where the main window opens, through upstream's real `set_window_size` on the offscreen platform's 800x800 screen."""
+    """The framework keeps the main window on a screen, which is why this fork carries no patch for it."""
 
     @classmethod
     def setUpClass(cls):
@@ -363,180 +423,26 @@ class TestWindowCanBeReached(unittest.TestCase):
 
         cls.qt_app = QApplication.instance() or QApplication([])
 
-    def opened(self, saved, default=(700, 500), maximized=False, before=None):
-        """Place a window the way the app does at startup.
-
-        Args:
-            saved: The x, y, width and height held in `_ok.json`.
-            default: The width and height from the app's `window_size` config.
-            maximized: The `window_maximized` value held in `_ok.json`.
-            before: A position to give the window first, for a case that has to start off-screen.
-
-        Returns:
-            The placed window.
-        """
+    def test_the_window_opens_on_a_screen(self):
+        # A framework bump that drops this strands a window saved on an unplugged monitor, with no way to drag it back.
         from PySide6.QtWidgets import QWidget
 
-        class Window(QWidget):
-            ok_config = dict(zip(("window_x", "window_y", "window_width", "window_height"), saved), window_maximized=maximized)
-            set_window_size = placement.reachable(import_ui("MainWindow", "MainWindow").set_window_size)
-
-            def apply_navigation_state(self):
-                pass
-
-        window = Window()
-        if before:
-            window.setGeometry(*before)
-        window.set_window_size(*default, 100, 100)
-        return window
-
-    def test_where_the_window_opens(self):
         cases = (
-            ("saved on an unplugged monitor is centred at the default size", (3000, 300, 1200, 800), (700, 500), (50, 150, 700, 500)),
-            ("saved on the screen is left alone", (100, 100, 300, 200), (700, 500), (100, 100, 300, 200)),
-            ("a default taller than the screen is shrunk to fit", (-1, -1, -1, -1), (1000, 1000), (0, 0, 800, 800)),
+            ("saved on an unplugged monitor", (3000, 300, 700, 500), (700, 500)),
+            ("nothing saved and a default taller than the screen", (-1, -1, -1, -1), (1000, 1000)),
         )
-        for name, saved, default, expected in cases:
+        for name, saved, default in cases:
             with self.subTest(name):
-                self.assertEqual(expected, self.opened(saved, default).geometry().getRect())
+                class Window(QWidget):
+                    ok_config = dict(zip(("window_x", "window_y", "window_width", "window_height"), saved), window_maximized=False)
+                    set_window_size = import_ui("MainWindow", "MainWindow").set_window_size
 
-    def test_a_maximized_window_stays_maximized(self):
-        window = self.opened((3000, 300, 1200, 800), maximized=True, before=(3000, 300, 300, 200))
-        self.assertTrue(window.isMaximized())
+                    def apply_navigation_state(self):
+                        pass
 
-    def test_only_a_reachable_title_bar_counts(self):
-        laptop = QRect(0, 0, 1920, 1040)
-        second = QRect(1920, 0, 2560, 1400)
-        cases = (
-            ("on a second monitor that is still connected", (2100, 300, 1200, 800), (laptop, second), True),
-            ("on a second monitor that is gone", (2100, 300, 1200, 800), (laptop,), False),
-            ("title bar above the screen with the body on it", (100, -40, 1200, 800), (laptop,), False),
-            ("title bar behind the taskbar", (100, 1030, 1200, 800), (laptop,), False),
-        )
-        for name, geometry, screens, expected in cases:
-            with self.subTest(name):
-                self.assertEqual(expected, placement.can_grab(QRect(*geometry), screens))
-
-    def test_centring_counts_the_space_a_taskbar_takes(self):
-        self.assertEqual((360, 144, 1200, 800), placement.fitted(1200, 800, QRect(0, 48, 1920, 992)).getRect())
-
-
-class TestIdleDashboard(unittest.TestCase):
-    """The Info table before any task has run, which upstream hides until the first run."""
-
-    class Tab:
-        """A task tab reduced to what the idle table reads and draws, with upstream's own methods as no-ops."""
-
-        def __init__(self, tasks):
-            self.tasks = tasks
-            self.last_task = None
-            self.drawn = None
-            self.title = types.SimpleNamespace(text="", setText=lambda text: setattr(self.title, "text", text))
-            self.task_info_container = types.SimpleNamespace(titleLabel=self.title)
-            self.update_info_table = partial(dashboard.showing_while_idle(lambda tab: None), self)
-            self.close_task_info = partial(dashboard.dismissing_while_idle(lambda tab: None), self)
-
-        def update_task_info(self, task):
-            self.drawn = dict(task.info)
-
-    def test_idle_shows_the_static_rows_until_the_x_or_a_run(self):
-        # Each step is a regression on its own: hidden at launch, the X ignored, or idle rows over a real run.
-        tab = self.Tab([types.SimpleNamespace(config={"游戏语言": "English"})])
-        tab.update_info_table()
-        # As a list, because the team belongs above the two rows that never change rather than under them.
-        self.assertEqual([(dashboard.COMBATANTS, dashboard.UNREAD), ("Game Language", "English"),
-                          ("Version", "dev")], list(tab.drawn.items()))
-        self.assertEqual(dashboard.IDLE, tab.title.text)
-
-        tab.drawn = None
-        tab.last_task = object()
-        tab.update_info_table()
-        self.assertIsNone(tab.drawn)
-
-        tab = self.Tab([types.SimpleNamespace(config={})])
-        tab.close_task_info()
-        tab.update_info_table()
-        self.assertIsNone(tab.drawn)
-
-
-class TestRebuiltCardList(unittest.TestCase):
-    """The card list the task tabs throw away and rebuild whenever the task list changes.
-
-    Neither `ExpandLayout` nor ok-script's `ExpandCardLayout` shows the child it is handed, so a tab the user
-    is looking at rebuilds into a blank page. `handle_chaos_reward_claim` asks for a rebuild the moment the
-    loot cards run out, so this is a mid-run failure rather than a hypothetical one.
-    """
-
-    @classmethod
-    def setUpClass(cls):
-        # Offscreen has to be chosen before `QApplication` exists.
-        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-        from PySide6.QtWidgets import QApplication
-
-        cls.qt_app = QApplication.instance() or QApplication([])
-        cls.expand_card_layout = import_ui("widget.ExpandCardLayout", "ExpandCardLayout")
-        assert cls.expand_card_layout is not None, "ok-script no longer provides ExpandCardLayout"
-        # Applied with the escape hatch set, which also pins that the hatch cannot switch this patch off.
-        with mock.patch.dict(os.environ, {layout.DISABLE_ENV: "1"}):
-            layout.apply()
-
-    def listed(self):
-        """Build an empty card list.
-
-        Returns:
-            The `(view, layout)` pair, neither of them shown yet.
-        """
-        from PySide6.QtWidgets import QWidget
-
-        view = QWidget()
-        return view, self.expand_card_layout(view)
-
-    def test_a_card_added_to_a_list_on_screen_is_drawn(self):
-        from PySide6.QtWidgets import QWidget
-
-        view, card_layout = self.listed()
-        view.show()
-        card = QWidget()
-        card_layout.addWidget(card)
-        self.assertTrue(card.isVisible(), "the rebuilt card is hidden, so the tab draws nothing")
-
-    def test_the_auto_analysis_switch_still_finds_the_card_list(self):
-        # Renamed, the switch silently never shows and recording can never be turned on.
-        tab = import_ui("tasks.OneTimeTaskTab", "OneTimeTaskTab")
-        for name in ("refresh_ui", "add_task_card", "remove_task_card"):
-            with self.subTest(name):
-                self.assertTrue(callable(getattr(tab, name, None)))
-
-    def test_a_card_added_before_the_list_is_up_still_waits_for_it(self):
-        """Startup adds its cards to a hidden tab, and Qt's own show cascade is what draws those."""
-        from PySide6.QtWidgets import QWidget
-
-        view, card_layout = self.listed()
-        card = QWidget()
-        card_layout.addWidget(card)
-        self.assertFalse(card.isVisible())
-        view.show()
-        self.assertTrue(card.isVisible())
-
-    def test_a_card_moved_to_the_end_of_a_list_on_screen_is_placed_there(self):
-        """The Auto Analysis switch is moved below the rebuilt mode cards, and was left sitting on top of one of them."""
-        from PySide6.QtWidgets import QWidget
-
-        view, card_layout = self.listed()
-        view.resize(400, 400)
-        moved = QWidget()
-        moved.setFixedHeight(50)
-        card_layout.addWidget(moved)
-        view.show()
-        self.qt_app.processEvents()
-        card_layout.removeWidget(moved)
-        # Showing a new card lays the list out at once, which settles it before `moved` is back.
-        rebuilt = QWidget()
-        rebuilt.setFixedHeight(50)
-        card_layout.addWidget(rebuilt)
-        card_layout.addWidget(moved)
-        self.qt_app.processEvents()
-        self.assertGreater(moved.y(), rebuilt.y(), "the moved card overlaps the card added before it")
+                window = Window()
+                window.set_window_size(*default, 100, 100)
+                self.assertTrue(window.screen().availableGeometry().contains(window.geometry()))
 
 
 class TestExitStopsAdb(unittest.TestCase):

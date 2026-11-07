@@ -8,7 +8,24 @@ A fixture moved between those two files landed somewhere else entirely and the t
 fraction of the screen or a pixel position, and the file has to say which.
 """
 
+import atexit
+
+import shiboken6
+from PySide6.QtWidgets import QApplication
+
 WIDTH, HEIGHT = 1920, 1080
+
+
+def delete_open_widgets():
+    """Delete the widgets tests left open, since a kit widget alive at interpreter exit kills the process after the tests pass."""
+    for widget in QApplication.topLevelWidgets():
+        # Deleting a window takes its children with it, and a child can be in this list too.
+        if shiboken6.isValid(widget):
+            shiboken6.delete(widget)
+
+
+# Handlers run last-registered-first and PySide registers its teardown on import, so the import above puts this ahead of it.
+atexit.register(delete_open_widgets)
 
 
 class FakeBox:

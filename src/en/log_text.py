@@ -111,11 +111,11 @@ def translating(original):
 
 
 def reporting(original):
-    """Wrap `info_set` so the Tasks tab draws its Info rows in English, and stops shouting them at the log.
+    """Wrap `info_set` so the Tasks page draws its Info rows in English, and stops shouting them at the log.
 
     Three rows could never have been catalog entries - the floor and node row, the equipment row and the
     meditation key are composed at runtime, and `tr` is a whole-string lookup. The row itself is always
-    written, so the tab is unchanged. Only the echo waits for the value to actually differ.
+    written, so the page is unchanged. Only the echo waits for the value to actually differ.
 
     Args:
         original: The unbound `info_set` being replaced.
@@ -152,7 +152,7 @@ def quiet(record):
 def apply():
     """Route every message `ok_tasks/` logs, and every row it reports, through the translation table.
 
-    `BaseTask.log_info` fans out to three places - `self.logger.info`, the Tasks tab's `Log` row via `info_set`,
+    `BaseTask.log_info` fans out to three places - `self.logger.info`, the Tasks page's `Log` row via `info_set`,
     and the Windows toast when `notify=True` - so translating at the top of it covers all three, where a filter on
     the logging module would have covered only the first. Nothing reads log text, so this is safe: `handle_stuck_log`
     sounds like an exception but decides by pixel diff in `is_frame_stuck`. The Chinese that *is* load-bearing - OCR

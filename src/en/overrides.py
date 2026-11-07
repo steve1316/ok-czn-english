@@ -160,7 +160,7 @@ def reshape(task):
     for key, options in LIST_OPTIONS.items():
         if key not in task.default_config:
             continue
-        # The roster is shared rather than copied: ModifyListItem only ever reads it, and the card list is
+        # The roster is shared rather than copied: `ListEditor` only ever reads it, and the card list is
         # long enough that copying it per setting per task adds up to nothing useful.
         task.config_type[key] = {"type": "drop_down", "options_available": options}
         if key not in KEEPS_CHINESE:
