@@ -137,6 +137,7 @@ class TestUpstreamManifest(unittest.TestCase):
         seams = (
             ("tasks.tasks_page", "TaskRow", "refresh"),
             ("tasks.tasks_page", "TaskDetail", "refresh"),
+            ("tasks.tasks_page", "TaskDetail", "show_task"),
             ("tasks.tasks_page", "TasksPage", "_on_task_event"),
             ("tasks.config_form", "ConfigForm", "add_buttons"),
             ("tasks.config_form", "ConfigForm", "_adjust_config_content_size"),

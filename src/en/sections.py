@@ -46,7 +46,7 @@ class Section:
     button: Button
     # The settings row widgets under this header, in display order.
     rows: list = field(default_factory=list)
-    # Whether the rows are currently shown. Always starts collapsed.
+    # Whether the rows are currently shown. Starts collapsed, and a kept form remembers it between mode switches.
     expanded: bool = False
 
 
@@ -84,7 +84,7 @@ def place_sections(card):
     The trap is `__apply_sub_config_visibility`. Reset Config and any sub-config switch both
     run it, and it pulls every row out of the layout, puts them back from the top in `config_keys` order and shows
     them all. So the section rows are moved to the end of `config_keys`, and the sections are re-placed and
-    re-hidden every time it runs. Open state is not remembered, so every card starts with its sections collapsed.
+    re-hidden every time it runs. A section already open stays open, and a new card starts with its sections collapsed.
 
     The caller re-measures the card afterwards, since both callers already do.
 

@@ -16,7 +16,7 @@ from ok.util.config import Config  # noqa: E402
 
 from src import config as src_config  # noqa: E402
 from src.config import config  # noqa: E402
-from src.en import devices, monitors, shell, shutdown, task_list  # noqa: E402
+from src.en import devices, kept_forms, monitors, shell, shutdown, task_list  # noqa: E402
 from src.en.framework import import_ui  # noqa: E402
 from tests.fakes import EchoApp  # noqa: E402
 
@@ -53,6 +53,9 @@ class FakeExecutor:
 
     def get_all_tasks(self):
         return self.onetime_tasks + self.trigger_tasks
+
+    def waiting_for_task(self, task):
+        return None
 
     def reset_scene(self):
         self.resets += 1
@@ -276,6 +279,7 @@ class TestTasksPage(unittest.TestCase):
 
         cls.qt_app = QApplication.instance() or QApplication([])
         task_list.apply()
+        kept_forms.apply()
         cls.tasks_page = import_ui("tasks", "tasks_page")
         cls.task_row = import_ui("tasks.tasks_page", "TaskRow")
         cls.task_detail = import_ui("tasks.tasks_page", "TaskDetail")
@@ -285,13 +289,14 @@ class TestTasksPage(unittest.TestCase):
     def tearDownClass(cls):
         cls.folder.cleanup()
 
-    def mode(self, executor, name, enabled):
+    def mode(self, executor, name, enabled, default_config=None):
         """Build a mode carrying what the page draws.
 
         Args:
             executor: The executor whose one-time list holds it.
             name: The mode's name.
             enabled: Whether it is running.
+            default_config: The settings its form draws, one row each. Defaults to a single row.
 
         Returns:
             The mode.
@@ -303,7 +308,7 @@ class TestTasksPage(unittest.TestCase):
         task.running, task.paused, task.start_time = enabled, False, 0
         task.show_create_shortcut = False
         task.info = {}
-        task.default_config = {"count": 1}
+        task.default_config = default_config or {"count": 1}
         task.config = Config(name, task.default_config, folder=self.folder.name)
         task.config_description, task.config_type = {}, {}
         return task
@@ -315,7 +320,6 @@ class TestTasksPage(unittest.TestCase):
         executor = FakeExecutor()
         running, other = self.mode(executor, "Auto Sortie Mode", True), self.mode(executor, "Auto Chaos Mode", False)
         executor.onetime_tasks = [running, other]
-        executor.waiting_for_task = lambda task: None
         with mock.patch.object(og, "executor", executor, create=True), mock.patch.object(og, "app", EchoApp(), create=True), \
                 mock.patch.object(self.task_row, "refresh", shell.locking_row(self.task_row.refresh)), \
                 mock.patch.object(self.task_detail, "refresh", shell.locking_detail(self.task_detail.refresh)):
@@ -352,6 +356,49 @@ class TestTasksPage(unittest.TestCase):
                     strongest, ink = max(pixels, key=lambda pixel: pixel.alpha()), theme.color("text")
                     self.assertGreater(strongest.alpha(), 100)
                     self.assertLess(max(abs(strongest.red() - ink.red()), abs(strongest.green() - ink.green()), abs(strongest.blue() - ink.blue())), 24)
+
+    def test_switching_modes_keeps_each_form_current_and_opens_at_the_top(self):
+        # A rebuilt form is what makes a switch lag. A kept one must still not show values from before it was hidden, or the old scroll position.
+        from PySide6.QtCore import QEvent
+
+        from ok import og
+
+        executor = FakeExecutor()
+        rows = {f"row {index}": False for index in range(40)}
+        chaos, sortie = self.mode(executor, "Kept Chaos", False, rows), self.mode(executor, "Kept Sortie", False, rows)
+        executor.onetime_tasks = [chaos, sortie]
+        with mock.patch.object(og, "executor", executor, create=True), mock.patch.object(og, "app", EchoApp(), create=True):
+            detail = self.task_detail()
+            detail.resize(700, 400)
+            detail.show()
+            detail.show_task(chaos, False)
+            self.qt_app.processEvents()
+            chaos_form, scroll_bar = detail.form, detail.form_scroll.verticalScrollBar()
+            scroll_bar.setValue(scroll_bar.maximum())
+            self.assertGreater(scroll_bar.value(), 0)
+
+            detail.show_task(sortie, False)
+            self.qt_app.processEvents()
+            # `processEvents` leaves these queued, and stock's `deleteLater` is the one that would take the kept form away.
+            self.qt_app.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+            self.assertIsNot(chaos_form, detail.form)
+            self.assertTrue(chaos_form.isHidden())
+            self.assertEqual(0, scroll_bar.value())
+
+            chaos.config["row 0"] = True
+            detail.show_task(chaos, False)
+            self.assertIs(chaos_form, detail.form)
+            self.assertFalse(chaos_form.isHidden())
+            self.assertTrue(next(row for row in chaos_form.config_widgets if row.key == "row 0").switch_button.isChecked())
+
+            # A return trip, where neither form is new and nothing else moves the scroll bar.
+            self.qt_app.processEvents()
+            scroll_bar.setValue(scroll_bar.maximum())
+            self.assertGreater(scroll_bar.value(), 0)
+            detail.show_task(sortie, False)
+            self.qt_app.processEvents()
+            self.assertEqual(0, scroll_bar.value())
+            detail.close()
 
     def test_the_list_is_a_narrow_column_of_names_under_modes(self):
         # Each of these is a name the page reads at build time, so a framework rename puts the stock wide list back without an error.
