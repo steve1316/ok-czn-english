@@ -20,7 +20,7 @@ class Globals(QObject):
         from src.en import (  # noqa: E501
             battle, boss, claims, cursor, dashboard, deck, desire, devices, dialogue, dice, draft, enter, epiphany, equipment, etched_memory, events, forms, frame_log,
             log_text, memory_limit, monitors, navigation, obtain, observe, ocr_text, overrides, persona, picker, piles, pins, reobserve, remote, rest, rewards, sections,
-            reason, shell, shop, shutdown, summary, templates, notify, stuck, upload,
+            reason, shell, shop, shutdown, summary, task_list, templates, notify, stuck, upload,
         )
 
         # Neither does anything outside a debug run, and nothing else depends on when they start.
@@ -28,6 +28,7 @@ class Globals(QObject):
         remote.apply()
         sections.apply()
         forms.apply()
+        task_list.apply()
         picker.apply()
         ocr_text.apply()
         # Before log_text, so its translation wraps this ordering and the keys arrive here already in English.

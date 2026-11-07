@@ -7,6 +7,7 @@ import time
 
 from ok import Logger, og
 
+from src.en import task_list
 from src.en.framework import import_ui
 
 logger = Logger.get_logger(__name__)
@@ -100,6 +101,7 @@ def to_task(task, executor, communicate):
     # which is gone. Clearing this drops the button. The cost is that the modes now count as built-in to the
     # debug file watcher, which only matters while editing `ok_tasks/` with the app running.
     task.is_custom = False
+    task_list.set_mode_icon(task)
     # `on_create` restored this from the saved config. A run that ended in a crash leaves it set, and the
     # executor starts any enabled one-time task on its own, so a launch would silently resume the mode.
     task._enabled = False

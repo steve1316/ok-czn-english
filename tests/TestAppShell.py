@@ -16,7 +16,7 @@ from ok.util.config import Config  # noqa: E402
 
 from src import config as src_config  # noqa: E402
 from src.config import config  # noqa: E402
-from src.en import devices, monitors, shell, shutdown  # noqa: E402
+from src.en import devices, monitors, shell, shutdown, task_list  # noqa: E402
 from src.en.framework import import_ui  # noqa: E402
 from tests.fakes import EchoApp  # noqa: E402
 
@@ -275,6 +275,8 @@ class TestTasksPage(unittest.TestCase):
         from PySide6.QtWidgets import QApplication
 
         cls.qt_app = QApplication.instance() or QApplication([])
+        task_list.apply()
+        cls.tasks_page = import_ui("tasks", "tasks_page")
         cls.task_row = import_ui("tasks.tasks_page", "TaskRow")
         cls.task_detail = import_ui("tasks.tasks_page", "TaskDetail")
         cls.folder = tempfile.TemporaryDirectory()
@@ -330,6 +332,43 @@ class TestTasksPage(unittest.TestCase):
                 with self.subTest(name):
                     self.assertTrue(button.isEnabled())
                     self.assertNotIn("first", button.toolTip())
+
+    def test_every_mode_draws_its_icon_in_the_themes_ink(self):
+        # Through the page's own tile: a renamed mode class or an icon the framework stops accepting falls back to a monogram in silence.
+        from ok.ui.qt.kit.theme import Theme, theme
+
+        self.addCleanup(theme.set_theme, theme.mode)
+        for name in task_list.ICON_FILES:
+            self.assertIn(f"class {name}(", (REPO_ROOT / "ok_tasks" / f"{name}.py").read_text(encoding="utf-8"))
+            task = type(name, (), {"name": name})()
+            task_list.set_mode_icon(task)
+            tile = self.tasks_page.TaskIconTile(task)
+            for mode in (Theme.DARK, Theme.LIGHT):
+                with self.subTest(name=name, mode=mode):
+                    theme.set_theme(mode)
+                    image = tile.pixmap().toImage()
+                    pixels = [image.pixelColor(x, y) for x in range(image.width()) for y in range(image.height())]
+                    # Thin lines stay anti-aliased at this size, so the strongest pixel only comes close to the ink.
+                    strongest, ink = max(pixels, key=lambda pixel: pixel.alpha()), theme.color("text")
+                    self.assertGreater(strongest.alpha(), 100)
+                    self.assertLess(max(abs(strongest.red() - ink.red()), abs(strongest.green() - ink.green()), abs(strongest.blue() - ink.blue())), 24)
+
+    def test_the_list_is_a_narrow_column_of_names_under_modes(self):
+        # Each of these is a name the page reads at build time, so a framework rename puts the stock wide list back without an error.
+        from ok import og
+
+        executor = FakeExecutor()
+        task = self.mode(executor, "Chaos", False)
+        task.description = "Plays whole runs."
+        executor.onetime_tasks = [task]
+        with mock.patch.object(og, "executor", executor, create=True), mock.patch.object(og, "app", EchoApp(), create=True), \
+                mock.patch.object(Config, "config_folder", self.folder.name):
+            page = self.tasks_page.TasksPage()
+            row = self.task_row(task, False)
+        row.resize(300, 58)
+        self.assertEqual("Modes", page.onetime_section.title_label.text())
+        self.assertEqual(task_list.LIST_WIDTH, page.onetime_section.parentWidget().width())
+        self.assertEqual((True, ""), (row.description_label.isHidden(), row.description_label.text()))
 
 
 class TestEmulatorConnect(unittest.TestCase):

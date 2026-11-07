@@ -271,13 +271,13 @@ msgstr ""
 "auto-battle fights."
 
 msgid "自动卡厄思模式"
-msgstr "Auto Chaos Manifestation"
+msgstr "Chaos"
 
 msgid "自动出击模式"
-msgstr "Auto Sortie Mode"
+msgstr "Sortie"
 
 msgid "半自动剧情模式"
-msgstr "Semi-Auto Story Mode"
+msgstr "Story"
 
 msgid "刷梦边"
 msgstr "Farm Dream's Edge"
