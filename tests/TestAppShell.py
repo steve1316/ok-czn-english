@@ -331,23 +331,6 @@ class TestTasksPage(unittest.TestCase):
                     self.assertTrue(button.isEnabled())
                     self.assertNotIn("first", button.toolTip())
 
-    def test_a_config_import_shows_on_the_open_form(self):
-        # Upstream's refresh looks for a tab that is gone, so an imported config would save and the form would show old values.
-        from ok import og
-
-        executor = FakeExecutor()
-        task = self.mode(executor, "Auto Chaos Mode", False)
-        executor.onetime_tasks = [task]
-        executor.waiting_for_task = lambda task: None
-        with mock.patch.object(og, "executor", executor, create=True), mock.patch.object(og, "app", EchoApp(), create=True):
-            detail = self.task_detail()
-            detail.show_task(task, False)
-            window = types.SimpleNamespace(tasks_page=types.SimpleNamespace(detail=detail))
-            with mock.patch.object(og, "main_window", window, create=True):
-                task.config["count"] = 7
-                shell.refresh_open_form(task)
-            self.assertEqual(7, detail.form.config_widget_by_key["count"].spin_box.value())
-
 
 class TestEmulatorConnect(unittest.TestCase):
     """Refresh dials an emulator only once something is listening on its port."""

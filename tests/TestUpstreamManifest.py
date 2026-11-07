@@ -6,7 +6,6 @@ upstream, which on the Global client means the fork's whole reason for existing 
 """
 
 import ast
-import importlib
 import inspect
 import sys
 import unittest
@@ -153,12 +152,6 @@ class TestUpstreamManifest(unittest.TestCase):
         for module, owner, name in seams:
             with self.subTest(owner=owner, name=name):
                 self.assertTrue(hasattr(import_ui(module, owner), name), f"{owner}.{name} is gone")
-
-    def test_upstream_still_refreshes_configs_through_the_replaced_name(self):
-        # shell.py swaps this module attribute. A rename leaves imported configs saved while the form shows old values.
-        for name in shell.CONFIG_REFRESH_CALLERS:
-            with self.subTest(name):
-                self.assertTrue(hasattr(importlib.import_module(name), "refresh_task_config_widgets"))
 
     def test_the_about_tab_still_lists_upstream_by_its_url(self):
         # shell.py swaps the Chaos Zero Nightmare card by this exact URL. A moved repo puts upstream's link back in silence.

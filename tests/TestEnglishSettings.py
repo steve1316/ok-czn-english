@@ -21,7 +21,7 @@ import polib
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.en import etched_memory, overrides, picker, reobserve, sections  # noqa: E402
+from src.en import etched_memory, overrides, picker, reobserve, sections, upload  # noqa: E402
 from src.en.game_data import CARDS, COMBATANTS, EQUIPMENT, NODE_TYPES  # noqa: E402
 from src.en.game_text import DESCRIPTIONS  # noqa: E402
 from src.en.framework import import_ui  # noqa: E402
@@ -306,7 +306,7 @@ class TestSeasonSections(unittest.TestCase):
                 self.assertIn(title, msgids)
 
     def test_a_reset_keeps_the_section_folded_under_its_header(self):
-        # Reset Config and config-code imports re-sort every row to the top and show them all.
+        # Reset Config re-sorts every row to the top and shows them all.
         (section,) = getattr(self.card, sections.SECTIONS_ATTR)
         self.card.update_config()
         layout = self.card.viewLayout
@@ -403,7 +403,7 @@ class TestReshape(unittest.TestCase):
         """
         # `overrides.DESCRIPTIONS` is the settings help text. The bare `DESCRIPTIONS` here is card effects.
         described = set(overrides.DESCRIPTIONS) | upstream_described()
-        bare = sorted(key for key in mode_setting_keys() if key not in described and not key.startswith("_"))
+        bare = sorted(key for key in mode_setting_keys() - {upload.ROW_KEY} if key not in described and not key.startswith("_"))
         self.assertEqual([], bare, f"these settings would render with no help text: {bare}")
 
     def test_help_text_uses_the_client_s_own_terms(self):

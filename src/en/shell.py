@@ -3,7 +3,6 @@
 Upstream ships the modes as trigger tasks, so the framework draws them as switches in a separate Triggers section.
 """
 
-import sys
 import time
 
 from ok import Logger, og
@@ -18,8 +17,6 @@ logger = Logger.get_logger(__name__)
 HIDDEN = ("TestTrigger", "GetMengbian")
 # Upstream's entry in the About page's Other Projects grid, which the framework hardcodes rather than reading from `links`.
 UPSTREAM_REPO = "https://github.com/baoxin1100/ok-kes"
-# The upstream modules calling the config refresh, on the path `ok_tasks/` is imported from. `config_sync` imports its own copy of the name.
-CONFIG_REFRESH_CALLERS = ("config_io", "config_sync")
 
 _patched = False
 
@@ -194,20 +191,6 @@ def to_the_fork(original):
     return __init__
 
 
-def refresh_open_form(task):
-    """Show freshly imported or switched config values, standing in for `config_io.refresh_task_config_widgets`.
-
-    Upstream's version looks for a `trigger_tab` that no longer exists and does nothing. Only the selected task has
-    a form, and selecting another one builds its form from the saved values.
-
-    Args:
-        task: The mode whose config just changed.
-    """
-    detail = og.main_window.tasks_page.detail
-    if detail.task is task and detail.form is not None:
-        detail.form.update_config()
-
-
 def restructure(executor, task_manager, communicate):
     """Re-shape the task lists before the window builds its pages from them.
 
@@ -227,12 +210,6 @@ def restructure(executor, task_manager, communicate):
             task.visible = False
         elif task in executor.trigger_tasks:
             to_task(task, executor, communicate)
-
-    # Loaded with the tasks, so they only exist from here on.
-    for name in CONFIG_REFRESH_CALLERS:
-        module = sys.modules.get(name)
-        if module is not None:
-            module.refresh_task_config_widgets = refresh_open_form
 
 
 def apply():

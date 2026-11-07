@@ -19,7 +19,7 @@ from src.en.shop import PAID_THRESHOLD
 logger = Logger.get_logger(__name__)
 
 # Bump this when the settings below change shape enough that a saved config should be re-seeded. It is stamped
-# into the config file, and the leading underscore keeps it out of exported config codes.
+# into the config file, and the leading underscore keeps it out of the settings UI.
 SETTINGS_VERSION = 1
 VERSION_KEY = "_en_settings_version"
 
@@ -136,7 +136,6 @@ DESCRIPTIONS = {
     "生命值大于多少优先闪光(百分比)": "Only spend an Epiphany while the Combatant's health is above this percentage.",
     "第几层boss前自动暂停": "Stop and hand back control before the boss on this floor. Never Pause runs the whole map unattended.",
     "几轮后停止(0为不停止)": "Stop the bot after this many finished runs. Zero keeps it going.",
-    "配置操作": "Import or export this mode's settings as a shareable code, and save or switch between local presets.",
     "存储数据保存上限大于多少": "Only start a run whose Save Data Storage Limit reaches at least this much, re-rolling until one does. This picks the run, it never deletes anything.",
     "保留大于多少TB的存档": "After a run, on the Save Data collection screen, delete each stored save worth this many TB or less to free its slot. Zero keeps every save. Not the same as Minimum Save Data Storage Limit, which picks the run before it starts.",
     "优先使用金币治疗": "Always pay Credits for counselling at the Epione Center. Left off, a Communication Pass is spent when you have one and Credits only when you do not.",
@@ -214,7 +213,7 @@ def reshape(task):
 
     # `Config` rebuilds the saved file from `default_config` plus the saved values, so a key it does not know
     # about is dropped - which would lose the migration stamp and re-seed on every launch. The leading
-    # underscore keeps it out of the settings UI and out of exported config codes.
+    # underscore keeps it out of the settings UI.
     task.default_config[VERSION_KEY] = SETTINGS_VERSION
 
     # Upstream leaves ok-script's scaffold placeholder here, a bare link to the framework repo. The button
