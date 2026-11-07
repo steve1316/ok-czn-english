@@ -30,7 +30,7 @@ from src.en.events import (  # noqa: E402
     ATTACK, ATTACK_RANK, BESIDES_CREDITS, CREDIT_RANK, CURSE_RANK, DESIRE_RANK, DIALOGUE, DIALOGUE_RANK, ENCOUNTER, ENCOUNTER_RANK, HEALTH_COST,
     HEALTH_COST_RANK, MIN_LATIN_MARKER_LENGTH, MIN_MARKER_LENGTH, OFF_FACTION_RANK, QUIT, QUIT_RANK,
     REFINED, REWARD_RANK, RankingChoice, SPARK, SPARK_RANK, center_of, double_clicking, drop_unwanted, find_chests, fold,
-    handle_unavailable_reward, leave_after_refinement, open_a_chest, order, rank, substituted, take_substitute,
+    handle_unavailable_reward, leave_after_refinement, open_a_chest, order, rank, ranking, take_substitute,
 )
 from src.en.enter import OPTION_TEMPLATES, on_the_button  # noqa: E402
 from src.en.etched_memory import (  # noqa: E402
@@ -485,17 +485,24 @@ class TestUnavailableReward(unittest.TestCase):
         self.assertFalse(handle_unavailable_reward(task))
         self.assertEqual([], task.clicked)
 
-    def test_a_losing_substitute_is_cancelled_and_its_option_not_picked_again(self):
-        """Confirming here is the 2026-10-25 loss, and re-ranking the option as an Epiphany would raise the dialog forever."""
+    def test_a_losing_substitute_is_cancelled_and_another_option_taken(self):
+        """Confirming here is the 2026-10-25 loss. Picking the cancelled option again re-opens the dialog forever."""
         options = self.options(self.OBELISK)
         task = self.pick(options, 1)
         task.all_texts = self.dialog("Increase Credits by 100")
         self.assertTrue(handle_unavailable_reward(task))
         self.assertEqual([self.CANCEL_BUTTON], task.clicked)
 
-        ranked = order(substituted(task, options), [], utils.is_subsequence)
-        self.assertEqual(self.OBELISK[2], ranked[0]["description"])
-        self.assertEqual(CREDIT_RANK, rank(next(o for o in ranked if center_of(o) == center_of(options[1]))["description"]))
+        # The game leaves the cancelled option raised, and upstream takes a raised option before anything is ranked.
+        shown = [{**option, "x": center_of(option)[0], "y": 0.86 if slot == 1 else 0.95} for slot, option in enumerate(options)]
+        vars(task).update(all_texts=[], config={}, node_status={}, name="自动卡厄思模式", box_of_screen=lambda *region: region,
+                          find_feature=lambda *args, **kwargs: [], find_one=lambda *args, **kwargs: None)
+        with standing_in(utils, recognize_event_options=lambda task, **kwargs: [dict(option) for option in shown]):
+            handler = ranking(utils)(utils.handle_event_task)
+        tapped = []
+        with standing_in(utils, _move_and_click=lambda task, x, y: tapped.append((x, y))):
+            self.assertTrue(handler(task))
+        self.assertEqual([center_of(options[2])], tapped)
 
 
 class TestEnterButton(unittest.TestCase):
