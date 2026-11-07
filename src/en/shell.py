@@ -7,7 +7,7 @@ import time
 
 from ok import Logger, og
 
-from src.en import task_list
+from src.en import humanize, task_list
 from src.en.framework import import_ui
 
 logger = Logger.get_logger(__name__)
@@ -52,6 +52,7 @@ def looping(task):
             # Drops the cached frame so the next pass reads the current screen. This also raises once Stop is
             # pressed, which is the same exception the executor already handles for any other task.
             task.executor.reset_scene()
+            humanize.rest_if_due(task)
             # Upstream paced from the start of one pass to the start of the next. Sleeping the whole interval
             # on top of the pass would stretch every cycle by however long the pass took.
             # Read fresh each pass rather than captured once, so a handler can change the pace while the mode

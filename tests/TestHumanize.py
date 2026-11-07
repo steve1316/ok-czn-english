@@ -19,7 +19,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from ok.feature.Box import Box  # noqa: E402
 
-from src.en import humanize  # noqa: E402
+from src.en import humanize, shell, stuck  # noqa: E402
 from src.en.framework import import_ui  # noqa: E402
 from tests.fakes import HEIGHT, WIDTH, EchoApp  # noqa: E402
 
@@ -39,6 +39,7 @@ class TestHumanize(unittest.TestCase):
 
     def setUp(self):
         humanize._last_input = float("-inf")
+        humanize._next_break = None
         humanize._aimed = False
 
     def test_box_clicks_spread_but_stay_inside_the_middle_of_the_box(self):
@@ -87,6 +88,51 @@ class TestHumanize(unittest.TestCase):
         sleep.assert_called_once()
         (wait,), _ = sleep.call_args
         self.assertTrue(tuned[humanize.REACT_MIN] / 1000 <= wait <= tuned[humanize.REACT_MAX] / 1000)
+
+    def test_a_due_break_waits_for_the_next_pass_then_forgets_the_stuck_clock(self):
+        clock = [1000.0]
+        task = SimpleNamespace(**{stuck.CLOCK: 0, stuck.PICTURE: "frame"}, sleep=mock.Mock())
+        tuned = {**QUIET, humanize.BREAKS: True}
+        key = humanize.humanizing_key(lambda self, key, down_time: None)
+        with mock.patch.object(humanize, "settings", return_value=tuned), mock.patch.object(humanize.time, "monotonic", side_effect=lambda: clock[0]):
+            humanize.rest_if_due(task)
+            clock[0] = humanize._next_break
+            # A break inside an input could leave a raised card waiting on its Enter.
+            key(None, "enter")
+            task.sleep.assert_not_called()
+            humanize.rest_if_due(task)
+        task.sleep.assert_called_once()
+        (length,), _ = task.sleep.call_args
+        self.assertTrue(tuned[humanize.BREAK_MIN] * 60 <= length <= tuned[humanize.BREAK_MAX] * 60)
+        self.assertFalse(hasattr(task, stuck.CLOCK) or hasattr(task, stuck.PICTURE))
+        self.assertGreater(humanize._next_break, clock[0])
+
+    def test_an_idle_spell_counts_as_a_break(self):
+        clock = [1000.0]
+        task = SimpleNamespace(sleep=mock.Mock())
+        tuned = {**QUIET, humanize.BREAKS: True}
+        key = humanize.humanizing_key(lambda self, key, down_time: None)
+        with mock.patch.object(humanize, "settings", return_value=tuned), mock.patch.object(humanize.time, "monotonic", side_effect=lambda: clock[0]):
+            key(None, "1")
+            humanize.rest_if_due(task)
+            # The app sat stopped past the due time for longer than the shortest break.
+            clock[0] = humanize._next_break + tuned[humanize.BREAK_MIN] * 60
+            humanize.rest_if_due(task)
+        task.sleep.assert_not_called()
+        self.assertGreater(humanize._next_break, clock[0])
+
+    def test_the_mode_loop_offers_a_break_between_passes(self):
+        # Without this call in the loop, the Take Breaks switch would silently do nothing.
+        task = SimpleNamespace(enabled=True, enable=mock.Mock(), trigger_interval=0, executor=mock.Mock(), sleep=mock.Mock())
+        passes = [True, False]
+
+        def one_pass():
+            task.enabled = passes.pop(0)
+
+        task.run = one_pass
+        with mock.patch.object(humanize, "rest_if_due") as rest:
+            shell.looping(task)()
+        rest.assert_called_once_with(task)
 
 
 class TestHumanInputSettings(unittest.TestCase):

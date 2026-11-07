@@ -1,13 +1,15 @@
 """Make the bot's clicks, keys and pacing less mechanical, as tuned under the Input Variance settings.
 
-Upstream clicks the exact centre of every box (its "variance" is under a pixel and rounds away), holds every press for 10-20ms and acts the
-moment a screen appears. This spreads clicks, varies press lengths and waits a short reaction delay.
+Upstream clicks the exact centre of every box (its "variance" is under a pixel and rounds away), holds every press for 10-20ms, acts the
+moment a screen appears and never stops. This spreads clicks, varies press lengths, waits a short reaction delay and can take breaks.
 """
 
 import random
 import time
 
 from ok import ConfigOption, Logger, og
+
+from src.en import stuck
 
 logger = Logger.get_logger(__name__)
 
@@ -18,6 +20,11 @@ VARY_PRESS = "Vary Press Length"
 REACT = "Reaction Delay"
 REACT_MIN = "Reaction Delay Min (ms)"
 REACT_MAX = "Reaction Delay Max (ms)"
+BREAKS = "Take Breaks"
+PLAY_MIN = "Play Between Breaks Min (min)"
+PLAY_MAX = "Play Between Breaks Max (min)"
+BREAK_MIN = "Break Length Min (min)"
+BREAK_MAX = "Break Length Max (min)"
 
 DEFAULTS = {
     SPREAD: True,
@@ -26,6 +33,11 @@ DEFAULTS = {
     REACT: True,
     REACT_MIN: 150,
     REACT_MAX: 400,
+    BREAKS: False,
+    PLAY_MIN: 30,
+    PLAY_MAX: 60,
+    BREAK_MIN: 1,
+    BREAK_MAX: 5,
 }
 
 # Listed in `global_configs`, which is what puts it on the Settings page. A number row only shows while its switch is on.
@@ -35,6 +47,11 @@ human_input_option = ConfigOption("Input Variance", DEFAULTS, config_type={
     REACT: {"sub_configs": {True: [REACT_MIN, REACT_MAX]}},
     REACT_MIN: {"min": 0, "max": 2000},
     REACT_MAX: {"min": 0, "max": 2000},
+    BREAKS: {"sub_configs": {True: [PLAY_MIN, PLAY_MAX, BREAK_MIN, BREAK_MAX]}},
+    PLAY_MIN: {"min": 5, "max": 600},
+    PLAY_MAX: {"min": 5, "max": 600},
+    BREAK_MIN: {"min": 1, "max": 60},
+    BREAK_MAX: {"min": 1, "max": 60},
 }, config_description={
     SPREAD: "Click a random spot near the middle of each button instead of its exact centre.",
     SPREAD_PX: "How far a click aimed at a fixed spot, not a read button, may drift. Measured at 1080p and scaled to the window.",
@@ -42,6 +59,11 @@ human_input_option = ConfigOption("Input Variance", DEFAULTS, config_type={
     REACT: "Wait a moment before acting on a new screen, as a person reading it would.",
     REACT_MIN: "Shortest reaction delay.",
     REACT_MAX: "Longest reaction delay.",
+    BREAKS: "Stop for a few minutes every so often. Any idle spell at least as long as the shortest break counts as one.",
+    PLAY_MIN: "Shortest stretch of play before a break.",
+    PLAY_MAX: "Longest stretch of play before a break.",
+    BREAK_MIN: "Shortest break.",
+    BREAK_MAX: "Longest break.",
 }, description="Make clicks, keys and pacing less mechanical.")
 
 # Spread of a box click, as a share of the box: a standard deviation of 15%, kept inside the box's middle 70%.
@@ -60,6 +82,8 @@ REFERENCE_HEIGHT = 1080
 _patched = False
 # When the last click or key finished, on the monotonic clock.
 _last_input = float("-inf")
+# When the next break is due on the monotonic clock, or None until breaks are on and a pass schedules one.
+_next_break = None
 # Set by a box click's aim so the click it feeds is not spread a second time.
 _aimed = False
 
@@ -126,6 +150,43 @@ def nudge(interaction, x, y, tuned):
     return min(width - 1, max(0, int(round(x + dx)))), min(height - 1, max(0, int(round(y + dy))))
 
 
+def take_break(task, tuned):
+    """Stop for a break of a drawn length, which the Stop button still interrupts.
+
+    Args:
+        task: The running mode, whose sleep the break is.
+        tuned: The Input Variance settings.
+    """
+    global _next_break
+    length = random.uniform(tuned[BREAK_MIN], tuned[BREAK_MAX]) * 60
+    back = time.strftime("%H:%M:%S", time.localtime(time.time() + length))
+    logger.info(f"taking a {length / 60:.1f} minute break, back at {back}")
+    # Cleared first, so a run stopped mid-break schedules a fresh one rather than breaking again the moment it restarts.
+    _next_break = None
+    task.sleep(length)
+    # The screen sat still the whole time, which the stuck detector would otherwise count as frozen.
+    stuck.forget(task)
+
+
+def rest_if_due(task):
+    """Take a due break, called between a mode's passes because inside one a target is chosen or a card is half played.
+
+    Args:
+        task: The running mode, from `src/en/shell.py`'s loop.
+    """
+    global _next_break
+    tuned = settings()
+    if not tuned:
+        return
+    now = time.monotonic()
+    if not tuned[BREAKS] or now - _last_input >= tuned[BREAK_MIN] * 60:
+        _next_break = None
+    elif _next_break is not None and now >= _next_break:
+        take_break(task, tuned)
+    if tuned[BREAKS] and _next_break is None:
+        _next_break = time.monotonic() + random.uniform(tuned[PLAY_MIN], tuned[PLAY_MAX]) * 60
+
+
 def pace(tuned):
     """Wait a reaction delay when this input starts a new decision.
 
@@ -143,7 +204,7 @@ def pace(tuned):
 
 
 def finished():
-    """Note that an input just finished, for the reaction delay."""
+    """Note that an input just finished, for the reaction delay and the idle-counts-as-a-break rule."""
     global _last_input
     _last_input = time.monotonic()
 

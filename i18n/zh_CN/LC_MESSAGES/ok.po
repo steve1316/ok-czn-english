@@ -686,3 +686,33 @@ msgstr "最长反应延迟（毫秒）"
 
 msgid "Longest reaction delay."
 msgstr "反应延迟的上限。"
+
+msgid "Take Breaks"
+msgstr "定时休息"
+
+msgid "Stop for a few minutes every so often. Any idle spell at least as long as the shortest break counts as one."
+msgstr "每隔一段时间停止几分钟。空闲时间达到最短休息时长也算一次休息。"
+
+msgid "Play Between Breaks Min (min)"
+msgstr "两次休息间最短运行时长（分钟）"
+
+msgid "Shortest stretch of play before a break."
+msgstr "休息前连续运行的最短时长。"
+
+msgid "Play Between Breaks Max (min)"
+msgstr "两次休息间最长运行时长（分钟）"
+
+msgid "Longest stretch of play before a break."
+msgstr "休息前连续运行的最长时长。"
+
+msgid "Break Length Min (min)"
+msgstr "最短休息时长（分钟）"
+
+msgid "Shortest break."
+msgstr "休息时长的下限。"
+
+msgid "Break Length Max (min)"
+msgstr "最长休息时长（分钟）"
+
+msgid "Longest break."
+msgstr "休息时长的上限。"
