@@ -43,6 +43,8 @@ CHOOSERS = {
     "handle_card_reward": "recognize_cards",
     "handle_view_original": "recognize_cards",
 }
+# The `select_card` action for a removal, where a pinned card is the one to keep rather than the one to take.
+REMOVE = "移除"
 # Names each change in the shared record of what a function already carries.
 MARK_TAG = "pin marks"
 NARROW_TAG = "pinned only"
@@ -117,21 +119,23 @@ def marked(task, cards, offset):
     return cards
 
 
-def only_pinned(cards):
-    """Narrow a screen's cards to the ones the build preset pinned.
+def only_pinned(cards, removing=False):
+    """Narrow a screen's cards to the ones the build preset pinned, or to the rest on a removal.
 
     Args:
         cards: The cards the recognizer found, already marked.
+        removing: True on a removal screen, where the pinned cards are set aside instead.
 
     Returns:
-        Just the pinned cards, or every card when the pin cannot separate them.
+        The cards left, or every card when the pin cannot separate them.
     """
-    pinned = [card for card in cards if card.get("pinned")]
+    kept = [card for card in cards if bool(card.get("pinned")) != removing]
     # Narrowing to all of them, or to none of them, would change nothing but the log.
-    if not pinned or len(pinned) == len(cards):
+    if not kept or len(kept) == len(cards):
         return cards
-    logger.info(f"build preset pinned {[card['name'] for card in pinned]}, so the rest are set aside")
-    return pinned
+    pinned = [card["name"] for card in cards if card.get("pinned")]
+    logger.info(f"build preset pinned {pinned}, so {'they are kept out of the removal' if removing else 'the rest are set aside'}")
+    return kept
 
 
 def tagging(recognise, offset):
@@ -151,7 +155,7 @@ def tagging(recognise, offset):
 
 
 def narrowing(chooser, utils, recognizer):
-    """Wrap a function that picks a card so it only ever sees the pinned candidates.
+    """Wrap a function that picks a card so it only ever sees the pinned candidates, or on a removal the unpinned ones.
 
     Only the handlers about to *choose* a card are narrowed. Several other callers count what they were given
     rather than ranking it - `handle_mask_card` treats fewer than three cards as "the choice has already been
@@ -167,9 +171,11 @@ def narrowing(chooser, utils, recognizer):
     """
     def wrapped(*args, **kwargs):
         original = getattr(utils, recognizer)
+        # Only `select_card` takes an action, and every caller passes it by keyword.
+        removing = kwargs.get("action") == REMOVE
 
         def narrowed(*inner_args, **inner_kwargs):
-            return only_pinned(original(*inner_args, **inner_kwargs))
+            return only_pinned(original(*inner_args, **inner_kwargs), removing)
 
         with standing_in(utils, **{recognizer: narrowed}):
             return chooser(*args, **kwargs)
@@ -178,7 +184,7 @@ def narrowing(chooser, utils, recognizer):
 
 
 def taking_on_sight(select_card, utils):
-    """Wrap `select_card` so a pinned card is taken on the page it first shows up on.
+    """Wrap `select_card` so a pinned card is taken on the page it first shows up on, except on a removal.
 
     Upstream only clicks mid-scroll when a card matches the priority list, so a pinned card that matches nothing
     waits until the scroll reaches the bottom of the deck. The pinned names on the current page are appended to
@@ -192,6 +198,8 @@ def taking_on_sight(select_card, utils):
         The wrapped function.
     """
     def wrapped(task, card_names, count=1, action=""):
+        if action == REMOVE:
+            return select_card(task, card_names, count=count, action=action)
         names = list(card_names or [])
         configured = len(names)
         original = utils.recognize_cards_in_deck
