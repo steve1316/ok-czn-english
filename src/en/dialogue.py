@@ -82,6 +82,15 @@ AFTER_TOGGLE = 0.5
 # draw the button but never let it turn on, and tapping it again every frame left one run on the same line for
 # over a minute. Long enough to carry a whole cutscene, short enough that the next one tries the button again.
 TOGGLE_RETRY = 30
+# Where a memory cutscene shows, as `(left, top, right, bottom)` screen fractions: the middle of the scene, clear of the HUD and the prose.
+MEMORY_REGION = (0.1, 0.25, 0.9, 0.75)
+# A memory cutscene is drawn in greyscale and draws its auto-advance button but ignores it. Colour is any pixel past this saturation.
+COLOURED_LOW = np.array((0, 41, 0), dtype=np.uint8)
+COLOURED_HIGH = np.array((179, 255, 255), dtype=np.uint8)
+# The 11:31 memory cutscene measured 0.015 coloured at brightness 131. The 847 captures held no narration under 0.12, and the black
+# test frames sit under the brightness floor.
+MAX_MEMORY_COLOUR = 0.05
+MIN_MEMORY_BRIGHTNESS = 80
 # Set on the task: when the button was last tapped, so a tap that did not take is not repeated every frame.
 TOGGLED_AT = "_en_auto_advance_toggled_at"
 # A handler Chaos and Sortie both carry and Story does not, which is how the tap reaches those two alone.
@@ -159,6 +168,21 @@ def auto_advance_off(task):
     return colour_share(patch, GLOW_LOW, GLOW_HIGH) < MIN_GLOW
 
 
+def memory_scene(task):
+    """Report whether the frame is a greyscale memory cutscene, whose auto-advance button is locked.
+
+    Args:
+        task: The running task, whose `frame` holds the current capture.
+
+    Returns:
+        True when the middle of the scene is bright and all but colourless.
+    """
+    patch = patch_of(frame_of(task), MEMORY_REGION)
+    if patch is None or patch.size == 0:
+        return False
+    return patch.mean() >= MIN_MEMORY_BRIGHTNESS and colour_share(patch, COLOURED_LOW, COLOURED_HIGH) < MAX_MEMORY_COLOUR
+
+
 def turn_auto_advance_on(task):
     """Tap the auto-advance button so the game plays the rest of the cutscene itself.
 
@@ -191,7 +215,8 @@ def handle_dialogue(task):
     line = narration_line(task) or speech_line(task)
     if line is None:
         return False
-    if auto_advance_off(task) and time.monotonic() - getattr(task, TOGGLED_AT, float("-inf")) >= TOGGLE_RETRY:
+    retry_due = time.monotonic() - getattr(task, TOGGLED_AT, float("-inf")) >= TOGGLE_RETRY
+    if retry_due and auto_advance_off(task) and not memory_scene(task):
         turn_auto_advance_on(task)
         return True
     tap_through(task, line)

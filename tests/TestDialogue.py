@@ -18,7 +18,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from src.en.dialogue import (AFTER_TOGGLE, BETWEEN_TAPS, BUBBLE_AFTER_STUCK, MAX_TAPS, MAX_TEXT_BOXES, MIN_GLOW,  # noqa: E402
-                            TAP_AREA, TOGGLE_POINT, TOGGLE_REGION, TOGGLE_RETRY, TOGGLED_AT, advance_arrow_showing,
+                            MEMORY_REGION, TAP_AREA, TOGGLE_POINT, TOGGLE_REGION, TOGGLE_RETRY, TOGGLED_AT, advance_arrow_showing,
                             auto_advance_off, handle_dialogue, narration_line, speech_line)
 from src.en.stuck import CLOCK  # noqa: E402
 
@@ -414,6 +414,16 @@ class TestAutoAdvance(TapsInArea, unittest.TestCase):
         setattr(task, TOGGLED_AT, getattr(task, TOGGLED_AT) - TOGGLE_RETRY)
         handle_dialogue(task)
         self.assertEqual([TOGGLE_POINT], task.taps)
+
+    def test_a_memory_cutscene_is_tapped_through_without_reaching_for_the_button(self):
+        """The 11:31 memory cutscene is drawn in grey and ignores the button, so tapping it only wasted the frame."""
+        task = narration_screen()
+        task.frame = frame_with_button(UNLIT)
+        left, top, right, bottom = MEMORY_REGION
+        task.frame[int(top * HEIGHT):int(bottom * HEIGHT), int(left * WIDTH):int(right * WIDTH)] = (131, 131, 131)
+        self.assertTrue(handle_dialogue(task))
+        self.assertNotIn(TOGGLE_POINT, task.taps)
+        self.assertTapsInArea(task.taps, 1)
 
     def test_the_button_is_never_tapped_off_a_narration_screen(self):
         """The corner is only read once the screen has been recognised, so nothing else can be reached for."""
