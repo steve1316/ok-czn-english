@@ -662,3 +662,9 @@ msgstr "固定位置偏移（像素）"
 
 msgid "How far a click aimed at a fixed spot, not a read button, may drift. Measured at 1080p and scaled to the window."
 msgstr "点击固定位置（而非识别到的按钮）时可偏移的最大距离。以 1080p 为基准，并按窗口大小缩放。"
+
+msgid "Vary Press Length"
+msgstr "随机按压时长"
+
+msgid "Hold each click and key for a varied 50-140ms instead of a fixed 10-20ms."
+msgstr "每次点击和按键按住 50-140 毫秒不等，而不是固定的 10-20 毫秒。"

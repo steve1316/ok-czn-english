@@ -63,6 +63,18 @@ class TestHumanize(unittest.TestCase):
         self.assertTrue(all(abs(x - 300) <= reach and abs(y - 400) <= reach for x, y in drifted))
         self.assertEqual(landed, [(300, 400)])
 
+    def test_short_presses_vary_but_a_deliberate_hold_keeps_its_length(self):
+        pressed = []
+        click = humanize.humanizing_click(lambda self, x, y, **kwargs: pressed.append(kwargs["down_time"]))
+        with mock.patch.object(humanize, "settings", return_value=QUIET):
+            for _ in range(DRAWS):
+                click(INTERACTION, 300, 400, down_time=0.02)
+            click(INTERACTION, 300, 400, down_time=1)
+        held, short = pressed[-1], pressed[:-1]
+        self.assertEqual(held, 1)
+        self.assertGreater(len(set(short)), 1)
+        self.assertTrue(all(humanize.CLICK_PRESS[0] <= press <= humanize.CLICK_PRESS[1] for press in short))
+
 
 class TestHumanInputSettings(unittest.TestCase):
     """The section on the real settings form, where a mistyped key would silently lose its row."""

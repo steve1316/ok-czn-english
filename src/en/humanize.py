@@ -1,6 +1,7 @@
-"""Make the bot's clicks less mechanical, as tuned under the Input Variance settings.
+"""Make the bot's clicks, keys and pacing less mechanical, as tuned under the Input Variance settings.
 
-Upstream clicks the exact centre of every box, since its "variance" is under a pixel and rounds away. This spreads clicks around that centre.
+Upstream clicks the exact centre of every box (its "variance" is under a pixel and rounds away) and holds every press for 10-20ms. This
+spreads clicks and varies press lengths.
 """
 
 import random
@@ -12,10 +13,12 @@ logger = Logger.get_logger(__name__)
 # The labels on the Settings page, and the keys they are saved under.
 SPREAD = "Spread Clicks"
 SPREAD_PX = "Fixed-Point Spread (px)"
+VARY_PRESS = "Vary Press Length"
 
 DEFAULTS = {
     SPREAD: True,
     SPREAD_PX: 8,
+    VARY_PRESS: True,
 }
 
 # Listed in `global_configs`, which is what puts it on the Settings page. A number row only shows while its switch is on.
@@ -25,11 +28,17 @@ human_input_option = ConfigOption("Input Variance", DEFAULTS, config_type={
 }, config_description={
     SPREAD: "Click a random spot near the middle of each button instead of its exact centre.",
     SPREAD_PX: "How far a click aimed at a fixed spot, not a read button, may drift. Measured at 1080p and scaled to the window.",
+    VARY_PRESS: "Hold each click and key for a varied 50-140ms instead of a fixed 10-20ms.",
 }, description="Make clicks, keys and pacing less mechanical.")
 
 # Spread of a box click, as a share of the box: a standard deviation of 15%, kept inside the box's middle 70%.
 BOX_SIGMA = 0.15
 BOX_INNER = (0.15, 0.85)
+# Press lengths in seconds as (shortest, longest, most likely), for a triangular draw. Upstream's click also waits this long before the press.
+CLICK_PRESS = (0.06, 0.14, 0.08)
+KEY_PRESS = (0.05, 0.12, 0.07)
+# A press asked to last longer than this is a deliberate hold and keeps its length.
+LONG_HOLD = 0.05
 # The frame height `SPREAD_PX` is measured at.
 REFERENCE_HEIGHT = 1080
 
@@ -101,7 +110,7 @@ def nudge(interaction, x, y, tuned):
 
 
 def humanizing_click(original):
-    """Wrap `PostMessageInteraction.click` with the spread.
+    """Wrap `PostMessageInteraction.click` with the spread and a varied press.
 
     Args:
         original: The click below, already wrapped by `src/en/cursor.py`.
@@ -109,24 +118,47 @@ def humanizing_click(original):
     Returns:
         The wrapped method.
     """
-    def click(self, x=-1, y=-1, *args, **kwargs):
+    def click(self, x=-1, y=-1, *args, down_time=0.01, **kwargs):
         global _aimed
         tuned = settings()
         if not tuned:
-            return original(self, x, y, *args, **kwargs)
+            return original(self, x, y, *args, down_time=down_time, **kwargs)
         aimed, _aimed = _aimed, False
         asked = (x, y)
         # -1 repeats the last position, which upstream tracks itself.
         if tuned[SPREAD] and not aimed and x >= 0 and y >= 0:
             x, y = nudge(self, x, y, tuned)
-        logger.debug(f"click {asked} lands at ({x}, {y})")
-        return original(self, x, y, *args, **kwargs)
+        if tuned[VARY_PRESS] and down_time <= LONG_HOLD:
+            down_time = random.triangular(*CLICK_PRESS)
+        logger.debug(f"click {asked} lands at ({x}, {y}), held {down_time * 1000:.0f}ms")
+        return original(self, x, y, *args, down_time=down_time, **kwargs)
 
     return click
 
 
+def humanizing_key(original):
+    """Wrap `PostMessageInteraction.send_key` with a varied press.
+
+    Args:
+        original: The key below, already wrapped by `src/en/cursor.py`.
+
+    Returns:
+        The wrapped method.
+    """
+    def send_key(self, key, down_time=0.01, *args, **kwargs):
+        tuned = settings()
+        if not tuned:
+            return original(self, key, down_time, *args, **kwargs)
+        if tuned[VARY_PRESS] and down_time <= LONG_HOLD:
+            down_time = random.triangular(*KEY_PRESS)
+        logger.debug(f"key {key} held {down_time * 1000:.0f}ms")
+        return original(self, key, down_time, *args, **kwargs)
+
+    return send_key
+
+
 def apply():
-    """Spread clicks while the Input Variance settings ask for it."""
+    """Spread clicks and vary presses while the Input Variance settings ask for it."""
     global _patched
     if _patched:
         return
@@ -135,5 +167,6 @@ def apply():
 
     Box.relative_with_variance = spreading_in_box(Box.relative_with_variance)
     PostMessageInteraction.click = humanizing_click(PostMessageInteraction.click)
+    PostMessageInteraction.send_key = humanizing_key(PostMessageInteraction.send_key)
     _patched = True
-    logger.info("clicks follow the Input Variance settings")
+    logger.info("clicks and keys follow the Input Variance settings")
