@@ -91,6 +91,12 @@ COLOURED_HIGH = np.array((179, 255, 255), dtype=np.uint8)
 # test frames sit under the brightness floor.
 MAX_MEMORY_COLOUR = 0.05
 MIN_MEMORY_BRIGHTNESS = 80
+# The stroke across a locked button, as two `(x, y)` screen fractions, and the points read along it. 22 taps on it over three runs changed nothing.
+LOCK_STROKE = ((0.8714, 0.0630), (0.8870, 0.0435))
+LOCK_POINTS = 21
+# A point on the stroke is white in every channel. At least 0.71 of them were over 400 locked frames, and 0.52 at most on the lit button and the rest.
+LOCK_WHITE = 170
+MIN_LOCK_WHITE = 0.6
 # Set on the task: when the button was last tapped, so a tap that did not take is not repeated every frame.
 TOGGLED_AT = "_en_auto_advance_toggled_at"
 # A handler Chaos and Sortie both carry and Story does not, which is how the tap reaches those two alone.
@@ -183,6 +189,27 @@ def memory_scene(task):
     return patch.mean() >= MIN_MEMORY_BRIGHTNESS and colour_share(patch, COLOURED_LOW, COLOURED_HIGH) < MAX_MEMORY_COLOUR
 
 
+def button_locked(task):
+    """Report whether the auto-advance button is struck through, which means a tap on it does nothing.
+
+    Args:
+        task: The running task, whose `frame` holds the current capture.
+
+    Returns:
+        True when the stroke is drawn. A frame that cannot be read counts as not locked.
+    """
+    frame = frame_of(task)
+    if frame is None or frame.size == 0:
+        return False
+    height, width = frame.shape[:2]
+    (left, top), (right, bottom) = LOCK_STROKE
+    white = [frame[int((top + (bottom - top) * step) * height), int((left + (right - left) * step) * width)][:3].min() >= LOCK_WHITE for step in np.linspace(0, 1, LOCK_POINTS)]
+    locked = float(np.mean(white)) >= MIN_LOCK_WHITE
+    if locked:
+        logger.debug("auto-advance button is locked, so the line is tapped instead")
+    return locked
+
+
 def turn_auto_advance_on(task):
     """Tap the auto-advance button so the game plays the rest of the cutscene itself.
 
@@ -216,7 +243,7 @@ def handle_dialogue(task):
     if line is None:
         return False
     retry_due = time.monotonic() - getattr(task, TOGGLED_AT, float("-inf")) >= TOGGLE_RETRY
-    if retry_due and auto_advance_off(task) and not memory_scene(task):
+    if retry_due and auto_advance_off(task) and not memory_scene(task) and not button_locked(task):
         turn_auto_advance_on(task)
         return True
     tap_through(task, line)

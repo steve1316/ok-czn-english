@@ -383,6 +383,14 @@ class TestAutoAdvance(TapsInArea, unittest.TestCase):
         self.assertEqual([TOGGLE_POINT], task.taps)
         self.assertEqual(TOGGLE_POINT, task.moved)
 
+    def test_a_locked_button_is_left_alone(self):
+        """All 22 taps on the struck-through button across three runs left it unchanged, so the line is tapped instead."""
+        task = narration_screen()
+        task.frame = np.zeros((HEIGHT, WIDTH, 3), dtype=np.uint8)
+        task.frame[20:100, 1640:1740] = cv2.imread(str(REPO_ROOT / "tests" / "images" / "fast_forward_locked.png"))
+        self.assertTrue(handle_dialogue(task))
+        self.assertTapsInArea(task.taps, 1)
+
     def test_the_button_gets_the_pointer_before_the_tap(self):
         """Upstream dwells on every button before clicking it, and this client drops a click that
         arrives without one."""
