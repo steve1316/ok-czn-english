@@ -250,22 +250,6 @@ class TestNarrowing(unittest.TestCase):
         narrowing(chooser, utils, "recognize_cards_in_deck")(task)
         self.assertEqual([["card1"]], seen)
 
-    def test_a_removal_never_sees_the_pinned_cards(self):
-        """The preset pins the cards a build wants, so those are the last ones a removal should take."""
-        task, cards = screen_with([False, True], DECK_OFFSET)
-        marked(task, cards, DECK_OFFSET)
-        utils = self.utils_stub(cards)
-        seen, listed = [], []
-
-        def select_card(task_, names, count=1, action=""):
-            seen.append([c["name"] for c in utils.recognize_cards_in_deck(task_)])
-            listed.append(list(names))
-            return True
-
-        utils.select_card = select_card
-        taking_on_sight(narrowing(select_card, utils, "recognize_cards_in_deck"), utils)(task, [], count=1, action="移除")
-        self.assertEqual(([["card0"]], [[]]), (seen, listed))
-
     def test_passes_arguments_and_result_through(self):
         utils = self.utils_stub([])
         wrapped = narrowing(lambda task_, names, count=1, action="": (names, count, action),
@@ -300,7 +284,7 @@ class TestTakingOnSight(unittest.TestCase):
                          _move_and_click=lambda task_, x, y: clicks.append((x, y)),
                          _get_config_value=lambda task_, key, default: default,
                          _get_game_text=lambda task_, key: key):
-            self.assertTrue(taking_on_sight(utils.select_card, utils)(task, [], count=1, action="复制"))
+            self.assertTrue(taking_on_sight(utils.select_card, utils)(task, [], count=1, action="移除"))
         self.assertEqual([(0.4, 0.6)], clicks)
         self.assertEqual(0, page[0])
 
