@@ -338,10 +338,10 @@ msgstr "请选择获得"
 msgid "Select the combatant to gain Epiphany."
 msgstr "请选择获得闪光的主战员"
 
-# From handle_main_member_flash: the Duplicate combatant picker sits at the same point and is served by the
-# same handler, so it has to carry "请选择获得" too. The tail keeps the two apart in the log.
+# From handle_copy_member: _get_game_text(task, "选择要复制卡牌的主战员") in box.name. It must not carry "请选择获得",
+# or handle_main_member_flash claims it, waits for an Epiphany check that never draws here, and taps all three combatants.
 msgid "Select the Combatant whose card you'd like to Duplicate."
-msgstr "请选择获得复制卡牌的主战员"
+msgstr "请选择要复制卡牌的主战员"
 
 # From handle_copy_card_choice: _get_game_text(task, "请选择要复制的卡牌") in box.name
 msgid "Select a card to Duplicate."

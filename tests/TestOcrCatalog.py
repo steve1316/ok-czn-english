@@ -133,6 +133,13 @@ class TestOcrCatalog(unittest.TestCase):
         translation = gettext.translation("ocr", str(I18N_ROOT), languages=["en_US"])
         self.assertIn("购买卡牌", translation.gettext("Purchase Card"))
 
+    def test_the_duplicate_combatant_prompt_reaches_its_own_handler(self):
+        """Read as the Epiphany prompt, it went to a handler that tapped all three combatants and left the right-most chosen."""
+        translation = gettext.translation("ocr", str(I18N_ROOT), languages=["en_US"])
+        prompt = translation.gettext("Select the Combatant whose card you'd like to Duplicate.")
+        self.assertIn("选择要复制卡牌的主战员", prompt)
+        self.assertNotIn("请选择获得", prompt)
+
     def test_the_buttons_matched_by_equality_are_mapped(self):
         """Each of these is compared with `==` or `_clean_match`, so containing the literal is not enough."""
         translation = gettext.translation("ocr", str(I18N_ROOT), languages=["en_US"])
