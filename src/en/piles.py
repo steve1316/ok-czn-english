@@ -141,19 +141,6 @@ def version_of(name, text):
     return "\n".join((best, *divine_lines(text, best)))
 
 
-def is_divine(name, text):
-    """Say whether a card's text holds a Divine Epiphany line under its own wording.
-
-    Args:
-        name: The canonical card name.
-        text: The card's effect text as read.
-
-    Returns:
-        True when `divine_lines` finds one past the closest version.
-    """
-    return bool(divine_lines(text, closest_version(name, text)))
-
-
 def divine_lines(text, version):
     """Find the Divine Epiphany lines a card's text holds under its own wording.
 

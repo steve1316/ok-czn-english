@@ -380,25 +380,46 @@ class TestInstall(unittest.TestCase):
 class TestEpiphanyVariant(unittest.TestCase):
     """Which variant an Epiphany takes, where a Divine Epiphany outranks the pin."""
 
+    def pick(self, offer, screen, repeat=1):
+        """Run real upstream `handle_view_original` through `choosing_variant`, so this breaks if it stops reading through `recognize_cards`.
+
+        Args:
+            offer: The card dicts the recognizer returns.
+            screen: The other OCR boxes on the screen, such as a god's caption.
+            repeat: How many frames in a row the same screen is handled.
+
+        Returns:
+            The x of every card tapped.
+        """
+        caption = FakeBox("查看原件", 0.890, 0.051)
+        task = types.SimpleNamespace(log_info=lambda message: None, all_texts=screen, width=WIDTH, height=HEIGHT)
+        clicks = []
+        with standing_in(utils, find_box_at_point=lambda *a: caption, _get_game_text=lambda task_, text: text,
+                         recognize_cards=lambda *a, **k: [dict(card) for card in offer], _get_card_list=lambda *a: [],
+                         find_target_card=lambda task_: ([], []), _matching_meditation_card_names=lambda *a: [],
+                         _move_and_click=lambda task_, x, y: clicks.append(x)):
+            for _ in range(repeat):
+                epiphany.choosing_variant(utils.handle_view_original, utils)(task)
+        return clicks
+
     def test_a_divine_variant_beats_a_pin_and_the_most_ap_beats_a_random_pick(self):
-        # Real upstream `handle_view_original`, so this breaks if it stops reading through `recognize_cards` or falling back on `random`.
-        # The first case is the 10:31 Chaos screen, whose middle card carried Vytor's "Draw 1 card(s) of this unit".
+        # The 10:31 Chaos screen, whose middle card carried Vytor's "Draw 1 card(s) of this unit".
         divine = ("Tactical Analysis", ("+50% Heal Amount for2Waveturn", "Heal164%+50% Heal Amount for1Wave2 turns* Draw 1 card(s) of thisunit",
                                         "of this unit is activated,For 1 turn, when a card1 Wave"), (True, False, False))
         ap = ("Ignition Slash", ("500% Damage2 Tenacity Damage", "400% DamageGain 1 APDraw 1 2-Cost or higher card(s)", "450% Damage2 Tenacity DamageGain 2 AP"),
               (False, False, False))
-        caption = FakeBox("查看原件", 0.890, 0.051)
-        for case, (name, texts, pinned), expected in (("divine over pinned", divine, 0.5), ("most AP", ap, 0.7)):
+        vytor = [FakeBox("Epiphany: Vytor", 0.5, 0.886, width=380)]
+        # Without the god's caption the screen is an ordinary Epiphany, where shared wording like "Gain 1 AP" read as Divine on a live run.
+        for case, (name, texts, pinned), screen, expected in (("divine over pinned", divine, vytor, 0.5), ("no god, so the pin", divine, [], 0.2),
+                                                              ("most AP", ap, [], 0.7)):
             with self.subTest(case=case):
                 offer = [{"name": name, "description": text, "pinned": pin, "x": x, "y": 0.3} for text, pin, x in zip(texts, pinned, (0.2, 0.5, 0.7))]
-                clicks = []
-                with standing_in(utils, find_box_at_point=lambda *a: caption, _get_game_text=lambda task_, text: text,
-                                 recognize_cards=lambda *a, **k: [dict(card) for card in offer], _get_card_list=lambda *a: [],
-                                 find_target_card=lambda task_: ([], []), _matching_meditation_card_names=lambda *a: [],
-                                 _move_and_click=lambda task_, x, y: clicks.append(x)):
-                    epiphany.choosing_variant(utils.handle_view_original, utils)(types.SimpleNamespace(log_info=lambda message: None))
-                self.assertEqual([expected], clicks)
+                self.assertEqual([expected], self.pick(offer, screen))
 
+    def test_a_second_tap_waits_for_the_screen_to_answer(self):
+        # A second tap 1.5s after the first landed above the Faint Memory notice as it opened, and dismissed it.
+        offer = [{"name": "Ignition Slash", "description": "450% Damage2 Tenacity DamageGain 2 AP", "pinned": False, "x": 0.7, "y": 0.3}]
+        self.assertEqual([0.7], self.pick(offer, [], repeat=2))
 
 if __name__ == "__main__":
     unittest.main()
