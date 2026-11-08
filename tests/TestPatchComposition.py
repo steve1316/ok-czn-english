@@ -104,7 +104,7 @@ class TestPatchComposition(unittest.TestCase):
     def test_the_card_reward_screen_carries_the_pin_filter_once(self):
         for _ in range(MODES):
             self.install_all()
-        self.assertEqual([pins.NARROW_TAG], list(getattr(self.utils.handle_card_reward, WRAPS)))
+        self.assertEqual([pins.NARROW_TAG, pins.REWARD_TAG], list(getattr(self.utils.handle_card_reward, WRAPS)))
 
     def test_every_patched_handler_reaches_the_mode_list(self):
         self.install_all()

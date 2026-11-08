@@ -28,7 +28,7 @@ from src.en.handlers import standing_in  # noqa: E402
 
 from src.en.pins import (  # noqa: E402
     CHOOSERS, DECK_OFFSET, PICK_OFFSET, PROBE, RECOGNIZERS, ROW_OFFSET, install, is_pinned, marked,
-    narrowing, only_pinned, probe_box, tagging, taking_on_sight, to_pinned_combatant,
+    narrowing, only_pinned, probe_box, tagging, taking_marked, taking_on_sight, to_pinned_combatant,
 )
 from tests.fakes import FakeBox  # noqa: E402
 
@@ -338,6 +338,41 @@ class TestPinnedCombatant(unittest.TestCase):
                                  _move_and_click=lambda task_, x, y: clicked.append(round(y, 4))):
                     to_pinned_combatant(utils.handle_card_assign, utils)(task)
                 self.assertEqual([expected], clicked)
+
+
+class TestMarkedReward(unittest.TestCase):
+    """Taking the card a mark singles out on the three-card reward, through upstream's own handler."""
+
+    # Each card's type icon and its name, from the 2026-11-08 reward screen that offered Execution Rite.
+    ICONS = ((0.2313, "Camouflage"), (0.4609, "Execution Rite"), (0.6906, "Sacred Strike"))
+    ICON_Y = 0.3481
+    # Where OCR read that screen's N badge.
+    BADGE = (0.594, 0.273)
+
+    def taken(self, new=False, pin=None, listed=()):
+        task = FakeTask()
+        task.sleep = lambda seconds: None
+        task.all_texts = [FakeBox("N", *self.BADGE, width=20, height=20)] if new else []
+        offered = [{"name": name, "x": x, "y": 0.5, "feature_box": FakeMatch(x * WIDTH, self.ICON_Y * HEIGHT)} for x, name in self.ICONS]
+        if pin is not None:
+            task.paint(round((self.ICONS[pin][0] + PICK_OFFSET[0]) * WIDTH), round((self.ICON_Y + PICK_OFFSET[1]) * HEIGHT), PIN_BGR)
+        clicked = []
+        with standing_in(utils, _get_region_text=lambda *a: "卡牌奖励", recognize_cards=tagging(lambda *a, **k: [dict(card) for card in offered], PICK_OFFSET),
+                         find_target_card=lambda task_: ([], []), _get_card_reward_priority=lambda task_: list(listed), _get_config_value=lambda task_, key, default: "",
+                         _move_and_click=lambda task_, x, y: clicked.append(next((name for at, name in self.ICONS if at == x), "skip"))):
+            taking_marked(narrowing(utils.handle_card_reward, utils, "recognize_cards"), utils)(task)
+        return clicked
+
+    def test_a_marked_card_is_taken_rather_than_skipped(self):
+        """Upstream skips what its list does not name, so narrowing to a pinned card alone skipped that card, and every other with it."""
+        for reason, kwargs, expected in (
+            ("New beats the list", {"new": True, "listed": ["Camouflage"]}, "Execution Rite"),
+            ("New beats a pin", {"new": True, "pin": 0}, "Execution Rite"),
+            ("a pin nothing lists", {"pin": 2}, "Sacred Strike"),
+            ("nothing marked is skipped", {}, "skip"),
+        ):
+            with self.subTest(reason):
+                self.assertEqual([expected], self.taken(**kwargs))
 
 
 class TestInstall(unittest.TestCase):
