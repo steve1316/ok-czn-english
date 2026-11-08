@@ -36,6 +36,8 @@ WIDTH, HEIGHT = 1920, 1080
 # The orange the pin is drawn in, and a colour from an unpinned card's corner, both sampled from the captures.
 PIN_BGR = (41, 120, 239)
 PLAIN_BGR = (115, 115, 113)
+# Ignition Slash's art under the pin's spot, sampled from a 2026-11-08 run that read it as pinned.
+DIM_ORANGE_BGR = (31, 60, 160)
 # The card assign screen's three LEVEL tags down the screen, from a 2026-10-25 capture.
 ROW_TAGS = (0.3171, 0.5407, 0.7611)
 
@@ -148,6 +150,13 @@ class TestIsPinned(unittest.TestCase):
         task, cards = screen_with([False], DECK_OFFSET)
         x, y = probe_box(task, cards[0]["feature_box"], DECK_OFFSET)
         task.frame[y:y + 3, x:x + 3] = PIN_BGR
+        self.assertFalse(is_pinned(task, cards[0], DECK_OFFSET))
+
+    def test_dim_orange_card_art_is_not_a_pin(self):
+        # Read as a pin, it put Ignition Slash ahead of the real pinned cards on an Epiphany and a removal.
+        task, cards = screen_with([False], DECK_OFFSET)
+        x, y = probe_box(task, cards[0]["feature_box"], DECK_OFFSET)
+        task.frame[y:y + PROBE, x:x + PROBE] = DIM_ORANGE_BGR
         self.assertFalse(is_pinned(task, cards[0], DECK_OFFSET))
 
     def test_declines_without_a_frame(self):

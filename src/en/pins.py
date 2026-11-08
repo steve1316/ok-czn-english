@@ -25,8 +25,9 @@ ROW_OFFSET = (0.4497, -0.1056)
 # tolerates the pixel or two the offset drifts between screens.
 PROBE = 19
 # The pin's colour, as inclusive HSV bounds. Amber, saturated and bright. Held as arrays because `inRange`
-# would otherwise rebuild them on every card.
-PIN_LOW = np.array((5, 150, 150), dtype=np.uint8)
+# would otherwise rebuild them on every card. Real pins read 0.61-0.63 with V>=200. Ignition Slash's art reads 0.53 at V>=150 but 0.00
+# at V>=200, and Blaster Swing's 0.45 against 0.02, so a floor of 150 pinned both.
+PIN_LOW = np.array((5, 150, 200), dtype=np.uint8)
 PIN_HIGH = np.array((25, 255, 255), dtype=np.uint8)
 # How much of the patch has to be that colour. Measured: about 0.66 on a pin, 0.00 without one.
 MIN_ORANGE = 0.25
