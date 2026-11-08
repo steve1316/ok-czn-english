@@ -20,8 +20,10 @@ sys.path.insert(0, str(REPO_ROOT / "ok_tasks"))
 import utils  # noqa: E402
 
 from src.en.deck import (  # noqa: E402
-    COPY_LIST, GAP_KEY, PORTRAIT, ROW_TOLERANCE, choosing_ap_copies, copying_ap_cards, portrait_of, preferring_target_row, reading_bottom_right_first, row_of, rows_first,
+    COPY_LIST, GAP_KEY, PORTRAIT, ROW_TOLERANCE, choosing_copies, copying_ap_cards, portrait_of, preferring_target_row, random_combatant, reading_bottom_right_first, row_of,
+    rows_first,
 )
+from src.en import deck  # noqa: E402
 from src.en.handlers import standing_in  # noqa: E402
 from tests.fakes import FakeBox  # noqa: E402
 
@@ -237,7 +239,7 @@ class TestPreferringTargetRow(unittest.TestCase):
 
 
 class TestCopyingApCards(unittest.TestCase):
-    """A copy with nothing on the user's list takes a card that gains AP, rather than skipping."""
+    """A copy with nothing on the user's list takes a pinned card, an AP card or the strongest, rather than skipping."""
 
     def test_only_a_copy_falls_back_to_ap_cards(self):
         # Appended to a removal, the same list would delete Source of Water from the deck.
@@ -249,16 +251,52 @@ class TestCopyingApCards(unittest.TestCase):
                 self.assertEqual(expected, "Source of Water" in seen)
                 self.assertNotIn("Seven Arms", seen, "its AP comes with a condition")
 
-    def test_upstreams_copy_screen_takes_the_ap_card_on_an_empty_list(self):
+    def copied(self, offered):
+        """Run upstream's copy screen on an empty list and say which offered card it tapped."""
         clicked = []
-        offered = [{"name": "Brand of Annihilation", "x": 0.66, "y": 0.60}, {"name": "+Source of Water", "x": 0.33, "y": 0.18}]
         task = types.SimpleNamespace(log_info=lambda *a: None, sleep=lambda *a: None)
         with standing_in(utils, find_box_at_point=lambda *a: FakeBox("请选择要复制的卡牌", 0.498, 0.133), _get_game_text=lambda task_, text: text,
                          find_target_card=lambda task_: ([], []), recognize_cards=lambda task_, page="": offered,
                          _get_config_value=lambda task_, key, default: [] if key == COPY_LIST else default,
                          _move_and_click=lambda task_, x, y: clicked.append((x, y))):
-            self.assertTrue(choosing_ap_copies(utils.handle_copy_card_choice, utils)(task))
-        self.assertEqual([(0.33, 0.18)], clicked)
+            self.assertTrue(choosing_copies(utils.handle_copy_card_choice, utils)(task))
+        return [card["name"] for card in offered if (card["x"], card["y"]) in clicked]
+
+    def test_upstreams_copy_screen_falls_back_instead_of_skipping(self):
+        # The last two are the 2026-11-08 run's own reads, where every Duplicate was skipped.
+        for reason, offered, expected in (
+            ("an AP card", [{"name": "Brand of Annihilation"}, {"name": "+Source of Water"}], "+Source of Water"),
+            ("a pin over an AP card", [{"name": "+Source of Water"}, {"name": "Tsukuyomi", "pinned": True}], "Tsukuyomi"),
+            ("the strongest as shown", [{"name": "Karmic Flames", "description": "[Initiation] 112% Damage × 2 1 Cursed Shackles"},
+                                        {"name": "Oni Hunt", "description": "Haste 168% Damage ×2 +120% Damage Amount to the next Bind card"},
+                                        {"name": "Tsukuyomi", "description": "3 Will-O'-Wisp for each Hit of the next Attack"}], "Oni Hunt"),
+            ("an unread pin is never matched", [{"name": "", "pinned": True}, {"name": "Tsukuyomi"}, {"name": "Shadow of the Moon", "description": "78%Damage ×3"}],
+             "Shadow of the Moon"),
+        ):
+            with self.subTest(reason):
+                for column, card in enumerate(offered):
+                    card.update(x=0.2 + column * 0.25, y=0.33)
+                self.assertEqual([expected], self.copied(offered))
+
+
+class TestDuplicateCombatant(unittest.TestCase):
+    """The Duplicate's combatant is the save target when it shows, and a random one otherwise, rather than always the left-most."""
+
+    def first_tap(self, target_x=None):
+        clicked = []
+        task = types.SimpleNamespace(log_info=lambda *a: None, sleep=lambda *a: None, width=WIDTH, height=HEIGHT, box_of_screen=lambda *r: r,
+                                     feature_exists=lambda name: target_x is not None, wait_feature=lambda *a, **k: True,
+                                     find_one=lambda **k: types.SimpleNamespace(x=target_x * WIDTH - 50, y=0.4 * HEIGHT - 50, width=100, height=100, confidence=0.9))
+        with standing_in(utils, find_box_at_point=lambda *a: FakeBox("请选择要复制卡牌的主战员", 0.502, 0.932), _get_game_text=lambda task_, text: text,
+                         _move_and_click=lambda task_, x, y: clicked.append(x)):
+            with standing_in(deck.random, sample=lambda population, k: list(reversed(population))):
+                self.assertTrue(random_combatant(utils.handle_copy_member, utils)(task))
+        return clicked[0]
+
+    def test_a_random_combatant_unless_the_save_target_shows(self):
+        for reason, target_x, expected in (("no target, so the shuffle", None, 0.755), ("the target still wins", 0.228, 0.228)):
+            with self.subTest(reason):
+                self.assertEqual(expected, self.first_tap(target_x))
 
 
 if __name__ == "__main__":
