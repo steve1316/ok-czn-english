@@ -17,27 +17,17 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.en.dialogue import (AFTER_TOGGLE, BETWEEN_TAPS, BUBBLE_AFTER_STUCK, MAX_TAPS, MAX_TEXT_BOXES, MIN_GLOW,  # noqa: E402
+from src.en.dialogue import (AFTER_TOGGLE, BETWEEN_TAPS, BUBBLE_AFTER_STUCK, MAX_TAPS, MAX_TEXT_BOXES,  # noqa: E402
                             MEMORY_REGION, TAP_AREA, TOGGLE_POINT, TOGGLE_REGION, TOGGLE_RETRY, TOGGLED_AT, advance_arrow_showing,
-                            auto_advance_off, handle_dialogue, narration_line, speech_line)
+                            handle_dialogue, narration_line, speech_line, speed_to_raise)
 from src.en.stuck import CLOCK  # noqa: E402
 
 WIDTH, HEIGHT = 1920, 1080
 
-# What the button is drawn in, sampled off the captured frames as OpenCV BGR. The lit ring's amber, and the
-# neutral white of the padlock it shows while it is off.
-GLOW = (77, 111, 156)
+# The neutral white the button is drawn in while it is off, sampled off the captured frames as OpenCV BGR.
 UNLIT = (168, 168, 168)
-# The lit ring washed out by a scene change, which once read as off and got auto-advance switched off.
-PALE_GLOW = (207, 229, 230)
 # Where the corner crops in `tests/images/` were cut from, as the pixel at their top left.
 ARROW_CORNER = (1749, 900)
-# The share of the patch the ring covers when it is lit. Twenty frames of the Global client were sampled over
-# its patch: every frame showing it running ran 0.105 to 0.150 and every frame showing it off came back 0.000,
-# so the thinnest of the lit ones is what the threshold has to sit under.
-MEASURED_GLOW = 0.105
-# The washed-out ring's share of the patch, off the frame where it was misread.
-MEASURED_PALE_GLOW = 0.252
 
 # The line the run stalled on, and the two-line screen the mushroom event showed.
 SOLDIER = "The Soldier's eyes are fixed on the group. The Weapon in their hand is trembling."
@@ -92,21 +82,32 @@ class FakeTask:
         pass
 
 
-def frame_with_button(color, share=1.0):
+def frame_with_button(color):
     """Build a capture whose auto-advance button is drawn in one colour.
 
     Args:
         color: The BGR the button is painted in.
-        share: How much of the button's patch that colour covers, the rest left black.
 
     Returns:
         A `(height, width, 3)` BGR array.
     """
     left, top, right, bottom = TOGGLE_REGION
-    x, y = int(left * WIDTH), int(top * HEIGHT)
-    width, height = int(right * WIDTH) - x, int(bottom * HEIGHT) - y
     frame = np.zeros((HEIGHT, WIDTH, 3), dtype=np.uint8)
-    frame[y:y + max(1, round(height * share)), x:x + width] = color
+    frame[int(top * HEIGHT):int(bottom * HEIGHT), int(left * WIDTH):int(right * WIDTH)] = color
+    return frame
+
+
+def frame_with_crop(name):
+    """Build a capture holding a real crop of the auto-advance button.
+
+    Args:
+        name: The crop's suffix in `tests/images/fast_forward_*.png`.
+
+    Returns:
+        A `(height, width, 3)` BGR array.
+    """
+    frame = np.zeros((HEIGHT, WIDTH, 3), dtype=np.uint8)
+    frame[20:100, 1640:1740] = cv2.imread(str(REPO_ROOT / "tests" / "images" / f"fast_forward_{name}.png"))
     return frame
 
 
@@ -357,23 +358,30 @@ class TestAdvanceArrow(unittest.TestCase):
 class TestAutoAdvance(TapsInArea, unittest.TestCase):
     """Reading the auto-advance button, and reaching for it before tapping the prose."""
 
-    def test_the_lit_button_reads_as_running(self):
-        """The thinnest ring the captures measured, and the one a scene change washes out, still have to clear the threshold."""
-        for colour, share in ((GLOW, MEASURED_GLOW), (PALE_GLOW, MEASURED_PALE_GLOW)):
-            with self.subTest(colour=colour):
-                self.assertFalse(auto_advance_off(FakeTask([], frame_with_button(colour, share))))
+    def test_the_button_is_only_tapped_when_that_raises_the_speed(self):
+        """A tap at top speed wraps back to off, which a fade frame reading as off did on a live run."""
+        for crop, raises in (("off", True), ("first", True), ("top", False), ("top_fading", False), ("padlock", False), ("locked", False)):
+            with self.subTest(crop=crop):
+                task = narration_screen()
+                task.frame = frame_with_crop(crop)
+                self.assertTrue(handle_dialogue(task))
+                if raises:
+                    self.assertEqual([TOGGLE_POINT], task.taps)
+                else:
+                    self.assertTapsInArea(task.taps, 1)
 
-    def test_the_unlit_button_reads_as_off(self):
-        """Off is drawn in a neutral white that carries no amber at all."""
-        self.assertTrue(auto_advance_off(FakeTask([], frame_with_button(UNLIT))))
-
-    def test_a_ring_thinner_than_the_threshold_reads_as_off(self):
-        task = FakeTask([], frame_with_button(GLOW, MIN_GLOW / 2))
-        self.assertTrue(auto_advance_off(task))
+    def test_off_climbs_to_top_speed_without_waiting_out_the_retry(self):
+        """Each tap moves the button on one level, so the wait for a tap that did not take must not hold back the next."""
+        task = narration_screen()
+        for crop, expected in (("off", [TOGGLE_POINT]), ("first", [TOGGLE_POINT])):
+            task.frame = frame_with_crop(crop)
+            task.taps.clear()
+            handle_dialogue(task)
+            self.assertEqual(expected, task.taps, crop)
 
     def test_a_frame_the_reader_never_got_is_left_alone(self):
         """No capture means no reading, and a reading that fails must not put a click somewhere unasked."""
-        self.assertFalse(auto_advance_off(FakeTask([])))
+        self.assertIsNone(speed_to_raise(FakeTask([])))
 
     def test_the_handler_turns_auto_advance_on_instead_of_tapping(self):
         """One tap on the button and the game plays the rest of the cutscene without the bot in the loop."""
@@ -383,14 +391,6 @@ class TestAutoAdvance(TapsInArea, unittest.TestCase):
         self.assertEqual([TOGGLE_POINT], task.taps)
         self.assertEqual(TOGGLE_POINT, task.moved)
 
-    def test_a_locked_button_is_left_alone(self):
-        """All 22 taps on the struck-through button across three runs left it unchanged, so the line is tapped instead."""
-        task = narration_screen()
-        task.frame = np.zeros((HEIGHT, WIDTH, 3), dtype=np.uint8)
-        task.frame[20:100, 1640:1740] = cv2.imread(str(REPO_ROOT / "tests" / "images" / "fast_forward_locked.png"))
-        self.assertTrue(handle_dialogue(task))
-        self.assertTapsInArea(task.taps, 1)
-
     def test_the_button_gets_the_pointer_before_the_tap(self):
         """Upstream dwells on every button before clicking it, and this client drops a click that
         arrives without one."""
@@ -398,12 +398,6 @@ class TestAutoAdvance(TapsInArea, unittest.TestCase):
         task.frame = frame_with_button(UNLIT)
         handle_dialogue(task)
         self.assertEqual(2 * AFTER_TOGGLE, task.slept)
-
-    def test_the_handler_taps_the_line_once_auto_advance_is_running(self):
-        task = narration_screen()
-        task.frame = frame_with_button(GLOW, MEASURED_GLOW)
-        self.assertTrue(handle_dialogue(task))
-        self.assertTapsInArea(task.taps, 1)
 
     def test_a_button_that_will_not_turn_on_gives_way_to_tapping_the_line(self):
         """A live run tapped a button that never lit for over a minute and never advanced the line."""

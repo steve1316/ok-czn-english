@@ -75,6 +75,19 @@ GLOW_HIGH = np.array((35, 255, 255), dtype=np.uint8)
 # How much of the button's patch has to be amber to call auto-advance running. Over 779 captured frames every
 # lit one measured 0.152 or more, the washed-out one 0.252, and all 23 showing it off 0.000.
 MIN_GLOW = 0.05
+# How much amber a ring needs before its chevrons are trusted. First speed measured 0.276 or more, and a fading button shows less.
+MIN_FULL_GLOW = 0.2
+# Each tap moves the button on one step: off, first speed, top speed, then back to off.
+SPEED_OFF = "off"
+SPEED_FIRST = "first speed"
+# The right-hand chevron as `(left, top, right, bottom)` screen fractions, which is amber only at top speed and white only when off.
+SECOND_CHEVRON = (0.8824, 0.0445, 0.8860, 0.0667)
+# Amber share of that patch. Over 132 frames at first speed it read 0.083 at most, and 0.62 or more at top speed.
+MIN_SECOND_GLOW = 0.3
+# A pixel of the off chevron is at least this bright in every channel. Off filled 0.351 of the patch, against 0.244 for white text
+# and 0.137 at most for the padlock and struck-through looks. A fade to black reads 0.
+OFF_WHITE = 150
+MIN_OFF_WHITE = 0.3
 # How long the button gets to notice the pointer, and then to redraw before the corner is read again. The
 # hover matters: upstream taps every button this way and the client can drop a click that arrives without one.
 AFTER_TOGGLE = 0.5
@@ -97,8 +110,9 @@ LOCK_POINTS = 21
 # A point on the stroke is white in every channel. At least 0.71 of them were over 400 locked frames, and 0.52 at most on the lit button and the rest.
 LOCK_WHITE = 170
 MIN_LOCK_WHITE = 0.6
-# Set on the task: when the button was last tapped, so a tap that did not take is not repeated every frame.
+# Set on the task: when the button was last tapped and what it read then, so a tap that did not take is not repeated every frame.
 TOGGLED_AT = "_en_auto_advance_toggled_at"
+TOGGLED_FROM = "_en_auto_advance_toggled_from"
 # A handler Chaos and Sortie both carry and Story does not, which is how the tap reaches those two alone.
 MODE_ANCHOR = "handle_event_task"
 
@@ -158,20 +172,25 @@ def speech_line(task):
     return None
 
 
-def auto_advance_off(task):
-    """Report whether the game has been left to be tapped through a line at a time.
+def speed_to_raise(task):
+    """Say which speed the auto-advance button is at when another tap would make it faster.
 
     Args:
         task: The running task, whose `frame` holds the current capture.
 
     Returns:
-        True when the button is there to be turned on. A frame that cannot be read counts as on, so a
-        reading that fails leaves the tap doing the work rather than putting a click somewhere unasked.
+        `SPEED_OFF` or `SPEED_FIRST`, or None for anything else: top speed, where a tap wraps back to off, a fade,
+        a locked button, no button, or a frame that cannot be read.
     """
-    patch = patch_of(frame_of(task), TOGGLE_REGION)
-    if patch is None or patch.size == 0:
-        return False
-    return colour_share(patch, GLOW_LOW, GLOW_HIGH) < MIN_GLOW
+    frame = frame_of(task)
+    button = patch_of(frame, TOGGLE_REGION)
+    chevron = patch_of(frame, SECOND_CHEVRON)
+    if button is None or chevron is None or button.size == 0 or chevron.size == 0:
+        return None
+    glow = colour_share(button, GLOW_LOW, GLOW_HIGH)
+    if glow < MIN_GLOW:
+        return SPEED_OFF if float(np.mean(chevron.min(axis=2) >= OFF_WHITE)) >= MIN_OFF_WHITE else None
+    return SPEED_FIRST if glow >= MIN_FULL_GLOW and colour_share(chevron, GLOW_LOW, GLOW_HIGH) < MIN_SECOND_GLOW else None
 
 
 def memory_scene(task):
@@ -210,14 +229,16 @@ def button_locked(task):
     return locked
 
 
-def turn_auto_advance_on(task):
-    """Tap the auto-advance button so the game plays the rest of the cutscene itself.
+def raise_speed(task, speed):
+    """Tap the auto-advance button so the game plays the rest of the cutscene itself, one level faster.
 
     Args:
         task: The running task.
+        speed: The level `speed_to_raise` read, which the tap moves on from.
     """
-    task.log_info("dialogue with auto-advance off, turning it on")
+    task.log_info(f"dialogue with auto-advance at {speed}, tapping it faster")
     setattr(task, TOGGLED_AT, time.monotonic())
+    setattr(task, TOGGLED_FROM, speed)
     task.move_relative(*TOGGLE_POINT)
     task.sleep(AFTER_TOGGLE)
     task.click(*TOGGLE_POINT, after_sleep=AFTER_TOGGLE)
@@ -225,10 +246,6 @@ def turn_auto_advance_on(task):
 
 def handle_dialogue(task):
     """Advance narration or a speech bubble, by the game's own auto-advance where that can be reached and a tap where it cannot.
-
-    A screen that draws no button reads the same as one drawn off, and the tap that follows lands on empty
-    space in the top corner - which on a narration screen advances the line anyway. That ambiguity is why the
-    button is only read once `narration_line` has recognised the screen.
 
     Args:
         task: The running task.
@@ -242,9 +259,12 @@ def handle_dialogue(task):
     line = narration_line(task) or speech_line(task)
     if line is None:
         return False
+    speed = speed_to_raise(task)
+    # Only a tap that left the button where it was has to wait, so off still climbs straight to top speed.
+    moved_on = speed != getattr(task, TOGGLED_FROM, None)
     retry_due = time.monotonic() - getattr(task, TOGGLED_AT, float("-inf")) >= TOGGLE_RETRY
-    if retry_due and auto_advance_off(task) and not memory_scene(task) and not button_locked(task):
-        turn_auto_advance_on(task)
+    if speed is not None and (moved_on or retry_due) and not memory_scene(task) and not button_locked(task):
+        raise_speed(task, speed)
         return True
     tap_through(task, line)
     return True
