@@ -278,6 +278,31 @@ class TestCopyingApCards(unittest.TestCase):
                     card.update(x=0.2 + column * 0.25, y=0.33)
                 self.assertEqual([expected], self.copied(offered))
 
+    def deck_grid(self, action, offered):
+        """Run upstream's deck grid over a one-page deck carrying a Skip button, and say what it tapped."""
+        tapped, skipped = [], []
+        task = types.SimpleNamespace(name="", width=1920, height=1080, log_info=lambda *a: None, sleep=lambda *a: None, click_box=skipped.append,
+                                     ocr=lambda: [FakeBox("跳过", 0.9, 0.93)],
+                                     box_of_screen=lambda left, top, right, bottom: types.SimpleNamespace(x=left * 1920, y=top * 1080, width=(right - left) * 1920, height=(bottom - top) * 1080))
+        with standing_in(utils, _simplify_texts=list, _get_config_value=lambda task_, key, default: default, _get_card_list=lambda task_, key: [],
+                         _get_game_text=lambda task_, text: text, region_white_ratio=lambda *a: 0, recognize_cards_in_deck=lambda task_, page="": offered,
+                         _move_and_click=lambda task_, x, y: tapped.append((x, y))):
+            deck.copying_instead_of_skipping(utils.select_card, utils)(task, [], action=action)
+        return tapped, len(skipped)
+
+    def test_the_deck_grid_copies_the_strongest_card_rather_than_skipping(self):
+        # All 5 deck-grid Duplicates in the September release logs ended on Skip.
+        weak = {"name": "Karmic Flames", "description": "112% Damage", "x": 0.3, "y": 0.3, "selected": False}
+        strong = {"name": "Oni Hunt", "description": "168% Damage ×2", "x": 0.6, "y": 0.3, "selected": False}
+        unread = {"name": "", "description": "", "x": 0.3, "y": 0.6, "selected": False}
+        for reason, action, offered, expected in (
+            ("a copy takes the strongest", "复制", [weak, strong], ([(0.6, 0.3)], 0)),
+            ("only a copy changes", "闪光", [weak, strong], ([], 1)),
+            ("nothing readable to copy still skips", "复制", [unread], ([], 1)),
+        ):
+            with self.subTest(reason):
+                self.assertEqual(expected, self.deck_grid(action, offered))
+
 
 class TestDuplicateCombatant(unittest.TestCase):
     """The Duplicate's combatant is the save target when it shows, and a random one otherwise, rather than always the left-most."""

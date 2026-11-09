@@ -33,6 +33,7 @@ COPY = "复制"
 COPY_LIST = "复制卡牌列表"
 COPY_TAG = "AP cards copied by default"
 CHOICE_TAG = "copy never skipped"
+GRID_TAG = "deck grid copy never skipped"
 MEMBER_TAG = "random copy combatant"
 ORDER_TAG = "bottom right first"
 # How finely a card's height is rounded into a row. Cards on one row read a few thousandths apart and rows sit ~0.4 apart.
@@ -258,6 +259,41 @@ def choosing_copies(choice, utils):
     return handle_copy_card_choice
 
 
+def copying_instead_of_skipping(select_card, utils):
+    """Wrap `select_card` so a copy that found nothing takes the strongest card on the page it stopped at rather than skipping.
+
+    Args:
+        select_card: The function to wrap, upstream's or another patch's.
+        utils: The module holding `recognize_cards_in_deck` and `_move_and_click`.
+
+    Returns:
+        The wrapped function.
+    """
+    def wrapped(task, card_names, count=1, action=""):
+        if action != COPY:
+            return select_card(task, card_names, count=count, action=action)
+        page = []
+        recognise, skip = utils.recognize_cards_in_deck, task.click_box
+
+        def reading(*args, **kwargs):
+            page[:] = recognise(*args, **kwargs)
+            return list(page)
+
+        def taking_strongest(box, *args, **kwargs):
+            # The only box upstream taps in here is Skip or Cancel, once every page has been searched.
+            named = [card for card in page if card.get("name") and not card.get("selected")]
+            if not named:
+                return skip(box, *args, **kwargs)
+            strongest = max(named, key=shown_strength)
+            logger.info(f"nothing listed to Duplicate, so taking {strongest['name']}")
+            return utils._move_and_click(task, strongest["x"], strongest["y"])
+
+        with standing_in(utils, recognize_cards_in_deck=reading), standing_in(task, click_box=taking_strongest):
+            return select_card(task, card_names, count=count, action=action)
+
+    return wrapped
+
+
 def random_combatant(handler, utils):
     """Wrap `handle_copy_member` so the combatant is random unless the save target shows, rather than always the left-most.
 
@@ -293,6 +329,7 @@ def install(utils):
     # After it, so its order is applied first and the kept row is then moved ahead without changing order within it.
     wrap(utils, "select_card", lambda select_card: reading_bottom_right_first(select_card, utils), ORDER_TAG)
     wrap(utils, "select_card", copying_ap_cards, COPY_TAG)
+    wrap(utils, "select_card", lambda select_card: copying_instead_of_skipping(select_card, utils), GRID_TAG)
     wrap(utils, "handle_copy_card_choice", lambda choice: choosing_copies(choice, utils), CHOICE_TAG)
     wrap(utils, "handle_copy_member", lambda handler: random_combatant(handler, utils), MEMBER_TAG)
 

@@ -88,12 +88,12 @@ class TestPatchComposition(unittest.TestCase):
 
     def test_select_card_carries_every_change(self):
         self.install_all()
-        self.assertEqual({epiphany.TAG, pins.NARROW_TAG, pins.EARLY_TAG, deck.TAG, deck.COPY_TAG, deck.ORDER_TAG}, set(getattr(self.utils.select_card, WRAPS)))
+        self.assertEqual({epiphany.TAG, pins.NARROW_TAG, pins.EARLY_TAG, deck.TAG, deck.COPY_TAG, deck.GRID_TAG, deck.ORDER_TAG}, set(getattr(self.utils.select_card, WRAPS)))
 
     def test_select_card_does_not_stack_over_repeated_loads(self):
         for _ in range(MODES):
             self.install_all()
-        self.assertEqual(6, len(getattr(self.utils.select_card, WRAPS)))
+        self.assertEqual(7, len(getattr(self.utils.select_card, WRAPS)))
 
     def test_equipment_carries_every_change_once(self):
         for _ in range(MODES):
