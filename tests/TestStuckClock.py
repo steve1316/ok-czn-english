@@ -276,7 +276,8 @@ class TestOfferedInteraction(unittest.TestCase):
         return (lambda task: seen.append(task.node_status[rest.FLAG])), seen
 
     def test_the_count_is_read_off_the_screen(self):
-        for caption, expected in ((self.OFFERED, 1), (self.SPENT, 0), (None, None)):
+        # The last is how a live run read the "1", which skipped the safe zone.
+        for caption, expected in ((self.OFFERED, 1), (self.SPENT, 0), (None, None), ("Available Safe Zone Interactions:'", 1)):
             with self.subTest(caption=caption):
                 self.assertEqual(expected, rest.interactions_left(self.task_seeing(caption)))
 
@@ -310,6 +311,16 @@ class TestOfferedInteraction(unittest.TestCase):
                 except RuntimeError:
                     pass
                 self.assertIs(False, task.node_status[rest.FLAG])
+
+    def test_leaving_unused_is_cancelled_and_the_area_used(self):
+        # The run's leave warning as OCR read it. Upstream's centre Confirm would walk out with the interaction unspent.
+        cancel, clicked = FakeBox("取消", 0.347, 0.632), []
+        task = SimpleNamespace(width=1920, height=1080, node_status={rest.FLAG: False}, log_info=lambda message: None, sleep=lambda seconds: None,
+                               click_box=clicked.append, all_texts=[FakeBox("You have not yet used a Safe Zone interaction.", 0.5, 0.45),
+                                                                    FakeBox("Do you really wish to leave?", 0.5, 0.5), cancel, FakeBox("确认", 0.653, 0.632)])
+        self.assertTrue(rest.handle_unused_warning(task))
+        self.assertEqual([cancel], clicked)
+        self.assertIs(True, task.node_status[rest.FLAG])
 
 
 class TestQuickObtain(unittest.TestCase):

@@ -23,11 +23,12 @@ sys.path.insert(0, str(REPO_ROOT / "ok_tasks"))
 
 import utils  # noqa: E402
 
+from src.en import epiphany  # noqa: E402
 from src.en.handlers import standing_in  # noqa: E402
 
 from src.en.pins import (  # noqa: E402
     CHOOSERS, DECK_OFFSET, PICK_OFFSET, PROBE, RECOGNIZERS, ROW_OFFSET, install, is_pinned, marked,
-    narrowing, only_pinned, probe_box, tagging, taking_on_sight, to_pinned_combatant,
+    narrowing, only_pinned, probe_box, tagging, taking_marked, taking_on_sight, to_pinned_combatant,
 )
 from tests.fakes import FakeBox  # noqa: E402
 
@@ -35,6 +36,8 @@ WIDTH, HEIGHT = 1920, 1080
 # The orange the pin is drawn in, and a colour from an unpinned card's corner, both sampled from the captures.
 PIN_BGR = (41, 120, 239)
 PLAIN_BGR = (115, 115, 113)
+# Ignition Slash's art under the pin's spot, sampled from a 2026-11-08 run that read it as pinned.
+DIM_ORANGE_BGR = (31, 60, 160)
 # The card assign screen's three LEVEL tags down the screen, from a 2026-10-25 capture.
 ROW_TAGS = (0.3171, 0.5407, 0.7611)
 
@@ -149,6 +152,13 @@ class TestIsPinned(unittest.TestCase):
         task.frame[y:y + 3, x:x + 3] = PIN_BGR
         self.assertFalse(is_pinned(task, cards[0], DECK_OFFSET))
 
+    def test_dim_orange_card_art_is_not_a_pin(self):
+        # Read as a pin, it put Ignition Slash ahead of the real pinned cards on an Epiphany and a removal.
+        task, cards = screen_with([False], DECK_OFFSET)
+        x, y = probe_box(task, cards[0]["feature_box"], DECK_OFFSET)
+        task.frame[y:y + PROBE, x:x + PROBE] = DIM_ORANGE_BGR
+        self.assertFalse(is_pinned(task, cards[0], DECK_OFFSET))
+
     def test_declines_without_a_frame(self):
         task, cards = screen_with([True], DECK_OFFSET)
         task.frame = None
@@ -257,7 +267,7 @@ class TestNarrowing(unittest.TestCase):
 
     def test_only_the_choosing_sites_narrow(self):
         # The counting callers - handle_mask_card above all - must not be on this list.
-        self.assertEqual({"select_card", "handle_card_reward", "handle_view_original"}, set(CHOOSERS))
+        self.assertEqual({"select_card", "handle_card_reward"}, set(CHOOSERS))
 
 
 class TestTakingOnSight(unittest.TestCase):
@@ -330,6 +340,41 @@ class TestPinnedCombatant(unittest.TestCase):
                 self.assertEqual([expected], clicked)
 
 
+class TestMarkedReward(unittest.TestCase):
+    """Taking the card a mark singles out on the three-card reward, through upstream's own handler."""
+
+    # Each card's type icon and its name, from the 2026-11-08 reward screen that offered Execution Rite.
+    ICONS = ((0.2313, "Camouflage"), (0.4609, "Execution Rite"), (0.6906, "Sacred Strike"))
+    ICON_Y = 0.3481
+    # Where OCR read that screen's N badge.
+    BADGE = (0.594, 0.273)
+
+    def taken(self, new=False, pin=None, listed=()):
+        task = FakeTask()
+        task.sleep = lambda seconds: None
+        task.all_texts = [FakeBox("N", *self.BADGE, width=20, height=20)] if new else []
+        offered = [{"name": name, "x": x, "y": 0.5, "feature_box": FakeMatch(x * WIDTH, self.ICON_Y * HEIGHT)} for x, name in self.ICONS]
+        if pin is not None:
+            task.paint(round((self.ICONS[pin][0] + PICK_OFFSET[0]) * WIDTH), round((self.ICON_Y + PICK_OFFSET[1]) * HEIGHT), PIN_BGR)
+        clicked = []
+        with standing_in(utils, _get_region_text=lambda *a: "卡牌奖励", recognize_cards=tagging(lambda *a, **k: [dict(card) for card in offered], PICK_OFFSET),
+                         find_target_card=lambda task_: ([], []), _get_card_reward_priority=lambda task_: list(listed), _get_config_value=lambda task_, key, default: "",
+                         _move_and_click=lambda task_, x, y: clicked.append(next((name for at, name in self.ICONS if at == x), "skip"))):
+            taking_marked(narrowing(utils.handle_card_reward, utils, "recognize_cards"), utils)(task)
+        return clicked
+
+    def test_a_marked_card_is_taken_rather_than_skipped(self):
+        """Upstream skips what its list does not name, so narrowing to a pinned card alone skipped that card, and every other with it."""
+        for reason, kwargs, expected in (
+            ("New beats the list", {"new": True, "listed": ["Camouflage"]}, "Execution Rite"),
+            ("New beats a pin", {"new": True, "pin": 0}, "Execution Rite"),
+            ("a pin nothing lists", {"pin": 2}, "Sacred Strike"),
+            ("nothing marked is skipped", {}, "skip"),
+        ):
+            with self.subTest(reason):
+                self.assertEqual([expected], self.taken(**kwargs))
+
+
 class TestInstall(unittest.TestCase):
     """Putting the wrappers where the run will actually reach them."""
 
@@ -365,6 +410,51 @@ class TestInstall(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertEqual([], getattr(self.utils, name)(FakeTask()))
                 self.assertIsNot(getattr(self.utils, name), self.recognizers[name])
+
+
+class TestEpiphanyVariant(unittest.TestCase):
+    """Which variant an Epiphany takes, where a Divine Epiphany outranks the pin."""
+
+    def pick(self, offer, screen, repeat=1):
+        """Run real upstream `handle_view_original` through `choosing_variant`, so this breaks if it stops reading through `recognize_cards`.
+
+        Args:
+            offer: The card dicts the recognizer returns.
+            screen: The other OCR boxes on the screen, such as a god's caption.
+            repeat: How many frames in a row the same screen is handled.
+
+        Returns:
+            The x of every card tapped.
+        """
+        caption = FakeBox("查看原件", 0.890, 0.051)
+        task = types.SimpleNamespace(log_info=lambda message: None, all_texts=screen, width=WIDTH, height=HEIGHT)
+        clicks = []
+        with standing_in(utils, find_box_at_point=lambda *a: caption, _get_game_text=lambda task_, text: text,
+                         recognize_cards=lambda *a, **k: [dict(card) for card in offer], _get_card_list=lambda *a: [],
+                         find_target_card=lambda task_: ([], []), _matching_meditation_card_names=lambda *a: [],
+                         _move_and_click=lambda task_, x, y: clicks.append(x)):
+            for _ in range(repeat):
+                epiphany.choosing_variant(utils.handle_view_original, utils)(task)
+        return clicks
+
+    def test_a_divine_variant_beats_a_pin_and_the_most_ap_beats_a_random_pick(self):
+        # The 10:31 Chaos screen, whose middle card carried Vytor's "Draw 1 card(s) of this unit".
+        divine = ("Tactical Analysis", ("+50% Heal Amount for2Waveturn", "Heal164%+50% Heal Amount for1Wave2 turns* Draw 1 card(s) of thisunit",
+                                        "of this unit is activated,For 1 turn, when a card1 Wave"), (True, False, False))
+        ap = ("Ignition Slash", ("500% Damage2 Tenacity Damage", "400% DamageGain 1 APDraw 1 2-Cost or higher card(s)", "450% Damage2 Tenacity DamageGain 2 AP"),
+              (False, False, False))
+        vytor = [FakeBox("Epiphany: Vytor", 0.5, 0.886, width=380)]
+        # Without the god's caption the screen is an ordinary Epiphany, where shared wording like "Gain 1 AP" read as Divine on a live run.
+        for case, (name, texts, pinned), screen, expected in (("divine over pinned", divine, vytor, 0.5), ("no god, so the pin", divine, [], 0.2),
+                                                              ("most AP", ap, [], 0.7)):
+            with self.subTest(case=case):
+                offer = [{"name": name, "description": text, "pinned": pin, "x": x, "y": 0.3} for text, pin, x in zip(texts, pinned, (0.2, 0.5, 0.7))]
+                self.assertEqual([expected], self.pick(offer, screen))
+
+    def test_a_second_tap_waits_for_the_screen_to_answer(self):
+        # A second tap 1.5s after the first landed above the Faint Memory notice as it opened, and dismissed it.
+        offer = [{"name": "Ignition Slash", "description": "450% Damage2 Tenacity DamageGain 2 AP", "pinned": False, "x": 0.7, "y": 0.3}]
+        self.assertEqual([0.7], self.pick(offer, [], repeat=2))
 
 if __name__ == "__main__":
     unittest.main()

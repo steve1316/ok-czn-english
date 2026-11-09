@@ -28,7 +28,7 @@ from src.en.rewards import EQUIPMENT_KEYS, SORTIE_CARD_KEY, generated_list  # no
 from src.en.screen import combatant_slot_points  # noqa: E402
 from src.en.equipment import (  # noqa: E402
     HANDOVER_X, ROW_PITCH, SLOTS, SPREE_END, SPREE_START, bare_slots, buying_on_spree, has_room_for_mythic,
-    insisting_on_mythic, MYTHIC_TIER, UNKNOWN_TIER, install, is_mythic_colour, mythic_offer,
+    insisting_on_mythic, leaving_recommended_selected, MYTHIC_TIER, picking_mythic, UNKNOWN_TIER, install, is_mythic_colour, mythic_offer,
     offering_mythic_where_it_fits, preferring_recommended, reading_the_team_gear, recommended_banner,
     recommended_row, remembering_slots, slot_tier, team_equipment, worn_line,
 )
@@ -444,6 +444,83 @@ class TestInsistingOnMythic(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestPickingMythic(unittest.TestCase):
+    """Which of the choice screen's two pieces gets tapped."""
+
+    # Upstream's two tap points on the choice screen.
+    TOP, BOTTOM = (0.518, 0.454), (0.521, 0.600)
+
+    def tapped(self, top_name, bottom_name, upstream_pick):
+        """Run the wrapped handler over a choice screen and report where it tapped.
+
+        Args:
+            top_name: The upper piece's name as read.
+            bottom_name: The lower piece's name as read.
+            upstream_pick: Where upstream taps, one of `TOP` and `BOTTOM`.
+
+        Returns:
+            The point the tap reached.
+        """
+        taps = []
+        pieces = iter([{"ocr_name": top_name, "name": top_name}, {"ocr_name": bottom_name, "name": bottom_name}])
+        utils = types.SimpleNamespace(_equipment_info=lambda task_, *regions: next(pieces), _move_and_click=lambda task_, x, y: taps.append((x, y)))
+
+        def handler(task_):
+            for position in (self.TOP, self.BOTTOM):
+                utils._equipment_info(task_, None, None, None)["click_position"] = position
+            utils._move_and_click(task_, *upstream_pick)
+            return False
+
+        picking_mythic(handler, utils)(equipment_screen())
+        return taps[0]
+
+    def test_a_mythic_is_taken_over_the_other_piece(self):
+        """The 11:01 screen: upstream took Wings of Light for an empty slot over Eye of the Punisher."""
+        cases = (("Wings of Light", "Eye of the Punisher", self.TOP, self.BOTTOM),
+                 ("Eye of the Punisher", "Wings of Light", self.TOP, self.TOP),
+                 ("Wings of Light", "Enforcement Contract", self.BOTTOM, self.BOTTOM))
+        for top, bottom, pick, expected in cases:
+            with self.subTest(top=top, bottom=bottom, pick=pick):
+                self.assertEqual(expected, self.tapped(top, bottom, pick))
+
+
+class TestRecommendedAlreadySelected(unittest.TestCase):
+    """Whether the handover tap is skipped for a combatant the client has already selected."""
+
+    def taps(self, tapped_row, slots):
+        """Run the wrapped handler with the banner on the top row and report the taps that went through.
+
+        Args:
+            tapped_row: The row upstream hands the piece to.
+            slots: What upstream reads in the banner row's three slots.
+
+        Returns:
+            The taps that reached the screen.
+        """
+        taps = []
+        utils = types.SimpleNamespace(
+            _find_member_level_tags=lambda task_, *args, **kwargs: level_tags(),
+            _equipment_info=lambda task_, *args: dict(OFFERED),
+            _move_and_click=lambda task_, x, y: taps.append((x, y)),
+            _equipment_quality_at=lambda task_, point, allow_empty=False: ("", None),
+            _member_equipment_qualities=lambda task_, row: list(slots))
+
+        def handler(task_):
+            rows = utils._find_member_level_tags(task_, None)
+            utils._equipment_info(task_, None, None, None)
+            utils._move_and_click(task_, HANDOVER_X, (rows[tapped_row].y + rows[tapped_row].height / 2) / HEIGHT)
+            return False
+
+        leaving_recommended_selected(handler, utils)(equipment_screen(recommended=0))
+        return taps
+
+    def test_only_an_open_slot_on_the_recommended_row_skips_the_tap(self):
+        """The 00:19 screen: the client had already selected the recommended row, whose ring slot stood open."""
+        for tapped_row, slots, tapped in ((0, ["普通", "普通", ""], False), (0, ["普通", "普通", "普通"], True), (1, ["", "", ""], True)):
+            with self.subTest(tapped_row=tapped_row, slots=slots):
+                self.assertEqual(tapped, bool(self.taps(tapped_row, slots)))
 
 
 class TestBareSlots(unittest.TestCase):

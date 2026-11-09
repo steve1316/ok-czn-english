@@ -14,7 +14,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.en import deck, desire, dialogue, equipment, events, handlers, pins, shop  # noqa: E402
+from src.en import deck, desire, dialogue, epiphany, equipment, events, handlers, pins, shop  # noqa: E402
 from src.en.handlers import WRAPS  # noqa: E402
 
 MODES = 3
@@ -83,28 +83,28 @@ class TestPatchComposition(unittest.TestCase):
 
     def install_all(self):
         """Run every module's install, the way one task load does."""
-        for module in (pins, deck, equipment, shop):
+        for module in (epiphany, pins, deck, equipment, shop):
             module.install(self.utils)
 
     def test_select_card_carries_every_change(self):
         self.install_all()
-        self.assertEqual({pins.NARROW_TAG, pins.EARLY_TAG, deck.TAG, deck.COPY_TAG}, set(getattr(self.utils.select_card, WRAPS)))
+        self.assertEqual({epiphany.TAG, pins.NARROW_TAG, pins.EARLY_TAG, deck.TAG, deck.COPY_TAG, deck.GRID_TAG, deck.ORDER_TAG}, set(getattr(self.utils.select_card, WRAPS)))
 
     def test_select_card_does_not_stack_over_repeated_loads(self):
         for _ in range(MODES):
             self.install_all()
-        self.assertEqual(4, len(getattr(self.utils.select_card, WRAPS)))
+        self.assertEqual(7, len(getattr(self.utils.select_card, WRAPS)))
 
     def test_equipment_carries_every_change_once(self):
         for _ in range(MODES):
             self.install_all()
         self.assertEqual([equipment.PLACEMENT_TAG, equipment.RECOMMENDED_TAG, equipment.MYTHIC_TAG,
-                          equipment.SLOT_TAG], list(getattr(self.utils.handle_equipment, WRAPS)))
+                          equipment.SLOT_TAG, equipment.PICK_TAG, equipment.SELECTED_TAG], list(getattr(self.utils.handle_equipment, WRAPS)))
 
     def test_the_card_reward_screen_carries_the_pin_filter_once(self):
         for _ in range(MODES):
             self.install_all()
-        self.assertEqual([pins.NARROW_TAG], list(getattr(self.utils.handle_card_reward, WRAPS)))
+        self.assertEqual([pins.NARROW_TAG, pins.REWARD_TAG], list(getattr(self.utils.handle_card_reward, WRAPS)))
 
     def test_every_patched_handler_reaches_the_mode_list(self):
         self.install_all()

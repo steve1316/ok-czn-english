@@ -1,4 +1,4 @@
-"""Take the card the user's build preset pinned, and hand a card to the combatant it pinned.
+"""Take the card the user's build preset pinned or the client marked New, and hand a card to the combatant it pinned.
 
 A build preset marks the cards a combatant's build wants, and the client draws a small orange pin in the
 top-right corner of every marked card, and of the combatant row a granted card belongs to. Nothing in `ok_tasks/`
@@ -25,8 +25,9 @@ ROW_OFFSET = (0.4497, -0.1056)
 # tolerates the pixel or two the offset drifts between screens.
 PROBE = 19
 # The pin's colour, as inclusive HSV bounds. Amber, saturated and bright. Held as arrays because `inRange`
-# would otherwise rebuild them on every card.
-PIN_LOW = np.array((5, 150, 150), dtype=np.uint8)
+# would otherwise rebuild them on every card. Real pins read 0.61-0.63 with V>=200. Ignition Slash's art reads 0.53 at V>=150 but 0.00
+# at V>=200, and Blaster Swing's 0.45 against 0.02, so a floor of 150 pinned both.
+PIN_LOW = np.array((5, 150, 200), dtype=np.uint8)
 PIN_HIGH = np.array((25, 255, 255), dtype=np.uint8)
 # How much of the patch has to be that colour. Measured: about 0.66 on a pin, 0.00 without one.
 MIN_ORANGE = 0.25
@@ -36,18 +37,22 @@ RECOGNIZERS = {
     "recognize_cards": PICK_OFFSET,
     "recognize_cards_in_deck": DECK_OFFSET,
 }
-# The places a card is actually chosen, and the recognizer each one narrows. `select_card` covers the removal
-# and Epiphany grids; the other two are the screens that offer three cards at once.
+# The places a card is actually chosen, and the recognizer each one narrows. `select_card` covers the removal and Epiphany grids, and
+# `handle_card_reward` the three-card pick. The Epiphany variant pick is left to `epiphany`, where a Divine Epiphany outranks a pin.
 CHOOSERS = {
     "select_card": "recognize_cards_in_deck",
     "handle_card_reward": "recognize_cards",
-    "handle_view_original": "recognize_cards",
 }
+# What OCR reads off the round badge the client draws on a New card, whose mission progress makes it worth taking. It sits where the pin does
+# and fills 0.56 of the probe, so colour alone calls it a pin. Read at 15px from the probe's centre, so this stays well inside a card's corner.
+NEW_BADGE = "N"
+NEW_REACH = 0.016
 # Names each change in the shared record of what a function already carries.
 MARK_TAG = "pin marks"
 NARROW_TAG = "pinned only"
 EARLY_TAG = "pinned on sight"
 ROW_TAG = "pinned combatant"
+REWARD_TAG = "marked reward taken"
 
 _patched = False
 
@@ -115,6 +120,26 @@ def marked(task, cards, offset):
     for card in cards:
         card["pinned"] = is_pinned(task, card, offset)
     return cards
+
+
+def is_new(task, card, offset):
+    """Report whether a card carries the New badge.
+
+    Args:
+        task: The running task, whose `all_texts` holds the current OCR pass.
+        card: A card dict from `recognize_cards`.
+        offset: The layout's `(dx, dy)`.
+
+    Returns:
+        True when OCR read the badge in the card's corner.
+    """
+    anchor = card.get("feature_box")
+    if anchor is None:
+        return False
+    x, y = probe_box(task, anchor, offset)
+    reach = NEW_REACH * task.width
+    return any(box.name.strip() == NEW_BADGE and abs(box.x + box.width / 2 - x - PROBE / 2) <= reach and abs(box.y + box.height / 2 - y - PROBE / 2) <= reach
+               for box in task.all_texts)
 
 
 def only_pinned(cards):
@@ -207,6 +232,41 @@ def taking_on_sight(select_card, utils):
     return wrapped
 
 
+def taking_marked(handler, utils):
+    """Wrap `handle_card_reward` so a New card, or failing that a pinned one, is taken even when the priority list does not name it.
+
+    Upstream skips a reward its list does not match. The marked names go after the user's own entries, which still choose between marked cards.
+
+    Args:
+        handler: The handler to wrap, upstream's or another patch's.
+        utils: The module holding `recognize_cards` and `_get_card_reward_priority`.
+
+    Returns:
+        The wrapped handler.
+    """
+    def wrapped(task):
+        recognise, read_priority = utils.recognize_cards, utils._get_card_reward_priority
+        wanted = []
+
+        def listing(*args, **kwargs):
+            read = recognise(*args, **kwargs)
+            new = [card for card in read if is_new(task, card, PICK_OFFSET)]
+            for card in new:
+                card["pinned"] = False
+            if new:
+                logger.info(f"{[card['name'] for card in new]} marked New, so the rest are set aside")
+            wanted[:] = new or [card for card in read if card.get("pinned")]
+            return new or read
+
+        def with_marked(*args, **kwargs):
+            return [*read_priority(*args, **kwargs), *(card["name"] for card in wanted if card.get("name"))]
+
+        with standing_in(utils, recognize_cards=listing, _get_card_reward_priority=with_marked):
+            return handler(task)
+
+    return wrapped
+
+
 def to_pinned_combatant(handler, utils):
     """Wrap `handle_card_assign` so a granted card goes to the combatant the build preset pinned.
 
@@ -253,11 +313,13 @@ def install(utils):
         wrap(utils, name,
              lambda chooser, recognizer=recognizer: narrowing(chooser, utils, recognizer), NARROW_TAG)
     wrap(utils, "select_card", lambda select_card: taking_on_sight(select_card, utils), EARLY_TAG)
+    # After `narrowing`, so that its own read of the cards goes through this one and a New card is not set aside for a pin.
+    wrap(utils, "handle_card_reward", lambda handler: taking_marked(handler, utils), REWARD_TAG)
     wrap(utils, "handle_card_assign", lambda handler: to_pinned_combatant(handler, utils), ROW_TAG)
 
 
 def apply():
-    """Prefer a card the user's build preset pinned on every screen that chooses one."""
+    """Prefer a card the user's build preset pinned on every screen that chooses one, and a New card on a reward."""
     global _patched
     if _patched:
         return

@@ -155,6 +155,8 @@ class TestOcrNormalisation(unittest.TestCase):
             ("Choose 1 card to obtain Epiphany.", "请选择1张获得闪光的卡牌"),
             # What OCR hands back once it has split the count off into a box of its own.
             ("card to obtain Epiphany", "请选择张获得闪光的卡牌"),
+            # Read this way on a live run, which pressed Skip on the Epiphany it offered.
+            ("Seeprevious piphany Q", "查看之前的闪光"),
         ):
             with self.subTest(caption=caption):
                 self.assertEqual(expected, ocr_text.pattern_fix(caption))

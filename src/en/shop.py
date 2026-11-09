@@ -11,7 +11,7 @@ from ok import Logger
 
 from src.en.handlers import answering, loaded, register, standing_in, wrap
 from src.en.rest import GATED_ON_FLAG as SAFE_ZONES
-from src.en.screen import lines_in, text_in_region
+from src.en.screen import in_region, lines_in, text_in_region
 from src.en.state import GEAR, say_once
 
 logger = Logger.get_logger(__name__)
@@ -26,8 +26,11 @@ FREE = "免费"
 # The Safe Zone's way into the shop, where upstream's `handle_rest` reads and clicks it.
 SHOP_ENTRY = "德朗商店"
 SHOP_ENTRY_POINT = (0.360, 0.138)
-# Where upstream's `_get_current_credit` reads the run's credits along the top bar.
-CREDIT_POINTS = ((0.794, 0.054), (0.734, 0.053))
+# The stretch of the top bar the run's credits sit in, as (x1, y1, x2, y2). Upstream reads two fixed points at x 0.734 and 0.794, but
+# Chaos draws a Faint Memory orb to the right and the number sits at ~0.647, so every shop read 0 and never paid for a removal.
+CREDIT_REGION = (0.600, 0.020, 0.820, 0.090)
+# The modules that call upstream's credit reader, which `utils_sortie` imports by name.
+CREDIT_READERS = ("utils", "utils_sortie")
 # Name each change in the shared record of what a function already carries.
 TAG = "shop floor"
 NAMES_TAG = "whole shelf names"
@@ -83,18 +86,30 @@ def refusing_free_refresh(handler, credit_of):
     return wrapped
 
 
-def credits_read(task, utils):
+def credits_read(task):
     """Read the run's credits off the top bar, telling an unread count apart from zero.
 
     Args:
         task: The running task, whose `all_texts` holds the current OCR pass.
-        utils: The loaded `utils` module, for its `find_box_at_point`.
 
     Returns:
-        The larger count read at either spot, or None when neither held a number.
+        The largest number read in `CREDIT_REGION`, or None when it held none.
     """
-    counts = [int(box.name) for box in (utils.find_box_at_point(task, *point) for point in CREDIT_POINTS) if box and box.name.isdigit()]
+    counts = [int(box.name) for box in getattr(task, "all_texts", None) or []
+              if box.name.isdigit() and in_region(box, CREDIT_REGION, task.width, task.height)]
     return max(counts, default=None)
+
+
+def current_credit(task):
+    """Stand in for upstream's `_get_current_credit`, which reads 0 wherever the number is not at its two points.
+
+    Args:
+        task: The running task, whose `all_texts` holds the current OCR pass.
+
+    Returns:
+        The credits, or 0 when none were read, as upstream answers.
+    """
+    return credits_read(task) or 0
 
 
 def skipping_poor_shop(handler, utils):
@@ -117,7 +132,7 @@ def skipping_poor_shop(handler, utils):
         entry = utils.find_box_at_point(task, *SHOP_ENTRY_POINT)
         if entry is None or SHOP_ENTRY not in entry.name:
             return handler(task)
-        credit = credits_read(task, utils)
+        credit = credits_read(task)
         if credit is not None and credit < SHOP_FLOOR:
             say_once(task, GEAR, f"{credit} credits is under the {SHOP_FLOOR} the shop's cheapest item costs, so the shop is skipped")
             status["shop"] = False
@@ -177,7 +192,9 @@ def install(utils):
     """
     if utils is None:
         return
-    wrap(utils, "handle_shop", lambda handler: refusing_free_refresh(handler, utils._get_current_credit), TAG)
+    for module in filter(None, map(loaded, CREDIT_READERS)):
+        module._get_current_credit = current_credit
+    wrap(utils, "handle_shop", lambda handler: refusing_free_refresh(handler, current_credit), TAG)
     wrap(utils, "handle_shop", lambda handler: reading_names_whole(handler, utils), NAMES_TAG)
     wrap(utils, "handle_shop", lambda handler: never_paying(handler, utils), NEVER_PAID_TAG)
     for module_name, handler_name in SAFE_ZONES.items():

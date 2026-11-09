@@ -11,7 +11,7 @@ import re
 from ok import Logger
 
 from src.en.handlers import insert_before, loaded, register, wrap
-from src.en.screen import centre_of
+from src.en.screen import centre_of, text_in_region
 
 logger = Logger.get_logger(__name__)
 
@@ -31,7 +31,17 @@ UNDECIDED = None
 # The count the safe zone prints along its bottom edge, as "Available Safe Zone Interactions: 1". Matched
 # loosely because only the number is load bearing, and read as text rather than at a point because the line
 # moves with its own length. Shops are exempt from the count, which is why only rest and meditate consult it.
-INTERACTIONS = re.compile(r"safe\s*zone\s*interactions\D*(\d+)", re.I)
+INTERACTIONS = re.compile(r"safe\s*zone\s*interactions\W*?(\d+|[|!lIi'])", re.I)
+# What OCR has read a lone "1" as at the end of that line: "Interactions:'". Only a read 0 means none are left.
+ONE_GLYPHS = "|!lIi'"
+# The game's own warning on leaving a safe zone unused, read in English off the Global client. Its Cancel stays, and it is the one sure sign
+# an interaction is still going spare when the count above was misread.
+UNUSED_WARNING = "not yet used a Safe Zone interaction"
+WARNING_REGION = (0.1, 0.25, 0.9, 0.65)
+CANCEL = "取消"
+CANCEL_REGION = (0.1, 0.5, 0.5, 0.85)
+# The handler that would otherwise press the warning's Confirm.
+CONFIRM_ANCHOR = "handle_center_confirm"
 # The handler each mode gates a safe zone on, by the module that defines it. Chaos rests through `utils`,
 # Sortie through its own copy, and Story has neither.
 GATED_ON_FLAG = {"utils": "handle_rest", "utils_sortie": "handle_rest_sortie"}
@@ -116,7 +126,8 @@ def interactions_left(task):
     for box in getattr(task, "all_texts", None) or []:
         found = INTERACTIONS.search(box.name)
         if found:
-            return int(found.group(1))
+            count = found.group(1)
+            return 1 if count in ONE_GLYPHS else int(count)
     return None
 
 
@@ -151,6 +162,29 @@ def taking_the_offered_interaction(original):
                 status[FLAG] = False
 
     return handler
+
+
+def handle_unused_warning(task):
+    """Cancel the warning about leaving a safe zone unused, and arm the flag so the next frame spends the interaction.
+
+    Args:
+        task: The running task, whose `all_texts` is the current screen.
+
+    Returns:
+        True when this frame was claimed.
+    """
+    if not text_in_region(task, UNUSED_WARNING, WARNING_REGION):
+        return False
+    cancel = text_in_region(task, CANCEL, CANCEL_REGION)
+    if cancel is None:
+        return False
+    status = getattr(task, "node_status", None)
+    if isinstance(status, dict):
+        status[FLAG] = True
+    task.log_info("about to leave a safe zone with an interaction unused, so staying to use it")
+    task.click_box(cancel)
+    task.sleep(1)
+    return True
 
 
 def free_epiphany_handler(utils):
@@ -193,6 +227,7 @@ def install(utils):
     for module_name, handler_name in READS_SHOP:
         wrap(loaded(module_name), handler_name, lambda handler: deciding_the_shop(handler, utils), SHOP_DECIDED_TAG)
     insert_before("handle_rest_sortie", free_epiphany_handler(utils), only=("utils_sortie",))
+    insert_before(CONFIRM_ANCHOR, handle_unused_warning)
 
 
 def apply():

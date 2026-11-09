@@ -1,10 +1,12 @@
-"""Act on the kept combatant's row first when removing cards or sparking an Epiphany, and copy an AP card by default.
+"""Act on the kept combatant's row first when removing cards or sparking an Epiphany, and never skip a copy.
 
 A Chaos run keeps one combatant - the save-scum target - and throws the other two away at the end, so anything
 spent on the discarded pair is spent on nothing. Upstream can already find that row, but gates the rule on the
 `刷空档` strategy being on and on the operation being a removal, so it almost never fires on this client. A copy
-only takes cards on the user's list, and skips when none is on offer.
+only takes cards on the user's list, skips when none is on offer, and always copies from the left-most combatant.
 """
+
+import random
 
 from ok import Logger
 
@@ -26,10 +28,16 @@ GAP_KEY = "刷空档"
 ROW_ACTIONS = ("移除", "闪光", "灵光")
 # Names this change in the shared record of what a function already carries.
 TAG = "kept combatant's row"
-# The operation and the setting a copy reads its cards from, and the tag its fallback carries.
+# The operation and the setting a copy reads its cards from, and the tags its fallbacks carry.
 COPY = "复制"
 COPY_LIST = "复制卡牌列表"
 COPY_TAG = "AP cards copied by default"
+CHOICE_TAG = "copy never skipped"
+GRID_TAG = "deck grid copy never skipped"
+MEMBER_TAG = "random copy combatant"
+ORDER_TAG = "bottom right first"
+# How finely a card's height is rounded into a row. Cards on one row read a few thousandths apart and rows sit ~0.4 apart.
+ROW_DIGITS = 1
 
 _patched = False
 
@@ -82,6 +90,40 @@ def rows_first(cards, row_y):
     # A stable sort on the boolean keeps the grid's own order within each group, which is what upstream's
     # bottom-up fallbacks expect to be handed.
     return sorted(cards, key=lambda card: abs(card["y"] - row_y) > ROW_TOLERANCE)
+
+
+def bottom_right_first(cards):
+    """Order the deck grid's cards bottom row first, right to left along each row.
+
+    Args:
+        cards: The cards the deck recognizer found, which upstream sorts by x alone.
+
+    Returns:
+        The cards, reordered.
+    """
+    return sorted(cards, key=lambda card: (round(card["y"], ROW_DIGITS), card["x"]), reverse=True)
+
+
+def reading_bottom_right_first(select_card, utils):
+    """Wrap `select_card` so every pick on a page starts at its bottom right card.
+
+    Args:
+        select_card: The function to wrap, upstream's or another patch's.
+        utils: The module holding `recognize_cards_in_deck`.
+
+    Returns:
+        The wrapped function.
+    """
+    def wrapped(task, card_names, count=1, action=""):
+        original = utils.recognize_cards_in_deck
+
+        def ordered(*args, **kwargs):
+            return bottom_right_first(original(*args, **kwargs))
+
+        with standing_in(utils, recognize_cards_in_deck=ordered):
+            return select_card(task, card_names, count=count, action=action)
+
+    return wrapped
 
 
 def preferring_target_row(select_card, utils):
@@ -159,21 +201,120 @@ def copying_ap_cards(select_card):
     return wrapped
 
 
-def choosing_ap_copies(choice, utils):
-    """Wrap upstream's other copy screen, which reads the same setting itself, so it falls back to AP cards too.
+def shown_strength(card):
+    """Say what a card is worth by the text it shows, which carries its levels and stacks.
+
+    Args:
+        card: A card dict from `recognize_cards`.
+
+    Returns:
+        The `cards.strength` of the shown text, or of the card's data when the text reads as nothing.
+    """
+    return cards.strength(cards.figures(card.get("description") or "")) or cards.strength(cards.features(card["name"]))
+
+
+def copy_order(names, offered):
+    """Order what a copy takes: the user's cards, then a pinned card, then an AP card, then the strongest offered.
+
+    Args:
+        names: The cards to copy, from the `复制卡牌列表` setting.
+        offered: The cards `recognize_cards` found on the copy screen, marked by `pins`.
+
+    Returns:
+        Names in the order upstream should try them. Every named card offered is on it, so the copy is never skipped.
+    """
+    # An unread name would match every card, since upstream tests containment.
+    named = [card for card in offered if card.get("name")]
+    pinned = [card["name"] for card in named if card.get("pinned")]
+    strongest = [card["name"] for card in sorted(named, key=shown_strength, reverse=True)]
+    return with_ap_cards(list(names or []) + pinned) + strongest
+
+
+def choosing_copies(choice, utils):
+    """Wrap upstream's other copy screen, which reads the same setting itself, so it falls back the same way and never skips.
 
     Args:
         choice: Upstream's `handle_copy_card_choice`.
-        utils: The module holding `_get_config_value`, the seam it reads the setting through.
+        utils: The module holding `recognize_cards` and `_get_config_value`, the seams it reads the cards and the setting through.
 
     Returns:
         The wrapped handler.
     """
     def handle_copy_card_choice(task):
-        with answering(utils, COPY_LIST, lambda task_, value: with_ap_cards(value)):
+        offered = []
+        recognise = utils.recognize_cards
+
+        def listing(*args, **kwargs):
+            offered[:] = recognise(*args, **kwargs)
+            return offered
+
+        def ordered(task_, value):
+            order = copy_order(value, offered)
+            logger.info(f"Duplicate takes the first offered of {order}")
+            return order
+
+        with standing_in(utils, recognize_cards=listing), answering(utils, COPY_LIST, ordered):
             return choice(task)
 
     return handle_copy_card_choice
+
+
+def copying_instead_of_skipping(select_card, utils):
+    """Wrap `select_card` so a copy that found nothing takes the strongest card on the page it stopped at rather than skipping.
+
+    Args:
+        select_card: The function to wrap, upstream's or another patch's.
+        utils: The module holding `recognize_cards_in_deck` and `_move_and_click`.
+
+    Returns:
+        The wrapped function.
+    """
+    def wrapped(task, card_names, count=1, action=""):
+        if action != COPY:
+            return select_card(task, card_names, count=count, action=action)
+        page = []
+        recognise, skip = utils.recognize_cards_in_deck, task.click_box
+
+        def reading(*args, **kwargs):
+            page[:] = recognise(*args, **kwargs)
+            return list(page)
+
+        def taking_strongest(box, *args, **kwargs):
+            # The only box upstream taps in here is Skip or Cancel, once every page has been searched.
+            named = [card for card in page if card.get("name") and not card.get("selected")]
+            if not named:
+                return skip(box, *args, **kwargs)
+            strongest = max(named, key=shown_strength)
+            logger.info(f"nothing listed to Duplicate, so taking {strongest['name']}")
+            return utils._move_and_click(task, strongest["x"], strongest["y"])
+
+        with standing_in(utils, recognize_cards_in_deck=reading), standing_in(task, click_box=taking_strongest):
+            return select_card(task, card_names, count=count, action=action)
+
+    return wrapped
+
+
+def random_combatant(handler, utils):
+    """Wrap `handle_copy_member` so the combatant is random unless the save target shows, rather than always the left-most.
+
+    Args:
+        handler: Upstream's `handle_copy_member`.
+        utils: The module holding `_prioritize_target_member_click`, which moves the save target's position first.
+
+    Returns:
+        The wrapped handler.
+    """
+    def handle_copy_member(task):
+        prioritise = utils._prioritize_target_member_click
+
+        def shuffled(task_, positions, region):
+            # Shuffled before the target is moved first, so a target that shows still wins.
+            return prioritise(task_, random.sample(positions, len(positions)), region)
+
+        with standing_in(utils, _prioritize_target_member_click=shuffled):
+            return handler(task)
+
+    return handle_copy_member
 
 
 def install(utils):
@@ -185,12 +326,16 @@ def install(utils):
     if utils is None:
         return
     wrap(utils, "select_card", lambda select_card: preferring_target_row(select_card, utils), TAG)
+    # After it, so its order is applied first and the kept row is then moved ahead without changing order within it.
+    wrap(utils, "select_card", lambda select_card: reading_bottom_right_first(select_card, utils), ORDER_TAG)
     wrap(utils, "select_card", copying_ap_cards, COPY_TAG)
-    wrap(utils, "handle_copy_card_choice", lambda choice: choosing_ap_copies(choice, utils), COPY_TAG)
+    wrap(utils, "select_card", lambda select_card: copying_instead_of_skipping(select_card, utils), GRID_TAG)
+    wrap(utils, "handle_copy_card_choice", lambda choice: choosing_copies(choice, utils), CHOICE_TAG)
+    wrap(utils, "handle_copy_member", lambda handler: random_combatant(handler, utils), MEMBER_TAG)
 
 
 def apply():
-    """Start removals and Epiphanies on the row of the combatant the run is keeping, and copy AP cards by default."""
+    """Start removals and Epiphanies on the row of the combatant the run is keeping, and never skip a copy."""
     global _patched
     if _patched:
         return
