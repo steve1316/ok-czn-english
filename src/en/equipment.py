@@ -89,6 +89,26 @@ TOP_QUALITY = "传说"
 _patched = False
 
 
+def recording_offers(read_info):
+    """Make a stand-in for `_equipment_info` that keeps every piece it reads.
+
+    Args:
+        read_info: The reader to stand in for, upstream's or another patch's.
+
+    Returns:
+        The list the pieces collect in, and the stand-in.
+    """
+    offered = []
+
+    def noted(task, *args, **kwargs):
+        info = read_info(task, *args, **kwargs)
+        if info:
+            offered.append(info)
+        return info
+
+    return offered, noted
+
+
 def recommended_banner(task):
     """Find the client's "Recommended" banner in the current OCR pass.
 
@@ -523,14 +543,8 @@ def picking_mythic(handler, utils):
         The wrapped handler.
     """
     def wrapped(task):
-        read_info, tap = utils._equipment_info, utils._move_and_click
-        offered = []
-
-        def noted(task_, *args, **kwargs):
-            info = read_info(task_, *args, **kwargs)
-            if info:
-                offered.append(info)
-            return info
+        tap = utils._move_and_click
+        offered, noted = recording_offers(utils._equipment_info)
 
         def mythic_first(task_, x, y):
             # Upstream sets `click_position` on each piece after reading it, so only the choice screen's pieces carry one.
@@ -560,8 +574,9 @@ def leaving_recommended_selected(handler, utils):
         The wrapped handler.
     """
     def wrapped(task):
-        find_rows, read_info, tap = utils._find_member_level_tags, utils._equipment_info, utils._move_and_click
-        banner_tag, offered = [], []
+        find_rows, tap = utils._find_member_level_tags, utils._move_and_click
+        banner_tag = []
+        offered, noted = recording_offers(utils._equipment_info)
 
         def found(task_, *args, **kwargs):
             tags = find_rows(task_, *args, **kwargs)
@@ -569,12 +584,6 @@ def leaving_recommended_selected(handler, utils):
             if not banner_tag and row is not None:
                 banner_tag.append(tags[row])
             return tags
-
-        def noted(task_, *args, **kwargs):
-            info = read_info(task_, *args, **kwargs)
-            if info:
-                offered.append(info)
-            return info
 
         def handed_over(task_, x, y):
             if x == HANDOVER_X and banner_tag and offered and abs(centre_of(banner_tag[0], task_.width, task_.height)[1] - y) < ROW_PITCH / 2:

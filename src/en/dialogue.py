@@ -111,8 +111,7 @@ LOCK_POINTS = 21
 LOCK_WHITE = 170
 MIN_LOCK_WHITE = 0.6
 # Set on the task: when the button was last tapped and what it read then, so a tap that did not take is not repeated every frame.
-TOGGLED_AT = "_en_auto_advance_toggled_at"
-TOGGLED_FROM = "_en_auto_advance_toggled_from"
+TOGGLED = "_en_auto_advance_toggled"
 # A handler Chaos and Sortie both carry and Story does not, which is how the tap reaches those two alone.
 MODE_ANCHOR = "handle_event_task"
 
@@ -222,8 +221,9 @@ def button_locked(task):
         return False
     height, width = frame.shape[:2]
     (left, top), (right, bottom) = LOCK_STROKE
-    white = [frame[int((top + (bottom - top) * step) * height), int((left + (right - left) * step) * width)][:3].min() >= LOCK_WHITE for step in np.linspace(0, 1, LOCK_POINTS)]
-    locked = float(np.mean(white)) >= MIN_LOCK_WHITE
+    steps = np.linspace(0, 1, LOCK_POINTS)
+    rows, columns = ((top + (bottom - top) * steps) * height).astype(int), ((left + (right - left) * steps) * width).astype(int)
+    locked = float(np.mean(frame[rows, columns, :3].min(axis=1) >= LOCK_WHITE)) >= MIN_LOCK_WHITE
     if locked:
         logger.debug("auto-advance button is locked, so the line is tapped instead")
     return locked
@@ -237,8 +237,7 @@ def raise_speed(task, speed):
         speed: The level `speed_to_raise` read, which the tap moves on from.
     """
     task.log_info(f"dialogue with auto-advance at {speed}, tapping it faster")
-    setattr(task, TOGGLED_AT, time.monotonic())
-    setattr(task, TOGGLED_FROM, speed)
+    setattr(task, TOGGLED, (time.monotonic(), speed))
     task.move_relative(*TOGGLE_POINT)
     task.sleep(AFTER_TOGGLE)
     task.click(*TOGGLE_POINT, after_sleep=AFTER_TOGGLE)
@@ -260,10 +259,10 @@ def handle_dialogue(task):
     if line is None:
         return False
     speed = speed_to_raise(task)
+    tapped_at, tapped_from = getattr(task, TOGGLED, (float("-inf"), None))
     # Only a tap that left the button where it was has to wait, so off still climbs straight to top speed.
-    moved_on = speed != getattr(task, TOGGLED_FROM, None)
-    retry_due = time.monotonic() - getattr(task, TOGGLED_AT, float("-inf")) >= TOGGLE_RETRY
-    if speed is not None and (moved_on or retry_due) and not memory_scene(task) and not button_locked(task):
+    due = speed != tapped_from or time.monotonic() - tapped_at >= TOGGLE_RETRY
+    if speed is not None and due and not button_locked(task) and not memory_scene(task):
         raise_speed(task, speed)
         return True
     tap_through(task, line)

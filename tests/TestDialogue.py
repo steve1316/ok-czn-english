@@ -18,7 +18,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from src.en.dialogue import (AFTER_TOGGLE, BETWEEN_TAPS, BUBBLE_AFTER_STUCK, MAX_TAPS, MAX_TEXT_BOXES,  # noqa: E402
-                            MEMORY_REGION, TAP_AREA, TOGGLE_POINT, TOGGLE_REGION, TOGGLE_RETRY, TOGGLED_AT, advance_arrow_showing,
+                            MEMORY_REGION, TAP_AREA, TOGGLE_POINT, TOGGLE_REGION, TOGGLE_RETRY, TOGGLED, advance_arrow_showing,
                             handle_dialogue, narration_line, speech_line, speed_to_raise)
 from src.en.stuck import CLOCK  # noqa: E402
 
@@ -373,23 +373,15 @@ class TestAutoAdvance(TapsInArea, unittest.TestCase):
     def test_off_climbs_to_top_speed_without_waiting_out_the_retry(self):
         """Each tap moves the button on one level, so the wait for a tap that did not take must not hold back the next."""
         task = narration_screen()
-        for crop, expected in (("off", [TOGGLE_POINT]), ("first", [TOGGLE_POINT])):
+        for crop in ("off", "first"):
             task.frame = frame_with_crop(crop)
             task.taps.clear()
             handle_dialogue(task)
-            self.assertEqual(expected, task.taps, crop)
+            self.assertEqual([TOGGLE_POINT], task.taps, crop)
 
     def test_a_frame_the_reader_never_got_is_left_alone(self):
         """No capture means no reading, and a reading that fails must not put a click somewhere unasked."""
         self.assertIsNone(speed_to_raise(FakeTask([])))
-
-    def test_the_handler_turns_auto_advance_on_instead_of_tapping(self):
-        """One tap on the button and the game plays the rest of the cutscene without the bot in the loop."""
-        task = narration_screen()
-        task.frame = frame_with_button(UNLIT)
-        self.assertTrue(handle_dialogue(task))
-        self.assertEqual([TOGGLE_POINT], task.taps)
-        self.assertEqual(TOGGLE_POINT, task.moved)
 
     def test_the_button_gets_the_pointer_before_the_tap(self):
         """Upstream dwells on every button before clicking it, and this client drops a click that
@@ -397,6 +389,7 @@ class TestAutoAdvance(TapsInArea, unittest.TestCase):
         task = narration_screen()
         task.frame = frame_with_button(UNLIT)
         handle_dialogue(task)
+        self.assertEqual(TOGGLE_POINT, task.moved)
         self.assertEqual(2 * AFTER_TOGGLE, task.slept)
 
     def test_a_button_that_will_not_turn_on_gives_way_to_tapping_the_line(self):
@@ -413,7 +406,8 @@ class TestAutoAdvance(TapsInArea, unittest.TestCase):
         task.frame = frame_with_button(UNLIT)
         handle_dialogue(task)
         task.taps.clear()
-        setattr(task, TOGGLED_AT, getattr(task, TOGGLED_AT) - TOGGLE_RETRY)
+        tapped_at, speed = getattr(task, TOGGLED)
+        setattr(task, TOGGLED, (tapped_at - TOGGLE_RETRY, speed))
         handle_dialogue(task)
         self.assertEqual([TOGGLE_POINT], task.taps)
 
