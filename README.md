@@ -17,6 +17,7 @@
 
 ![Platform](https://img.shields.io/badge/platform-Windows-blue)
 [![GitHub release](https://img.shields.io/github/v/release/steve1316/ok-czn-english)](https://github.com/steve1316/ok-czn-english/releases)
+[![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/5Yv4kqjAbm)
 
 </div>
 
