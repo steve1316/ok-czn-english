@@ -14,7 +14,8 @@ from src.en.etched_memory import BONUSES, ENTER_MEMORY_END, ETCHED_MEMORY, KEEP_
 from src.en.game_data import CARDS, COMBATANTS, EQUIPMENT
 from src.en.framework import import_ui
 from src.en.reobserve import DEFAULT_BLACKLIST, MODIFIER_BLACKLIST, MODIFIERS, REOBSERVE
-from src.en.shop import PAID_THRESHOLD
+from src.en.rest import SHOP_SETTING
+from src.en.shop import BUY_MONSTER_CARDS, PAID_THRESHOLD
 
 logger = Logger.get_logger(__name__)
 
@@ -78,7 +79,7 @@ SINGLE_CHOICE = {
 # is `NEVER_PAY`, so a run never pays to reroll unless the user raises it. Loot is safe to claim by default, since
 # upstream switches it off once the Loot Certification Cards run out.
 NEVER_PAY = -1
-FORCED_DEFAULTS = {"进入商店": True, PAID_THRESHOLD: NEVER_PAY, "领取奖励(只使用验证卡)": True}
+FORCED_DEFAULTS = {SHOP_SETTING: True, PAID_THRESHOLD: NEVER_PAY, "领取奖励(只使用验证卡)": True}
 # Number settings whose range the fork pins. ok-script opens a negative default's range to -999999 and floors a positive
 # one at 1, which would stop the save threshold reaching its keep-everything 0.
 NUMBER_RANGES = {PAID_THRESHOLD: {"min": NEVER_PAY}, "保留大于多少TB的存档": {"min": 0}}
@@ -140,7 +141,8 @@ DESCRIPTIONS = {
     "保留大于多少TB的存档": "After a run, on the Save Data collection screen, delete each stored save worth this many TB or less to free its slot. Zero keeps every save. Not the same as Minimum Save Data Storage Limit, which picks the run before it starts.",
     "优先使用金币治疗": "Always pay Credits for counselling at the Epione Center. Left off, a Communication Pass is spent when you have one and Credits only when you do not.",
     PAID_THRESHOLD: "Pay Credits to reroll the Dellang Shop once its free refreshes are used up, but only while holding more than this many. -1 never pays, and 0 pays whenever the price is affordable.",
-    "进入商店": "Visit the Dellang Shop when a Safe Zone offers one. It pays to remove a card first, up to five a run, then buys from your Card Reward Priority and Equipment Slot lists.",
+    SHOP_SETTING: "Visit the Dellang Shop when a Safe Zone offers one. It pays to remove a card first, up to five a run, then buys from your Card Reward Priority and Equipment Slot lists.",
+    BUY_MONSTER_CARDS: "Let the Dellang Shop buy Monster Cards. Turn it off to keep the Credits for card removals and equipment.",
     "优先移除基础牌": "Clear basic cards out of the deck before anything else.",
     "只打第一层": "Leave after the first floor instead of running the whole map.",
 }
@@ -193,6 +195,13 @@ def reshape(task):
     # `default_config`, and an existing config simply gains it switched on.
     if PLAYS_ITS_OWN_CARDS in task.default_config:
         task.default_config[SMART_CARD_PLAY] = True
+
+    # Both Chaos and Sortie declare the shop switch, and this narrows it, so it is shown right under it.
+    if SHOP_SETTING in task.default_config:
+        rows = [(key, value) for key, value in task.default_config.items() if key != BUY_MONSTER_CARDS]
+        under = [key for key, _ in rows].index(SHOP_SETTING) + 1
+        task.default_config.clear()
+        task.default_config.update([*rows[:under], (BUY_MONSTER_CARDS, True), *rows[under:]])
 
     if FARMED_COMBATANT in task.default_config:
         task.default_config[DESIRE_FACTION] = DEFAULT_FACTION
