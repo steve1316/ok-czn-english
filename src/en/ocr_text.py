@@ -53,8 +53,8 @@ PATTERNS = (
     # The ordinal is drawn in another colour, and OCR usually glues it to the word beside it: "Selectfourth".
     (re.compile(r"^select ?\w+ ?combatant to join.*$", re.I), "请选择加入的主战员"),
     # OCR splits this one round its count, drawn in another colour, and upstream reads the box after it. An empty count
-    # still satisfies upstream's pattern, which then takes it as one.
-    (re.compile(r"^(?:choose )?(\d*) ?cards? to obtain epiphany.*$", re.I), "请选择{0}张获得闪光的卡牌"),
+    # still satisfies upstream's pattern, which then takes it as one. A Divine Epiphany asks the same way and picks off the same list.
+    (re.compile(r"^(?:choose )?(\d*) ?cards? to obtain .*epiphany.*$", re.I), "请选择{0}张获得闪光的卡牌"),
     # The Epiphany screen's caption, which OCR has read with its "E" lost: "Seeprevious piphany Q". Unmatched, the screen falls to Skip.
     (re.compile(r"^see ?previous ?e?piphany.*$", re.I), "查看之前的闪光"),
 )
