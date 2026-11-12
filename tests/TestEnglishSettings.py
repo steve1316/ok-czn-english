@@ -241,6 +241,23 @@ class TestDesireFaction(unittest.TestCase):
                 self.assertIn(label, msgids)
 
 
+class TestBuyMonsterCards(unittest.TestCase):
+    """The shop's Monster Card switch, added fork-side under the shop switch that Chaos and Sortie both declare."""
+
+    def test_it_sits_switched_on_under_the_shop_switch(self):
+        # Anchored on upstream's key, so a rename there would drop the switch from both modes without an error.
+        self.assertIn(overrides.SHOP_SETTING, mode_setting_keys())
+        task = reshaped({"游戏语言": "简体中文", overrides.SHOP_SETTING: False, "优先移除基础牌": True})
+        keys = list(task.default_config)
+        self.assertEqual(overrides.BUY_MONSTER_CARDS, keys[keys.index(overrides.SHOP_SETTING) + 1])
+        self.assertIs(task.default_config[overrides.BUY_MONSTER_CARDS], True)
+        self.assertIn(overrides.BUY_MONSTER_CARDS, task.config_description)
+
+    def test_the_label_reaches_the_ui_through_the_catalog(self):
+        catalog = polib.pofile(str(REPO_ROOT / "i18n" / "zh_CN" / "LC_MESSAGES" / "ok.po"))
+        self.assertIn(overrides.BUY_MONSTER_CARDS, {entry.msgid for entry in catalog})
+
+
 class TestSeasonFive(unittest.TestCase):
     """The Memory settings, added fork-side the same way as the Desire faction."""
 

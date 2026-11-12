@@ -3,13 +3,16 @@
 Upstream walks into the shop however few credits the run holds, and its free refresh rerolls whenever nothing on
 the shelf matches - dead time when nothing could be paid for. The shelf also wraps long names onto two lines, which
 upstream glues in OCR order ("JudgmentInstant"), so no name ever matched them. A negative paid threshold reads as "never".
+Upstream also has no way to keep its credits off Monster Cards for removals and equipment.
 """
 
 import sys
 
 from ok import Logger
 
+from src.en.game_quality import MONSTER_CARDS
 from src.en.handlers import answering, loaded, register, standing_in, wrap
+from src.en.quality import CARD_INDEX
 from src.en.rest import GATED_ON_FLAG as SAFE_ZONES
 from src.en.screen import in_region, lines_in, text_in_region
 from src.en.state import GEAR, say_once
@@ -36,8 +39,11 @@ TAG = "shop floor"
 NAMES_TAG = "whole shelf names"
 NEVER_PAID_TAG = "never paid"
 ENTRY_TAG = "shop entry floor"
+MONSTER_TAG = "monster cards left"
 # The paid-refresh threshold. Upstream pays while credits are above it, so -1 would pay on every frame.
 PAID_THRESHOLD = "商店刷新信用点阈值"
+# The fork's switch for buying Monster Cards in the shop. On by default, which is how upstream shops.
+BUY_MONSTER_CARDS = "Buy Monster Cards"
 
 _patched = False
 
@@ -159,6 +165,38 @@ def reading_names_whole(handler, utils):
     return wrapped
 
 
+def leaving_monster_cards(handler, utils):
+    """Wrap `handle_shop` so a Monster Card on the shelf reads as nameless while `BUY_MONSTER_CARDS` is off.
+
+    Upstream skips a nameless item, so the credits stay for a removal, equipment or another card.
+
+    Args:
+        handler: The handler to wrap, upstream's or another patch's.
+        utils: The loaded `utils` module, whose `_get_region_text` and `_get_config_value` the handler resolves through.
+
+    Returns:
+        The wrapped handler.
+    """
+    def wrapped(task):
+        if utils._get_config_value(task, BUY_MONSTER_CARDS, True):
+            return handler(task)
+        # Read now, so this sits on top of whichever name reader the outer wrappers put up.
+        read_name = utils._get_region_text
+
+        def without_monsters(task, region):
+            name = read_name(task, region)
+            card = CARD_INDEX.look_up(name)
+            if card in MONSTER_CARDS:
+                say_once(task, GEAR, f"{card} is a Monster Card and {BUY_MONSTER_CARDS} is off, so the shop leaves it")
+                return ""
+            return name
+
+        with standing_in(utils, _get_region_text=without_monsters):
+            return handler(task)
+
+    return wrapped
+
+
 def never_paying(handler, utils):
     """Wrap `handle_shop` so a negative paid-refresh threshold never pays.
 
@@ -195,6 +233,8 @@ def install(utils):
     for module in filter(None, map(loaded, CREDIT_READERS)):
         module._get_current_credit = current_credit
     wrap(utils, "handle_shop", lambda handler: refusing_free_refresh(handler, current_credit), TAG)
+    # Before the whole-name reader, so that one is outermost and this filters the names it reads.
+    wrap(utils, "handle_shop", lambda handler: leaving_monster_cards(handler, utils), MONSTER_TAG)
     wrap(utils, "handle_shop", lambda handler: reading_names_whole(handler, utils), NAMES_TAG)
     wrap(utils, "handle_shop", lambda handler: never_paying(handler, utils), NEVER_PAID_TAG)
     for module_name, handler_name in SAFE_ZONES.items():

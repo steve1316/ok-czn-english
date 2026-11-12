@@ -390,6 +390,8 @@ EXHAUST_TALENT = "TALENT_EXHAUST"
 # an Ego skill is fired from the combatant bar, so neither one's `cost` is an Action Point cost. Leaving them
 # in would put an Ego skill's EP price of 5 beside a card that really does cost 5 Action Points.
 NON_HAND_SORTS = frozenset({"SORT_SUPPORT", "SORT_COLLAPSE_SKILL"})
+# The sort every Monster Card carries, the neutral cards named after an enemy that the shop and rewards offer.
+MONSTER_SORT = "SORT_MONSTER_UNIQUE"
 # The combatant's Ego skill. The client calls it a collapse skill in the data and an Ego skill on screen.
 COMBATANT_EGO_COLUMN = "collapse_skill_link_card_id"
 # A negative cost means the card spends every Action Point left rather than a fixed number. The client
@@ -466,10 +468,13 @@ def collect_quality(table, dump_dir):
 
     card_rarity = {}
     card_classes = {}
+    monster_cards = set()
     for name, row in cards.items():
         rarity = RARITIES.get(row.get("rarity"))
         if rarity:
             card_rarity[name] = rarity
+        if row.get(CARD_SORT_COLUMN) == MONSTER_SORT:
+            monster_cards.add(name)
         classes = id_list(row.get(CARD_CLASS_COLUMN))
         if classes:
             card_classes[name] = classes
@@ -509,6 +514,7 @@ def collect_quality(table, dump_dir):
     return {
         "CARD_RARITY": card_rarity,
         "CARD_CLASSES": card_classes,
+        "MONSTER_CARDS": monster_cards,
         "EQUIPMENT_RARITY": equipment_rarity,
         "EQUIPMENT_SLOT": equipment_slot,
         "EQUIPMENT_TAGS": collect_equipment_tags(table, relic_rows),
@@ -564,6 +570,7 @@ def render_quality(quality):
         "CARD_RARITY": "What the client grades each card, for deciding whether one is worth buying or keeping.",
         "CARD_CLASSES": "Which classes may hold a card, for the roughly one card in ten that is restricted."
                         " A card absent from here is unrestricted, and the value is a class, not a combatant.",
+        "MONSTER_CARDS": "Every Monster Card, upgrades included, so the shop can be told to leave them on the shelf.",
         "EQUIPMENT_RARITY": "What the client grades each piece of equipment.",
         "EQUIPMENT_SLOT": "Which of the three equipment slots a piece goes in, numbered as the handlers number them.",
         "EQUIPMENT_TAGS": "What kind of deck a piece of equipment serves, in the game's own vocabulary. Read off"

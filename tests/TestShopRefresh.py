@@ -25,7 +25,8 @@ import utils  # noqa: E402
 from tests.fakes import FakeBox as Box  # noqa: E402
 
 from src.en.shop import (  # noqa: E402
-    PAID_THRESHOLD, SHOP_FLOOR, credits_read, free_refresh_box, never_paying, reading_names_whole, refusing_free_refresh, skipping_poor_shop,
+    BUY_MONSTER_CARDS, PAID_THRESHOLD, SHOP_FLOOR, credits_read, free_refresh_box, leaving_monster_cards, never_paying, reading_names_whole,
+    refusing_free_refresh, skipping_poor_shop,
 )
 
 WIDTH, HEIGHT = 1920, 1080
@@ -37,6 +38,8 @@ SHELF_X, SHELF_Y = 0.500, 0.850
 SOLD_OUT_X, SOLD_OUT_Y = 0.727, 0.286
 CREDIT_X, CREDIT_Y = 0.794, 0.054
 COUNT_X, PRICE_X, PAID_Y = 0.080, 0.190, 0.932
+# Two shelf slots: the credit icon `handle_shop` clicks to buy, and the card type badge that marks the slot as a card.
+SHELF_ICON_XS, SHELF_ICON_Y, BADGE_Y = (0.200, 0.500), 0.830, 0.730
 
 
 # The shop places its boxes by share of the screen.
@@ -174,6 +177,35 @@ class TestNeverPaying(unittest.TestCase):
                 task = PaidRefreshTask(threshold)
                 handler(task)
                 self.assertEqual(task.clicked, [task.price] if pays else [])
+
+
+class MonsterShelfTask(PaidRefreshTask):
+    """The shop with a Monster Card in the first slot and an ordinary card in the second, both on the card list."""
+
+    SHELF = ("Dominion", "Absolute Zero")
+
+    def __init__(self, buys_monsters):
+        super().__init__(-1)
+        self.icons = [FakeBox("", x, SHELF_ICON_Y, width=30, height=30) for x in SHELF_ICON_XS]
+        self.badges = [FakeBox("", x, BADGE_Y, width=30, height=30) for x in SHELF_ICON_XS]
+        for x, name in zip(SHELF_ICON_XS, self.SHELF):
+            self.all_texts += [FakeBox(name, x + 0.050, 0.650), FakeBox("50", x + 0.099, SHELF_ICON_Y - 0.001)]
+        self.config.update({"卡牌奖励优先级": list(self.SHELF), BUY_MONSTER_CARDS: buys_monsters})
+
+    def find_feature(self, feature_name=None, **kwargs):
+        return {"credit_icon": self.icons, "attack_in_shop": self.badges}.get(feature_name, [])
+
+
+class TestLeavingMonsterCards(unittest.TestCase):
+    """Upstream buys whatever on the shelf matches the card list first, Monster Card or not."""
+
+    def test_the_switch_decides_whether_the_monster_card_is_bought(self):
+        handler = leaving_monster_cards(utils.handle_shop, utils)
+        for why, buys_monsters, slot in (("switched on", True, 0), ("switched off", False, 1)):
+            with self.subTest(why):
+                task = MonsterShelfTask(buys_monsters)
+                handler(task)
+                self.assertEqual(task.clicked, [task.icons[slot]])
 
 
 class TestReadingNamesWhole(unittest.TestCase):
