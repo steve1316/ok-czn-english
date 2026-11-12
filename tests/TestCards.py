@@ -1043,17 +1043,18 @@ class TestKits(unittest.TestCase):
             # Generic play plays it as a skill and gets a random 3-Cost card.
             ("Future Decreed stays in hand", ("Future Decreed", "Anchor"), cards.Board(), ["Anchor"]),
             # Live, Gear Bag and an attack took the battle's points while Chrono Archon sat in hand, and Time Paradox converted nothing.
-            ("Chrono Archon takes the point from an attack", ("Slash", "Chrono Archon"), cards.Board(action_points=1), ["Chrono Archon"]),
+            ("Chrono Archon goes ahead of an attack", ("Slash", "Chrono Archon"), cards.Board(action_points=1), ["Chrono Archon", "Slash"]),
             ("Time Paradox waits for Chrono Archon", ("Time Paradox", "Chrono Archon"), cards.Board(action_points=1, played=("Slash", "Slash")),
              ["Chrono Archon"]),
             ("a second Chrono Archon is an ordinary card", ("Time Paradox", "Slash", "Chrono Archon"),
-             cards.Board(action_points=1, played=("Slash", "Slash"), battle=("Chrono Archon", "Slash", "Slash")), ["Time Paradox", "Slash"]),
+             cards.Board(action_points=1, played=("Slash", "Slash"), battle=("Chrono Archon", "Slash", "Slash")), ["Chrono Archon", "Time Paradox", "Slash"]),
             # Generic play reads its 120% once, so a 180 card for 1 AP outbids the 240% it deals at Cost 2.
             ("Fate Imprint hits once for each point of its Cost", ("Amber Lumen", "Fate Imprint"), cards.Board(action_points=2), ["Fate Imprint"]),
             # Live, generic play rated it a flat 100 and played it last or not at all.
             ("Chrono Circle is worth its Fate Imprints", ("Amber Lumen", "Chrono Circle"), cards.Board(action_points=1), ["Chrono Circle"]),
             ("Chrono Circle goes ahead of the attacks", ("Slash", "Chrono Circle"), cards.Board(action_points=2), ["Chrono Circle", "Slash"]),
-            ("Chrono Archon still outbids Chrono Circle", ("Chrono Circle", "Chrono Archon"), cards.Board(action_points=1), ["Chrono Archon"]),
+            ("Chrono Archon still goes ahead of Chrono Circle", ("Chrono Circle", "Chrono Archon"), cards.Board(action_points=1),
+             ["Chrono Archon", "Chrono Circle"]),
         ))
 
     def test_selena_marks_before_attacking(self):

@@ -53,7 +53,7 @@ GROUPS = [
 #
 # Source: https://game8.co/games/Chaos-Zero-Nightmare/archives/558105, updated by hand as new combatants release
 PLAYABLE_COMBATANTS = [
-    "Adelheid", "Amir", "Anika", "Arabella", "Beryl", "Cassius", "Chizuru", "Diana", "Fei", "Haru", "Heidemarie",
+    "Adelheid", "Amir", "Anika", "Arabella", "Beryl", "Blazebell", "Cassius", "Chizuru", "Diana", "Fei", "Haru", "Heidemarie",
     "Hilde", "Hugo", "Kayron", "Khalipe", "Lucas", "Luke", "Magna", "Maribell", "Mei Lin", "Mika", "Narja",
     "Nia", "Nine", "Olga", "Orlea", "Owen", "Rei", "Renoa", "Rin", "Rita", "Rossweisse", "Selena", "Sereniel", "Tenebria",
     "Tiphera", "Tressa", "Veronica", "Yuki",
