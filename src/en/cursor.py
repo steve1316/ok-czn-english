@@ -27,7 +27,9 @@ _patched = False
 
 
 def over_game(interaction):
-    """Find the real cursor when it is over an uncovered part of the game window, where the game reads it instead of posted input.
+    """Find the real cursor when it is over an uncovered part of the game's client area, where the game reads it instead of posted input.
+
+    The title bar and borders do not count. Moving the cursor while the player holds the title bar drags the whole window off with it.
 
     Args:
         interaction: The running `PostMessageInteraction`, whose `hwnd_window` holds the game's window handles.
@@ -40,7 +42,11 @@ def over_game(interaction):
         at = win32api.GetCursorPos()
         under = win32gui.WindowFromPoint(at)
         game = {win32gui.GetAncestor(hwnd, win32con.GA_ROOT) for hwnd in (window.hwnd, window.top_hwnd) if hwnd}
-        return at if under and win32gui.GetAncestor(under, win32con.GA_ROOT) in game else None
+        if not under or win32gui.GetAncestor(under, win32con.GA_ROOT) not in game:
+            return None
+        x, y = win32gui.ScreenToClient(window.hwnd, at)
+        _, _, right, bottom = win32gui.GetClientRect(window.hwnd)
+        return at if 0 <= x < right and 0 <= y < bottom else None
     except pywintypes.error:
         return None
 

@@ -26,18 +26,22 @@ OTHER = 99
 ORIGIN = (100, 200)
 # Where the player left the cursor.
 PLAYER = (500, 500)
+# On the game window's title bar, just above the client area.
+TITLE_BAR = (500, ORIGIN[1] - 20)
 
 
 class Desktop:
     """Fake the Windows calls, recording cursor moves and posted messages in the order they happen."""
 
-    def __init__(self, under=GAME):
+    def __init__(self, under=GAME, at=PLAYER):
         """Set up a desktop with the cursor over one window.
 
         Args:
             under: The window under the cursor, `GAME` or `OTHER`.
+            at: The cursor's screen position.
         """
         self.under = under
+        self.at = at
         self.events = []
 
     def patches(self):
@@ -47,7 +51,8 @@ class Desktop:
             The patchers, to start together.
         """
         return [
-            mock.patch("win32api.GetCursorPos", return_value=PLAYER),
+            mock.patch("win32api.GetCursorPos", return_value=self.at),
+            mock.patch("win32gui.GetClientRect", return_value=(0, 0, WIDTH, HEIGHT)),
             mock.patch("win32api.SetCursorPos", side_effect=lambda point: self.events.append(("cursor", tuple(point)))),
             mock.patch("win32gui.WindowFromPoint", side_effect=lambda point: self.under),
             mock.patch("win32gui.GetAncestor", side_effect=lambda hwnd, flag: hwnd),
@@ -100,10 +105,12 @@ class TestCursor(unittest.TestCase):
         self.assertLess(events.index(("cursor", park)), events.index(("post", win32con.WM_KEYDOWN)))
 
     def test_the_cursor_is_left_alone_while_it_is_off_the_game(self):
-        for name, action in (("click", lambda it: it.click(300, 400)), ("key", lambda it: it.send_key("1"))):
-            with self.subTest(name):
-                events = self.run_on(Desktop(under=OTHER), action)
-                self.assertFalse([event for event in events if event[0] in ("cursor", "freeze")])
+        # The title bar case: moving a cursor that holds the title bar drags the game window off-screen.
+        for where, desktop in (("other window", lambda: Desktop(under=OTHER)), ("title bar", lambda: Desktop(at=TITLE_BAR))):
+            for name, action in (("click", lambda it: it.click(300, 400)), ("key", lambda it: it.send_key("1"))):
+                with self.subTest(where=where, action=name):
+                    events = self.run_on(desktop(), action)
+                    self.assertFalse([event for event in events if event[0] in ("cursor", "freeze")])
 
 
 if __name__ == "__main__":
