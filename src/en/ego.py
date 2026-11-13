@@ -68,6 +68,8 @@ STRIKES = re.compile(r"Damage(?!\s*(?:Amount|Reduction))", re.I)
 HEALS = re.compile(r"\bHeal", re.I)
 # An Ego that does nothing unless a card is Exhausted, as Activate Defense Module's "when a card is Exhausted, 1 Weaken".
 ON_EXHAUST = re.compile(r"\bExhausted\b", re.I)
+# An Ego that throws the hand away, as Hellfire's "Discard all cards inhand" with the words run together the way live OCR read it.
+DISCARDS_HAND = re.compile(r"\bDiscard all cards\s*in\s*hand", re.I)
 SETUPS = re.compile(r"Morale|Fortitude|Vulnerable|Weaken|Draw|Critical|Increase|Counterattack|Mark|\bAP\b", re.I)
 # A guard is fired once the next hit would leave the team below this share of its HP, and a full bar prefers one below the second.
 GUARD_BELOW = 0.30
@@ -283,7 +285,7 @@ def decide(slots, banked, after_hit, invulnerable, attacking, boss, exhausting):
 
     The first rule that applies wins: a guard before a hit the team cannot take, a full bar spent on whatever fits, nothing into an
     enemy that cannot lose Health, then a set-up ahead of the attacks unless a boss fight is saving for a damage Ego. A set-up that heals
-    waits for a hurt team.
+    waits for a hurt team, and one that discards the hand waits for the attacks in it.
 
     Args:
         slots: `(key, Ego or None, affordable)` for each slot, in panel order.
@@ -297,7 +299,8 @@ def decide(slots, banked, after_hit, invulnerable, attacking, boss, exhausting):
     Returns:
         A `(key, ego, reason)` triple, or None to fire nothing.
     """
-    ready = [(key, ego) for key, ego, affordable in slots if affordable and ego is not None and (exhausting or not ON_EXHAUST.search(ego.text))]
+    ready = [(key, ego) for key, ego, affordable in slots if affordable and ego is not None and (exhausting or not ON_EXHAUST.search(ego.text))
+             and not (attacking and DISCARDS_HAND.search(ego.text))]
     first = {role: next(((key, ego) for key, ego in ready if role in ego.roles), None) for role in (GUARD, STRIKE, SETUP)}
     hurt = after_hit is not None and after_hit < HURT_BELOW
     if after_hit is not None and after_hit < GUARD_BELOW and first[GUARD]:

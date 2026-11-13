@@ -34,6 +34,8 @@ FREE_OPENING_FOUND = next(text for text in EPIPHANIES["Opening Found"] if "Cost 
 # Rin's deck from the live run: a First Form that takes Dark Mist Stance, and an Annihilation that cuts her other cards' cost in it.
 RIN_DECK = {"Dark Mist Sword: First Form": next(text for text in EPIPHANIES["Dark Mist Sword: First Form"] if "Stance" in text),
             "Dark Mist Secret Art: Annihilation": next(text for text in EPIPHANIES["Dark Mist Secret Art: Annihilation"] if "Decrease Cost" in text)}
+# Blazebell's Fluttering Embers with the Justice damage buff in place of the Purity draw.
+JUSTICE_EMBERS = next(text for text in EPIPHANIES["Fluttering Embers"] if "Damage Amount" in text)
 # Two Action Points for 220% damage, which is better value per point than 100% for one.
 BIG_ATTACK = "Charge Launcher"
 # Spends every Action Point left rather than a fixed number.
@@ -775,6 +777,25 @@ class TestKits(unittest.TestCase):
             ("Karmic Flames leads the attacks", ("Moonslash", "Karmic Flames"), cards.Board(action_points=2), ["Karmic Flames", "Moonslash"]),
             # Generic play plays the free Tsukuyomi ahead of every setup card, and so well before Oni Hunt.
             ("Tsukuyomi sits right before Oni Hunt", ("Tsukuyomi", BUFF, "Oni Hunt"), cards.Board(action_points=2), [BUFF, "Tsukuyomi", "Oni Hunt"]),
+        ))
+
+    def test_blazebell_stacks_blue_flame_and_buffs_first(self):
+        """Blue Flame stacks into Fluttering Embers, Vestige and Flametouch go before the attacks, and Embers after other attributes."""
+        self.plays((
+            # Live, leftover points went on Blue Flame at full HP for a heal worth 0, which spent its stack.
+            ("Blue Flame is kept for its stack", ("Blue Flame", "Bright Flame"), cards.Board(action_points=3), ["Bright Flame"]),
+            ("Blue Flame heals a team about to drop", ("Blue Flame",), cards.Board(health=0.2), ["Blue Flame"]),
+            # Generic play files the unread buff after the attack it was for.
+            ("Vestige goes before the attacks", ("Bright Flame", "Vestige of Flames"), cards.Board(), ["Vestige of Flames", "Bright Flame"]),
+            # Generic play buys the buff over the only attack, and the buff lands on nothing.
+            ("Vestige waits when the attack takes the last point", ("Bright Flame", "Vestige of Flames"), cards.Board(action_points=1),
+             ["Bright Flame"]),
+            ("Flametouch leads the attacks", ("Bright Flame", "Flametouch"), cards.Board(action_points=2), ["Flametouch", "Bright Flame"]),
+            # Generic play plays the free Embers first, while Yuki's Order card in hand turns its Purity draw off.
+            ("Embers follows another attribute's card", ("Fluttering Embers", "Rapid Slash"), cards.Board(), ["Rapid Slash", "Fluttering Embers"]),
+            # The Justice damage Embers has no Purity draw to protect, and held back it would miss the attack it buffs.
+            ("an Embers that buffs still goes first", ("Rapid Slash", "Fluttering Embers"), cards.Board(deck={"Fluttering Embers": JUSTICE_EMBERS}),
+             ["Fluttering Embers", "Rapid Slash"]),
         ))
 
     def test_diana_discards_her_quietus_attacks(self):
