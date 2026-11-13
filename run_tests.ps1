@@ -7,8 +7,6 @@
 # making every install reversible. A new module that starts failing only in a full run, and passes on its
 # own, belongs on this list.
 $env:PYTHONIOENCODING = 'UTF-8'
-# The project's own environment when there is one, because a global Python can hold a different ok-script.
-$python = if (Test-Path -LiteralPath .venv\Scripts\python.exe) { '.venv\Scripts\python.exe' } else { 'python' }
 
 $isolated = @('TestUpstreamManifest')
 
@@ -18,13 +16,13 @@ $failed = 0
 
 if ($shared) {
     Write-Host "Running $($shared.Count) modules in one process"
-    & $python -u -m unittest -v @($shared | ForEach-Object { "tests.$_" })
+    python -u -m unittest -v @($shared | ForEach-Object { "tests.$_" })
     if ($LASTEXITCODE -ne 0) { $failed = 1 }
 }
 
 foreach ($module in $all | Where-Object { $isolated -contains $_ }) {
     Write-Host "Running tests.$module (isolated)"
-    & $python -u -m unittest "tests.$module" -v
+    python -u -m unittest "tests.$module" -v
     if ($LASTEXITCODE -ne 0) { $failed = 1 }
 }
 
