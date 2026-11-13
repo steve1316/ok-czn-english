@@ -32,8 +32,7 @@ def other_attribute(name):
     Returns:
         True for another attribute's card. A card with no owner has no attribute, so it never counts.
     """
-    attribute = COMBATANT_ATTRIBUTE.get(CARD_OWNER.get(base_name(name), ""))
-    return attribute is not None and attribute != OWN_ATTRIBUTE
+    return COMBATANT_ATTRIBUTE.get(CARD_OWNER.get(base_name(name), "")) not in (None, OWN_ATTRIBUTE)
 
 
 class Blazebell(Kit):
@@ -60,8 +59,7 @@ class Blazebell(Kit):
         if card == VESTIGE:
             # Vestige Retains, so a turn with no attack to buff loses nothing by keeping it.
             spare = board.action_points - CARD_COST[VESTIGE]
-            return not any(CARD_CATEGORY.get(base_name(other)) == ATTACK_CATEGORY and CARD_COST.get(base_name(other), 0) <= spare
-                           for other in board.hand)
+            return not any(CARD_CATEGORY.get(other) == ATTACK_CATEGORY and CARD_COST.get(other, 0) <= spare for other in map(base_name, board.hand))
         return False
 
     def worth(self, name, board, base, rate):
