@@ -135,6 +135,8 @@ class TestOcrNormalisation(unittest.TestCase):
         for caption, expected in (
             ("Select 1 card(s) to spark an Epiphany for.", "请选择1张闪光的卡牌"),
             ("Select 1 card(s) to trigger Epiphany.", "请选择1张闪光的卡牌"),
+            # Meditation's screen, which upstream's Epiphany picker would answer with a card that is not pinned.
+            ("Select 1 card to spark an Epiphany again.", "冥想重构卡牌"),
             ("Select 1 card(s) to Convert.", "请选择1张转换的卡牌"),
             ("Select 3 card(s) to Duplicate.", "请选择3张复制的卡牌"),
             ("Select up to 2 card(s) to Remove.", "请选择2张要移除的卡牌"),

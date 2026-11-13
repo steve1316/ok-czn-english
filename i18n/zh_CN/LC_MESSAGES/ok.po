@@ -333,6 +333,9 @@ msgstr "智能出牌"
 msgid "Buy Monster Cards"
 msgstr "购买怪物卡"
 
+msgid "Meditate on Pinned Cards"
+msgstr "冥想重构钉选卡牌"
+
 msgid "刷梦边"
 msgstr "刷梦边"
 
