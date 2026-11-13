@@ -24,12 +24,21 @@ logger = Logger.get_logger(__name__)
 PARK = (0.55, 0.08)
 # How long the cursor stays on a click before it goes back, so the game reads the press there and not at the player's cursor. ~3 frames.
 HOLD = 0.05
-# The `GUITHREADINFO` flag Windows sets while a window on the thread is being dragged or resized.
+# The `GUITHREADINFO` flag Windows sets while a window on the thread is being dragged or resized. A still hold on the title bar takes
+# ~1s to set it, but the window holds the mouse capture from the press, so the capture counts too.
 GUI_INMOVESIZE = 0x2
 # How often held input rechecks whether the player has let go of the game window, in seconds.
 WAIT_STEP = 0.1
+# How long input waits on a hold before it goes anyway, in seconds, so a capture nobody lets go of cannot hang the bot.
+WAIT_LIMIT = 30
+# The side mouse buttons' release, which pywin32's `win32con` leaves out.
+WM_XBUTTONUP = 0x020C
+# Releases never start a drag, and holding them back behind the capture the bot's own press took would wait forever.
+RELEASES = frozenset({win32con.WM_LBUTTONUP, win32con.WM_RBUTTONUP, win32con.WM_MBUTTONUP, WM_XBUTTONUP, win32con.WM_KEYUP, win32con.WM_SYSKEYUP})
 
 _patched = False
+# Whether `freeze` has the player's input frozen, so the player cannot be holding anything new.
+_frozen = False
 
 
 class GUITHREADINFO(ctypes.Structure):
@@ -73,20 +82,20 @@ def over_game(interaction):
         return None
 
 
-def being_moved(interaction):
-    """Say whether the player is dragging or resizing the game window right now.
+def held_by_player(interaction):
+    """Say whether a mouse button is held on the game window, as when the player grabs its title bar to drag it.
 
     Args:
         interaction: The running `PostMessageInteraction`, whose `hwnd_window` holds the game's window handles.
 
     Returns:
-        True while the drag lasts. False when it cannot be read.
+        True while the window is dragged or holds the mouse capture. False when it cannot be read.
     """
     window = interaction.hwnd_window
     user32 = ctypes.windll.user32
     thread = user32.GetWindowThreadProcessId(window.top_hwnd or window.hwnd, None)
     info = GUITHREADINFO(cbSize=ctypes.sizeof(GUITHREADINFO))
-    return bool(thread and user32.GetGUIThreadInfo(thread, ctypes.byref(info)) and info.flags & GUI_INMOVESIZE)
+    return bool(thread and user32.GetGUIThreadInfo(thread, ctypes.byref(info)) and (info.flags & GUI_INMOVESIZE or info.hwndCapture))
 
 
 def screen_point(interaction, x, y):
@@ -129,6 +138,8 @@ def freeze(frozen):
     Args:
         frozen: True to freeze, False to release.
     """
+    global _frozen
+    _frozen = frozen
     ctypes.windll.user32.BlockInput(frozen)
 
 
@@ -183,10 +194,10 @@ def parking_cursor(original):
     return send_key
 
 
-def waiting_out_drags(original):
-    """Wrap `PostMessageInteraction.post`, the one call every posted click, key and scroll goes through, to wait while the window is dragged.
+def waiting_out_holds(original):
+    """Wrap `PostMessageInteraction.post`, the one call every posted click, key and scroll goes through, to wait while the window is held.
 
-    The cursor sits on the title bar for the whole drag, outside the client area, so `borrowing_cursor` never has input frozen here.
+    Frozen input skips the wait, since the player could not let go then. A title bar grab never freezes, as the cursor is outside the client area.
 
     Args:
         original: Upstream's `post`.
@@ -194,12 +205,16 @@ def waiting_out_drags(original):
     Returns:
         The wrapped method.
     """
-    def post(self, *args, **kwargs):
-        if being_moved(self):
-            logger.info("the game window is being dragged, so input waits until it is let go")
-            while being_moved(self):
+    def post(self, message, *args, **kwargs):
+        if message not in RELEASES and not _frozen and held_by_player(self):
+            logger.info("the game window is being held, so input waits until it is let go")
+            give_up = time.monotonic() + WAIT_LIMIT
+            while held_by_player(self):
+                if time.monotonic() > give_up:
+                    logger.warning(f"the game window was still held after {WAIT_LIMIT}s, so input goes anyway")
+                    break
                 time.sleep(WAIT_STEP)
-        return original(self, *args, **kwargs)
+        return original(self, message, *args, **kwargs)
 
     return post
 
@@ -213,6 +228,6 @@ def apply():
 
     PostMessageInteraction.click = borrowing_cursor(PostMessageInteraction.click)
     PostMessageInteraction.send_key = parking_cursor(PostMessageInteraction.send_key)
-    PostMessageInteraction.post = waiting_out_drags(PostMessageInteraction.post)
+    PostMessageInteraction.post = waiting_out_holds(PostMessageInteraction.post)
     _patched = True
     logger.info("clicks and keys move the real cursor out of the way while it is over the game")

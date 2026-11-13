@@ -39,19 +39,28 @@ class Desktop:
         Args:
             under: The window under the cursor, `GAME` or `OTHER`.
             at: The cursor's screen position.
-            drag: How many checks find the player still dragging the game window before they let go.
+            drag: How many checks find the player still holding the game window before they let go.
         """
         self.under = under
         self.at = at
         self.drag = drag
         self.events = []
+        # Whether the bot's own press is down, which gives the game window the mouse capture as a real press does.
+        self.pressed = False
 
-    def being_moved(self, interaction):
-        """Report the drag for the first `drag` checks, recording each one."""
+    def post(self, message):
+        """Record a posted message, tracking the press it starts or ends."""
+        self.events.append(("post", message))
+        self.pressed = {win32con.WM_LBUTTONDOWN: True, win32con.WM_LBUTTONUP: False}.get(message, self.pressed)
+
+    def held_by_player(self, interaction):
+        """Report the hold for the first `drag` checks, recording each one, and the capture the bot's own press takes."""
         if self.drag:
             self.drag -= 1
             self.events.append(("dragged",))
             return True
+        if self.pressed:
+            raise AssertionError("input waited on the capture of the bot's own press, which would never let go")
         return False
 
     def patches(self):
@@ -68,8 +77,8 @@ class Desktop:
             mock.patch("win32gui.GetAncestor", side_effect=lambda hwnd, flag: hwnd),
             mock.patch("win32gui.ClientToScreen", side_effect=lambda hwnd, p: (p[0] + ORIGIN[0], p[1] + ORIGIN[1])),
             mock.patch("win32gui.ScreenToClient", side_effect=lambda hwnd, p: (p[0] - ORIGIN[0], p[1] - ORIGIN[1])),
-            mock.patch("win32gui.PostMessage", side_effect=lambda hwnd, message, *args: self.events.append(("post", message))),
-            mock.patch.object(cursor, "being_moved", side_effect=self.being_moved),
+            mock.patch("win32gui.PostMessage", side_effect=lambda hwnd, message, *args: self.post(message)),
+            mock.patch.object(cursor, "held_by_player", side_effect=self.held_by_player),
             mock.patch("time.sleep"),
             mock.patch.object(ctypes.windll.user32, "BlockInput", side_effect=lambda frozen: self.events.append(("freeze", frozen))),
         ]
@@ -133,6 +142,25 @@ class TestCursor(unittest.TestCase):
                 self.assertTrue(posts)
                 # Both checks that still find the drag come before anything is posted.
                 self.assertEqual(events[:min(posts)].count(("dragged",)), 2)
+
+    def test_frozen_input_never_waits_on_a_hold(self):
+        # The player cannot let go while input is frozen, so waiting there would hang until Ctrl+Alt+Del.
+        desktop = Desktop(drag=1000)
+        events = self.run_on(desktop, lambda it: it.click(300, 400))
+        self.assertIn(("post", win32con.WM_LBUTTONUP), events)
+        self.assertEqual(desktop.drag, 1000)
+
+    def test_a_hold_counts_from_the_press_not_from_when_windows_starts_the_drag(self):
+        # A still title bar hold took ~1s live to set the drag flag, but the window held the mouse capture from the press.
+        window = SimpleNamespace(hwnd_window=SimpleNamespace(hwnd=GAME, top_hwnd=0))
+        for flags, capture, held in ((0, 0, False), (0, GAME, True), (cursor.GUI_INMOVESIZE, GAME, True)):
+            def fill(thread, info):
+                info._obj.flags, info._obj.hwndCapture = flags, capture
+                return 1
+            with (self.subTest(flags=flags, capture=capture),
+                  mock.patch.object(ctypes.windll.user32, "GetWindowThreadProcessId", return_value=7),
+                  mock.patch.object(ctypes.windll.user32, "GetGUIThreadInfo", side_effect=fill)):
+                self.assertEqual(cursor.held_by_player(window), held)
 
 
 if __name__ == "__main__":
