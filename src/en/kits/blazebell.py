@@ -18,6 +18,8 @@ BIND_MAX = 4
 LOW_HEALTH = 0.3
 # How many Blue Flame a card's text makes, as in "Create 2 Blue Flame".
 CREATES_FLAMES = re.compile(r"\bCreate (\d+) Blue Flame")
+# The Purity draw on Fluttering Embers, the only part of it another attribute's card in hand switches off.
+DRAWS = re.compile(r"\bDraw \d")
 OWN_ATTRIBUTE = COMBATANT_ATTRIBUTE["Blazebell"]
 
 
@@ -78,7 +80,9 @@ class Blazebell(Kit):
         return base + made * rate(EMBERS) / BIND_MAX if made else base
 
     def phase(self, name, board, base):
-        """Play Fluttering Embers after every card of another attribute, so its Purity draw fires.
+        """Play a Fluttering Embers that draws after every card of another attribute, so its Purity draw fires.
+
+        The versions that do not draw have no Purity, and the Justice damage one has to go before the attacks it buffs.
 
         Args:
             name: The card being placed.
@@ -88,7 +92,7 @@ class Blazebell(Kit):
         Returns:
             The card's place in the turn.
         """
-        if base_name(name) == EMBERS and any(other_attribute(other) for other in board.hand):
+        if base_name(name) == EMBERS and DRAWS.search(text(name, board)) and any(other_attribute(other) for other in board.hand):
             return PHASE_OTHER + 0.5
         return super().phase(name, board, base)
 
