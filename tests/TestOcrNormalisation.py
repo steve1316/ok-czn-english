@@ -154,6 +154,8 @@ class TestOcrNormalisation(unittest.TestCase):
             ("Select fourth Combatant to join.", "请选择加入的主战员"),
             # The ordinal is drawn in another colour, and OCR usually reads it glued to the word before.
             ("Selectfourth Combatant to join.", "请选择加入的主战员"),
+            # Split off the ordinal on a live run, which left the draft unread and the event handler tapping a spent Search again.
+            ("Combatant to join.", "请选择加入的主战员"),
             ("Choose 1 card to obtain Epiphany.", "请选择1张获得闪光的卡牌"),
             # Left in English on a live run, the event task handler tapped beside the cards for 16 minutes.
             ("Choose 1 card to obtain Divine Epiphany.", "请选择1张获得闪光的卡牌"),
