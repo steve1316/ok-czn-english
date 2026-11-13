@@ -171,18 +171,33 @@ class TestRewardQuality(unittest.TestCase):
 
     def test_obtain_card_waits_for_the_first_team_read(self):
         # Live, a run started on Obtain Card lost its first team tap and picked before the retry, knowing neither the team nor the deck.
-        title = types.SimpleNamespace(name=rewards.OBTAIN_TITLE)
+        boxes = {rewards.OBTAIN_TITLE_AT: rewards.OBTAIN_TITLE, rewards.OBTAIN_TIP_AT: "请选择1张要获得的卡牌"}
         picked = []
         handler = rewards.after_the_team(lambda task: picked.append(task) or True, utils_sortie)
         cases = {"tapped, unread": (1, frozenset(), False), "tapped, read": (1, frozenset({"Owen"}), True),
                  "tries spent": (navigation.TEAM_TRIES, frozenset(), True)}
-        with standing_in(utils_sortie, find_box_at_point=lambda task, x, y: title):
+        with standing_in(utils_sortie, find_box_at_point=lambda task, x, y: types.SimpleNamespace(name=boxes.get((x, y), "")),
+                         recognize_cards=lambda task, page: []):
             for case, (tries, party, picks) in cases.items():
                 with self.subTest(case):
                     picked.clear()
                     task = types.SimpleNamespace(node_status={navigation.TEAM_TAPPED: (tries, 0.0)}, sleep=lambda seconds: None, **{PARTY: party})
                     self.assertTrue(handler(task))
                     self.assertEqual(picks, bool(picked))
+
+    def test_obtain_card_waits_for_every_card_to_land(self):
+        # Live, upstream read the first of three cards while the rest dealt in, did not want it, and skipped the reward.
+        boxes = {rewards.OBTAIN_TITLE_AT: rewards.OBTAIN_TITLE, rewards.OBTAIN_TIP_AT: "请选择1张要获得的卡牌"}
+        offer = [{"name": "Distortion: Overwhelm"}, {"name": "Prepare to Subdue"}, {"name": "Distortion: Nature's Gift"}]
+        seen = []
+        handler = rewards.after_the_team(lambda task: seen.append(utils_sortie.recognize_cards(task, page="")) or True, utils_sortie)
+        task = types.SimpleNamespace(node_status={}, sleep=lambda seconds: None, **{PARTY: frozenset({"Yuki"})})
+        landed = iter([1, 3, 3])
+        with standing_in(utils_sortie, find_box_at_point=lambda task, x, y: types.SimpleNamespace(name=boxes.get((x, y), "")),
+                         recognize_cards=lambda task, page: offer[:next(landed)]):
+            for _ in range(3):
+                self.assertTrue(handler(task))
+        self.assertEqual([offer], seen)
 
     def test_a_misread_reward_is_still_picked(self):
         # Live, Black Dance was read as `Back Dance`, so upstream found no listed name in it and skipped the reward.

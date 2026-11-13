@@ -5,6 +5,8 @@ because reading the team off the screen is what fills it - `src/en/dashboard.py`
 its place in the table and what it says before it has been read.
 """
 
+import re
+import time
 from contextlib import ExitStack
 
 from ok import Logger
@@ -34,9 +36,21 @@ FILLED_IN = ("handle_shop", "handle_card_reward", "handle_card_assign")
 # handler reading it is what tells them apart.
 FREE = ("handle_card_reward", "handle_get_card")
 
-# Upstream's own check for Sortie's Obtain Card screen: its title, and the point it reads it at.
+# Upstream's own check for Sortie's Obtain Card screen: its title and prompt, and the points it reads them at.
 OBTAIN_TITLE = "获得卡牌"
 OBTAIN_TITLE_AT = (0.502, 0.128)
+OBTAIN_TIP = r"请选择.*获得的卡牌"
+OBTAIN_TIP_AT = (0.883, 0.131)
+# The page name upstream's own read passes, so the read made here logs the same way.
+OBTAIN_PAGE = "获得卡牌页面"
+# Where the last Obtain Card read is kept: its card count, when it was made, and when the screen was first read.
+DEALT = "_en_obtain_dealt"
+# Longest gap in seconds between two reads of one Obtain Card screen. An older read belongs to an earlier screen.
+DEAL_GAP = 5
+# Longest in seconds a card count that keeps changing is waited on before upstream picks anyway.
+DEAL_LIMIT = 8
+# Pause before the next read while the cards deal in. Live, one of three had landed ~1s after Claim and all three by ~3s.
+DEAL_WAIT = 0.5
 
 TEAM = "_en_team"
 
@@ -240,26 +254,56 @@ def filling_in(original, task_module, free=False):
     return patched
 
 
+def still_dealing(task, count):
+    """Say whether Obtain Card's cards may still be dealing in, so the pick waits a frame.
+
+    The cards land one at a time, so a read is trusted once the next frame finds the same number of cards.
+
+    Args:
+        task: The running Sortie task, which keeps the last read.
+        count: How many cards were read this frame.
+
+    Returns:
+        True when this read is the screen's first or differs from the last, until the screen has been waited on for `DEAL_LIMIT` seconds.
+    """
+    now = time.monotonic()
+    last, last_at, since = getattr(task, DEALT, (None, 0.0, 0.0))
+    if now - last_at > DEAL_GAP:
+        last, since = None, now
+    setattr(task, DEALT, (count, now, since))
+    return count != last and now - since < DEAL_LIMIT
+
+
 def after_the_team(handler, utils_sortie):
-    """Hold Sortie's Obtain Card pick while the run's first team read still has tries left, so the pick knows the team and the deck.
+    """Hold Sortie's Obtain Card pick until the team is read and every card has landed.
 
     A run started on this screen taps for the team as the game window comes to the front, which loses the tap, and upstream picked in the
-    wait before the retry.
+    wait before the retry. Upstream also picks from the first frame it can read one card, and skips the reward when that card is not wanted.
 
     Args:
         handler: Upstream's `handle_get_card`.
-        utils_sortie: The Sortie module, whose `find_box_at_point` reads the screen title.
+        utils_sortie: The Sortie module, whose `find_box_at_point` reads the screen title and whose `recognize_cards` reads the cards.
 
     Returns:
         The wrapped handler, under the original's name.
     """
     def handle_get_card(task):
         title = utils_sortie.find_box_at_point(task, *OBTAIN_TITLE_AT)
-        if title and title.name == OBTAIN_TITLE and team_pending(task):
+        tip = utils_sortie.find_box_at_point(task, *OBTAIN_TIP_AT)
+        if not (title and title.name == OBTAIN_TITLE and tip and re.search(OBTAIN_TIP, tip.name)):
+            return handler(task)
+        if team_pending(task):
             logger.debug("Obtain Card waits for the team and the deck to be read")
             task.sleep(1)
             return True
-        return handler(task)
+        found = utils_sortie.recognize_cards(task, page=OBTAIN_PAGE)
+        if found and still_dealing(task, len(found)):
+            logger.debug(f"Obtain Card read {len(found)} card(s), so it waits a frame for the rest to land")
+            task.sleep(DEAL_WAIT)
+            return True
+        # Upstream picks from this same read, so the cards are not read twice.
+        with standing_in(utils_sortie, recognize_cards=lambda *args, **kwargs: found):
+            return handler(task)
 
     handle_get_card.__name__ = handler.__name__
     return handle_get_card
