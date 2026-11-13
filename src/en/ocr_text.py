@@ -52,8 +52,9 @@ PATTERNS = (
     # Must stay below every rule above, or it swallows them. Upstream's in-battle hand picker reads only the count,
     # and freezes the turn on any caption left in English.
     (re.compile(SELECT_CARDS + r".*$", re.I), "请选择{0}张卡牌"),
-    # The ordinal is drawn in another colour, and OCR usually glues it to the word beside it: "Selectfourth".
-    (re.compile(r"^select ?\w+ ?combatant to join.*$", re.I), "请选择加入的主战员"),
+    # The ordinal is drawn in another colour, and OCR usually glues it to the word beside it: "Selectfourth". Sometimes it splits
+    # "Select fourth" off instead, and the draft reads the box after it.
+    (re.compile(r"^(?:select ?\w+ ?)?combatant to join.*$", re.I), "请选择加入的主战员"),
     # OCR splits this one round its count, drawn in another colour, and upstream reads the box after it. An empty count
     # still satisfies upstream's pattern, which then takes it as one. A Divine Epiphany asks the same way and picks off the same list.
     (re.compile(r"^(?:choose )?(\d*) ?cards? to obtain .*epiphany.*$", re.I), "请选择{0}张获得闪光的卡牌"),
