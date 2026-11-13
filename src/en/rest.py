@@ -40,6 +40,9 @@ UNUSED_WARNING = "not yet used a Safe Zone interaction"
 WARNING_REGION = (0.1, 0.25, 0.9, 0.65)
 CANCEL = "取消"
 CANCEL_REGION = (0.1, 0.5, 0.5, 0.85)
+# Rest's own "Unusable" caption, read under the dimmed warning in the band upstream reads Rest's "Free" from. OCR has dropped the U.
+REST_UNUSABLE = "nusable"
+REST_REGION = (0.154, 0.602, 0.359, 0.847)
 # The handler that would otherwise press the warning's Confirm.
 CONFIRM_ANCHOR = "handle_center_confirm"
 # The handler each mode gates a safe zone on, by the module that defines it. Chaos rests through `utils`,
@@ -177,6 +180,10 @@ def handle_unused_warning(task):
         return False
     cancel = text_in_region(task, CANCEL, CANCEL_REGION)
     if cancel is None:
+        return False
+    # With Rest locked nothing can spend the interaction, and Cancel only leads back to Skip and this warning.
+    if text_in_region(task, REST_UNUSABLE, REST_REGION):
+        task.log_info("Rest is locked in this safe zone, so leaving it unused")
         return False
     status = getattr(task, "node_status", None)
     if isinstance(status, dict):

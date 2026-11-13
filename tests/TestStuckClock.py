@@ -313,15 +313,20 @@ class TestOfferedInteraction(unittest.TestCase):
                     pass
                 self.assertIs(False, task.node_status[rest.FLAG])
 
-    def test_leaving_unused_is_cancelled_and_the_area_used(self):
-        # The run's leave warning as OCR read it. Upstream's centre Confirm would walk out with the interaction unspent.
-        cancel, clicked = FakeBox("取消", 0.347, 0.632), []
-        task = SimpleNamespace(width=1920, height=1080, node_status={rest.FLAG: False}, log_info=lambda message: None, sleep=lambda seconds: None,
-                               click_box=clicked.append, all_texts=[FakeBox("You have not yet used a Safe Zone interaction.", 0.5, 0.45),
-                                                                    FakeBox("Do you really wish to leave?", 0.5, 0.5), cancel, FakeBox("确认", 0.653, 0.632)])
-        self.assertTrue(rest.handle_unused_warning(task))
-        self.assertEqual([cancel], clicked)
-        self.assertIs(True, task.node_status[rest.FLAG])
+    def test_leaving_unused_is_cancelled_unless_rest_is_locked(self):
+        # The run's leave warning as OCR read it. Upstream's centre Confirm would walk out with the interaction unspent. Meditation's own
+        # "Unusable" sits outside Rest's band.
+        for why, behind, cancelled in (("meditation locked", [FakeBox("Unusable", 0.80, 0.62)], True), ("rest locked", [FakeBox("Unusable", 0.333, 0.80)], False),
+                                       ("misread", [FakeBox("Jnusable", 0.333, 0.80)], False)):
+            with self.subTest(why):
+                cancel, clicked = FakeBox("取消", 0.347, 0.632), []
+                texts = [FakeBox("You have not yet used a Safe Zone interaction.", 0.5, 0.45), FakeBox("Do you really wish to leave?", 0.5, 0.5),
+                         cancel, FakeBox("确认", 0.653, 0.632), *behind]
+                task = SimpleNamespace(width=1920, height=1080, node_status={rest.FLAG: False}, log_info=lambda message: None,
+                                       sleep=lambda seconds: None, click_box=clicked.append, all_texts=texts)
+                self.assertIs(cancelled, rest.handle_unused_warning(task))
+                self.assertEqual([cancel] if cancelled else [], clicked)
+                self.assertIs(cancelled, task.node_status[rest.FLAG])
 
 
 class TestQuickObtain(unittest.TestCase):
