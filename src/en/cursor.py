@@ -1,12 +1,14 @@
-"""Move the real cursor out of the bot's way while it sits over the game window.
+"""Keep the player's mouse and the bot's input out of each other's way over the game window.
 
 Upstream posts clicks and keys straight to the game window, which works with the game behind other windows. The game follows the real
 mouse instead whenever it is over the window, so a click lands wherever the player's cursor is, and a card the cursor rests on stays hovered
-and refuses every card key. A click now borrows the cursor and puts it back, and a key parks it in an empty strip of the screen.
+and refuses every card key. A click now borrows the cursor and puts it back, and a key parks it in an empty strip of the screen. Input
+posted while the player holds the title bar is read as the drag's new position and flings the window, so it waits for the window to be let go.
 """
 
 import ctypes
 import time
+from ctypes import wintypes
 
 import pywintypes
 import win32api
@@ -22,8 +24,28 @@ logger = Logger.get_logger(__name__)
 PARK = (0.55, 0.08)
 # How long the cursor stays on a click before it goes back, so the game reads the press there and not at the player's cursor. ~3 frames.
 HOLD = 0.05
+# The `GUITHREADINFO` flag Windows sets while a window on the thread is being dragged or resized.
+GUI_INMOVESIZE = 0x2
+# How often held input rechecks whether the player has let go of the game window, in seconds.
+WAIT_STEP = 0.1
 
 _patched = False
+
+
+class GUITHREADINFO(ctypes.Structure):
+    """The Win32 struct `GetGUIThreadInfo` fills in. Only `flags` is read."""
+
+    _fields_ = [
+        ("cbSize", wintypes.DWORD),  # The struct's own size, which the caller sets.
+        ("flags", wintypes.DWORD),  # The thread's state bits, `GUI_INMOVESIZE` among them.
+        ("hwndActive", wintypes.HWND),  # The thread's active window.
+        ("hwndFocus", wintypes.HWND),  # The window with the keyboard focus.
+        ("hwndCapture", wintypes.HWND),  # The window holding the mouse capture.
+        ("hwndMenuOwner", wintypes.HWND),  # The window that owns an open menu.
+        ("hwndMoveSize", wintypes.HWND),  # The window being moved or sized.
+        ("hwndCaret", wintypes.HWND),  # The window showing the caret.
+        ("rcCaret", wintypes.RECT),  # The caret's bounds.
+    ]
 
 
 def over_game(interaction):
@@ -49,6 +71,22 @@ def over_game(interaction):
         return at if 0 <= x < right and 0 <= y < bottom else None
     except pywintypes.error:
         return None
+
+
+def being_moved(interaction):
+    """Say whether the player is dragging or resizing the game window right now.
+
+    Args:
+        interaction: The running `PostMessageInteraction`, whose `hwnd_window` holds the game's window handles.
+
+    Returns:
+        True while the drag lasts. False when it cannot be read.
+    """
+    window = interaction.hwnd_window
+    user32 = ctypes.windll.user32
+    thread = user32.GetWindowThreadProcessId(window.top_hwnd or window.hwnd, None)
+    info = GUITHREADINFO(cbSize=ctypes.sizeof(GUITHREADINFO))
+    return bool(thread and user32.GetGUIThreadInfo(thread, ctypes.byref(info)) and info.flags & GUI_INMOVESIZE)
 
 
 def screen_point(interaction, x, y):
@@ -145,8 +183,29 @@ def parking_cursor(original):
     return send_key
 
 
+def waiting_out_drags(original):
+    """Wrap `PostMessageInteraction.post`, the one call every posted click, key and scroll goes through, to wait while the window is dragged.
+
+    The cursor sits on the title bar for the whole drag, outside the client area, so `borrowing_cursor` never has input frozen here.
+
+    Args:
+        original: Upstream's `post`.
+
+    Returns:
+        The wrapped method.
+    """
+    def post(self, *args, **kwargs):
+        if being_moved(self):
+            logger.info("the game window is being dragged, so input waits until it is let go")
+            while being_moved(self):
+                time.sleep(WAIT_STEP)
+        return original(self, *args, **kwargs)
+
+    return post
+
+
 def apply():
-    """Keep the real cursor from overriding the bot's clicks and keys while it is over the game."""
+    """Keep the real cursor from overriding the bot's clicks and keys, and hold input while the game window is dragged."""
     global _patched
     if _patched:
         return
@@ -154,5 +213,6 @@ def apply():
 
     PostMessageInteraction.click = borrowing_cursor(PostMessageInteraction.click)
     PostMessageInteraction.send_key = parking_cursor(PostMessageInteraction.send_key)
+    PostMessageInteraction.post = waiting_out_drags(PostMessageInteraction.post)
     _patched = True
     logger.info("clicks and keys move the real cursor out of the way while it is over the game")

@@ -33,16 +33,26 @@ TITLE_BAR = (500, ORIGIN[1] - 20)
 class Desktop:
     """Fake the Windows calls, recording cursor moves and posted messages in the order they happen."""
 
-    def __init__(self, under=GAME, at=PLAYER):
+    def __init__(self, under=GAME, at=PLAYER, drag=0):
         """Set up a desktop with the cursor over one window.
 
         Args:
             under: The window under the cursor, `GAME` or `OTHER`.
             at: The cursor's screen position.
+            drag: How many checks find the player still dragging the game window before they let go.
         """
         self.under = under
         self.at = at
+        self.drag = drag
         self.events = []
+
+    def being_moved(self, interaction):
+        """Report the drag for the first `drag` checks, recording each one."""
+        if self.drag:
+            self.drag -= 1
+            self.events.append(("dragged",))
+            return True
+        return False
 
     def patches(self):
         """Build the patches that route the Windows calls here.
@@ -59,6 +69,8 @@ class Desktop:
             mock.patch("win32gui.ClientToScreen", side_effect=lambda hwnd, p: (p[0] + ORIGIN[0], p[1] + ORIGIN[1])),
             mock.patch("win32gui.ScreenToClient", side_effect=lambda hwnd, p: (p[0] - ORIGIN[0], p[1] - ORIGIN[1])),
             mock.patch("win32gui.PostMessage", side_effect=lambda hwnd, message, *args: self.events.append(("post", message))),
+            mock.patch.object(cursor, "being_moved", side_effect=self.being_moved),
+            mock.patch("time.sleep"),
             mock.patch.object(ctypes.windll.user32, "BlockInput", side_effect=lambda frozen: self.events.append(("freeze", frozen))),
         ]
 
@@ -111,6 +123,16 @@ class TestCursor(unittest.TestCase):
                 with self.subTest(where=where, action=name):
                     events = self.run_on(desktop(), action)
                     self.assertFalse([event for event in events if event[0] in ("cursor", "freeze")])
+
+    def test_input_waits_while_the_player_drags_the_window(self):
+        # Posted mid-drag, a click's position is read as where the drag went, and the window jumps there.
+        for name, action in (("click", lambda it: it.click(300, 400)), ("key", lambda it: it.send_key("1"))):
+            with self.subTest(name):
+                events = self.run_on(Desktop(at=TITLE_BAR, drag=2), action)
+                posts = [index for index, event in enumerate(events) if event[0] == "post"]
+                self.assertTrue(posts)
+                # Both checks that still find the drag come before anything is posted.
+                self.assertEqual(events[:min(posts)].count(("dragged",)), 2)
 
 
 if __name__ == "__main__":
