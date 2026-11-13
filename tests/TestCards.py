@@ -777,6 +777,22 @@ class TestKits(unittest.TestCase):
             ("Tsukuyomi sits right before Oni Hunt", ("Tsukuyomi", BUFF, "Oni Hunt"), cards.Board(action_points=2), [BUFF, "Tsukuyomi", "Oni Hunt"]),
         ))
 
+    def test_blazebell_stacks_blue_flame_and_buffs_first(self):
+        """Blue Flame stacks into Fluttering Embers, Vestige and Flametouch go before the attacks, and Embers after other attributes."""
+        self.plays((
+            # Live, leftover points went on Blue Flame at full HP for a heal worth 0, which spent its stack.
+            ("Blue Flame is kept for its stack", ("Blue Flame", "Bright Flame"), cards.Board(action_points=3), ["Bright Flame"]),
+            ("Blue Flame heals a team about to drop", ("Blue Flame",), cards.Board(health=0.2), ["Blue Flame"]),
+            # Generic play files the unread buff after the attack it was for.
+            ("Vestige goes before the attacks", ("Bright Flame", "Vestige of Flames"), cards.Board(), ["Vestige of Flames", "Bright Flame"]),
+            # Generic play buys the buff over the only attack, and the buff lands on nothing.
+            ("Vestige waits when the attack takes the last point", ("Bright Flame", "Vestige of Flames"), cards.Board(action_points=1),
+             ["Bright Flame"]),
+            ("Flametouch leads the attacks", ("Bright Flame", "Flametouch"), cards.Board(action_points=2), ["Flametouch", "Bright Flame"]),
+            # Generic play plays the free Embers first, while Yuki's Order card in hand turns its Purity draw off.
+            ("Embers follows another attribute's card", ("Fluttering Embers", "Rapid Slash"), cards.Board(), ["Rapid Slash", "Fluttering Embers"]),
+        ))
+
     def test_diana_discards_her_quietus_attacks(self):
         """Quietus cards fire free when discarded, so Diana keeps them for Blooming Love and Heart Breaker rather than paying for them."""
         milk = "C\u2019mere, Milk & Pong!"

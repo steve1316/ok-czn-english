@@ -44,6 +44,9 @@ STRIKE_EGO = ego.Ego("Execution", frozenset({ego.STRIKE}), "")
 SETUP_EGO = ego.Ego("Tactical Command", frozenset({ego.SETUP}), "")
 HEALING_SETUP_EGO = ego.Ego("Vitality Boosting Potion", frozenset({ego.GUARD, ego.SETUP}), "Heal142% 1 Morale for 1turn")
 EXHAUST_EGO = ego.Ego("Activate Defense Module", frozenset({ego.SETUP}), "For 1 turn, when a card is Exhausted, 1 Weaken to a random enemy")
+# Blazebell's Ego as live OCR read its preview, words run together.
+DISCARD_EGO = ego.Ego("Hellfire", frozenset({ego.STRIKE}), "880%Defense-Based Damage and 1 Melting to all enemies Discard all cards inhand except "
+                      "for Unique and Bind cards Create 4 Rliie Flame")
 
 # Where the painted enemy stands. Anywhere inside the band the counters are looked for in will do.
 ENEMY_AT = (0.50, 0.25)
@@ -294,6 +297,13 @@ class TestEgoPlanner(unittest.TestCase):
                 with self.subTest(banked=banked, exhausting=exhausting):
                     choice = ego.decide([("F1", EXHAUST_EGO, True)], banked, 0.9, False, True, False, exhausting)
                     self.assertEqual(fired, choice and choice[0])
+
+    def test_a_hand_discarding_ego_waits_for_the_attacks(self):
+        # A full bar fires its strike at once, and Hellfire would throw away the attacks the turn was about to play.
+        for attacking, fired in ((True, None), (False, "F1")):
+            with self.subTest(attacking=attacking):
+                choice = ego.decide([("F1", DISCARD_EGO, True)], 7, 0.9, False, attacking, False, False)
+                self.assertEqual(fired, choice and choice[0])
 
     def test_a_press_the_game_ignored_does_not_use_up_the_turn(self):
         # Live, F1 pressed while an attack still played left the bar at 3 EP, and the retry that did fire was counted as a second.

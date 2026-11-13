@@ -8,7 +8,7 @@ from functools import lru_cache
 
 from src.en.kits.kit import base_name
 from src.en.kits import (
-    adelheid, amir, anika, arabella, beryl, cassius, chizuru, diana, fei, haru, heidemarie, hilde, hugo, kayron,
+    adelheid, amir, anika, arabella, beryl, blazebell, cassius, chizuru, diana, fei, haru, heidemarie, hilde, hugo, kayron,
     khalipe, lucas, luke, magna, maribell, mei_lin, mika, narja, nia, nine, olga, orlea, owen, rei, renoa, rin, rita,
     rossweisse, selena, sereniel, tenebria, tiphera, tressa, veronica, yuki,
 )
@@ -16,7 +16,7 @@ from src.en.kits import (
 # Every kit, listed by hand rather than found by scanning the folder, so the packaged build sees each import.
 KITS = (
     rossweisse.KIT, luke.KIT, hugo.KIT, owen.KIT, lucas.KIT, magna.KIT, maribell.KIT, mei_lin.KIT, mika.KIT, narja.KIT,
-    nia.KIT, adelheid.KIT, amir.KIT, anika.KIT, arabella.KIT, beryl.KIT, cassius.KIT, chizuru.KIT, diana.KIT, fei.KIT,
+    nia.KIT, adelheid.KIT, amir.KIT, anika.KIT, arabella.KIT, beryl.KIT, blazebell.KIT, cassius.KIT, chizuru.KIT, diana.KIT, fei.KIT,
     haru.KIT, heidemarie.KIT, hilde.KIT, kayron.KIT, khalipe.KIT, nine.KIT, olga.KIT, orlea.KIT, rei.KIT, renoa.KIT,
     rin.KIT, rita.KIT, selena.KIT, sereniel.KIT, tenebria.KIT, tiphera.KIT, tressa.KIT, veronica.KIT, yuki.KIT,
 )
