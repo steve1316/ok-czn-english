@@ -131,7 +131,7 @@ DESCRIPTIONS = {
     "任务优先级": "Preferred options inside an Unidentified Area, best first, matched loosely against the option's description rather than its title - so prefer distinctive wording, since a short word matches far more than you expect. Your Equipment Slot priorities are tried ahead of this list, and an area that matches nothing is picked at random.",
     "拉黑任务": "Never take an Unidentified Area option whose description matches one of these, so an entry like Curse skips anything handing you a Curse Card. If blocking would leave nothing to choose from, the list is ignored for that one screen.",
     "领取奖励(只使用验证卡)": "Takes the Additional Loot the Settlement screen offers, spending one of the four Loot Certification Cards issued each week. Turns itself off once they run out, so a run never pays Aether for loot.",
-    "领取奖励": "Claims the Chaos loot offered at the end of a sortie. Turns itself off when there is not enough Aether left to keep claiming.",
+    "领取奖励": "Claims the Chaos Loot at the end of a Sortie with Reason. It never charges Reason with Aether, so once Reason runs out the rest of that run's loot is left.",
     "多少信用点以上冥想": "Only meditate once Credits reach this much, so a run keeps enough to spend elsewhere.",
     "治疗崩溃": "Visit the Epione Center when a Combatant hits a Mental Breakdown, instead of running on under the Stress.",
     "生命值大于多少优先闪光(百分比)": "Only spend an Epiphany while the Combatant's health is above this percentage.",
