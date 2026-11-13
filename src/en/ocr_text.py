@@ -37,6 +37,8 @@ PATTERNS = (
     (re.compile(SELECT_CARDS + r"remove.*$", re.I), "请选择{0}张要移除的卡牌"),
     (re.compile(SELECT_CARDS + r"convert.*$", re.I), "请选择{0}张转换的卡牌"),
     (re.compile(SELECT_CARDS + r"duplicate.*$", re.I), "请选择{0}张复制的卡牌"),
+    # Meditation's card screen, "spark an Epiphany again". Above the spark rule, which would hand it to upstream's Epiphany picker.
+    (re.compile(SELECT_CARDS + r"spark.*epiphany ?again.*$", re.I), "冥想重构卡牌"),
     (re.compile(SELECT_CARDS + r"(?:spark|trigger).*epiphany.*$", re.I), "请选择{0}张闪光的卡牌"),
     # The top of the Draw Pile keeps its own word, since the card picked there is drawn again next turn rather than given up.
     # Matched on "top" alone, since a voice line's bubble can cover the end: "to move to top of Dra8".

@@ -353,6 +353,9 @@ msgstr "Smart Card Play"
 msgid "Buy Monster Cards"
 msgstr "Buy Monster Cards"
 
+msgid "Meditate on Pinned Cards"
+msgstr "Meditate on Pinned Cards"
+
 # Section headers this fork draws over the seasonal settings, English for the same reason.
 msgid "Season 3 - Persona"
 msgstr "Season 3 - Persona"

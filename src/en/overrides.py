@@ -14,6 +14,7 @@ from src.en.etched_memory import BONUSES, ENTER_MEMORY_END, ETCHED_MEMORY, KEEP_
 from src.en.game_data import CARDS, COMBATANTS, EQUIPMENT
 from src.en.framework import import_ui
 from src.en.reobserve import DEFAULT_BLACKLIST, MODIFIER_BLACKLIST, MODIFIERS, REOBSERVE
+from src.en.meditation import MAX_STRESS, MEDITATE, MIN_HP_PERCENT
 from src.en.rest import SHOP_SETTING
 from src.en.shop import BUY_MONSTER_CARDS, PAID_THRESHOLD
 
@@ -38,7 +39,8 @@ GAME_LANGUAGES = ["English", "简体中文", "繁体中文"]
 SMART_CARD_PLAY = "Smart Card Play"
 PLAYS_ITS_OWN_CARDS = "出牌优先级"
 # Upstream settings taken off both modes. `Config` drops a saved key it no longer declares, so upstream reads its own default.
-DROPPED = ("优先移除基础牌",)
+# Upstream's Meditation list and threshold are replaced by `MEDITATE`.
+DROPPED = ("优先移除基础牌", "需要冥想的卡牌", "多少信用点以上冥想")
 # Rows moved to sit right under another, as `(row, anchor)` pairs.
 PLACED_UNDER = ((SMART_CARD_PLAY, "游戏语言"), ("拉黑主战员", "主战员优先级"))
 # The combatant whose save data the run farms. `src/en/navigation.py` reads it to recognise the tab. Only Chaos
@@ -61,7 +63,6 @@ LIST_OPTIONS = {
     "移除卡牌列表": CARDS,
     "复制卡牌列表": CARDS,
     "闪光卡牌列表": CARDS,
-    "需要冥想的卡牌": CARDS,
     "卡牌奖励优先级": CARDS,
     "获得卡牌优先级": CARDS,
     "丢弃卡牌优先级": CARDS,
@@ -103,7 +104,6 @@ DESCRIPTIONS = {
     "复制卡牌列表": "Cards to duplicate whenever a copy is offered.",
     "闪光卡牌列表": "Cards to spend an Epiphany on.",
     "闪光优先级": "Epiphany targets, matched loosely against a card's name and its description, so a few keywords are enough. Order matters.",
-    "需要冥想的卡牌": "The exact cards to meditate on, each taken once per run. Nothing happens until Credits pass the figure in Meditate Above This Many Credits.",
     "卡牌奖励优先级": "Preferred cards when a reward offers a choice.",
     "获得卡牌优先级": "Preferred cards when the run offers a card to obtain.",
     "丢弃卡牌优先级": "Cards to throw away first when the run asks you to discard.",
@@ -136,7 +136,6 @@ DESCRIPTIONS = {
     "拉黑任务": "Never take an Unidentified Area option whose description matches one of these, so an entry like Curse skips anything handing you a Curse Card. If blocking would leave nothing to choose from, the list is ignored for that one screen.",
     "领取奖励(只使用验证卡)": "Takes the Additional Loot the Settlement screen offers, spending one of the four Loot Certification Cards issued each week. Turns itself off once they run out, so a run never pays Aether for loot.",
     "领取奖励": "Claims the Chaos Loot at the end of a Sortie with Reason. It never charges Reason with Aether, so once Reason runs out the rest of that run's loot is left.",
-    "多少信用点以上冥想": "Only meditate once Credits reach this much, so a run keeps enough to spend elsewhere.",
     "治疗崩溃": "Visit the Epione Center when a Combatant hits a Mental Breakdown, instead of running on under the Stress.",
     "生命值大于多少优先闪光(百分比)": "Only spend an Epiphany while the Combatant's health is above this percentage.",
     "第几层boss前自动暂停": "Stop and hand back control before the boss on this floor. Never Pause runs the whole map unattended.",
@@ -147,6 +146,7 @@ DESCRIPTIONS = {
     PAID_THRESHOLD: "Pay Credits to reroll the Dellang Shop once its free refreshes are used up, but only while holding more than this many. -1 never pays, and 0 pays whenever the price is affordable.",
     SHOP_SETTING: "Visit the Dellang Shop when a Safe Zone offers one. It pays to remove a card first, up to five a run, then buys from your Card Reward Priority and Equipment Slot lists.",
     BUY_MONSTER_CARDS: "Let the Dellang Shop buy Monster Cards. Turn it off to keep the Credits for card removals and equipment.",
+    MEDITATE: f"At a Safe Zone with HP at {MIN_HP_PERCENT}% or more and every combatant under {MAX_STRESS:.0%} Stress, pay for Meditation to re-roll the Epiphany on a card your build preset pinned. With no pinned card, or this off, the run rests.",
     "只打第一层": "Leave after the first floor instead of running the whole map.",
 }
 # Setup a mode needs before its first run, shown behind its Instructions button. A mode with nothing to set up gets no button.
@@ -216,12 +216,13 @@ def reshape(task):
     if PLAYS_ITS_OWN_CARDS in task.default_config:
         task.default_config[SMART_CARD_PLAY] = True
 
-    # Both Chaos and Sortie declare the shop switch, and this narrows it, so it is shown right under it.
+    # Both Chaos and Sortie declare the shop switch. Monster Cards narrows it, and Meditation is the Safe Zone's other paid choice, so both sit right under it.
     if SHOP_SETTING in task.default_config:
-        rows = [(key, value) for key, value in task.default_config.items() if key != BUY_MONSTER_CARDS]
+        added = {BUY_MONSTER_CARDS: True, MEDITATE: True}
+        rows = [(key, value) for key, value in task.default_config.items() if key not in added]
         under = [key for key, _ in rows].index(SHOP_SETTING) + 1
         task.default_config.clear()
-        task.default_config.update([*rows[:under], (BUY_MONSTER_CARDS, True), *rows[under:]])
+        task.default_config.update([*rows[:under], *added.items(), *rows[under:]])
 
     if FARMED_COMBATANT in task.default_config:
         task.default_config[DESIRE_FACTION] = DEFAULT_FACTION

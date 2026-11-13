@@ -253,9 +253,20 @@ class TestBuyMonsterCards(unittest.TestCase):
         self.assertIs(task.default_config[overrides.BUY_MONSTER_CARDS], True)
         self.assertIn(overrides.BUY_MONSTER_CARDS, task.config_description)
 
+    def test_the_meditation_switch_sits_on_under_it_and_replaces_upstreams_rows(self):
+        # Left in, upstream's list and threshold would read as settings that still steer Meditation.
+        task = reshaped({overrides.SHOP_SETTING: False, "需要冥想的卡牌": [], "多少信用点以上冥想": 0, "只打第一层": True})
+        keys = list(task.default_config)
+        self.assertEqual(overrides.MEDITATE, keys[keys.index(overrides.BUY_MONSTER_CARDS) + 1])
+        self.assertIs(task.default_config[overrides.MEDITATE], True)
+        self.assertIn(overrides.MEDITATE, task.config_description)
+        self.assertFalse({"需要冥想的卡牌", "多少信用点以上冥想"} & set(keys))
+
     def test_the_label_reaches_the_ui_through_the_catalog(self):
         catalog = polib.pofile(str(REPO_ROOT / "i18n" / "zh_CN" / "LC_MESSAGES" / "ok.po"))
-        self.assertIn(overrides.BUY_MONSTER_CARDS, {entry.msgid for entry in catalog})
+        for label in (overrides.BUY_MONSTER_CARDS, overrides.MEDITATE):
+            with self.subTest(label=label):
+                self.assertIn(label, {entry.msgid for entry in catalog})
 
 
 class TestSeasonFive(unittest.TestCase):

@@ -12,6 +12,7 @@ import sys
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 from types import SimpleNamespace
 
 import numpy as np
@@ -24,7 +25,7 @@ import utils  # noqa: E402
 import utils_chaos  # noqa: E402
 import utils_sortie  # noqa: E402
 
-from src.en import notify, obtain, rest, stuck  # noqa: E402
+from src.en import meditation, notify, obtain, rest, stuck  # noqa: E402
 from tests.fakes import FakeBox  # noqa: E402
 
 # Small enough to keep the detector's resize and diff cheap, large enough to survive dividing by four.
@@ -395,6 +396,136 @@ class TestSortieFreeEpiphany(unittest.TestCase):
                 task, searched, _ = self.seeing(None, line)
                 self.assertFalse(rest.free_epiphany_handler(utils)(task))
                 self.assertEqual(searches, len(searched))
+
+
+def party_bar(stress):
+    """Paint the party's Stress bars onto a black 1080p frame, the purple fill over the grey track as the client draws them.
+
+    Args:
+        stress: One share from 0 to 1 per combatant.
+
+    Returns:
+        A BGR frame.
+    """
+    frame = np.zeros((1080, 1920, 3), dtype=np.uint8)
+    for (left, top, right, bottom), level in zip(meditation.STRESS_BARS, stress):
+        x1, x2, y1, y2 = int(left * 1920) + 10, int(right * 1920) - 10, int(top * 1080), int(bottom * 1080) + 1
+        frame[y1:y2, x1:x2] = (77, 72, 70)
+        frame[y1:y2, x1:x1 + int((x2 - x1) * level)] = (240, 60, 200)
+    return frame
+
+
+class TestMeditation(unittest.TestCase):
+    """Meditation re-rolls the Epiphany on a pinned card, and only when the party could spare the Rest."""
+
+    OFFERED = "Available Safe Zone Interactions: 1"
+    ICON = FakeBox("meditate", 0.878, 0.607)
+
+    @classmethod
+    def setUpClass(cls):
+        meditation.install(utils)
+
+    def safe_zone(self, hp="1796/1796", stress=(0.1, 0.2, 0.1), credits="287", switch=True):
+        """Build a task on the Safe Zone screen, laid out as the Global client draws it.
+
+        Args:
+            hp: The party HP as OCR reads it.
+            stress: Each combatant's Stress, painted into the frame.
+            credits: The run's Credits as OCR reads them.
+            switch: What `MEDITATE` is set to.
+
+        Returns:
+            A `(task, clicked)` pair, where `clicked` collects every box clicked.
+        """
+        clicked = []
+        texts = [FakeBox(self.OFFERED, 0.842, 0.771), FakeBox(hp, 0.209, 0.040), FakeBox(credits, 0.734, 0.053),
+                 FakeBox("Meditation", 0.804, 0.580), FakeBox("80", 0.835, 0.625), FakeBox("Rest", 0.327, 0.766)]
+        task = SimpleNamespace(width=1920, height=1080, all_texts=texts, frame=party_bar(stress), config={meditation.MEDITATE: switch},
+                               default_config={}, log_info=lambda message: None, sleep=lambda seconds: None, click_box=clicked.append,
+                               box_of_screen=lambda *region: region, wait_ocr=lambda *args, **kwargs: None,
+                               find_one=lambda feature_name, box: self.ICON if feature_name == meditation.MEDITATE_ICON else None)
+        return task, clicked
+
+    def test_a_healthy_calm_party_meditates_and_anything_less_rests(self):
+        # Against upstream's own HP, Credit and config readers, so a rename there fails here rather than resting every time.
+        for why, kwargs, meditates in (("fit", {}, True), ("hurt", {"hp": "1437/1796"}, False), ("stressed", {"stress": (0.1, 0.3, 0.1)}, False),
+                                       ("poor", {"credits": "79"}, False), ("switched off", {"switch": False}, False)):
+            with self.subTest(why):
+                task, clicked = self.safe_zone(**kwargs)
+                self.assertIs(meditates, meditation.safe_zone_handler(utils)(task))
+                self.assertEqual([self.ICON] if meditates else [], clicked)
+
+    def test_upstreams_own_list_never_sends_the_run_to_meditate(self):
+        # The list and the threshold are gone from the settings. `utils_chaos` holds upstream's unwrapped handler, which shows the
+        # screen does reach its Meditation click, so the wrapped one staying off it is the wrapper's doing.
+        for handler, meditates in ((utils_chaos.handle_rest, True), (utils.handle_rest, False)):
+            with self.subTest(wrapped=handler is utils.handle_rest):
+                task, clicked = self.safe_zone()
+                task.node_status = {rest.FLAG: True}
+                task.member_status = {"deck": {"冥想": {"Hunting Instincts": True}}}
+                task.config = {"多少信用点以上冥想": 0}
+                handler(task)
+                self.assertEqual(meditates, self.ICON in clicked)
+
+    def card_screen(self, pinned, again_active):
+        """Build a task on the card screen Meditation opens, one card on it.
+
+        Args:
+            pinned: Whether the card carries the build preset's pin.
+            again_active: Whether "Epiphany Again" is lit, meaning a card is already chosen.
+
+        Returns:
+            A `(task, tapped, stand_ins)` trio: the task, every box or point tapped, and the upstream helpers to patch into `utils`.
+        """
+        tapped = []
+        again, cancel = FakeBox("重新闪光", 0.9, 0.93, width=300), FakeBox("取消", 0.72, 0.93)
+        task = SimpleNamespace(width=1920, height=1080, all_texts=[FakeBox("冥想重构卡牌", 0.27, 0.05, width=700), again, cancel],
+                               log_info=lambda message: None, sleep=lambda seconds: None, click_box=tapped.append)
+        stand_ins = dict(
+            is_button_active=lambda task_, box: again_active,
+            recognize_cards_in_deck=lambda task_, page="": [{"name": "Hunting Instincts", "x": 0.355, "y": 0.3, "pinned": pinned}],
+            region_white_ratio=lambda task_, region: 0.0, _point_is_white=lambda *args: True, _scroll_card_page=lambda *args: tapped.append("scroll"),
+            _move_and_click=lambda task_, x, y: tapped.append((x, y)))
+        return task, tapped, stand_ins
+
+    def test_a_pinned_card_is_taken_and_none_backs_out_to_rest(self):
+        # Patched onto the real `utils`, so a rename upstream fails here. A chosen card is left to upstream's Epiphany Again, since
+        # tapping it again would only un-choose it.
+        for why, pinned, again_active, claimed, expected, meditating in (
+                ("pinned", True, False, True, [(0.355, 0.3)], None), ("none pinned", False, False, True, ["取消"], False),
+                ("already chosen", True, True, False, [], None)):
+            with self.subTest(why):
+                task, tapped, stand_ins = self.card_screen(pinned, again_active)
+                with mock.patch.multiple(utils, **stand_ins):
+                    self.assertIs(claimed, meditation.pick_handler(utils)(task))
+                self.assertEqual(expected, [getattr(item, "name", item) for item in tapped])
+                self.assertIs(meditating, meditation.decision(task))
+
+    def test_the_popup_is_confirmed_only_while_the_fork_is_meditating(self):
+        # Upstream's centre Confirm would otherwise walk straight back into the card screen just cancelled.
+        for why, decided, expected in (("chosen", True, "确认"), ("turned down", False, "取消"), ("never chosen", None, "取消")):
+            with self.subTest(why):
+                clicked = []
+                task = SimpleNamespace(width=1920, height=1080, log_info=lambda message: None, sleep=lambda seconds: None, click_box=clicked.append,
+                                       all_texts=[FakeBox("Select 1 card with an Epiphany to reconstruct the Epiphany.", 0.5, 0.447, width=900),
+                                                  FakeBox("取消", 0.347, 0.672), FakeBox("确认", 0.666, 0.672)])
+                if decided is not None:
+                    meditation.decide(task, decided)
+                self.assertIs(True, meditation.handle_meditation_popup(task))
+                self.assertEqual([expected], [box.name for box in clicked])
+
+    def test_each_handler_runs_ahead_of_its_anchor_in_both_modes(self):
+        # Behind its anchor, upstream's centre Confirm or Epiphany picker answers the screen first. The install only finds lists in
+        # `sys.modules`, which another module in a shared run can clear, so the modes this file imported are put back for it.
+        with mock.patch.dict(sys.modules, {"utils_chaos": utils_chaos, "utils_sortie": utils_sortie}):
+            meditation.install(utils)
+        for module in (utils_chaos, utils_sortie):
+            names = [handler.__name__ for handler in module.PAGE_HANDLERS]
+            for handler, anchors in (("handle_meditation", meditation.SAFE_ZONE_ANCHORS), ("handle_meditation_popup", (meditation.POPUP_ANCHOR,)),
+                                     ("handle_meditation_pick", (meditation.PICK_ANCHOR,))):
+                with self.subTest(module=module.__name__, handler=handler):
+                    anchor = next(name for name in anchors if name in names)
+                    self.assertLess(names.index(handler), names.index(anchor))
 
 
 if __name__ == "__main__":
