@@ -37,6 +37,10 @@ GAME_LANGUAGES = ["English", "简体中文", "繁体中文"]
 # to choose its own cards, and so the only one this belongs on.
 SMART_CARD_PLAY = "Smart Card Play"
 PLAYS_ITS_OWN_CARDS = "出牌优先级"
+# Upstream settings taken off both modes. `Config` drops a saved key it no longer declares, so upstream reads its own default.
+DROPPED = ("优先移除基础牌",)
+# Rows moved to sit right under another, as `(row, anchor)` pairs.
+PLACED_UNDER = ((SMART_CARD_PLAY, "游戏语言"), ("拉黑主战员", "主战员优先级"))
 # The combatant whose save data the run farms. `src/en/navigation.py` reads it to recognise the tab. Only Chaos
 # declares it, which makes it the marker for Chaos-only settings.
 FARMED_COMBATANT = "刷存档主战员"
@@ -143,13 +147,29 @@ DESCRIPTIONS = {
     PAID_THRESHOLD: "Pay Credits to reroll the Dellang Shop once its free refreshes are used up, but only while holding more than this many. -1 never pays, and 0 pays whenever the price is affordable.",
     SHOP_SETTING: "Visit the Dellang Shop when a Safe Zone offers one. It pays to remove a card first, up to five a run, then buys from your Card Reward Priority and Equipment Slot lists.",
     BUY_MONSTER_CARDS: "Let the Dellang Shop buy Monster Cards. Turn it off to keep the Credits for card removals and equipment.",
-    "优先移除基础牌": "Clear basic cards out of the deck before anything else.",
     "只打第一层": "Leave after the first floor instead of running the whole map.",
 }
 # Setup a mode needs before its first run, shown behind its Instructions button. A mode with nothing to set up gets no button.
 INSTRUCTIONS = {"ChaosMode": "Turn on the event/dialogue Fast Forward in-game before starting a run."}
 
 _applied = False
+
+
+def place_under(config, key, anchor):
+    """Move a row to sit right under another, when the config declares both.
+
+    Args:
+        config: A task's `default_config`, whose order is the order the settings card draws.
+        key: The row to move.
+        anchor: The row it goes under.
+    """
+    if key not in config or anchor not in config:
+        return
+    value = config.pop(key)
+    rows = list(config.items())
+    under = [name for name, _ in rows].index(anchor) + 1
+    config.clear()
+    config.update([*rows[:under], (key, value), *rows[under:]])
 
 
 def reshape(task):
@@ -215,6 +235,11 @@ def reshape(task):
         task.default_config[REOBSERVE] = True
         task.default_config[MODIFIER_BLACKLIST] = list(DEFAULT_BLACKLIST)
         task.config_type[MODIFIER_BLACKLIST] = {"type": "drop_down", "options_available": MODIFIERS}
+
+    for key in DROPPED:
+        task.default_config.pop(key, None)
+    for key, anchor in PLACED_UNDER:
+        place_under(task.default_config, key, anchor)
 
     for key, text in DESCRIPTIONS.items():
         if key in task.default_config:

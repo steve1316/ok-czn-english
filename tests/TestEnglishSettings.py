@@ -492,7 +492,7 @@ class TestReshape(unittest.TestCase):
         """
         # `overrides.DESCRIPTIONS` is the settings help text. The bare `DESCRIPTIONS` here is card effects.
         described = set(overrides.DESCRIPTIONS) | upstream_described()
-        bare = sorted(key for key in mode_setting_keys() - {upload.ROW_KEY} if key not in described and not key.startswith("_"))
+        bare = sorted(key for key in mode_setting_keys() - {upload.ROW_KEY, *overrides.DROPPED} if key not in described and not key.startswith("_"))
         self.assertEqual([], bare, f"these settings would render with no help text: {bare}")
 
     def test_help_text_uses_the_client_s_own_terms(self):
