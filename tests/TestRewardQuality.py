@@ -710,20 +710,43 @@ class TestCombatantsRowHoldsItsPlace(unittest.TestCase):
 
 
 class TestObtainNeedsReason(unittest.TestCase):
-    """Obtain spends 1 Reason, so with none left it only opens a Charge Reason dialog there is nothing to charge from."""
+    """Obtain spends 1 Reason, and with none left the Charge Reason dialog it opens would spend Aether."""
 
     def test_obtain_is_pressed_only_with_reason_left(self):
-        for counter, obtains in (("0/9", False), ("3/9", True)):
-            with self.subTest(counter=counter):
+        # A declined Charge Reason dialog holds for the run, since the counter reading 3 is what let Obtain open it.
+        for why, counter, out_of_reason, obtains in (("none left", "0/9", False, False), ("some left", "3/9", False, True),
+                                                     ("charge declined", "3/9", True, False)):
+            with self.subTest(why):
                 pressed = []
                 # The Settlement page, placed the way the run's capture read it.
                 task = types.SimpleNamespace(
                     all_texts=[FakeBox("结算", 0.590, 0.065, width=259, height=54, units="fraction"), FakeBox(counter, 0.880, 0.051, units="fraction"),
                                FakeBox("获得", 0.857, 0.386, width=108, height=36, units="fraction")],
-                    width=WIDTH, height=HEIGHT, config={"领取奖励": True}, node_status={},
+                    width=WIDTH, height=HEIGHT, config={"领取奖励": True}, node_status={reason.OUT_OF_REASON: out_of_reason},
                     click_box=lambda box: pressed.append(box.name), log_info=lambda message: None, sleep=lambda seconds: None,
                 )
                 with standing_in(utils_sortie, _finish_only_first_layer=lambda task: True):
-                    reason.skipping_obtain(utils_sortie.handle_sortie_reward_settlement, utils_sortie)(task)
+                    reason.with_reason_only(utils_sortie.handle_sortie_reward_settlement, utils_sortie)(task)
                 self.assertEqual(["获得"] if obtains else [], pressed)
                 self.assertTrue(task.config["领取奖励"])
+
+    def test_the_charge_dialog_is_declined_even_with_aether_to_pay(self):
+        # Upstream only backs out when Confirm is greyed, so an active Confirm is the case that spent Aether.
+        clicks = []
+        task = types.SimpleNamespace(all_texts=[FakeBox("补充理性", 0.5, 0.17, units="fraction"), FakeBox("确认", 0.664, 0.774, units="fraction")],
+                                     width=WIDTH, height=HEIGHT, node_status={}, log_info=lambda message: None, sleep=lambda seconds: None)
+        with standing_in(utils_sortie, _move_and_click=lambda task_, x, y: clicks.append((x, y))):
+            self.assertIs(True, reason.charge_reason_handler(utils_sortie)(task))
+        self.assertEqual([reason.DECLINE_POINT], clicks)
+        self.assertIs(True, task.node_status[reason.OUT_OF_REASON])
+
+    def test_the_loot_dialog_gives_up_once_the_run_is_out_of_reason(self):
+        for out_of_reason, point in ((False, (0.567, 0.708)), (True, (0.355, 0.714))):
+            with self.subTest(out_of_reason=out_of_reason):
+                clicks = []
+                task = types.SimpleNamespace(all_texts=[FakeBox("卡厄思战利品", 0.503, 0.335, width=300, units="fraction")], width=WIDTH, height=HEIGHT,
+                                             config={"领取奖励": True}, node_status={reason.OUT_OF_REASON: out_of_reason},
+                                             log_info=lambda message: None, sleep=lambda seconds: None)
+                with standing_in(utils_sortie, _move_and_click=lambda task_, x, y: clicks.append((x, y))):
+                    reason.with_reason_only(utils_sortie.handle_sortie_reward_claim, utils_sortie)(task)
+                self.assertEqual([point], clicks)
