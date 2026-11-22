@@ -224,6 +224,16 @@ class TestOcrNormalisation(unittest.TestCase):
         """Stripping punctuation must not let an unrelated caption match a shorter msgid."""
         self.assertIsNone(self.fix("Multishot."))
 
+    def test_an_empty_box_stays_empty(self):
+        """An empty reading must not come back as the `ocr.po` header that gettext maps "" to."""
+        from ok.task.task import OCR
+        ocr_text.apply()
+        self.assertNotEqual(self.translation.gettext(""), "")
+        executor = SimpleNamespace(config={}, ocr_po_translation=self.translation, text_fix={})
+        boxes = [FakeBox("", 0.3, 0.5), FakeBox("   ", 0.3, 0.6), FakeBox("XBasic Attack", 0.3, 0.7)]
+        OCR.fix_texts(SimpleNamespace(executor=executor), boxes)
+        self.assertEqual([box.name for box in boxes], ["", "", "基础攻击"])
+
     def test_the_patch_is_idempotent(self):
         """globals.apply() runs once, but a second call must not wrap the patch inside itself."""
         from ok.task.task import OCR
