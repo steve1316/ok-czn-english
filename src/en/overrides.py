@@ -41,7 +41,8 @@ SMART_CARD_PLAY = "Smart Card Play"
 PLAYS_ITS_OWN_CARDS = "出牌优先级"
 # Upstream settings taken off both modes. `Config` drops a saved key it no longer declares, so upstream reads its own default.
 # Upstream's Meditation list and threshold are replaced by `MEDITATE`. Its Credits switch is read as on by `heal.py`.
-DROPPED = ("优先移除基础牌", "需要冥想的卡牌", "多少信用点以上冥想", PAY_CREDITS)
+# Its discard list is read nowhere.
+DROPPED = ("优先移除基础牌", "需要冥想的卡牌", "多少信用点以上冥想", PAY_CREDITS, "丢弃卡牌优先级")
 # The combatant whose save data the run farms. `src/en/navigation.py` reads it to recognise the tab. Only Chaos
 # declares it, which makes it the marker for Chaos-only settings.
 FARMED_COMBATANT = "刷存档主战员"
@@ -68,7 +69,6 @@ LIST_OPTIONS = {
     "闪光卡牌列表": CARDS,
     "卡牌奖励优先级": CARDS,
     "获得卡牌优先级": CARDS,
-    "丢弃卡牌优先级": CARDS,
     PLAYS_ITS_OWN_CARDS: CARDS,
     "装备1号位优先级": EQUIPMENT,
     "装备2号位优先级": EQUIPMENT,
@@ -108,7 +108,6 @@ DESCRIPTIONS = {
     "闪光优先级": "Epiphany targets, matched loosely against a card's name and its description, so a few keywords are enough. Order matters.",
     "卡牌奖励优先级": "Preferred cards when a reward offers a choice.",
     "获得卡牌优先级": "Preferred cards when the run offers a card to obtain.",
-    "丢弃卡牌优先级": "Cards to throw away first when the run asks you to discard.",
     PLAYS_ITS_OWN_CARDS: "Order to play cards in battle. Needs shortcut key display turned on in the game's"
                          " settings.",
     DESIRE_FACTION: "Which Desire faction to build towards. Every Desire card and event option pushes this one higher.",
