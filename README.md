@@ -68,7 +68,7 @@ time elapsed, the last thing the bot did, floor, credits, runs finished, the tea
 
 - **Epiphanies** go to the cards you pinned in your build preset first, then down your priority list.
 - **Removals, copies and Meditation** follow your lists, and act on pinned cards wherever a screen offers them.
-- **Monster Cards** can be bought in shops or skipped as rewards, each on its own switch.
+- **Shop cards** can be left on the shelf, so Credits go only to removals and equipment. **Monster Card** rewards can be skipped on their own switch.
 - **Equipment** goes to the combatant the game marks "Recommended", and a Mythic piece is never passed over. Only
   upgrades are equipped, and spares can be extracted.
 

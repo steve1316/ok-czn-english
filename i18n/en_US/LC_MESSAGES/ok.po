@@ -350,8 +350,8 @@ msgstr "Card Play Priority"
 msgid "Smart Card Play"
 msgstr "Smart Card Play"
 
-msgid "Buy Monster Cards"
-msgstr "Buy Monster Cards"
+msgid "Buy Shop Cards"
+msgstr "Buy Shop Cards"
 
 msgid "Meditate on Pinned Cards"
 msgstr "Meditate on Pinned Cards"
