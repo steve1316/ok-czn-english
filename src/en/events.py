@@ -11,7 +11,7 @@ import cv2
 import numpy as np
 from ok import Logger
 
-from src.en import desire
+from src.en import desire, farm_start
 from src.en.handlers import StandIn, insert_before, loaded, register, standing_in, wrap
 from src.en.memory_limit import CANCEL, CANCEL_REGION
 from src.en.screen import centre_of, frame_of, lines_in, text_in_region, white_mask
@@ -641,6 +641,9 @@ def ranking(utils):
             options = original_recognize(task, *args, **kwargs)
             if not options:
                 return options
+            if farm_start.farming_start(task, utils):
+                # Upstream's own farm check decides here, and ranking would withhold the max-Health Legendary option it farms for.
+                return farm_start.marked(options)
             options = still_on_offer(task, options)
             leave = leave_after_refinement(task, options)
             if leave:
