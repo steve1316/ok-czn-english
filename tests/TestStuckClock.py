@@ -551,6 +551,47 @@ class TestHealing(unittest.TestCase):
                     self.assertIs(True, handler(task))
                 self.assertEqual(expected, clicked[-1])
 
+    @staticmethod
+    def treatment_screen(*texts, treat=True):
+        """Build a Chaos task on one of the Global treatment screens.
+
+        Args:
+            texts: The screen's OCR boxes, as captured live.
+            treat: The Treat Breakdown switch.
+
+        Returns:
+            A `(task, tapped)` pair: the task, and the names of the boxes it taps.
+        """
+        tapped = []
+        task = SimpleNamespace(width=1920, height=1080, all_texts=list(texts), config={heal.TREAT: treat}, default_config={},
+                               click_box=lambda box: tapped.append(box.name), log_info=lambda message: None, sleep=lambda seconds: None)
+        return task, tapped
+
+    def test_deep_trauma_opens_the_epione_center_only_while_treat_breakdown_is_on(self):
+        # A wrong tap here costs Credits and a combatant's Frail Data for good, so the player's own Nightmare Mode and the switch both hold it off.
+        deep_trauma = "Nightmare Mode has been activated as there is a Combatant who is in 'Deep Trauma'"
+        for why, banner, treat, opens in (("deep trauma", deep_trauma, True, True), ("switched off", deep_trauma, False, False),
+                                          ("the player's own choice", "Via the button, you have activated Nightmare Mode.", True, False)):
+            with self.subTest(why):
+                task, tapped = self.treatment_screen(FakeBox("Nightmare Mode", 0.123, 0.059), FakeBox(banner, 0.648, 0.061, width=1000),
+                                                     FakeBox(heal.CENTER, 0.112, 0.916, width=200), FakeBox("确认", 0.922, 0.918), treat=treat)
+                with mock.patch.dict(sys.modules, {"utils_chaos": utils_chaos}):
+                    self.assertIs(opens, heal.handle_deep_trauma(task))
+                self.assertEqual([heal.CENTER] if opens else [], tapped)
+
+    def test_upstreams_treatment_taps_read_the_global_labels(self):
+        # Against upstream's own handlers, which return False on these captures, so the English read is what presses them.
+        delete = (FakeBox("Delete", 0.579, 0.682, width=110, height=36), FakeBox("Memories", 0.593, 0.723, width=150, height=36),
+                  FakeBox("24,000", 0.764, 0.702), FakeBox("取消", 0.347, 0.700))
+        done = (FakeBox("Memory deletion complete.", 0.492, 0.838, width=460),)
+        for wrapper, handler, texts, expected in ((heal.pressing_delete, utils_chaos.handle_memory_elimination, delete, "Delete"),
+                                                  (heal.tapping_through, utils_chaos.handle_treat_approve, done, "Memory deletion complete.")):
+            with self.subTest(handler.__name__):
+                task, tapped = self.treatment_screen(*texts)
+                self.assertIs(False, handler(task))
+                self.assertIs(True, wrapper(handler)(task))
+                self.assertEqual([expected], tapped)
+
 
 if __name__ == "__main__":
     unittest.main()

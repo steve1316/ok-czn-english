@@ -38,8 +38,8 @@ UPSTREAM_NAMES = {
         "recognize_cards", "recognize_cards_in_deck", "recognize_event_options", "select_card",
     ),
     "utils_chaos": (
-        "_get_config_value", "_move_and_click", "handle_archive_target_member", "handle_battle_auto_check", "handle_mask_card",
-        "handle_save_target_member", "handle_season_chaos_initial_page",
+        "_get_config_value", "_move_and_click", "handle_archive_target_member", "handle_battle_auto_check", "handle_mask_card", "handle_memory_elimination",
+        "handle_save_target_member", "handle_season_chaos_initial_page", "handle_trauma_center", "handle_treat_approve",
     ),
     "utils_sortie": (
         "_get_config_value", "_hand_card_names", "_hand_cards", "_is_card_name", "_move_and_click", "_read_hand_count", "_read_member_slots",
