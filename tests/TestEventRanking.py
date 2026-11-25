@@ -36,6 +36,7 @@ from src.en.enter import OPTION_TEMPLATES, on_the_button  # noqa: E402
 from src.en.etched_memory import (  # noqa: E402
     ENTER_MEMORY_END, ETCHED_MEMORY, MEMORY_BONUS, MEMORY_CARD, choosing_bonus, entering_memory_end, picking_memory, processing_for_bonus,
 )
+from src.en.farm_start import GAP_KEY, INITIAL_CARD_KEY, handle_farm_escape, marked, reading_english_escape  # noqa: E402
 from src.en.handlers import standing_in  # noqa: E402
 from tests.fakes import HEIGHT, WIDTH, FakeBox  # noqa: E402
 
@@ -543,6 +544,59 @@ class TestUnavailableReward(unittest.TestCase):
         with standing_in(utils, _move_and_click=lambda task, x, y: tapped.append((x, y))):
             self.assertTrue(handler(task))
         self.assertEqual([center_of(options[2])], tapped)
+
+
+class TestFarmStart(unittest.TestCase):
+    """Farm Gaps and Farm Starting Card reroll the starting event until it offers what they farm for. Read off a 2026-11-23 Chaos capture."""
+
+    GAPS = "Open the machineSelect and Remove2 Cards"
+    LEGENDARY = "Endure the painDecrease max Health by 20%,random Neutral LegendarySelect and obtain 1 among 3"
+    OTHERS = ["Receive graceObtain Equipment [M85Military Grenade], For 3Normal Battles, change HP o ..",
+              "Express gratitude for the blessingSpark an Epiphany for arandom Combatant 1 time(s)"]
+    WORDINGS = ((GAPS, "移除2张"), ("Surrender to the flowSelect and Remove 2 Cards", "移除2张"),
+                ("Let out a cryInitiate Battle, Select andRemove 2 Cards", "移除2张"), (LEGENDARY, "传说卡牌"),
+                ("Select and Remove 1 Cards", None), ("Obtain Rare-Legendary equipment", None), ("Obtain 1 random Neutral RareLegendary Card.", None))
+
+    def test_each_wording_carries_its_farm_phrase(self):
+        for text, phrase in self.WORDINGS:
+            with self.subTest(text):
+                self.assertEqual(f"{text} {phrase}" if phrase else text, marked([{"description": text}])[0]["description"])
+
+    def test_the_starting_event_takes_the_farmed_option_or_restarts(self):
+        # Ranking withholds the Legendary option for its max Health cost, so ranked here Farm Starting Card would restart forever.
+        cases = (("Farm Gaps finds its option", {GAP_KEY: True}, [*self.OTHERS, self.GAPS], 2),
+                 ("Farm Starting Card finds its option", {INITIAL_CARD_KEY: "Gear Bag"}, [*self.OTHERS, self.LEGENDARY], 2),
+                 ("Farm Gaps restarts without it", {GAP_KEY: True}, [*self.OTHERS, self.LEGENDARY], None))
+        for label, config, descriptions, picked in cases:
+            with self.subTest(label):
+                options = [{"description": text, "x": 0.25 * slot + 0.25, "y": 0.95, "description_region": (0.25 * slot + 0.13, 0.66, 0.25 * slot + 0.37, 0.82)}
+                           for slot, text in enumerate(descriptions)]
+                task = SimpleNamespace(width=WIDTH, height=HEIGHT, all_texts=[], config=config, node_status={}, name="自动卡厄思模式",
+                                       sleep=lambda seconds: None, click=lambda x, y: None, log_info=lambda message: None,
+                                       box_of_screen=lambda *region: region, find_feature=lambda *args, **kwargs: [], find_one=lambda *args, **kwargs: None)
+                with standing_in(utils, recognize_event_options=lambda task, **kwargs: [dict(option) for option in options]):
+                    handler = ranking(utils)(utils.handle_event_task)
+                tapped = []
+                with standing_in(utils, _move_and_click=lambda task, x, y: tapped.append((x, y))):
+                    self.assertTrue(handler(task))
+                self.assertEqual([(0.959, 0.053) if picked is None else center_of(options[picked])], tapped)
+
+    def test_the_open_menu_is_escaped_only_while_farming_the_start(self):
+        # Without this the event pass reads the menu as an event and taps its close button, which shares the menu button's spot.
+        escape = FakeBox("Escape", 0.936, 0.928, width=110)
+        menu = [FakeBox("© Chaos Info", 0.168, 0.050), FakeBox("X", 0.958, 0.050),
+                FakeBox("The loot you have acquired can be taken back to the ship upon return.", 0.811, 0.818, width=1290), escape]
+        cases = (("farming the start", {GAP_KEY: True}, {}, True), ("not farming", {}, {}, False), ("past the start", {GAP_KEY: True}, {"node_count": 1}, False))
+        for label, config, status, escapes in cases:
+            with self.subTest(label):
+                clicked = []
+                task = SimpleNamespace(width=WIDTH, height=HEIGHT, all_texts=menu, config=config, node_status=dict(status), name="自动卡厄思模式",
+                                       sleep=lambda seconds: None, log_info=lambda message: None, click_box=clicked.append)
+                # Upstream's own escape reads only the Chinese button, so it is given the English reading as `install` gives it.
+                with standing_in(utils, handle_escape=reading_english_escape(utils.handle_escape, utils)):
+                    self.assertEqual(escapes, bool(handle_farm_escape(task)))
+                self.assertEqual([escape] if escapes else [], clicked)
+                self.assertEqual(escapes, task.node_status.get("is_escaped", False))
 
 
 class TestEquipmentScreen(unittest.TestCase):

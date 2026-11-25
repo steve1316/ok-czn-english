@@ -32,7 +32,7 @@ UPSTREAM_NAMES = {
         "_find_member_level_tags", "_find_target_member_index",
         "_get_card_list", "_get_config_value", "_get_current_credit", "_get_current_hp_percent", "_get_game_language", "_get_game_text", "_get_region_text", "_member_deck_state",
         "_member_equipment_qualities", "_move_and_click", "_scroll_card_page", "_should_install_equipment", "find_box_at_point",
-        "handle_card_assign", "handle_card_reward", "handle_confirm", "handle_equipment", "handle_event_task",
+        "handle_card_assign", "handle_card_reward", "handle_confirm", "handle_equipment", "handle_escape", "handle_event_task",
         "handle_expedition_result", "handle_negotiation", "handle_shop", "handle_stuck_log",
         "handle_view_original", "is_button_active", "is_frame_stuck", "is_subsequence", "log_node_status", "random",
         "recognize_cards", "recognize_cards_in_deck", "recognize_event_options", "select_card",

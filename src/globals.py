@@ -18,9 +18,9 @@ class Globals(QObject):
         # Everything English-only lives under src/en/ so upstream's files stay untouched.
         from src.ui.SponsorDialog import install_sponsor_dialog
         from src.en import (  # noqa: E501
-            battle, boss, claims, cursor, dashboard, deck, desire, devices, dialogue, dice, draft, enter, epiphany, equipment, etched_memory, events, forms, frame_log, game_language, heal, humanize,
-            kept_forms, log_text, loot_cards, meditation, memory_limit, monitors, navigation, obtain, observe, ocr_text, overrides, persona, picker, piles, pins, reobserve, remote, rest, rewards, sections,
-            reason, route, shell, shop, shutdown, story, summary, task_list, templates, notify, stuck, upload, zero_system,
+            battle, boss, claims, cursor, dashboard, deck, desire, devices, dialogue, dice, draft, enter, epiphany, equipment, etched_memory, events, farm_start, forms, frame_log, game_language, heal,
+            humanize, kept_forms, log_text, loot_cards, meditation, memory_limit, monitors, navigation, obtain, observe, ocr_text, overrides, persona, picker, piles, pins, reobserve, remote, rest,
+            rewards, sections, reason, route, shell, shop, shutdown, story, summary, task_list, templates, notify, stuck, upload, zero_system,
         )
 
         # Neither does anything outside a debug run, and nothing else depends on when they start.
@@ -42,6 +42,7 @@ class Globals(QObject):
         # Ahead of pins, so the pinned-card wrappers sit outside this one and every page it ranks is already narrowed to the pinned cards.
         epiphany.apply()
         events.apply()
+        farm_start.apply()
         enter.apply()
         pins.apply()
         deck.apply()
