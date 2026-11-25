@@ -18,7 +18,7 @@ from src.en.heal import PAY_CREDITS
 from src.en.reobserve import DEFAULT_BLACKLIST, MODIFIER_BLACKLIST, MODIFIERS, REOBSERVE
 from src.en.meditation import MAX_STRESS, MEDITATE, MIN_HP_PERCENT
 from src.en.rest import SHOP_SETTING
-from src.en.shop import BUY_MONSTER_CARDS, PAID_THRESHOLD, TAKE_MONSTER_REWARDS
+from src.en.shop import BUY_CARDS, OLD_BUY_CARDS, PAID_THRESHOLD, TAKE_MONSTER_REWARDS
 from src.en.zero_system import (ANY, CHAOS_MERGE, CODEX, CODEX_MERGE, CODEX_OPTIONS, CODEX_SEASON, DEFAULT_MAX_MERGES, MAX_MERGES, MERGE_OPTIONS,
                                  NORMAL_MERGE, SEASON_OPTIONS)
 
@@ -28,6 +28,8 @@ logger = Logger.get_logger(__name__)
 # into the config file, and the leading underscore keeps it out of the settings UI.
 SETTINGS_VERSION = 1
 VERSION_KEY = "_en_settings_version"
+# Fork settings saved under an older key, as old -> new. A saved value moves across, since `Config` would drop the old key and re-seed the new one.
+RENAMED = {OLD_BUY_CARDS: BUY_CARDS}
 
 # Route Priority values are internal labels, never OCR text, so they must stay exactly as upstream writes
 # them. `ok.po` translates them for display, and ModifyListDialog stores the canonical value.
@@ -145,7 +147,7 @@ DESCRIPTIONS = {
     "保留大于多少TB的存档": "After a run, delete each stored save worth this many TB or less. Zero keeps every save.",
     PAID_THRESHOLD: "Pay Credits to reroll the Dellang Shop after its free refreshes, only while holding more than this many.",
     SHOP_SETTING: "Visit the Dellang Shop when a Safe Zone offers one.",
-    BUY_MONSTER_CARDS: "Let the Dellang Shop buy Monster Cards. Turn it off to keep the Credits for card removals and equipment.",
+    BUY_CARDS: "Let the Dellang Shop buy cards. Turn it off to spend Credits only on card removals and equipment.",
     TAKE_MONSTER_REWARDS: "Take Monster Cards from a battle's card reward. Turn it off to skip them.",
     EXTRACT_SPARE: "Extract every piece of equipment for Credits instead of equipping it, except a Mythic.",
     MEDITATE: "At a Safe Zone, pay for Meditation to re-roll the Epiphany on a card your build preset pinned.",
@@ -248,9 +250,10 @@ def reshape(task):
     if PLAYS_ITS_OWN_CARDS in task.default_config:
         task.default_config[SMART_CARD_PLAY] = True
 
-    # Both Chaos and Sortie declare the shop switch. Monster Cards narrows it, and Meditation is the Safe Zone's other paid choice, so both sit right under it.
+    # Both Chaos and Sortie declare the shop switch. Buying cards narrows it, and Meditation is the Safe Zone's other paid choice,
+    # so both sit right under it.
     if SHOP_SETTING in task.default_config:
-        added = {BUY_MONSTER_CARDS: True, MEDITATE: True}
+        added = {BUY_CARDS: True, MEDITATE: True}
         rows = [(key, value) for key, value in task.default_config.items() if key not in added]
         under = [key for key, _ in rows].index(SHOP_SETTING) + 1
         task.default_config.clear()
@@ -301,7 +304,7 @@ def reshape(task):
 
 
 def migrate_saved_config(task):
-    """Drop settings saved before this fork re-shaped them, once.
+    """Drop settings saved before this fork re-shaped them, once, and carry a renamed setting's value across.
 
     A config written against upstream's defaults holds Chinese card and combatant names that can never match
     English OCR, so it has to be re-seeded. This runs before `Config` is built, editing the file the same way
@@ -313,10 +316,16 @@ def migrate_saved_config(task):
     """
     path = get_relative_path(Config.config_folder, f"{task.__class__.__name__}.json")
     data = read_json_file(path)
-    if not isinstance(data, dict) or data.get(VERSION_KEY) == SETTINGS_VERSION:
+    if not isinstance(data, dict):
+        return
+    renamed = [old for old in RENAMED if old in data]
+    for old in renamed:
+        data.setdefault(RENAMED[old], data.pop(old))
+    stale = data.get(VERSION_KEY) != SETTINGS_VERSION
+    if not (renamed or stale):
         return
 
-    dropped = [key for key in MANAGED_KEYS if key in data and key not in KEEPS_CHINESE]
+    dropped = [key for key in MANAGED_KEYS if key in data and key not in KEEPS_CHINESE] if stale else []
     for key in dropped:
         del data[key]
     data[VERSION_KEY] = SETTINGS_VERSION

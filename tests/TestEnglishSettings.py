@@ -249,23 +249,23 @@ class TestDesireFaction(unittest.TestCase):
                 self.assertIn(label, msgids)
 
 
-class TestBuyMonsterCards(unittest.TestCase):
-    """The shop's Monster Card switch, added fork-side under the shop switch that Chaos and Sortie both declare."""
+class TestBuyCards(unittest.TestCase):
+    """The shop's card switch, added fork-side under the shop switch that Chaos and Sortie both declare."""
 
     def test_it_sits_switched_on_under_the_shop_switch(self):
         # Anchored on upstream's key, so a rename there would drop the switch from both modes without an error.
         self.assertIn(overrides.SHOP_SETTING, mode_setting_keys())
         task = reshaped({"游戏语言": "简体中文", overrides.SHOP_SETTING: False, "优先移除基础牌": True})
         keys = list(task.default_config)
-        self.assertEqual(overrides.BUY_MONSTER_CARDS, keys[keys.index(overrides.SHOP_SETTING) + 1])
-        self.assertIs(task.default_config[overrides.BUY_MONSTER_CARDS], True)
-        self.assertIn(overrides.BUY_MONSTER_CARDS, task.config_description)
+        self.assertEqual(overrides.BUY_CARDS, keys[keys.index(overrides.SHOP_SETTING) + 1])
+        self.assertIs(task.default_config[overrides.BUY_CARDS], True)
+        self.assertIn(overrides.BUY_CARDS, task.config_description)
 
     def test_the_meditation_switch_sits_on_under_it_and_replaces_upstreams_rows(self):
         # Left in, upstream's list and threshold would read as settings that still steer Meditation.
         task = reshaped({overrides.SHOP_SETTING: False, "需要冥想的卡牌": [], "多少信用点以上冥想": 0, "只打第一层": True})
         keys = list(task.default_config)
-        self.assertEqual(overrides.MEDITATE, keys[keys.index(overrides.BUY_MONSTER_CARDS) + 1])
+        self.assertEqual(overrides.MEDITATE, keys[keys.index(overrides.BUY_CARDS) + 1])
         self.assertIs(task.default_config[overrides.MEDITATE], True)
         self.assertIn(overrides.MEDITATE, task.config_description)
         self.assertFalse({"需要冥想的卡牌", "多少信用点以上冥想"} & set(keys))
@@ -283,7 +283,7 @@ class TestBuyMonsterCards(unittest.TestCase):
 
     def test_the_label_reaches_the_ui_through_the_catalog(self):
         catalog = polib.pofile(str(REPO_ROOT / "i18n" / "zh_CN" / "LC_MESSAGES" / "ok.po"))
-        for label in (overrides.BUY_MONSTER_CARDS, overrides.MEDITATE, *(key for key, _, _ in overrides.ADDED_UNDER)):
+        for label in (overrides.BUY_CARDS, overrides.MEDITATE, *(key for key, _, _ in overrides.ADDED_UNDER)):
             with self.subTest(label=label):
                 self.assertIn(label, {entry.msgid for entry in catalog})
 
@@ -328,7 +328,7 @@ class TestSeasonSections(unittest.TestCase):
         sections.apply()
         config_form = import_ui("tasks.config_form", "ConfigForm")
         assert config_form is not None, "ok-script no longer provides ConfigForm"
-        default = {"进入商店": False, shop.BUY_MONSTER_CARDS: True, "指定面具卡牌": "", "面具卡牌刻印": "", "几轮后停止(0为不停止)": 0,
+        default = {"进入商店": False, shop.BUY_CARDS: True, "指定面具卡牌": "", "面具卡牌刻印": "", "几轮后停止(0为不停止)": 0,
                    zero_system.CODEX: zero_system.ANY, zero_system.CODEX_SEASON: zero_system.ANY}
         config_type = {zero_system.CODEX: {"type": "drop_down", "options": zero_system.CODEX_OPTIONS},
                        zero_system.CODEX_SEASON: {"type": "drop_down", "options": zero_system.SEASON_OPTIONS}}
@@ -392,15 +392,15 @@ class TestSeasonSections(unittest.TestCase):
 
     def test_a_changed_row_is_marked_counted_and_unlocks_its_dependents(self):
         shop_row = self.card.config_widget_by_key["进入商店"]
-        monster_row = self.card.config_widget_by_key[shop.BUY_MONSTER_CARDS]
+        cards_row = self.card.config_widget_by_key[shop.BUY_CARDS]
         pill, count = getattr(shop_row, row_hints.PILL_ATTR), self.section("Safe Zone").count
-        self.assertFalse(monster_row.isEnabled())
+        self.assertFalse(cards_row.isEnabled())
         shop_row.update_config(True)
         try:
             self.assertFalse(pill.isHidden())
             self.assertFalse(count.isHidden())
             self.assertIn(sections.CHANGED.format(1), count.text())
-            self.assertTrue(monster_row.isEnabled())
+            self.assertTrue(cards_row.isEnabled())
         finally:
             shop_row.update_config(False)
         self.assertTrue(pill.isHidden())
@@ -650,6 +650,14 @@ class TestMigration(unittest.TestCase):
         """Only the settings this module re-shapes are its to clear."""
         result = self.run_migration({"几轮后停止(0为不停止)": 5})
         self.assertEqual(5, result["几轮后停止(0为不停止)"])
+
+    def test_a_renamed_switch_keeps_its_saved_value(self):
+        """`Config` drops a key it does not declare, so the old name's False would come back as the new name's default True."""
+        for why, stamp in (("before the re-seed", {}), ("already stamped", {overrides.VERSION_KEY: overrides.SETTINGS_VERSION})):
+            with self.subTest(why):
+                result = self.run_migration({**stamp, shop.OLD_BUY_CARDS: False})
+                self.assertNotIn(shop.OLD_BUY_CARDS, result)
+                self.assertIs(False, result[shop.BUY_CARDS])
 
 
 class TestPicker(unittest.TestCase):

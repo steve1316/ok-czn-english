@@ -327,8 +327,8 @@ msgstr "出牌优先级"
 msgid "Smart Card Play"
 msgstr "智能出牌"
 
-msgid "Buy Monster Cards"
-msgstr "购买怪物卡"
+msgid "Buy Shop Cards"
+msgstr "商店购买卡牌"
 
 msgid "Meditate on Pinned Cards"
 msgstr "冥想重构钉选卡牌"

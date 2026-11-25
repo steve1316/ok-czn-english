@@ -21,7 +21,7 @@ from src.en.meditation import MEDITATE
 from src.en.overrides import DESIRE_FACTION, EXTRACT_SPARE, FARMED_COMBATANT, SMART_CARD_PLAY
 from src.en.reobserve import MODIFIER_BLACKLIST, REOBSERVE, SAVE_LIMIT_KEY
 from src.en.rest import SHOP_SETTING
-from src.en.shop import BUY_MONSTER_CARDS, PAID_THRESHOLD, TAKE_MONSTER_REWARDS
+from src.en.shop import BUY_CARDS, PAID_THRESHOLD, TAKE_MONSTER_REWARDS
 from src.en.zero_system import CODEX, CODEX_MERGE, CODEX_SEASON, MAX_MERGES
 
 logger = Logger.get_logger(__name__)
@@ -39,7 +39,7 @@ SECTIONS = [
     ("Cards", ["获得卡牌优先级", "卡牌奖励优先级", TAKE_MONSTER_REWARDS, "移除卡牌列表", "复制卡牌列表", "闪光卡牌列表", "闪光优先级", "首层刷特定闪光",
                "生命值大于多少优先闪光(百分比)"]),
     ("Equipment", [EXTRACT_SPARE, "装备1号位优先级", "装备2号位优先级", "装备3号位优先级"]),
-    ("Safe Zone", [SHOP_SETTING, BUY_MONSTER_CARDS, PAID_THRESHOLD, MEDITATE, "治疗崩溃"]),
+    ("Safe Zone", [SHOP_SETTING, BUY_CARDS, PAID_THRESHOLD, MEDITATE, "治疗崩溃"]),
     ("Saves", ["保留大于多少TB的存档"]),
     ("Season 3 - Persona", ["指定面具卡牌", "面具卡牌刻印"]),
     ("Season 4 - Desire", [DESIRE_FACTION]),

@@ -23,7 +23,7 @@ from src.en.etched_memory import ETCHED_MEMORY, MEMORY_BONUS, MEMORY_CARD
 from src.en.overrides import EXTRACT_SPARE, TOOLTIPS
 from src.en.reobserve import MODIFIER_BLACKLIST, REOBSERVE
 from src.en.rest import SHOP_SETTING
-from src.en.shop import BUY_MONSTER_CARDS, PAID_THRESHOLD, TAKE_MONSTER_REWARDS
+from src.en.shop import BUY_CARDS, PAID_THRESHOLD, TAKE_MONSTER_REWARDS
 from src.en.zero_system import CODEX, CODEX_SEASON, seasons_for
 
 # The line shown under the Floor 1 Epiphany row while it cannot run. `{}` is the controlling row's label.
@@ -66,7 +66,7 @@ class Rule:
 # Dependent row key -> its `Rule`. Farm Starting Card is not greyed by Farm Gaps in return, so a config saved with both set
 # still leaves one row the user can clear.
 RULES = {
-    BUY_MONSTER_CARDS: Rule(SHOP_SETTING, operator.not_),
+    BUY_CARDS: Rule(SHOP_SETTING, operator.not_),
     PAID_THRESHOLD: Rule(SHOP_SETTING, operator.not_),
     "装备1号位优先级": Rule(EXTRACT_SPARE, bool),
     "装备2号位优先级": Rule(EXTRACT_SPARE, bool),
