@@ -397,8 +397,10 @@ class Pressed:
         self.taps = []
         self.progress = []
         self.prompt_hand = []
-        # What each fresh read of the "Not enough AP." toast's region gives, in turn. Nothing once they run out.
+        # What each fresh read of the "Not enough AP." toast's region, or of a key's answer, gives in turn. Nothing once they run out.
         self.toasts = []
+        # What reads of a key's answer give once the toasts run out. A card lifted to the middle unless a test says the key got nothing.
+        self.picked = [FakeBox("Attack", 0.505, 0.593)]
 
     def send_key(self, key):
         self.keys.append(key)
@@ -408,6 +410,8 @@ class Pressed:
             return self.points
         if region == battle.NO_POINTS_REGION:
             return self.toasts.pop(0) if self.toasts else []
+        if region == battle.KEY_ANSWER_REGION:
+            return self.toasts.pop(0) if self.toasts else self.picked
         return self.prompt_hand if region == battle.PROMPT_HAND else self.progress
 
     def box_of_screen(self, *region):
@@ -845,13 +849,31 @@ class TestInstalling(unittest.TestCase):
             self.assertEqual(2, len(task.keys))
 
     def test_a_card_the_game_cannot_afford_is_left_on_its_key(self):
-        # Live, each unaffordable key was confirmed and waited on. The toast on the key is enough to move to the next card.
-        with upstream(hand(ATTACK, BIG_ATTACK)) as (utils_sortie, task):
-            task.toasts = [[FakeBox("Not enough AP.", 0.502, 0.501)]]
-            battle.install()
-            utils_sortie._try_all_card_keys(task, 2)
-            utils_sortie._try_all_card_keys(task, 2)
-            self.assertEqual(task.keys, ["2", "1", battle.CONFIRM_KEY])
+        # Live, each unaffordable key was confirmed and waited on. The toast is enough to move to the next card, and so is a key
+        # to a lowered card, which lifts nothing and puts up no toast. That one was confirmed into nothing and retried, ~4s a press.
+        silent = [[]] * round(battle.PICKED_WAIT / battle.TOAST_POLL)
+        for answer in ([[FakeBox("Not enough AP.", 0.502, 0.501)]], silent):
+            with self.subTest(toast=bool(answer[0])), upstream(hand(ATTACK, BIG_ATTACK)) as (utils_sortie, task):
+                task.toasts = list(answer)
+                battle.install()
+                utils_sortie._try_all_card_keys(task, 2)
+                utils_sortie._try_all_card_keys(task, 2)
+                self.assertEqual(task.keys, ["2", "1", battle.CONFIRM_KEY])
+
+    def test_a_play_resolves_once_the_card_is_down_and_the_hand_reads_the_same_twice(self):
+        # Upstream slept a flat 2s after every Enter. Leaving while the card is up, or past 2s, is what this pins.
+        up, a, ab = [FakeBox("Attack", 0.505, 0.593)], [FakeBox("Anchor", 0.3, 0.75)], [FakeBox("Anchor", 0.3, 0.75), FakeBox("Slash", 0.5, 0.75)]
+        cap = round(battle.AFTER_CONFIRM / battle.TOAST_POLL)
+        for why, reads, polls in (
+            ("the card is still up", [up, up, up, ab, ab], 5),
+            ("the hand is still being dealt", [a, ab, ab], 3),
+            ("the card never comes down", [up] * (cap + 2), cap),
+        ):
+            with self.subTest(why):
+                left = list(reads)
+                task = types.SimpleNamespace(width=1920, height=1080, sleep=lambda seconds: None, ocr=lambda *region: left.pop(0))
+                battle.resolve(task)
+                self.assertEqual(len(reads) - len(left), polls)
 
     def test_a_lowered_card_costs_what_its_digit_reads(self):
         # Live, "rbidenEctasyofVolence" took the assumed cost of 1, and so read as lowered to 0 for a card at 8.
@@ -890,6 +912,30 @@ class TestInstalling(unittest.TestCase):
         ):
             with self.subTest(name=name):
                 self.assertEqual(expected, battle.remembered(name, hand))
+
+    def test_a_card_read_under_another_spelling_is_not_waited_on(self):
+        # Live, ~1 in 4 settle frames waited on a card still in hand under a fuller read, such as "Kyrke" as Kyrken's Apostle.
+        for last, now, lost in (
+                (["Glacia", "Bloom: Shock"], ["Glacial Iron Fist", "Bloom: Shock"], []),
+                (["lce Fra", "Frost Shield"], ["Ice Fragment", "Frost Shield"], []),
+                (["Glacial Iron Fist", "Ice Fragment"], ["Glacia"], ["Ice Fragment"]),
+                (["Frost Shield", "Ice Fragment"], ["Bloom: Shock"], ["Frost Shield", "Ice Fragment"]),
+        ):
+            with self.subTest(last=last, now=now):
+                turn = battle.Turn(6)
+                turn.hand = last
+                self.assertEqual(lost, battle.unsettled(turn, now, 6))
+
+    def test_an_unaffordable_card_or_a_crowded_hand_is_not_waited_on(self):
+        # A 2-cost Overpower dims with 1 point left and stops reading. A 9-card hand dropped Time Acceleration for good after one frame.
+        for count, points, lost in (
+                (6, 1, []), (6, 0, []), (6, 2, ["Overpower"]), (6, None, ["Overpower"]),
+                (battle.CROWDED_HAND - 1, None, ["Overpower"]), (battle.CROWDED_HAND, None, []),
+        ):
+            with self.subTest(count=count, points=points):
+                turn = battle.Turn(count)
+                turn.hand = ["Overpower", "Lashing"]
+                self.assertEqual(lost, battle.unsettled(turn, ["Lashing"], count, points=points))
 
     def test_a_card_still_in_hand_is_not_tried_again(self):
         # The game kept it twice running, so the next frame should reach for the other card instead. A Retrieve the deck read showed
@@ -1065,6 +1111,23 @@ class TestCallingBackTheTurn(unittest.TestCase):
             # Asked once a turn, so a card the game will not take after all cannot hold the turn open.
             task.all_texts = list(CARDS_LEFT_PROMPT)
             self.assertFalse(handlers["handle_cards_left"](task))
+
+    def test_unread_keys_are_tried_at_0_ap_once_the_game_says_a_card_plays(self):
+        # Live, a crowded hand read only a held Growth Acceleration of 7 cards, and the turn was ended twice over a 0 AP card unread.
+        with upstream(hand("Growth Acceleration", at=[0.2]), action_points=False) as (utils_sortie, task):
+            task.counter = 3
+            battle.install()
+            handlers = handlers_of(utils_sortie)
+            # The first frame settles a short deal, and the second ends the turn.
+            utils_sortie._try_all_card_keys(task, 3)
+            utils_sortie._try_all_card_keys(task, 3)
+            self.assertEqual(task.keys, [battle.END_TURN_KEY])
+            task.all_texts = list(CARDS_LEFT_PROMPT)
+            self.assertTrue(handlers["handle_cards_left"](task))
+            task.all_texts, task.keys = [], []
+            utils_sortie._try_all_card_keys(task, 3)
+            self.assertNotIn(battle.END_TURN_KEY, task.keys)
+            self.assertTrue(task.keys and task.keys[0].isdigit())
 
     def test_cards_the_game_refused_are_tried_again_once_it_says_they_play(self):
         # Live, a final boss turn refused every card with all three points to spend, then warned that they could still be played.
@@ -1291,7 +1354,7 @@ class TestHandPrompt(unittest.TestCase):
     SCREEN = (FakeBox("请选择1张要移动至抽牌堆的卡牌", 0.5, 0.111, width=600), FakeBox("05/10", 0.505, 0.971), FakeBox("Launcher", 0.273, 0.721),
               FakeBox("Basi", 0.27, 0.80), FakeBox("Opening Found", 0.349, 0.765), FakeBox("Hunting Instincts", 0.603, 0.757), FakeBox(AILMENT, 0.73, 0.776))
 
-    def frames(self, *counters, screens=(), played=None, cropped=()):
+    def frames(self, *counters, screens=(), played=None, cropped=(), ego=False):
         """Answer the prompt once per counter reading.
 
         Args:
@@ -1299,6 +1362,7 @@ class TestHandPrompt(unittest.TestCase):
             screens: What the full-screen pass reads on the first frames, `SCREEN` for every frame after them.
             played: The card whose key opened the prompt, or None for a turn not tracked.
             cropped: What a read of the hand alone gives.
+            ego: Whether `played` is an Ego fired rather than a card.
 
         Returns:
             The task, with every tap it made.
@@ -1307,7 +1371,7 @@ class TestHandPrompt(unittest.TestCase):
             battle.install()
             if played:
                 turn = battle.Turn(5)
-                turn.attempted = played
+                setattr(turn, "ego_opened" if ego else "attempted", played)
                 setattr(task, battle.TURN, turn)
             for index, counter in enumerate(counters):
                 task.all_texts = list(screens[index] if index < len(screens) else self.SCREEN)
@@ -1369,7 +1433,8 @@ class TestHandPrompt(unittest.TestCase):
     def test_a_pick_to_place_in_hand_takes_the_best_card(self):
         # Live, Nia's Curiosity offered two Amp Therapy and an Inferno Rhapsody, and sat 11s for the stuck-screen fallback's random click.
         offered = [{"name": name, "description": "", "x": x, "y": 0.33} for name, x in (("Amp Therapy", 0.26), ("Amp Therapy", 0.51), ("Inferno Rhapsody", 0.76))]
-        for caption in ("请选择1张放入手牌的卡牌", "→ Select 1 card(s) to place in hand."):
+        # G Chord's pick of a card to proc sat 13s the same way.
+        for caption in ("请选择1张放入手牌的卡牌", "→ Select 1 card(s) to place in hand.", "Select 1 additional card(s) to proc."):
             with self.subTest(caption=caption):
                 taps = []
                 utils = types.SimpleNamespace(recognize_cards=lambda task, page: offered, _move_and_click=lambda task, x, y: taps.append((x, y)))
@@ -1402,15 +1467,17 @@ class TestHandPrompt(unittest.TestCase):
     def test_a_boost_goes_to_the_best_card_it_fits(self):
         # Opening Found rates highest, but Growth Acceleration can only pick Orlea's own cards, and the curse is no boost at all.
         choose = next(text for text in EPIPHANIES["Dark Condensation"] if text.startswith("Choose"))
-        cases = (("Growth Acceleration", (*self.SCREEN, FakeBox("Growing Creature", 0.45, 0.765)), 0.45, {}),
-                 ("Dark Condensation", self.SCREEN, 0.349, {}),
+        cases = (("Growth Acceleration", (*self.SCREEN, FakeBox("Growing Creature", 0.45, 0.765)), 0.45, {}, False),
+                 ("Dark Condensation", self.SCREEN, 0.349, {}, False),
                  # Live, a deck holding this Epiphany took its prompt for a discard and kept tapping a Skill the prompt would not take.
-                 ("Dark Condensation", self.SCREEN, 0.349, {"Dark Condensation": [choose]}))
+                 ("Dark Condensation", self.SCREEN, 0.349, {"Dark Condensation": [choose]}, False),
+                 # An Ego opens one too. Live, Field Overview's "apply Linked" gave up the worst card instead.
+                 ("Field Overview", self.SCREEN, 0.349, {}, True))
         self.addCleanup(cards.use_deck, {})
-        for played, screen, x, deck in cases:
+        for played, screen, x, deck, ego in cases:
             with self.subTest(played=played, epiphany=bool(deck)):
                 cards.use_deck(deck)
-                task = self.frames("0/1", screens=(screen,), played=played)
+                task = self.frames("0/1", screens=(screen,), played=played, ego=ego)
                 self.assertEqual([(x, round(0.765 + battle.CARD_BODY, 3))], task.taps)
 
     def test_a_hand_not_read_yet_is_waited_for(self):

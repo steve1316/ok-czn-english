@@ -110,6 +110,8 @@ COPIES = {}
 DECK = {}
 # How many times a battle a card comes back to hand after it is played, by canonical name, summed over its copies, from the deck read.
 RETRIEVES = {}
+# Every card `DECK` can put in hand, its own and those their effects create, from `holdable`. Rebound with `DECK`, and frozen so `canonical` can cache on it.
+HELD = frozenset()
 
 # What a card does, in the terms the ordering cares about.
 Features = namedtuple("Features", [
@@ -187,6 +189,8 @@ GARBLED_TAIL = 2
 # How much of a name a reading checked against the deck has to keep, as a share of its letters. Live, Annihilation came back as
 # "DarkMistSecretAil", 17 of 29, far past what the whole roster can risk but the only Dark Mist card those letters fit in that deck.
 DECK_SHARE = 0.5
+# What an effect text creates, as in "Create 2 Contaminated Spore, then ...", up to the punctuation or joining word that ends the name.
+CREATE = re.compile(r"\bcreate (?:\d+ |x |a )?(.+?)(?=,|\.|\n|$| then | and | in | to | for | with )", re.I)
 # Tiphera's three Archetype cards differ only by a glyph the reader seldom keeps - "Archetype:O", "Archetyp", "rchetype:".
 # Matched on folded text, on a piece of the word, with a real glyph or the O, C or 0 the reader takes the circle for at the end.
 ARCHETYPE_READ = re.compile(r"(?:rchet|het[yv]p)[a-z]*?([○△□oc0]?)$|^arche$")
@@ -231,7 +235,30 @@ def owner(name):
     return CARD_OWNER.get(base_name(name))
 
 
-def stub_card(stub, party=frozenset()):
+def holdable(deck):
+    """Add to a deck the cards its effects create, and what those create in turn.
+
+    A created card is in no deck read, so a name cut short that fits it and another card could not be placed. Live, a crowded hand read
+    Contaminated Spore as "Contaminat", which fits Contamination too, and the free Spores Retain kept making were never played.
+
+    Args:
+        deck: The canonical names of the deck's cards, from `DECK`.
+
+    Returns:
+        Those names and every card a text among them creates.
+    """
+    held = set(deck)
+    pending = list(deck)
+    while pending:
+        for found in CREATE.finditer(description(pending.pop())):
+            for made in found.group(1).split(" or "):
+                if made in CARD_COST and made not in held:
+                    held.add(made)
+                    pending.append(made)
+    return frozenset(held)
+
+
+def stub_card(stub, party=frozenset(), held=frozenset()):
     """Find the one card a name cut short can be.
 
     The reader cuts from either end - "Knife Tos" and "rrier Der" are both real readings - so a stub is tried as the start
@@ -243,6 +270,7 @@ def stub_card(stub, party=frozenset()):
     Args:
         stub: A folded reading the index has no spelling for.
         party: The combatants known to be in the party. Empty when none are known yet, which leaves every card in play.
+        held: The cards the deck can put in hand, from `holdable`, which narrow the fits the same way. Empty before the piles are read.
 
     Returns:
         The card, or None when nothing or more than one card fits. A card and its Epiphanies count as one card, the plainest of them, as do
@@ -258,6 +286,8 @@ def stub_card(stub, party=frozenset()):
         # Kept whole when no fit is the party's, so a member whose cards have not been read yet still gets the old answer.
         if party:
             matches = [real for real in matches if owner(real) in (None, *party)] or matches
+        if held:
+            matches = [real for real in matches if real in held] or matches
         if matches:
             plainest = min(matches, key=len)
             # A longer name built on the plainest at its price is played the same: "Inferno" fits Inferno Rhapsody and Inferno Rhapsody: Heaven.
@@ -294,7 +324,7 @@ def canonical(name, party=frozenset(), deck=frozenset()):
     # The reader also cuts a name short while the hand animates, so "Knife Tos" arrives for "Knife Toss".
     # Only an unambiguous stub is repaired: two cards start "Attac", and guessing between them would be
     # worse than leaving the reading alone for the label test to deal with.
-    known = stub_card(stub, party) or deck_card(stub, deck)
+    known = stub_card(stub, party, deck) or deck_card(stub, deck)
     if known:
         return known
     archetype = ARCHETYPE_READ.search(stub)
@@ -540,9 +570,11 @@ def on_play(name):
 
 def settle_deck():
     """Value every card by the version of it `COPIES` holds, the weakest where its copies differ."""
+    global HELD
     DECK.clear()
     DECK.update({name: min(texts, key=lambda text: strength(figures(text))) for name, texts in COPIES.items()})
     parsed.cache_clear()
+    HELD = holdable(DECK)
 
 
 def use_deck(copies, retrieves=None):

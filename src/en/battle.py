@@ -40,7 +40,8 @@ PARTY = "_en_party"
 # Set by Sortie's team read when a turn had a card or end turn in flight, so the next turn opens with a frame spare for the tap.
 TEAM_WANTED = "_en_team_wanted"
 
-# Upstream's own timings for playing a card, kept so the two paths feel the same to the game.
+# Upstream's own timings for playing a card. Upstream sleeps all of `AFTER_CONFIRM`, which is only the most a play now waits.
+# Timed live, half of 67 plays had resolved by 0.5s, and a fifth still had the card up at 2s.
 AFTER_KEY = 1
 AFTER_CONFIRM = 2
 # The key that ends a turn, as upstream sends it.
@@ -67,6 +68,17 @@ NO_POINTS_REGION = (0.30, 0.42, 0.70, 0.58)
 # How often a key's wait looks for that toast, and the most it waits for one to clear, in seconds.
 TOAST_POLL = 0.25
 TOAST_FADE = 2
+# Where a key's card shows its name once picked, lifted out of the hand and enlarged over the middle. Measured at (0.505, 0.593) on keys 2 and 3.
+PICKED_REGION = (0.42, 0.56, 0.60, 0.63)
+# One read covers both answers a key can get, the toast and the picked card.
+KEY_ANSWER_REGION = (0.30, 0.42, 0.70, 0.63)
+# Upstream's hand row, from `_hand_card_names`, and one read covering it and the picked card, for telling when a play has resolved.
+HAND_ROW = (0.159, 0.683, 0.836, 0.831)
+RESOLVE_REGION = (0.15, 0.42, 0.85, 0.85)
+# How long a key waits for its card to come up. Live, a key to a lowered card neither lifted it nor put up the toast.
+PICKED_WAIT = 2
+# What `key_answer` returns once the card is up.
+PICKED = "picked"
 # The Action Point digit, a little wider than `board.ACTION_POINTS`. OCR finds it only once the crop is enlarged and padded with black,
 # and then reads every count but most 1s and digits under a skill's flash: 51 of 76 lit frames, from 1 to 6, all of them right.
 POINTS_DIGIT = (0.478, 0.888, 0.538, 0.958)
@@ -89,6 +101,8 @@ ATTRIBUTE_CHOICE = "Select an attribute"
 # Nia's Curiosity raises the same kind of pick among cards checked in the Draw Pile, and sat 11s the same way. Its caption is rewritten,
 # unless OCR reads the arrow in front of it, as in "→ Select 1 card(s) to place in hand.".
 PLACE_IN_HAND = ("放入手牌", "place in hand")
+# G Chord's pick of one more card to proc, "Select 1 additional card(s) to proc.", which sat 13s the same way.
+PROC = "card(s) to proc"
 ATTRIBUTE_CHOICE_REGION = (0.20, 0.00, 0.80, 0.26)
 # Parked on the task while the hand reads empty under a counter that says it is not: how many times the end of the turn
 # has been called back since, or None once the hand reads again.
@@ -138,6 +152,9 @@ KIT_PAUSE = 0.5
 # Frames a read that lost cards the last one held is waited on, a hand size at a time. Live, a Rhythm's hit still played over the hand
 # 2s after its key, and the read caught 1 of 6 cards.
 SETTLE_WAIT = 2
+# A hand this big overlaps, and OCR reads about half of it, a different half each frame. Live, 33 of 35 waits on a card a read lost
+# never brought it back, nearly all of them in hands of 7 or more.
+CROWDED_HAND = 7
 # Frames in a row the counter may read 00/10 with the end-turn button up before the turn is taken as still open. The deal lands 1-2
 # frames after the Start Turn banner shows 00/10. The enemy's turn hides the button, so a long one does not count towards it.
 DEAL_WAIT = 4
@@ -377,7 +394,21 @@ def fight_of(task):
     return getattr(task, "start_time", None), status.get("pass_final_boss_count"), status.get("node_count")
 
 
-def unsettled(turn, names, count, limit=SETTLE_WAIT):
+def same_card(one, other):
+    """Say whether two readings off the hand are the same card, one of them cut short.
+
+    Args:
+        one: A name read on one frame.
+        other: A name read on another.
+
+    Returns:
+        True when the shorter starts the longer, give or take one letter, and is long enough to tell.
+    """
+    short, long = sorted((fold(one), fold(other)), key=len)
+    return len(short) >= REMEMBERED_STUB and (long.startswith(short) or one_edit_apart(short, long[:len(short)]))
+
+
+def unsettled(turn, names, count, limit=SETTLE_WAIT, points=None):
     """Find the cards a short read lost since the last one, counting the frame it is about to wait.
 
     Args:
@@ -385,17 +416,32 @@ def unsettled(turn, names, count, limit=SETTLE_WAIT):
         names: The canonical names read this frame.
         count: The hand size the counter read.
         limit: Frames a hand size is waited on, longer while a Finale would end the turn on what is left.
+        points: The Action Points left, 0 once the readout goes dark, or None when the count did not read.
 
     Returns:
-        The cards missing besides the one pressed, empty when the read is whole or this hand size has been waited on enough.
+        The cards missing besides the one pressed, empty when the read is whole, the hand is `CROWDED_HAND` or more, or this hand size
+        has been waited on enough.
     """
     expected = collections.Counter(turn.hand)
     if turn.attempted:
         expected[turn.attempted] -= 1
-    lost = expected - collections.Counter(names)
+    read = collections.Counter(names)
+    lost = expected - read
+    # A card read in part on one frame and whole on the other is still in hand. Live, ~1 in 4 settle frames waited on one.
+    extra = list((read - expected).elements())
+    for stub in list(lost.elements()):
+        match = next((name for name in extra if same_card(stub, name)), None)
+        if match is not None:
+            extra.remove(match)
+            lost[stub] -= 1
+    lost = +lost
+    # A card the turn cannot afford is dimmed and its name stops reading, so waiting on it never brings it back.
+    # Live, ~1 in 3 plays of a Sortie run waited 2s on an Overpower or a Vulture Ejection left with 1 point to spend.
+    if points is not None:
+        lost = collections.Counter({name: copies for name, copies in lost.items() if cards.cost(name) <= points})
     size, waits = turn.settling
     waits = waits if size == count else 0
-    if not count or len(names) >= count or not lost or waits >= limit:
+    if not count or count >= CROWDED_HAND or len(names) >= count or not lost or waits >= limit:
         return []
     turn.settling = (count, waits + 1)
     return sorted(lost.elements())
@@ -463,6 +509,8 @@ class Turn:
         self.ego_fires = 0
         self.ego_missed = False
         self.ego_held = False
+        # The Ego fired since the last card key was pressed, whose effect can open a hand prompt the way a card does.
+        self.ego_opened = None
         # Whether an enemy shows Absolute Invincibility, from `watch_invulnerable`, so the picker holds its attacks.
         self.invulnerable = False
         # The fewest enemies a frame of this turn has shown, from `board.enemy_counters`. 0 until a frame shows one.
@@ -475,9 +523,10 @@ class Turn:
 
 
 def play_key(task, key, name=None):
-    """Play the card on a key, with upstream's own timings so both paths feel the same to the game.
+    """Play the card on a key, confirming it only once the game has picked it up.
 
-    The game answers the key itself with its "Not enough AP." toast, so a card it refuses is left there rather than confirmed and waited on.
+    The game answers the key by lifting the card to the middle, or with its "Not enough AP." toast. A key that gets neither, as on a lowered
+    card, is refused too.
 
     Args:
         task: The running task.
@@ -485,14 +534,16 @@ def play_key(task, key, name=None):
         name: The card's canonical name, so one that hits a picked enemy is aimed at the boss. None for a key pressed blind.
 
     Returns:
-        False when the game refused the card for want of Action Points, True when it was confirmed.
+        False when the game refused the card, True when it was confirmed.
     """
     # Read before the key, while `all_texts` still holds the HP numbers of the frame the card was chosen on.
     boss = board.boss_x(task) if name and CARD_TARGET.get(base_name(name)) in AIMED else None
     task.send_key(key)
-    if toast_within(task, AFTER_KEY):
-        # Waited out, since the next frame would read a toast still up as a spent turn.
-        toast_within(task, TOAST_FADE, up=False)
+    answer = key_answer(task)
+    if answer != PICKED:
+        if answer == NO_POINTS:
+            # Waited out, since the next frame would read a toast still up as a spent turn.
+            toast_cleared(task)
         return False
     if boss is not None:
         aim(task, boss)
@@ -522,32 +573,65 @@ def aim(task, boss):
         task.sleep(AFTER_TAB)
 
 
-def toast_within(task, seconds, up=True):
-    """Watch fresh frames for the game's "Not enough AP." toast to show, or to clear.
+def key_answer(task):
+    """Watch fresh frames for the game's answer to a card's key.
 
     Args:
         task: The running task, whose sleep drops the frame so each OCR reads a new one.
-        seconds: How long to watch for.
-        up: True to wait for the toast to show, False to wait for it to clear.
 
     Returns:
-        True as soon as it does, False when the time runs out first.
+        `PICKED` once the card is lifted, `NO_POINTS` once the toast shows, or None when neither comes up within `PICKED_WAIT`.
     """
-    for _ in range(round(seconds / TOAST_POLL)):
+    for _ in range(round(PICKED_WAIT / TOAST_POLL)):
         task.sleep(TOAST_POLL)
-        if any(fold(NO_POINTS) in fold(box.name) for box in task.ocr(*NO_POINTS_REGION) or []) == up:
-            return True
-    return False
+        boxes = task.ocr(*KEY_ANSWER_REGION) or []
+        if any(fold(NO_POINTS) in fold(box.name) for box in boxes):
+            return NO_POINTS
+        if any(in_region(box, PICKED_REGION, task.width, task.height) for box in boxes):
+            return PICKED
+    return None
+
+
+def toast_cleared(task):
+    """Watch fresh frames for the game's "Not enough AP." toast to clear, for at most `TOAST_FADE` seconds.
+
+    Args:
+        task: The running task, whose sleep drops the frame so each OCR reads a new one.
+    """
+    for _ in range(round(TOAST_FADE / TOAST_POLL)):
+        task.sleep(TOAST_POLL)
+        if not any(fold(NO_POINTS) in fold(box.name) for box in task.ocr(*NO_POINTS_REGION) or []):
+            return
 
 
 def confirm(task):
-    """Press Enter on the card a key raised, and wait as upstream does for it to resolve.
+    """Press Enter on the card a key raised, and wait for the play to resolve.
 
     Args:
         task: The running task.
     """
     task.send_key(CONFIRM_KEY)
-    task.sleep(AFTER_CONFIRM)
+    resolve(task)
+
+
+def resolve(task):
+    """Wait until the played card has left the middle and two polls in a row read the same hand, for at most `AFTER_CONFIRM` seconds.
+
+    Args:
+        task: The running task, just after Enter, whose sleep drops the frame so each OCR reads a new one.
+    """
+    last = None
+    for poll in range(1, round(AFTER_CONFIRM / TOAST_POLL) + 1):
+        task.sleep(TOAST_POLL)
+        boxes = task.ocr(*RESOLVE_REGION) or []
+        if any(in_region(box, PICKED_REGION, task.width, task.height) for box in boxes):
+            last = None
+            continue
+        hand = [box.name for box in sorted(boxes, key=lambda box: box.x) if in_region(box, HAND_ROW, task.width, task.height)]
+        if hand == last:
+            logger.debug(f"the play resolved {poll * TOAST_POLL:.2f}s after Enter")
+            return
+        last = hand
 
 
 def unread_key(hand, count, tried):
@@ -716,7 +800,7 @@ def attribute_handler(utils):
         Returns:
             True when a card was taken.
         """
-        if not any(text_in_region(task, caption, ATTRIBUTE_CHOICE_REGION) for caption in (ATTRIBUTE_CHOICE, *PLACE_IN_HAND)):
+        if not any(text_in_region(task, caption, ATTRIBUTE_CHOICE_REGION) for caption in (ATTRIBUTE_CHOICE, *PLACE_IN_HAND, PROC)):
             return False
         offered = utils.recognize_cards(task, page="attribute choice")
         if not offered:
@@ -1001,7 +1085,7 @@ def boost_order(played):
     """Rank the hand for a prompt that boosts a card, if the card that opened it is one that does.
 
     Args:
-        played: The card whose key was pressed last, from `Turn.attempted`, or None.
+        played: The card whose key was pressed last, from `Turn.attempted`, or the Ego fired after it, or None.
 
     Returns:
         A sort key over `(name, board)`, the card best boosted being smallest, or None when the prompt gives a card up.
@@ -1104,7 +1188,8 @@ def answer_prompt(task, utils_sortie, chosen, need, to_top=False, from_pile=Fals
         return True
     board_now = cards.Board(hand=tuple(name for name, _ in hand))
     turn = getattr(task, TURN, None)
-    boost = boost_order(turn.attempted if turn else None)
+    # Live, Field Overview's "apply Linked" to 2 cards was read as a discard and gave up Water Arrow.
+    boost = boost_order((turn.ego_opened or turn.attempted) if turn else None)
     if from_pile:
         # The card goes to hand to be played, so the best one, and a dealt-to-you card only when nothing else is there.
         prompt.tapped, box = min(hand, key=lambda card: (cards.category(card[0]) in cards.DEALT_TO_YOU, -cards.rated(card[0], board_now)))
@@ -1323,7 +1408,7 @@ def install():
         read = utils_sortie._hand_cards(task) or []
         party = met(task, read)
         turn = turn_of(task, count)
-        named = [{**card, "name": remembered(cards.canonical(card["name"], party, frozenset(cards.DECK)), turn.hand)} for card in read]
+        named = [{**card, "name": remembered(cards.canonical(card["name"], party, cards.HELD), turn.hand)} for card in read]
         hand = priced(task, utils_sortie, kits.reading(named, count))
         names = [card["name"] for card in hand]
         if drawing(task) and turn.drawing < SETTLE_WAIT:
@@ -1340,8 +1425,10 @@ def install():
             return
         # Live, Rapid Fire and Sir Kowalski sat lowered out of the name band for 2s after Firing Preparation, and a Reloading played
         # alone ended the turn with two points left. A turn out of points has its cards dimmed for good, so only a lit count waits.
-        finale = any(kits.ends_turn(name) for name in names) and board.has_action_points(task)
-        lost = unsettled(turn, names, count, KIT_WAIT if finale else SETTLE_WAIT)
+        lit = board.has_action_points(task)
+        finale = lit and any(kits.ends_turn(name) for name in names)
+        ap = points_left(task, frame_of(task)) if lit and not out_of_points(task) else 0
+        lost = unsettled(turn, names, count, KIT_WAIT if finale else SETTLE_WAIT, ap)
         if lost:
             task.log_info(f"read {names} without {lost} from the last frame, so the hand gets a frame to settle")
             task.sleep(KIT_PAUSE)
@@ -1365,12 +1452,8 @@ def install():
                 task.log_info(f"the game would not play {turn.attempted}, leaving it for the rest of this turn")
 
         # A turn whose count does not read is planned against a full three and corrected by what the game will actually accept.
-        points = 0
-        unread = False
-        if board.has_action_points(task) and not out_of_points(task):
-            read = points_left(task, frame_of(task))
-            unread = read is None
-            points = (UNREAD_MID_TURN if turn.played else cards.BASE_ACTION_POINTS) if unread else read
+        unread = ap is None
+        points = (UNREAD_MID_TURN if turn.played else cards.BASE_ACTION_POINTS) if unread else ap
         # An attack's flash can pass for extra counters, and an enemy that dies stays gone. Too few only values all-enemy damage as before.
         seen = len(board.enemy_counters(frame_of(task)))
         if seen:
@@ -1402,8 +1485,9 @@ def install():
                 return
             turn.attempted = None
             # A card OCR missed is still in hand. Live, an unread Cobalt Light was left behind with points to spend,
-            # so each missing key is tried once before giving up on the turn.
-            blind = unread_key(hand, count, turn.blind) if points else None
+            # so each missing key is tried once before giving up on the turn. At 0 AP only once the game says a card still plays,
+            # since live a crowded hand read 1 of 7 and the 0 AP card among the other 6 was never tried.
+            blind = unread_key(hand, count, turn.blind) if points or turn.objected else None
             if blind:
                 task.log_info(f"read {len(names)} of {count} cards and none worth playing, trying unread key {blind}")
                 turn.blind.add(blind)
@@ -1423,6 +1507,7 @@ def install():
         task.log_info(f"playing {name} for {cards.price(card)} AP on key {card['key']}, "
                       f"worth {cards.value(name, state):.0f}")
         turn.attempted = name
+        turn.ego_opened = None
         turn.attempted_copies = names.count(name)
         turn.draws_at_press = draws_shown(task)
         tested.played(name)
