@@ -18,7 +18,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from tests.fakes import FakeBox as Box  # noqa: E402
 
-from src.en import tested  # noqa: E402
+from src.en import analysis, tested  # noqa: E402
 from src.en.battle import PARTY  # noqa: E402
 from src.en.dashboard import COMBATANTS, TEAM_GEAR  # noqa: E402
 from src.en.draft import DRAFTED, ROLES, badges, choose, confirming_our_pick, drafting, rank, rerollable, role_for, role_of, wanted  # noqa: E402
@@ -129,7 +129,7 @@ class TestDraft(unittest.TestCase):
                 pick = choose([COMBATANT_ROLE[name] for name in offers], wanted(party), can_reroll)
                 self.assertEqual(expected, None if pick is None else offers[pick])
 
-    def test_a_debug_run_drafts_whoever_has_played_least(self):
+    def test_draft_least_played_outranks_the_role_the_team_lacks(self):
         """A kit test run wants every combatant's cards played live, so coverage outranks the role the team lacks."""
         cases = [
             # (offers, card plays so far, can reroll, expected pick or None for a reroll)
@@ -147,13 +147,13 @@ class TestDraft(unittest.TestCase):
     def test_a_card_played_counts_toward_its_owner_across_runs(self):
         """A tally that stops counting would draft the same untested-looking combatant every run."""
         with (tempfile.TemporaryDirectory() as folder, mock.patch.object(tested, "FILE", os.path.join(folder, "plays.json")),
-              mock.patch.object(tested, "debug_run", lambda: True), mock.patch.object(tested, "_plays", None)):
+              mock.patch.object(analysis, "drafting_least_played", lambda: True), mock.patch.object(tested, "_plays", None)):
             tested.played("Flash Slash")
             tested.played("Impulse")
             tested._plays = None
             self.assertEqual({"Yuki": 1}, dict(tested.plays()), "Impulse belongs to no one, Flash Slash is Yuki's")
-        with mock.patch.object(tested, "debug_run", lambda: False):
-            self.assertIsNone(tested.plays(), "a release run drafts by role")
+        with mock.patch.object(analysis, "drafting_least_played", lambda: False):
+            self.assertIsNone(tested.plays(), "with the switch off the draft goes by role")
 
     def test_confirm_waits_for_the_draft_to_pick(self):
         """A card still highlighted from before a restart was confirmed without the draft ever seeing the screen."""
