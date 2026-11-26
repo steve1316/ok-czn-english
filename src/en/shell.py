@@ -64,40 +64,33 @@ def looping(task):
     return run
 
 
-def pausing(task, communicate):
-    """Build the pause for a mode that now lives in the one-time list.
+def follows_executor(task):
+    """Read a mode as paused whenever the executor is.
 
-    `BaseTask.pause` pauses the whole executor for a trigger task, which is what makes the frame the mode
-    reads block, and that is kept. What it does not do is record the pause on the task itself, and the Tasks
-    page reads `task.paused` to decide whether to offer Resume. `BaseTask.unpause` is already correct as it stands.
+    Upstream pauses the executor itself - the top bar's Pause button and the pause before a floor's boss both do - and
+    never the mode, so the Tasks page, which reads `task.paused`, kept showing a paused run as Running.
 
     Args:
-        task: The mode being moved.
-        communicate: The framework's signal hub, used to refresh the row.
+        task: A mode, whose `executor` is the one it runs on.
 
     Returns:
-        The replacement `pause`.
+        Whether the mode is paused.
     """
-    def pause():
-        task.executor.pause()
-        task._paused = True
-        communicate.task.emit(task)
-
-    return pause
+    return task.executor.paused
 
 
-def to_task(task, executor, communicate):
+def to_task(task, executor):
     """Move one mode from the page's Triggers section to its On-demand section.
 
     Args:
         task: The mode to move.
         executor: The task executor holding both lists.
-        communicate: The framework's signal hub.
     """
     executor.trigger_tasks.remove(task)
     executor.onetime_tasks.append(task)
     task.run = looping(task)
-    task.pause = pausing(task, communicate)
+    # A property only takes effect on the class, and each mode has a class of its own.
+    type(task).paused = property(follows_executor)
     # `TaskDetail` offers an Edit button for anything loaded out of `ok_tasks/`, and it opens the Script page,
     # which is gone. Clearing this drops the button. The cost is that the modes now count as built-in to the
     # debug file watcher, which only matters while editing `ok_tasks/` with the app running.
@@ -212,7 +205,9 @@ def restructure(executor, task_manager, communicate):
         if task.__class__.__name__ in HIDDEN:
             task.visible = False
         elif task in executor.trigger_tasks:
-            to_task(task, executor, communicate)
+            to_task(task, executor)
+    # The page redraws on a task event and the executor only sends its own, so a pause would otherwise show late.
+    communicate.executor_paused.connect(lambda paused: communicate.task.emit(None))
 
 
 def apply():

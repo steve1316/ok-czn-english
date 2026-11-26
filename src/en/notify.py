@@ -1,13 +1,14 @@
 """Send a Windows notification at the few points in a run worth looking up for.
 
-Errors are left alone: the executor already raises a notification of its own when a task stops on one.
+Errors are left alone: the executor already raises a notification of its own when a task stops on one. Upstream's
+pause before a floor's boss is silent and fires again on every route frame, so resuming never got past it.
 """
 
 import time
 
 from ok import Logger
 
-from src.en.handlers import loaded, register, replace
+from src.en.handlers import answering, loaded, register, replace, wrap
 from src.en.stuck import frozen_for
 
 logger = Logger.get_logger(__name__)
@@ -24,6 +25,14 @@ BOSSES = "pass_final_boss_count"
 
 # Set on the task, to keep one stuck screen from sending a notification on every frame.
 LAST_STUCK = "_en_last_stuck_notice"
+
+# The setting that pauses the run before a floor's boss, and the value that turns it off.
+BOSS_PAUSE = "第几层boss前自动暂停"
+NEVER_PAUSE = "不暂停"
+# Set on the task to the `(rounds, floor)` it last paused at, so resuming carries on rather than pausing again.
+PAUSED_AT = "_en_boss_paused_at"
+# Names this change in the shared record of what a function already carries, so it is applied once.
+BOSS_PAUSE_TAG = "the boss pause is announced once per floor"
 
 _patched = False
 
@@ -122,8 +131,49 @@ def stuck(original):
     return handle_stuck_log_announcing
 
 
+def pausing_once(task, setting):
+    """Answer the boss-pause setting so the pause is announced, and happens only once per floor of a run.
+
+    Args:
+        task: The running task.
+        setting: The floor to pause on, as the config holds it, or `NEVER_PAUSE`.
+
+    Returns:
+        The setting to hand upstream - `NEVER_PAUSE` once this floor has already paused.
+    """
+    rounds, _, floor = score_of(task)
+    try:
+        due = int(setting) == floor
+    except (TypeError, ValueError):
+        return setting
+    if not due:
+        return setting
+    if getattr(task, PAUSED_AT, None) == (rounds, floor):
+        return NEVER_PAUSE
+    setattr(task, PAUSED_AT, (rounds, floor))
+    announce(task, f"Paused before the floor {floor} boss, as Auto-Pause Before Boss on Floor is set. Press Resume to carry on.")
+    return setting
+
+
+def pausing_before_boss(original, utils):
+    """Wrap `handle_route_selection` so its boss pause goes through `pausing_once`.
+
+    Args:
+        original: The handler currently installed.
+        utils: Upstream's `utils` module, whose `_get_config_value` the handler reads the setting through.
+
+    Returns:
+        The wrapped handler.
+    """
+    def handle_route_selection(task):
+        with answering(utils, BOSS_PAUSE, pausing_once):
+            return original(task)
+
+    return handle_route_selection
+
+
 def apply():
-    """Announce the start of a run, the end of one, and a screen the bot cannot get past."""
+    """Announce the start of a run, the end of one, a pause before a boss, and a screen the bot cannot get past."""
     global _patched
     if _patched:
         return
@@ -132,10 +182,11 @@ def apply():
         utils = loaded("utils")
         if utils is None:
             return
-        for name, wrap in (("handle_expedition_result", finishing), ("handle_stuck_log", stuck)):
+        for name, factory in (("handle_expedition_result", finishing), ("handle_stuck_log", stuck)):
             handler = getattr(utils, name, None)
             if handler is not None:
-                replace(name, wrap(handler))
+                replace(name, factory(handler))
+        wrap(utils, "handle_route_selection", lambda original: pausing_before_boss(original, utils), BOSS_PAUSE_TAG)
 
     register(install)
 
