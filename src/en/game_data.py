@@ -2244,3 +2244,12 @@ RISK_MODIFIERS = {
     'Randomly disable 1 selection option when acquiring Fates or cards': 5,
     'Decrease equipment stats by 80%': 4,
 }
+
+# Every Sortie tier's level, lowest first, as the lobby's arrows step through them.
+SORTIE_LEVELS = [
+    40,
+    50,
+    60,
+    65,
+    80,
+]
