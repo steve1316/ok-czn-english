@@ -1,8 +1,8 @@
-"""Keep the device list's Refresh from waiting on Android emulators that are not running.
+"""Keep the device list on the PC game window, and keep its Refresh from waiting on emulators that are not running.
 
-Upstream's Refresh dials every installed emulator over adb to see whether it is up, and finds which ones run by
-reading every process's command line. A closed emulator is dialled anyway and the scan reads hundreds of processes,
-so each Refresh waited seconds. Only an emulator listening on its port is dialled, and the scan reads names first.
+Upstream lists emulators above the PC window and, once the saved pick is gone, falls back to a connected emulator. The
+saved PC pick names the window handle, which changes every game restart, so a running emulator kept taking over. Its
+Refresh also dials every installed emulator and reads every process's command line, so each one waited seconds.
 """
 
 from ok import Logger
@@ -91,15 +91,50 @@ def running_emulators():
     yield from emulator_exes(psutil.process_iter(["name"]))
 
 
+def pc_first(self):
+    """Stand in for `DeviceManager.get_devices`, listing the PC game window first.
+
+    The dropdown and `set_preferred_device(index=...)` both read this order, so they stay in step.
+
+    Args:
+        self: The `DeviceManager`.
+
+    Returns:
+        The known devices, PC window first.
+    """
+    return sorted(self.device_dict.values(), key=lambda device: device.get("device") != "windows")
+
+
+def falling_back_to_pc(original):
+    """Wrap `DeviceManager.set_preferred_device` so a missing pick falls back to the PC window instead of an emulator.
+
+    A pick that is still listed, or one made by index from the dropdown, is left alone.
+
+    Args:
+        original: The framework's `set_preferred_device`.
+
+    Returns:
+        The wrapped method.
+    """
+    def set_preferred_device(self, imei=None, index=-1):
+        if index == -1 and (imei or self.config.get("preferred")) not in self.device_dict:
+            imei = next((device["imei"] for device in self.device_dict.values() if device.get("device") == "windows"), imei)
+        return original(self, imei, index)
+
+    return set_preferred_device
+
+
 def apply():
-    """Have Refresh dial only listening emulators and find running ones by name."""
+    """List and fall back to the PC window first, dial only listening emulators, and find running ones by name."""
     global _patched
     if _patched:
         return
     from ok.alas.emulator_windows import EmulatorManager
     from ok.device.DeviceManager import DeviceManager
 
+    DeviceManager.get_devices = pc_first
+    DeviceManager.set_preferred_device = falling_back_to_pc(DeviceManager.set_preferred_device)
     DeviceManager.adb_connect = dialling_only_listening(DeviceManager.adb_connect, listening_ports)
     EmulatorManager.iter_running_emulator = staticmethod(running_emulators)
     _patched = True
-    logger.info("emulators are dialled only while listening, and found running by name")
+    logger.info("PC window listed first and used when the saved pick is gone, emulators dialled only while listening")
