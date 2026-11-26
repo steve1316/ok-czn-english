@@ -140,6 +140,28 @@ class TestNotify(unittest.TestCase):
         self.assertTrue(notify.stuck(lambda task: True)(FakeTask()))
         self.assertFalse(notify.stuck(lambda task: False)(FakeTask()))
 
+    def test_the_boss_pause_is_announced_and_resuming_carries_on(self):
+        """Upstream pauses on every route frame before the boss, so resuming just paused again."""
+        task = FakeTask(rounds=4, bosses=0)
+        self.assertEqual("1", notify.pausing_once(task, "1"))
+        self.assertIn("Paused before the floor 1 boss", task.notifications[0]["message"])
+        self.assertEqual(notify.NEVER_PAUSE, notify.pausing_once(task, "1"))
+        self.assertEqual(1, len(task.notifications))
+
+    def test_the_next_run_pauses_again(self):
+        task = FakeTask(rounds=4, bosses=0)
+        notify.pausing_once(task, "1")
+        task.node_status[notify.ROUNDS] += 1
+        self.assertEqual("1", notify.pausing_once(task, "1"))
+        self.assertEqual(2, len(task.notifications))
+
+    def test_other_floors_and_never_are_left_alone(self):
+        for setting, bosses in (("2", 0), (notify.NEVER_PAUSE, 0), ("1", 1)):
+            with self.subTest(setting=setting, bosses=bosses):
+                task = FakeTask(bosses=bosses)
+                self.assertEqual(setting, notify.pausing_once(task, setting))
+                self.assertEqual([], task.notifications)
+
     def test_the_replacement_is_named_apart_from_the_original(self):
         """`handlers.replace` matches by name, so a wrapper named after the original would wrap itself."""
         self.assertEqual("handle_stuck_log_announcing", notify.stuck(lambda task: False).__name__)
