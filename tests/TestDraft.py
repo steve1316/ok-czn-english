@@ -1,9 +1,11 @@
 """Check which combatant the bot drafts for the team it has, and when it spends a reroll.
 
 A reroll cannot be taken back, and a badge matched to the wrong card would rank every candidate wrongly, so
-both the badge-to-card pairing and the spend condition are pinned here. Positions are the draft screen's.
+both the badge-to-card pairing and the spend condition are pinned here. So are the run's start screens: who the
+Combatant List can pick, and which Risk Modifier each row reads as. Positions are the screens' own.
 """
 
+import collections
 import os
 import sys
 import tempfile
@@ -15,6 +17,9 @@ from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(REPO_ROOT / "ok_tasks"))
+
+import utils_sortie  # noqa: E402
 
 from tests.fakes import FakeBox as Box  # noqa: E402
 
@@ -23,11 +28,26 @@ from src.en.battle import PARTY  # noqa: E402
 from src.en.dashboard import COMBATANTS, TEAM_GEAR  # noqa: E402
 from src.en.draft import DRAFTED, ROLES, badges, choose, confirming_our_pick, drafting, rank, rerollable, role_for, role_of, wanted  # noqa: E402
 from src.en.game_quality import COMBATANT_ROLE  # noqa: E402
+from src.en.game_data import RISK_MODIFIERS  # noqa: E402
+from src.en.sortie_loop import least_played, modifier_rows, roster_only  # noqa: E402
 
 WIDTH, HEIGHT = 1920, 1080
 # Where the three cards sit, measured off the screen the run captured.
 CARDS = (("Rin", 0.322), ("Beryl", 0.586), ("Magna", 0.851))
 BADGE_Y, NAME_Y, REROLL_Y = 0.675, 0.724, 0.807
+# The Lv.80 Risk Modifiers page as OCR read it on 2026-11-26, at the top of the list, with the Extended Modifiers panel on the right.
+# The sixth row is cut off by the bottom edge, so it has no "+N Stages" yet.
+RISK_PAGE = (
+    ("Risk Modifiers", 0.146, 0.047), ("Modifier List", 0.084, 0.115), ("Time until list reset", 0.315, 0.115),
+    ("Change Damage Amount taken by", 0.235, 0.210), ("monsters to 1 (1 time per battle)", 0.225, 0.245), ("+3 Stages", 0.427, 0.227),
+    ("0", 0.506, 0.229), ("Stage 3 /30", 0.761, 0.322),
+    ("Decrease Turn Draw by 1", 0.205, 0.378), ("+3 Stages", 0.427, 0.376),
+    ("When a monster's HP drops to 30% or", 0.249, 0.510), ("+3 Stages", 0.426, 0.526), ("less, gain 2 Fortitude", 0.189, 0.545),
+    ("Gradually decrease Shield Gain and Heal", 0.797, 0.535), ("Stage 0", 0.610, 0.554),
+    ("Unable to recover Stress through Heals +4 Stages", 0.286, 0.675),
+    ("On Ravage, unable to gain AP", 0.219, 0.827), ("+3 Stages", 0.427, 0.826),
+    ("Increase all nrices in the Safe Zones and", 0.251, 0.943),
+)
 
 
 # The draft screen places its boxes by share of the screen.
@@ -226,6 +246,47 @@ class TestDraft(unittest.TestCase):
         task = draft_screen()
         no_button = {"name": "Rin", "x": 0.322, "y": NAME_Y, "refresh_y": None}
         self.assertFalse(rerollable(task, no_button))
+
+
+
+class FakeListTask(FakeTask):
+    """A task holding one OCR pass of the Combatant List, with the debug log upstream's reader writes to."""
+
+    def log_debug(self, message):
+        pass
+
+
+class TestRunStart(unittest.TestCase):
+    """What the start of a Sortie run reads: the Combatant List's names and the Risk Modifiers rows."""
+
+    def test_the_combatant_list_offers_only_real_names(self):
+        # Upstream's own reader, so a rename there shows up here. Its random fallback once could tap any of these labels.
+        names = ("Rin", "等级", "攻击力", "Car", "Q", "Lv.60 Nia")
+        task = FakeListTask([FakeBox(name, 0.20 + 0.12 * index, 0.40) for index, name in enumerate(names)])
+        with mock.patch.object(tested, "plays", return_value=None):
+            boxes = roster_only(utils_sortie._battle_member_boxes)(task)
+        self.assertEqual(["Rin", "Lv.60 Nia"], [box.name for box in boxes])
+
+    def test_draft_least_played_narrows_the_list_to_the_least_played(self):
+        boxes = [FakeBox(name, 0.2, 0.4) for name in ("Rin", "Nia", "Magna")]
+        with mock.patch.object(tested, "plays", return_value=collections.Counter({"Rin": 4, "Nia": 0, "Magna": 0})):
+            self.assertEqual(["Nia", "Magna"], [box.name for box in least_played(boxes)])
+        with mock.patch.object(tested, "plays", return_value=None):
+            self.assertEqual(boxes, least_played(boxes))
+
+    def test_each_risk_modifier_row_reads_as_its_modifier(self):
+        rows = modifier_rows([FakeBox(text, x, y) for text, x, y in RISK_PAGE], WIDTH, HEIGHT)
+        self.assertEqual(list(RISK_MODIFIERS)[:5], [name for name, _ in rows])
+        for (name, y), wanted in zip(rows, (0.227, 0.376, 0.526, 0.675, 0.826)):
+            with self.subTest(name=name):
+                self.assertAlmostEqual(wanted, y, places=2)
+
+    def test_a_misread_row_still_beats_the_other_modifier_of_its_cost(self):
+        # Both five-stage rows wrap, and OCR dropped a letter from this one.
+        lines = (("Increase all nrices in the Safe Zones and", 0.25, 0.43), ("the Dellang Shop by 30% and additionally", 0.25, 0.46),
+                 ("increase the price of Flash by 100%", 0.22, 0.49), ("+5 Stages", 0.427, 0.46))
+        rows = modifier_rows([FakeBox(text, x, y) for text, x, y in lines], WIDTH, HEIGHT)
+        self.assertEqual([list(RISK_MODIFIERS)[5]], [name for name, _ in rows])
 
 
 if __name__ == "__main__":

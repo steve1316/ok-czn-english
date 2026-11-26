@@ -362,6 +362,9 @@ msgstr "Take Monster Card Rewards"
 msgid "Extract Spare Equipment"
 msgstr "Extract Spare Equipment"
 
+msgid "Risk Modifiers"
+msgstr "Risk Modifiers"
+
 # Section headers this fork draws over the mode settings, English for the same reason.
 msgid "Map"
 msgstr "Map"
