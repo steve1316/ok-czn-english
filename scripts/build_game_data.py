@@ -51,12 +51,16 @@ GROUPS = [
      lambda table, dump: collect_codex(table, dump)[1]),
     ("CHAOS_SEASON", "A Chaos whose Codices always carry one season, mapped to it. The rest let Merge Codices pick any season.",
      lambda table, dump: collect_codex(table, dump)[2]),
+    ("RISK_MODIFIERS", "Lv.80 Sortie's Risk Modifiers in the game's list order, each mapped to the stages it adds.",
+     lambda table, dump: collect_risk_modifiers(table, dump)),
 ]
 # Zero System's tables: each Chaos in list order, and each Codex coordinate naming its Chaos and its fixed season.
 CHAOS_TABLE = "chaos@chaos.json"
 COORDINATE_TABLE = "zero_orb_coordinate@zero_orb_coordinate.json"
 CHAOS_TITLE_ID = "chaos@title@{id}"
 SEASON_ID = re.compile(r"^chaos@title@(disaster_s\d+)$")
+# Sortie's Risk Modifiers as the game lists them. The text table also keeps retired ones, so the schedule decides which exist.
+RISK_MODIFIER_TABLE = "chaos_assault_schedule@chaos_assault_penalty.json"
 # Combatants cannot be read out of the dump alone, from either direction. The `char_base@name@` namespace
 # also names every NPC and enemy, and even the combatant table carries characters that have not been released
 # yet, while a character released after the rip is missing from it altogether. So the roster below is the
@@ -220,6 +224,20 @@ def collect_codex(table, dump_dir):
         if len(tied) == 1 and (season := tied.pop()) in seasons:
             chaos_season[name] = seasons[season]
     return chaos_names, [seasons[key] for key in sorted(seasons)], chaos_season
+
+
+def collect_risk_modifiers(table, dump_dir):
+    """Read Sortie's Risk Modifiers and the stages each one adds.
+
+    Args:
+        table: The localization table, for each modifier's text.
+        dump_dir: Path to the dump's `output` directory, for the schedule table.
+
+    Returns:
+        A dict of modifier text to its stage count, in the game's list order.
+    """
+    rows = json.loads((Path(dump_dir) / "db" / RISK_MODIFIER_TABLE).read_text(encoding="utf-8"))
+    return {table[row["cs_desc"]].strip(): int(row["penalty_level"]) for row in sorted(rows, key=lambda row: int(row["sort"]))}
 
 
 def collect_combatants(table, dump_dir):
