@@ -28,6 +28,8 @@ EXACT_MATCHES = (
      "the Settlement screen offers this instead of Continue, and unmapped no handler claims the frame at all"),
     ("Observe", "观测",
      "the Story map's Observe node opens a Chaos, and unmapped Story mode sits on the map"),
+    ("Combatant Formation", "主战员配置",
+     "handle_battle_member_config never sees the Sortie formation, so a chained run stops before Enter"),
 )
 
 
@@ -144,6 +146,13 @@ class TestOcrCatalog(unittest.TestCase):
         prompt = translation.gettext("Select the Combatant whose card you'd like to Duplicate.")
         self.assertIn("选择要复制卡牌的主战员", prompt)
         self.assertNotIn("请选择获得", prompt)
+
+    def test_the_sortie_result_stamp_is_mapped(self):
+        """Unmapped, every Sortie run counts as lost in the Runs row and the finish notice."""
+        translation = gettext.translation("ocr", str(I18N_ROOT), languages=["en_US"])
+        for english, chinese in (("CLEAR", "完成"), ("FAIL", "失败")):
+            with self.subTest(english=english):
+                self.assertIn(chinese, translation.gettext(english))
 
     def test_the_buttons_matched_by_equality_are_mapped(self):
         """Each of these is compared with `==` or `_clean_match`, so containing the literal is not enough."""

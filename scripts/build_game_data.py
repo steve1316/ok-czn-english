@@ -22,6 +22,8 @@ import sys
 from datetime import date
 from pathlib import Path
 
+from compile_i18n import compile_one
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 OUT_PATH = REPO_ROOT / "src" / "en" / "game_data.py"
 OUT_TEXT_PATH = REPO_ROOT / "src" / "en" / "game_text.py"
@@ -64,6 +66,10 @@ CHAOS_TITLE_ID = "chaos@title@{id}"
 SEASON_ID = re.compile(r"^chaos@title@(disaster_s\d+)$")
 # Sortie's Risk Modifiers as the game lists them. The text table also keeps retired ones, so the schedule decides which exist.
 RISK_MODIFIER_TABLE = "chaos_assault_schedule@chaos_assault_penalty.json"
+# The app catalogs whose Risk Modifiers pick-list shows each modifier with its stages, and the comment on each entry written here.
+STAGE_CATALOGS = [REPO_ROOT / "i18n" / language / "LC_MESSAGES" / "ok.po" for language in ("en_US", "zh_CN")]
+STAGE_TAG = "#. Risk Modifier stages, written by scripts/build_game_data.py"
+STAGE_ENTRY = re.compile("^" + re.escape(STAGE_TAG) + r'\nmsgid ".*"\nmsgstr ".*"\n\n?', re.MULTILINE)
 # Sortie's tiers, each with the level the lobby shows on it.
 SORTIE_TIER_TABLE = "chaos_assault_list@chaos_assault_list.json"
 # Combatants cannot be read out of the dump alone, from either direction. The `char_base@name@` namespace
@@ -243,6 +249,38 @@ def collect_risk_modifiers(table, dump_dir):
     """
     rows = json.loads((Path(dump_dir) / "db" / RISK_MODIFIER_TABLE).read_text(encoding="utf-8"))
     return {table[row["cs_desc"]].strip(): int(row["penalty_level"]) for row in sorted(rows, key=lambda row: int(row["sort"]))}
+
+
+def po_string(text):
+    """Escape text for a quoted `.po` string.
+
+    Args:
+        text: The text to escape.
+
+    Returns:
+        The text with backslashes and double quotes escaped.
+    """
+    return text.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def write_stage_labels(path, modifiers):
+    """Rewrite one catalog's Risk Modifier labels, replacing the ones a previous run wrote.
+
+    Args:
+        path: The `ok.po` to rewrite.
+        modifiers: Modifier text to its stage count, from `collect_risk_modifiers`.
+    """
+    raw = path.read_bytes().decode("utf-8")
+    newline = "\r\n" if "\r\n" in raw else "\n"
+    text = raw.replace("\r\n", "\n")
+    first = STAGE_ENTRY.search(text)
+    text = STAGE_ENTRY.sub("", text)
+    entries = "\n".join(f'{STAGE_TAG}\nmsgid "{po_string(name)}"\nmsgstr "{po_string(name)} (+{stages} Stages)"\n' for name, stages in modifiers.items())
+    if first is None:
+        text = text.rstrip("\n") + "\n\n" + entries
+    else:
+        text = text[:first.start()] + entries + "\n" + text[first.start():]
+    path.write_bytes(text.replace("\n", newline).encode("utf-8"))
 
 
 def collect_sortie_levels(dump_dir):
@@ -1200,6 +1238,10 @@ def main():
     OUT_QUALITY_PATH.write_text(render_quality(quality), encoding="utf-8")
     OUT_BATTLE_PATH.write_text(render_battle(battle), encoding="utf-8")
     OUT_FATES_PATH.write_text(render_fates(fates), encoding="utf-8")
+    risk_modifiers = next(values for name, values, _ in groups if name == "RISK_MODIFIERS")
+    for path in STAGE_CATALOGS:
+        write_stage_labels(path, risk_modifiers)
+        compile_one(path)
 
     unresolved = sum(1 for text in described.values() if VALUE_PLACEHOLDER in text)
     print(f"read {len(table)} localization rows from {args.dump}")
@@ -1216,6 +1258,7 @@ def main():
           + ", ".join(f"{len(values)} {name.lower()}" for name, values in battle.items()))
     print(f"wrote {OUT_FATES_PATH.relative_to(REPO_ROOT)} with "
           + ", ".join(f"{len(values)} {name.lower()}" for name, values in fates.items()))
+    print(f"wrote {len(risk_modifiers)} Risk Modifier stage labels to " + ", ".join(str(path.relative_to(REPO_ROOT)) for path in STAGE_CATALOGS))
     return 0
 
 
