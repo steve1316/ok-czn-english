@@ -478,6 +478,20 @@ class TestEmulatorConnect(unittest.TestCase):
                      types.SimpleNamespace(info={"name": "chrome.exe"}, exe=lambda: self.fail("a non-emulator's path was read"))]
         self.assertEqual(["C:/BlueStacks_nxt/HD-Player.exe"], list(devices.emulator_exes(processes)))
 
+    def test_the_pc_window_is_listed_and_picked_ahead_of_a_running_emulator(self):
+        from ok.device.DeviceManager import DeviceManager
+
+        listed = {"Rvc64": {"imei": "Rvc64", "device": "adb", "connected": True}, "pc": {"imei": "pc", "device": "windows", "connected": False}}
+        cases = (("a restart left the saved window handle stale", "pc_393312", "pc"),
+                 ("a fresh install has no saved pick", "", "pc"),
+                 ("an emulator the user picked is kept", "Rvc64", "Rvc64"))
+        for why, saved, picked in cases:
+            with self.subTest(why):
+                manager = types.SimpleNamespace(config={"preferred": saved}, device_dict=listed, start=lambda: None)
+                devices.falling_back_to_pc(DeviceManager.set_preferred_device)(manager)
+                self.assertEqual(picked, manager.config["preferred"])
+        self.assertEqual(["pc", "Rvc64"], [device["imei"] for device in devices.pc_first(manager)])
+
 
 class TestMonitorLeftOfTheMain(unittest.TestCase):
     """The framework skips geometry at a negative position unless the game is in front, taking it for a minimized window."""
