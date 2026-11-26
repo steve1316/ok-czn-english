@@ -374,6 +374,10 @@ msgstr "探险结果"
 msgid "Team Formation"
 msgstr "主战员配置"
 
+# From handle_battle_member_config: _get_game_text(task, "主战员配置") in title.name. Sortie's own formation carries this title.
+msgid "Combatant Formation"
+msgstr "主战员配置"
+
 # From handle_copy: "复制" in box.name
 msgid "Duplicate Card"
 msgstr "复制卡牌"

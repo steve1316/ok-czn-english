@@ -28,6 +28,8 @@ EXACT_MATCHES = (
      "the Settlement screen offers this instead of Continue, and unmapped no handler claims the frame at all"),
     ("Observe", "观测",
      "the Story map's Observe node opens a Chaos, and unmapped Story mode sits on the map"),
+    ("Combatant Formation", "主战员配置",
+     "handle_battle_member_config never sees the Sortie formation, so a chained run stops before Enter"),
 )
 
 
