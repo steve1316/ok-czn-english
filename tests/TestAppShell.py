@@ -25,20 +25,27 @@ PASSES = 3
 
 
 class FakeSignal:
-    """One of the framework's Qt signals, recording what was emitted rather than delivering it."""
+    """One of the framework's event signals, recording what was emitted and delivering it straight away."""
 
     def __init__(self):
         self.emitted = []
+        self.subscribers = []
+
+    def connect(self, callback):
+        self.subscribers.append(callback)
 
     def emit(self, value):
         self.emitted.append(value)
+        for callback in self.subscribers:
+            callback(value)
 
 
 class FakeCommunicate:
-    """The framework's signal hub, reduced to the one signal the card listens on."""
+    """The framework's signal hub, reduced to the signals the card and the shell use."""
 
     def __init__(self):
         self.task = FakeSignal()
+        self.executor_paused = FakeSignal()
 
 
 class FakeExecutor:
@@ -240,13 +247,18 @@ class TestAppShell(unittest.TestCase):
             tasks[0].run()
         self.assertEqual([], executor.sleeps)
 
-    def test_pausing_records_itself_so_the_page_can_offer_resume(self):
-        """The Tasks page reads `task.paused`, which upstream's trigger branch never sets."""
+    def test_a_paused_executor_shows_the_mode_as_paused(self):
+        """Upstream's boss pause and the top bar's Pause stop the executor only, and the Tasks page reads `task.paused`."""
         executor, _, tasks = moved(ChaosMode)
-        task = tasks[0]
-        task.pause()
-        self.assertTrue(executor.paused)
-        self.assertTrue(task._paused)
+        self.assertFalse(tasks[0].paused)
+        executor.pause()
+        self.assertTrue(tasks[0].paused)
+
+    def test_an_executor_pause_redraws_the_page(self):
+        communicate = FakeCommunicate()
+        shell.restructure(FakeExecutor(), FakeTaskManager(), communicate)
+        communicate.executor_paused.emit(True)
+        self.assertEqual([None], communicate.task.emitted)
 
     def test_the_scaffold_tasks_are_no_longer_registered(self):
         """Configuration Demo Task and Diagnosis Performance Test are gone from the Tasks page."""
