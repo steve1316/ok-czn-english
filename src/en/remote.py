@@ -161,12 +161,14 @@ def _task(name):
 
 
 def status():
-    """Report which task is running, whether the bot is held, and which tasks are switched on. The modes count as tasks here."""
+    """Report which task is running, whether the bot is held or paused, and which tasks are switched on. The modes count as tasks here."""
     executor = _executor()
     current = executor.current_task
     return {
         "running": type(current).__name__ if current is not None else None,
         "held": _held.is_set(),
+        # The app's own Pause, which stops the bot without touching the hold.
+        "paused": bool(executor.paused or getattr(current, "paused", False)),
         "pending": _actions.qsize(),
         "enabled": {type(task).__name__: task.enabled for task in executor.get_all_tasks()},
     }

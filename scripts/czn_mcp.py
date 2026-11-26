@@ -70,7 +70,7 @@ def ping():
 
 @server.tool()
 def status() -> dict:
-    """Which task is running, whether the bot is held, and which tasks are switched on."""
+    """Which task is running, whether the bot is held or paused in the app, and which tasks are switched on."""
     return call("status")
 
 
