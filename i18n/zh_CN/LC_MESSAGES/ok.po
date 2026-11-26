@@ -705,6 +705,12 @@ msgstr "自动分析"
 msgid "Record what the game's Auto plays in Chaos battles, for offline study. Costs extra OCR on every battle frame."
 msgstr "记录游戏自动战斗在混沌战斗中的出牌，用于离线分析。每个战斗帧都会额外消耗一次 OCR。"
 
+msgid "Draft Least Played"
+msgstr "优先编入出场最少的主战员"
+
+msgid "In Sortie, draft the combatant who has played the fewest cards so far, so every kit gets run live. Off, the draft fills the role the team lacks."
+msgstr "出击模式中，优先编入目前出牌最少的主战员，让每名主战员的卡组都能实战运行。关闭时，按队伍缺少的定位编入。"
+
 msgid "Input Variance"
 msgstr "输入随机化"
 

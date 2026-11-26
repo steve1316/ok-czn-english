@@ -1,8 +1,8 @@
 """Draft the role a Sortie team lacks, and reroll when none of the offers fill it.
 
 Upstream refreshes all three slots whenever no configured name matches, then picks at random - so with no
-priority list it spends both rerolls and still takes whatever it lands on. A debug run drafts whoever has played least instead, so
-every combatant's kit gets run live.
+priority list it spends both rerolls and still takes whatever it lands on. With Draft Least Played on, it takes whoever has played least
+instead, so every combatant's kit gets run live.
 """
 
 from ok import Logger
@@ -100,7 +100,7 @@ def choose(roles, wants, can_reroll, played=None):
         roles: The role of each offer, left to right, None where it was not read.
         wants: The roles the team lacks, as `wanted` returns them.
         can_reroll: True while any slot still has its reroll.
-        played: How many cards each offer has played across debug runs, from `tested.plays`, or None to draft by role alone.
+        played: How many cards each offer has played, from `tested.plays`, or None to draft by role alone.
 
     Returns:
         The index of the offer to take, or None when a reroll should be spent first.

@@ -1,4 +1,4 @@
-"""Count each combatant's card plays across debug runs, so a kit test run can draft whoever has been played least.
+"""Count each combatant's card plays while Draft Least Played is on, so the Sortie draft can take whoever has played least.
 
 Upstream drafts at random, so the same few combatants kept coming back while others never had their kit run live. The tally lives in
 `data/`, which is gitignored, so each machine keeps its own.
@@ -10,7 +10,7 @@ import os
 
 from ok import Logger
 
-from src.en import cards
+from src.en import analysis, cards
 
 logger = Logger.get_logger(__name__)
 
@@ -21,21 +21,14 @@ _plays = None
 _complained = False
 
 
-def debug_run():
-    """Say whether this is a `main_debug.py` run, the only kind that drafts for coverage."""
-    from ok import og
-
-    return bool((og.config or {}).get("debug"))
-
-
 def plays():
-    """Read how many cards each combatant has played across debug runs.
+    """Read how many cards each combatant has played while counting was on.
 
     Returns:
-        A `Counter` of combatant name to plays, or None off a debug run.
+        A `Counter` of combatant name to plays, or None while Draft Least Played is off.
     """
     global _plays
-    if not debug_run():
+    if not analysis.drafting_least_played():
         return None
     if _plays is None:
         try:
@@ -50,7 +43,7 @@ def plays():
 
 
 def played(name):
-    """Count one card play toward the combatant who owns the card, on a debug run.
+    """Count one card play toward the combatant who owns the card, while Draft Least Played is on.
 
     Args:
         name: The canonical name of the card being played, from the battle's plan.
