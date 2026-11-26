@@ -362,6 +362,9 @@ msgstr "Take Monster Card Rewards"
 msgid "Extract Spare Equipment"
 msgstr "Extract Spare Equipment"
 
+msgid "Sortie Level"
+msgstr "Sortie Level"
+
 msgid "Risk Modifiers"
 msgstr "Risk Modifiers"
 

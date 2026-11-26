@@ -11,7 +11,7 @@ from ok.util.file import get_relative_path, read_json_file, write_json_file
 
 from src.en.desire import DEFAULT_FACTION, FACTIONS
 from src.en.etched_memory import BONUSES, ENTER_MEMORY_END, ETCHED_MEMORY, KEEP_BONUS, MEMORIES, MEMORY_BONUS
-from src.en.game_data import CARDS, COMBATANTS, EQUIPMENT, RISK_MODIFIERS
+from src.en.game_data import CARDS, COMBATANTS, EQUIPMENT, RISK_MODIFIERS, SORTIE_LEVELS
 from src.en.framework import import_ui
 from src.en.game_language import GAME_LANGUAGES, MODE_KEY
 from src.en.heal import PAY_CREDITS
@@ -59,9 +59,13 @@ DESIRE_FACTION = "Desire Faction"
 EXTRACT_SPARE = "Extract Spare Equipment"
 # The Lv.80 Risk Modifiers to turn on before each Sortie run. Here rather than in `src/en/sortie_loop.py`, which imports this module.
 RISK_PICKS = "Risk Modifiers"
+# The Sortie tier to start each run on, stepped to from whatever the lobby shows. `KEEP_LEVEL` leaves the lobby's tier alone.
+SORTIE_LEVEL = "Sortie Level"
+KEEP_LEVEL = "Keep current"
+LEVEL_OPTIONS = [KEEP_LEVEL, *(f"Lv.{level}" for level in SORTIE_LEVELS)]
 # Fork settings added right under the upstream row they belong with, as `(key, default, anchor)`. Both modes declare the first two anchors.
-# Only Sortie declares Blocked Combatants, which keeps the Risk Modifiers off Chaos.
-ADDED_UNDER = ((TAKE_MONSTER_REWARDS, True, "卡牌奖励优先级"), (EXTRACT_SPARE, False, "装备3号位优先级"), (RISK_PICKS, [], "拉黑主战员"))
+# Only Sortie declares Blocked Combatants, which keeps its level and Risk Modifiers off Chaos.
+ADDED_UNDER = ((TAKE_MONSTER_REWARDS, True, "卡牌奖励优先级"), (EXTRACT_SPARE, False, "装备3号位优先级"), (SORTIE_LEVEL, KEEP_LEVEL, "拉黑主战员"), (RISK_PICKS, [], SORTIE_LEVEL))
 # List settings the user picks from, keyed by config name -> the roster it draws on.
 # Two rules decide whether a setting can become a pick-list. The value must be compared against OCR text - card,
 # equipment and combatant names are, while Route Priority's values are internal labels produced from template
@@ -123,6 +127,7 @@ DESCRIPTIONS = {
     "出战主战员优先级": "Combatants to deploy, in order of preference.",
     "主战员优先级": "Combatants to pick when the run offers a choice.",
     "拉黑主战员": "Combatants to never pick.",
+    SORTIE_LEVEL: "The tier each run starts on. Keep current runs whatever the lobby shows.",
     RISK_PICKS: "Lv.80 only. The modifiers to turn on before each run. The rest are turned off.",
     FARMED_COMBATANT: f"The combatant whose save data is farmed. Pick {NO_COMBATANT} to favour no one.",
     "指定面具卡牌": "The Persona Card to hold out for, matched against its name and description.",
@@ -267,6 +272,7 @@ def reshape(task):
             task.default_config[key] = default
             place_under(task.default_config, key, anchor)
     if RISK_PICKS in task.default_config:
+        task.config_type[SORTIE_LEVEL] = {"type": "drop_down", "options": LEVEL_OPTIONS}
         task.config_type[RISK_PICKS] = {"type": "drop_down", "options_available": list(RISK_MODIFIERS)}
 
     if FARMED_COMBATANT in task.default_config:

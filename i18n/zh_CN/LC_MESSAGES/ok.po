@@ -339,6 +339,9 @@ msgstr "领取怪物卡奖励"
 msgid "Extract Spare Equipment"
 msgstr "提炼多余装备"
 
+msgid "Sortie Level"
+msgstr "出击等级"
+
 msgid "Risk Modifiers"
 msgstr "风险修正"
 

@@ -29,7 +29,7 @@ from src.en.dashboard import COMBATANTS, TEAM_GEAR  # noqa: E402
 from src.en.draft import DRAFTED, ROLES, badges, choose, confirming_our_pick, drafting, rank, rerollable, role_for, role_of, wanted  # noqa: E402
 from src.en.game_quality import COMBATANT_ROLE  # noqa: E402
 from src.en.game_data import RISK_MODIFIERS  # noqa: E402
-from src.en.sortie_loop import least_played, modifier_rows, roster_only  # noqa: E402
+from src.en.sortie_loop import HIGHER, LOWER, MAX_STEPS, LEVEL_STATE, least_played, lobby_handler, modifier_rows, roster_only  # noqa: E402
 
 WIDTH, HEIGHT = 1920, 1080
 # Where the three cards sit, measured off the screen the run captured.
@@ -256,8 +256,41 @@ class FakeListTask(FakeTask):
         pass
 
 
+class FakeLobbyTask(FakeTask):
+    """A task on the Sortie lobby, recording what it pressed and whether it stopped."""
+
+    name = "SortieMode"
+
+    def __init__(self, level):
+        super().__init__([FakeBox("Cumulative Sortie Clears", 0.111, 0.244), FakeBox(level, 0.499, 0.457), FakeBox("进入", 0.499, 0.901)])
+        self.node_status = {}
+        self.pressed = []
+        self.stopped = False
+
+    def click_box(self, box):
+        self.pressed.append(box.name)
+
+    def disable(self):
+        self.stopped = True
+
+    def log_info(self, message):
+        pass
+
+    def notification(self, message, title=None, tray=False):
+        pass
+
+    def sleep(self, seconds):
+        pass
+
+
+def lobby_utils(pick, taps):
+    """Stand in for upstream's `utils` on the lobby: the Sortie Level setting, the tap and the run reset."""
+    return types.SimpleNamespace(_get_config_value=lambda task, key, default: pick, _move_and_click=lambda task, x, y: taps.append((x, y)),
+                                 reset_mission_status=lambda task: None)
+
+
 class TestRunStart(unittest.TestCase):
-    """What the start of a Sortie run reads: the Combatant List's names and the Risk Modifiers rows."""
+    """What the start of a Sortie run reads: the lobby's tier, the Combatant List's names and the Risk Modifiers rows."""
 
     def test_the_combatant_list_offers_only_real_names(self):
         # Upstream's own reader, so a rename there shows up here. Its random fallback once could tap any of these labels.
@@ -273,6 +306,22 @@ class TestRunStart(unittest.TestCase):
             self.assertEqual(["Nia", "Magna"], [box.name for box in least_played(boxes)])
         with mock.patch.object(tested, "plays", return_value=None):
             self.assertEqual(boxes, least_played(boxes))
+
+    def test_the_lobby_steps_toward_the_picked_level_before_entering(self):
+        # A wrong direction walks away from the pick until the step cap stops the run.
+        for level, pick, tap in (("LV.50", "Lv.80", HIGHER), ("Lv.60", "Lv.40", LOWER), ("LV.65", "Lv.65", None), ("LV.80", "Keep current", None)):
+            with self.subTest(level=level, pick=pick):
+                task, taps = FakeLobbyTask(level), []
+                self.assertTrue(lobby_handler(lobby_utils(pick, taps))(task))
+                self.assertEqual([tap] if tap else [], taps)
+                self.assertEqual([] if tap else ["进入"], task.pressed)
+
+    def test_a_level_the_arrows_never_reach_stops_the_run(self):
+        task, taps = FakeLobbyTask("LV.65"), []
+        task.node_status[LEVEL_STATE] = MAX_STEPS
+        lobby_handler(lobby_utils("Lv.80", taps))(task)
+        self.assertTrue(task.stopped)
+        self.assertEqual(([], []), (taps, task.pressed))
 
     def test_each_risk_modifier_row_reads_as_its_modifier(self):
         rows = modifier_rows([FakeBox(text, x, y) for text, x, y in RISK_PAGE], WIDTH, HEIGHT)

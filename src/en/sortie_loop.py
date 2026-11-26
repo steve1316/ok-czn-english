@@ -1,8 +1,8 @@
 """Start the next Sortie run from the lobby, so runs chain back to back on the Global client.
 
 Upstream starts a run through its catch-all Enter, which the fork keeps on the round button at the right, so the lobby's centre Enter
-was never pressed. Nothing set Lv.80's Risk Modifiers either, the Combatant List's random fallback could tap a stat label instead of a
-name, and an empty Aether bar would have walked into the refill prompt.
+was never pressed. Nothing picked the tier or set Lv.80's Risk Modifiers either, the Combatant List's random fallback could tap a stat
+label instead of a name, and an empty Aether bar would have walked into the refill prompt.
 """
 
 import difflib
@@ -13,11 +13,11 @@ import numpy as np
 from ok import Logger
 
 from src.en import tested
-from src.en.game_data import RISK_MODIFIERS
+from src.en.game_data import RISK_MODIFIERS, SORTIE_LEVELS
 from src.en.handlers import insert_before, loaded, register, wrap
 from src.en.navigation import ROSTER_NAME
 from src.en.notify import announce
-from src.en.overrides import RISK_PICKS
+from src.en.overrides import RISK_PICKS, SORTIE_LEVEL
 from src.en.quality import fold
 from src.en.screen import centre_of, colour_share, frame_of, in_region, patch_of, text_in_region
 
@@ -30,6 +30,14 @@ ENTER = "进入"
 LOBBY_MARK = "Cumulative Sortie Clears"
 LOBBY_MARK_BAND = (0.0, 0.18, 0.30, 0.30)
 LOBBY_ENTER = (0.40, 0.85, 0.60, 0.95)
+# The lobby's tier, "LV.80" over its numeral at (0.499, 0.457), and the arrows either side that step it. Lv.40 has no left arrow
+# and Lv.80 no right one.
+LEVEL_BAND = (0.42, 0.42, 0.58, 0.49)
+LEVEL = re.compile(r"Lv\.?\s*(\d+)", re.IGNORECASE)
+LOWER, HIGHER = (0.315, 0.50), (0.685, 0.50)
+# Steps to allow before deciding the picked tier is locked. One more than the tiers, so a missed read gets a second look.
+MAX_STEPS = len(SORTIE_LEVELS) + 1
+LEVEL_STATE = "_en_sortie_level"
 # The formation, as the catalog names it, with its Aether counter "16/320+" at (0.812, 0.047) and the run's cost "10" at (0.950, 0.914).
 FORMATION = "主战员配置"
 TITLE_BAND = (0.0, 0.0, 0.30, 0.09)
@@ -136,8 +144,39 @@ def toggle_on(frame, y):
     return colour_share(patch, ON_LOW, ON_HIGH) >= ON_SHARE
 
 
+def step_toward_level(task, utils):
+    """Tap the lobby's arrow one tier toward the picked Sortie Level, or stop the task when it cannot be reached.
+
+    Args:
+        task: The running task, on the Sortie lobby.
+        utils: Upstream's `utils` module, for its config read and tap.
+
+    Returns:
+        True when it tapped or stopped, False once the lobby is on the picked tier or none is picked.
+    """
+    wanted = LEVEL.search(str(utils._get_config_value(task, SORTIE_LEVEL, "")))
+    status = getattr(task, "node_status", None)
+    if wanted is None or status is None:
+        return False
+    target = int(wanted.group(1))
+    level = number_in(task, LEVEL, LEVEL_BAND)
+    if level == target:
+        return False
+    steps = status.get(LEVEL_STATE, 0)
+    if steps >= MAX_STEPS:
+        announce(task, f"Sortie Level Lv.{target} could not be reached from Lv.{level}, so Sortie stops")
+        task.disable()
+        return True
+    status[LEVEL_STATE] = steps + 1
+    if level is not None:
+        task.log_info(f"Sortie lobby on Lv.{level}, stepping toward Lv.{target}")
+        utils._move_and_click(task, *(HIGHER if level < target else LOWER))
+    task.sleep(1)
+    return True
+
+
 def lobby_handler(utils):
-    """Build the handler that presses the Sortie lobby's Enter.
+    """Build the handler that sets the Sortie lobby to the picked tier and presses its Enter.
 
     Args:
         utils: Upstream's `utils` module, for the run reset its own Enter press makes.
@@ -151,6 +190,8 @@ def lobby_handler(utils):
         button = text_in_region(task, ENTER, LOBBY_ENTER)
         if button is None:
             return False
+        if step_toward_level(task, utils):
+            return True
         task.log_info("on the Sortie lobby, pressing Enter for the next run")
         task.click_box(button)
         utils.reset_mission_status(task)

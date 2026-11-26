@@ -271,11 +271,17 @@ class TestBuyCards(unittest.TestCase):
         self.assertFalse({"需要冥想的卡牌", "多少信用点以上冥想"} & set(keys))
 
     def test_the_reward_and_extract_switches_sit_under_the_list_they_narrow(self):
-        # Anchored on upstream's keys, so a rename there would drop a switch from both modes without an error.
+        # Anchored on upstream's keys, so a rename there would drop a switch from both modes without an error. A row may also chain under an
+        # earlier fork row, as Risk Modifiers does under Sortie Level.
+        added, anchors = [], {key: anchor for key, _, anchor in overrides.ADDED_UNDER}
         for key, default, anchor in overrides.ADDED_UNDER:
             with self.subTest(key=key):
-                self.assertIn(anchor, mode_setting_keys())
-                task = reshaped({anchor: [], "只打第一层": True})
+                self.assertIn(anchor, [*mode_setting_keys(), *added])
+                added.append(key)
+                root = anchor
+                while root in anchors:
+                    root = anchors[root]
+                task = reshaped({root: [], "只打第一层": True})
                 keys = list(task.default_config)
                 self.assertEqual(key, keys[keys.index(anchor) + 1])
                 self.assertIs(default, task.default_config[key])
