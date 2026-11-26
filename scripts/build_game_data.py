@@ -27,6 +27,7 @@ OUT_PATH = REPO_ROOT / "src" / "en" / "game_data.py"
 OUT_TEXT_PATH = REPO_ROOT / "src" / "en" / "game_text.py"
 OUT_QUALITY_PATH = REPO_ROOT / "src" / "en" / "game_quality.py"
 OUT_BATTLE_PATH = REPO_ROOT / "src" / "en" / "game_battle.py"
+OUT_FATES_PATH = REPO_ROOT / "src" / "en" / "game_fates.py"
 # Where the extracted asset dump lives. Set CZN_DUMP, or pass --dump. Deliberately not a real path:
 # these modules are committed, and a default pointing at one machine would be copied into all of them.
 DUMP_ENV = "CZN_DUMP"
@@ -865,6 +866,102 @@ def render_descriptions(described, epiphanies, divine, dump_dir):
     return "\n".join(lines)
 
 
+# Each mode's Fate tables: the Fates it can hand out, the effect each one runs, and the status rows and effects
+# a `#rev_i_j#` placeholder reads, which is effect j of the Fate's i-th linked status.
+FATE_MODES = {
+    "SORTIE": ("fate(assault)@fate.json", "fate_skill(assault)@fate_skill.json", "fate_skill(assault)@cs.json", "fate_skill(assault)@skill_eff.json"),
+    "CHAOS": ("fate@fate.json", "fate_skill@fate_skill.json", "fate_skill@cs.json", "fate_skill@skill_eff.json"),
+}
+FATE_SKILL_COLUMN = "link_fate_skill_id"
+FATE_STATUS_COLUMN = "cs_link_cs_id"
+FATE_PLACEHOLDER = re.compile(r"#rev_(\d+)_(\d+)#")
+# Rows the client has switched off, and the leftover rows a name or id marks as not for play.
+FATE_IN_USE = "YES"
+FATE_LEFTOVER = re.compile(r"_test|unused", re.I)
+
+
+def resolve_fate_values(text, skill, statuses, effects):
+    """Fill a Fate's `#rev_i_j#` placeholders in from the statuses it links.
+
+    Args:
+        text: The raw description.
+        skill: The Fate's effect row, whose status column lists the statuses in placeholder order.
+        statuses: Every status row of the mode, keyed by id.
+        effects: Every effect row of the mode, keyed by id.
+
+    Returns:
+        The description with each resolvable placeholder replaced by its base value.
+    """
+    linked = LIST_ENTRY.findall(skill.get(FATE_STATUS_COLUMN) or "")
+
+    def replace(match):
+        status, effect = int(match.group(1)), int(match.group(2))
+        if status >= len(linked):
+            return match.group(0)
+        effect_ids = LIST_ENTRY.findall(statuses.get(linked[status], {}).get("link_skill_eff_id") or "")
+        value = effects.get(effect_ids[effect], {}).get(VALUE_COLUMN) if effect < len(effect_ids) else None
+        return value if value is not None else match.group(0)
+
+    return FATE_PLACEHOLDER.sub(replace, text)
+
+
+def collect_fates(table, dump_dir):
+    """Read every Fate each mode can hand out, with its effect text and whether it rolls on the random Fate screen.
+
+    A name is kept once per mode, from its first row in use. Chaos reuses a few names across seasons for different effects,
+    and the copy kept is the one the client lists first.
+
+    Args:
+        table: The localization table.
+        dump_dir: Path to the dump's `output` directory.
+
+    Returns:
+        A dict of constant name to mapping: `<MODE>_FATES` is name to description and `<MODE>_OFFERED` the names with
+        a pick weight above zero.
+    """
+    fates = {}
+    for mode, (fate_glob, skill_glob, status_glob, effect_glob) in FATE_MODES.items():
+        skills = load_data_tables(dump_dir, (skill_glob, "description"))
+        statuses = load_data_tables(dump_dir, (status_glob, "link_skill_eff_id"))
+        effects = load_data_tables(dump_dir, (effect_glob, VALUE_COLUMN))
+        described, offered = {}, set()
+        for row_id, row in load_data_tables(dump_dir, (fate_glob, FATE_SKILL_COLUMN)).items():
+            # A row linking an effect from another mode's table has no text of its own here.
+            skill = skills.get(linked_id(row, FATE_SKILL_COLUMN))
+            name = table.get(skill.get("name") or "") if skill else None
+            if not name or row.get("default_use") != FATE_IN_USE or FATE_LEFTOVER.search(row_id + name):
+                continue
+            if name not in described:
+                text = resolve_fate_values(table.get(skill.get("description") or "", ""), skill, statuses, effects)
+                described[name] = clean_description(text, table)
+            if int(row.get("pick_ratio") or 0) > 0:
+                offered.add(name)
+        fates[f"{mode}_FATES"] = described
+        fates[f"{mode}_OFFERED"] = offered
+    return fates
+
+
+def render_fates(fates):
+    """Write the module holding every Fate each mode can hand out.
+
+    Args:
+        fates: The collected mappings, from `collect_fates`.
+
+    Returns:
+        The module source.
+    """
+    comments = {}
+    for mode in FATE_MODES:
+        comments[f"{mode}_FATES"] = f"Every Fate {mode.title()} can hand out, mapped to its effect text. Values as in `game_text.py`."
+        comments[f"{mode}_OFFERED"] = f"The {mode.title()} Fates with a pick weight, which are the ones the random Fate screen can roll."
+    notes = [
+        "Sortie and Chaos keep separate Fate tables, and a name can mean a different Fate in each: Oblivion removes",
+        "every Basic Card in Sortie and discounts card removal in Chaos. A Fate outside `*_OFFERED` still reaches a",
+        "run another way, from an event option or as the reward another Fate promises.",
+    ]
+    return render_tables("Every Fate the client can hand out, per mode, taken from its own data tables.", notes, fates, comments)
+
+
 def cost_of(value):
     """Read a card's Action Point cost.
 
@@ -1060,12 +1157,14 @@ def main():
     divine = collect_divine(table, args.dump)
     quality = collect_quality(table, args.dump)
     battle = collect_battle(table, args.dump)
+    fates = collect_fates(table, args.dump)
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUT_PATH.write_text(render(groups, args.dump), encoding="utf-8")
     OUT_TEXT_PATH.write_text(render_descriptions(described, epiphanies, divine, args.dump), encoding="utf-8")
     OUT_QUALITY_PATH.write_text(render_quality(quality), encoding="utf-8")
     OUT_BATTLE_PATH.write_text(render_battle(battle), encoding="utf-8")
+    OUT_FATES_PATH.write_text(render_fates(fates), encoding="utf-8")
 
     unresolved = sum(1 for text in described.values() if VALUE_PLACEHOLDER in text)
     print(f"read {len(table)} localization rows from {args.dump}")
@@ -1080,6 +1179,8 @@ def main():
           + ", ".join(f"{len(values)} {name.lower()}" for name, values in quality.items()))
     print(f"wrote {OUT_BATTLE_PATH.relative_to(REPO_ROOT)} with "
           + ", ".join(f"{len(values)} {name.lower()}" for name, values in battle.items()))
+    print(f"wrote {OUT_FATES_PATH.relative_to(REPO_ROOT)} with "
+          + ", ".join(f"{len(values)} {name.lower()}" for name, values in fates.items()))
     return 0
 
 
