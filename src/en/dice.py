@@ -12,7 +12,7 @@ import time
 
 from ok import Logger
 
-from src.en.handlers import insert_before, loaded, register
+from src.en.handlers import insert_before, loaded, register, wrap
 from src.en.screen import in_region
 
 logger = Logger.get_logger(__name__)
@@ -39,6 +39,8 @@ CURRENCY_REGION = (0.75, 0.0, 1.0, 0.25)
 # A roll that has not been seen for this long belongs to a past event, so the count starts again.
 RESET_AFTER_SECONDS = 60
 STATE = "_en_reroll"
+# Names the guard on upstream's `handle_negotiation` in the shared record of what a function already carries.
+EMPTY_RESULT_TAG = "no Next on an empty result caption"
 
 _patched = False
 
@@ -121,19 +123,58 @@ def read_state(task, now):
     return count
 
 
+def is_failure(box):
+    """Tell whether the box at the result point is the failure caption.
+
+    Upstream tests the caption with `in`, and an empty string is in every string, so an empty box would pass.
+
+    Args:
+        box: The box at `RESULT_POINT`, or None.
+
+    Returns:
+        True when the box carries text that is part of 失败.
+    """
+    return bool(box and box.name and box.name in FAILURE)
+
+
+def skipping_empty_result(handle_negotiation, utils):
+    """Keep upstream's `handle_negotiation` from clicking Next on an empty box at the result point.
+
+    Args:
+        handle_negotiation: The handler currently installed.
+        utils: The imported `utils` module, whose `find_box_at_point` upstream reads the caption with.
+
+    Returns:
+        The handler to run in its place.
+    """
+
+    def guarded(task):
+        result = utils.find_box_at_point(task, *RESULT_POINT)
+        if result is not None and not result.name.strip():
+            return False
+        return handle_negotiation(task)
+
+    return guarded
+
+
+def install(utils):
+    """Put the reroll handler ahead of `handle_negotiation` and guard that handler wherever it is registered.
+
+    Args:
+        utils: The imported `utils` module, or None when it has not been imported yet.
+    """
+    if utils is None:
+        return
+    wrap(utils, "handle_negotiation", lambda handler: skipping_empty_result(handler, utils), EMPTY_RESULT_TAG)
+    insert_before("handle_negotiation", make_handler(utils))
+
+
 def apply():
     """Reroll failed rolls wherever the failure screen is handled."""
     global _patched
     if _patched:
         return
-
-    def install():
-        utils = loaded("utils")
-        if utils is None:
-            return
-        insert_before("handle_negotiation", make_handler(utils))
-
-    register(install)
+    register(lambda: install(loaded("utils")))
     _patched = True
 
 
@@ -149,7 +190,7 @@ def make_handler(utils):
 
     def handle_dice_reroll(task):
         result = utils.find_box_at_point(task, *RESULT_POINT)
-        if not (result and result.name in FAILURE):
+        if not is_failure(result):
             return False
 
         now = time.monotonic()

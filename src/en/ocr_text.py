@@ -213,6 +213,10 @@ def apply():
         if translation is None:
             return
         for box, was in zip(detected_boxes, before):
+            if not was:
+                # gettext answers "" with the catalog header, which upstream then takes as the reading.
+                box.name = was
+                continue
             if box.name != was:
                 continue
             if fix := fix_for(translation, was):

@@ -8,12 +8,17 @@ The box lists are the exact OCR of the failure and success screens from the 2026
 """
 
 import sys
+import types
 import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(REPO_ROOT / "ok_tasks"))
 
+import utils  # noqa: E402
+
+from src.en import dice, handlers  # noqa: E402
 from src.en.dice import (  # noqa: E402
     REROLL_CAP, REROLL_COST, find_currency, find_reroll_button, parse_currency, should_reroll,
 )
@@ -30,6 +35,9 @@ class FakeBox:
         self.y = y
         self.width = width
         self.height = height
+
+    def area(self):
+        return self.width * self.height
 
 
 # The failure screen, as OCR read it: 25/25十, Dexterous, 14, 失败, Reroll, 下一步.
@@ -99,6 +107,80 @@ class TestDiceReroll(unittest.TestCase):
         """Five rerolls at 2 each is 10 of 25, so the cap is what stops it, not the wallet."""
         self.assertTrue(should_reroll(REROLL_CAP - 1, 25 - (REROLL_CAP - 1) * REROLL_COST))
         self.assertFalse(should_reroll(REROLL_CAP, 25 - REROLL_CAP * REROLL_COST))
+
+
+# Upstream's Next button on the failure screen.
+NEXT = (0.665, 0.899)
+# A box OCR returned with no text, smaller than the caption and over the point both gates read.
+EMPTY_RESULT = FakeBox("", 940, 725, width=40, height=25)
+
+
+class FakeTask:
+    """A mode recording the taps a handler asks for."""
+
+    def __init__(self, boxes):
+        self.all_texts = boxes
+        self.width, self.height = WIDTH, HEIGHT
+        self.clicked = []
+
+    def log_info(self, message):
+        pass
+
+    def click_box(self, box):
+        self.clicked.append(box.name)
+
+    def sleep(self, seconds):
+        pass
+
+
+def claim(boxes):
+    """Run a mode's handler list, as `dice.install` leaves it, over one screen.
+
+    The list holds upstream's real `handle_negotiation` behind a stand-in module, so the install wraps the stand-in
+    and not the real `utils`, and only this list is edited.
+
+    Args:
+        boxes: Every OCR box on screen.
+
+    Returns:
+        The name of the handler that took the frame (None when none did), and the task.
+    """
+    def handle_negotiation(task):
+        return utils.handle_negotiation(task)
+
+    stand_in = types.SimpleNamespace(find_box_at_point=utils.find_box_at_point, handle_negotiation=handle_negotiation)
+    page_handlers = [handle_negotiation]
+    task = FakeTask(boxes)
+    record = lambda task_, x, y: task_.clicked.append((x, y))  # noqa: E731
+    with handlers.standing_in(handlers, each_list=lambda: iter([("fake_mode_for_dice_test", page_handlers)])):
+        dice.install(stand_in)
+        with handlers.standing_in(utils, _move_and_click=record):
+            claimed = next((handler.__name__ for handler in page_handlers if handler(task)), None)
+    assert [handler.__name__ for handler in page_handlers] == ["handle_dice_reroll", "handle_negotiation"]
+    return claimed, task
+
+
+class TestEmptyResultCaption(unittest.TestCase):
+    """An empty name is in every string, so `name in "失败"` alone reads an empty box as a failed roll."""
+
+    def test_an_empty_result_box_buys_no_reroll(self):
+        """Reroll and the counter are on screen, so only the caption test stands between this and a spend."""
+        task = FakeTask([EMPTY_RESULT, FakeBox("Reroll", 600, 960), FakeBox("25/25+", 1720, 95)])
+        self.assertFalse(dice.make_handler(utils)(task))
+        self.assertEqual([], task.clicked)
+
+    def test_an_empty_result_box_takes_no_next_click(self):
+        for name in ("", "  "):
+            with self.subTest(name=name):
+                claimed, task = claim([FakeBox(name, 940, 725, width=40, height=25)])
+                self.assertIsNone(claimed)
+                self.assertEqual([], task.clicked)
+
+    def test_the_failure_caption_still_clicks_next(self):
+        """With no Reroll button the reroll handler declines, and upstream's Next takes the loss."""
+        claimed, task = claim([box for box in FAILURE_BOXES if box.name != "Reroll"])
+        self.assertEqual("handle_negotiation", claimed)
+        self.assertEqual([NEXT], task.clicked)
 
 
 if __name__ == "__main__":
