@@ -36,6 +36,8 @@ from src.en.enter import OPTION_TEMPLATES, on_the_button  # noqa: E402
 from src.en.etched_memory import (  # noqa: E402
     ENTER_MEMORY_END, ETCHED_MEMORY, MEMORY_BONUS, MEMORY_CARD, choosing_bonus, entering_memory_end, picking_memory, processing_for_bonus,
 )
+from src.en import game_fates  # noqa: E402
+from src.en.fates import CHAOS_TIERS, SORTIE_TIERS, choosing_fate  # noqa: E402
 from src.en.farm_start import GAP_KEY, INITIAL_CARD_KEY, handle_farm_escape, marked, reading_english_escape  # noqa: E402
 from src.en.handlers import standing_in  # noqa: E402
 from tests.fakes import HEIGHT, WIDTH, FakeBox  # noqa: E402
@@ -719,6 +721,81 @@ class TestEtchedMemory(unittest.TestCase):
                 handled = entering_memory_end(utils_chaos.handle_go_to_memory_end, utils_chaos)(task)
                 self.assertEqual(entered, handled)
                 self.assertEqual(["前往记忆之末"] if entered else [], task.clicked)
+
+
+class SortieMode(SimpleNamespace):
+    """A task type named the way `fates.py` tells Sortie from Chaos."""
+
+
+def fate_screen(columns, mode=SimpleNamespace):
+    """Lay out a Fate screen the way upstream's title region reads it: three columns, each a name over its description lines.
+
+    Args:
+        columns: One (name, description lines) pair per Fate, left to right.
+        mode: The task type, `SortieMode` for a Sortie run and plain `SimpleNamespace` for Chaos.
+
+    Returns:
+        A task whose `all_texts` holds the screen and whose `clicked` collects what was tapped.
+    """
+    boxes = [FakeBox("请选择你的命运", 0.499, 0.932)]
+    for column, (name, lines) in enumerate(columns):
+        x = 0.3 + 0.2 * column
+        boxes.append(FakeBox(name, x, 0.506))
+        boxes.extend(FakeBox(line, x, 0.535 + 0.02 * row) for row, line in enumerate(lines))
+    clicked = []
+    return mode(width=WIDTH, height=HEIGHT, all_texts=boxes, config={}, clicked=clicked, sleep=lambda seconds: None,
+                log_info=lambda message: None, click_box=lambda box: clicked.append(box.name))
+
+
+def fates_taken(task):
+    """Run the ranked Fate handler under ten seeds and collect every name it taps.
+
+    Args:
+        task: A task from `fate_screen`.
+
+    Returns:
+        The set of tapped box names.
+    """
+    handle = choosing_fate(utils)(utils.handle_destiny_choice)
+    for seed in range(10):
+        random.seed(seed)
+        handle(task)
+    return set(task.clicked)
+
+
+class TestFateChoice(unittest.TestCase):
+    """Upstream picks a Fate at random off any line in the title region, descriptions included."""
+
+    def test_equipment_beats_a_conversion_the_run_then_skips(self):
+        # The 2026-11-26 release Sortie took Convert Tactics, then `handle_convert_card` skipped the conversion it grants.
+        task = fate_screen([("Convert Tactics", ["Select up to 2 cards in Deck and", "convert them into random"]),
+                            ("Armament of War", ["Gain 1 random Legendary weapon.", "Increase Attack of allies by 5%."]),
+                            ("Bits N' Pieces", ["Gain 250 Credits."])], SortieMode)
+        self.assertEqual({"Armament of War"}, fates_taken(task))
+
+    def test_only_a_name_is_ever_tapped(self):
+        # Read off the 2026-11-20 Chaos run, where upstream once took the description line "Gain 1 Action Point at".
+        task = fate_screen([("Envy", ["Each time AP consumed,", "gain 1 Morale for 1 turn"]),
+                            ("Sympathy", ["At the start of the battle,", "all enemies gain 1"]),
+                            ("Diligence", ["Each time upon", "gain 1 Action Point and"])])
+        self.assertLessEqual(fates_taken(task), {"Envy", "Sympathy", "Diligence"})
+
+    def test_chaos_ranks_by_its_own_table(self):
+        # None of these names is a Sortie Fate, so ranking a Chaos screen by the Sortie table would pick at random.
+        task = fate_screen([("Kleptomania", ["Gain 1 Anemia Curse Card."]), ("Greed", ["Gain 400 Credits."]),
+                            ("Research", ["Gain 2 random pieces of", "Rare Equipment."])])
+        self.assertEqual({"Research"}, fates_taken(task))
+
+    def test_every_fate_the_screen_can_roll_is_tiered(self):
+        # A patch that adds or renames a Fate lands it in the middle tier unseen, so a regenerated `game_fates.py` has to be tiered too.
+        for mode, tiers, fates, offered in (("sortie", SORTIE_TIERS, game_fates.SORTIE_FATES, game_fates.SORTIE_OFFERED),
+                                            ("chaos", CHAOS_TIERS, game_fates.CHAOS_FATES, game_fates.CHAOS_OFFERED)):
+            tiered = [fold(name) for names in tiers.values() for name in names]
+            known = {fold(name) for name in fates}
+            with self.subTest(mode=mode):
+                self.assertEqual([], sorted({fold(name) for name in offered} - set(tiered)), "rolled but not tiered")
+                self.assertEqual([], sorted(set(tiered) - known), "tiered but not a Fate")
+                self.assertEqual(len(tiered), len(set(tiered)), "tiered twice")
 
 
 if __name__ == "__main__":
