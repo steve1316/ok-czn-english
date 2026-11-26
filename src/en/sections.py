@@ -35,7 +35,7 @@ TOP = [FARMED_COMBATANT, "领取奖励(只使用验证卡)", "领取奖励", "�
 # the keys it carries, so a section with none of them is not drawn. A key in neither list stays above everything.
 SECTIONS = [
     ("Map", ["路线优先级", "任务优先级", "拉黑任务"]),
-    ("Battle", [SMART_CARD_PLAY, "出牌优先级", "丢弃卡牌优先级"]),
+    ("Battle", [SMART_CARD_PLAY, "出牌优先级"]),
     ("Cards", ["获得卡牌优先级", "卡牌奖励优先级", TAKE_MONSTER_REWARDS, "移除卡牌列表", "复制卡牌列表", "闪光卡牌列表", "闪光优先级", "首层刷特定闪光",
                "生命值大于多少优先闪光(百分比)"]),
     ("Equipment", [EXTRACT_SPARE, "装备1号位优先级", "装备2号位优先级", "装备3号位优先级"]),
