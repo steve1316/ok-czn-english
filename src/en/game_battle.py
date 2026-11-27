@@ -8,7 +8,7 @@ card to the combatant who owns it does not exist on the card row, and is rebuilt
 by inverting the cards each combatant starts and sparks.
 
 Source: the Global client's own asset dump.
-Generated: 2026-11-12
+Generated: 2026-11-26
 """
 
 
@@ -3406,6 +3406,39 @@ CARD_EXHAUSTS = frozenset({
     'Wanderer of the Void',
     'William',
     '○ △ □',
+})
+
+# The Lead cards, whose lowered cost lasts only until another card is played, so one shown lowered is worth opening the turn with.
+CARD_LEAD = frozenset({
+    'Big Game Ranger',
+    'Dark Mist Inner Art',
+    'Distortion: Automata Cavalry',
+    'Distortion: Dominion',
+    'Distortion: Forced Learning Apparatus',
+    'Distortion: Glorious Resistance',
+    'Explosion of Emotions',
+    'Extended Magazine',
+    'Forbidden Algorithm',
+    'Forbidden: Engraved Malice',
+    'Forced Learning Apparatus',
+    'Harmonization: Sadism',
+    'Ice Fragment',
+    'Ignition Slash',
+    'Inner Corruption',
+    'Mutation: Atomic Decomposition',
+    'Mutation: Self-Generating Experiment',
+    'Quiver Reload',
+    'Sadism\u200b',
+    'Scream For Me',
+    'Seize the Opportunity',
+    'Self-Generating Experiment',
+    'Shock Gun',
+    'Storm of Bitter Cold',
+    'Strike of Darkness',
+    'Unknown: Heart of the Nest',
+    'Unknown: Purple Duty',
+    "Unknown: Simulacrum's Echo",
+    'Warming Up',
 })
 
 # The combatant a card belongs to, recovered from the cards each of them starts and sparks. A card's attribute is its owner's, so this is how a card comes to have one.

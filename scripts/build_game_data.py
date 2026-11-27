@@ -497,6 +497,8 @@ CARD_SORT_COLUMN = "sort"
 CARD_TALENT_COLUMN = "talent"
 # The talent that sends a card to the Exhaust pile the first time it is played. `TALENT_EXHAUST_2` waits for a second play.
 EXHAUST_TALENT = "TALENT_EXHAUST"
+# The talent that gives a card a chance to start the turn costing 1 less, a discount lost once another card is played.
+LEAD_TALENT = "TALENT_LEAD"
 # Kinds of card that share the deck's tables but never reach a hand. A Persona sits in a slot of its own and
 # an Ego skill is fired from the combatant bar, so neither one's `cost` is an Action Point cost. Leaving them
 # in would put an Ego skill's EP price of 5 beside a card that really does cost 5 Action Points.
@@ -818,11 +820,13 @@ def collect_epiphanies(table, dump_dir, described):
         described: The base descriptions from `collect_descriptions`, by name.
 
     Returns:
-        A dict of card name to its distinct Epiphany texts, in the game's own order.
+        `(epiphanies, lead)`: a dict of card name to its distinct Epiphany texts, in the game's own order, and the same for just the
+        texts whose version carries Lead, which an Epiphany can add to a card or take away.
     """
     cards = load_data_tables(dump_dir, CARD_TABLES)
     effects = load_data_tables(dump_dir, EFFECT_TABLES)
     epiphanies = {}
+    lead = {}
     for spark in sorted(load_data_tables(dump_dir, EPIPHANY_TABLES).values(), key=lambda row: row["change_link_card_id"]):
         name = table.get(cards.get(spark["link_card_id"], {}).get("name") or "")
         version = cards.get(spark["change_link_card_id"], {})
@@ -832,7 +836,9 @@ def collect_epiphanies(table, dump_dir, described):
         text = clean_description(resolve_card_values(raw, version, effects), table)
         if text and text != described.get(name) and text not in epiphanies.get(name, ()):
             epiphanies[name] = epiphanies.get(name, ()) + (text,)
-    return epiphanies
+            if LEAD_TALENT in id_list(version.get(CARD_TALENT_COLUMN)):
+                lead[name] = lead.get(name, ()) + (text,)
+    return epiphanies, lead
 
 
 def collect_divine(table, dump_dir):
@@ -894,12 +900,13 @@ def render(groups, dump_dir):
     return "\n".join(lines)
 
 
-def render_descriptions(described, epiphanies, divine, dump_dir):
+def render_descriptions(described, epiphanies, lead, divine, dump_dir):
     """Build the source of the generated description module.
 
     Args:
         described: A dict of entity name to cleaned description.
         epiphanies: A dict of card name to its Epiphany texts, from `collect_epiphanies`.
+        lead: The same for the texts whose version carries Lead, from `collect_epiphanies`.
         divine: The god and shared Divine Epiphany lines, from `collect_divine`.
         dump_dir: The dump the text came from, recorded in the header.
 
@@ -925,6 +932,11 @@ def render_descriptions(described, epiphanies, divine, dump_dir):
     lines.append("# The text of each Epiphany version a card can take, where it reads differently from the base card. Values as above.")
     lines.append("EPIPHANIES = {")
     lines.extend(f"    {name!r}: {epiphanies[name]!r}," for name in sorted(epiphanies))
+    lines.append("}")
+    lines.append("")
+    lines.append("# The Epiphany texts above whose version has Lead, which an Epiphany can add to a card or take away.")
+    lines.append("EPIPHANY_LEAD = {")
+    lines.extend(f"    {name!r}: {lead[name]!r}," for name in sorted(lead))
     lines.append("}")
     lines.append("")
     gods, shared = divine
@@ -1107,6 +1119,7 @@ def collect_battle(table, dump_dir):
     card_target = {}
     card_sparkable = set()
     card_exhausts = set()
+    card_lead = set()
     for name, row in named.items():
         cost = cost_of(row.get(CARD_COST_COLUMN))
         if cost is not None:
@@ -1119,8 +1132,11 @@ def collect_battle(table, dump_dir):
             card_target[name] = target
         if row.get(CARD_SPARK_COLUMN) == "YES":
             card_sparkable.add(name)
-        if EXHAUST_TALENT in id_list(row.get(CARD_TALENT_COLUMN)):
+        talents = id_list(row.get(CARD_TALENT_COLUMN))
+        if EXHAUST_TALENT in talents:
             card_exhausts.add(name)
+        if LEAD_TALENT in talents:
+            card_lead.add(name)
 
     attributes = collect_attributes(table, dump_dir)
     roster = set(PLAYABLE_COMBATANTS)
@@ -1160,6 +1176,7 @@ def collect_battle(table, dump_dir):
         "CARD_TARGET": card_target,
         "CARD_SPARKABLE": card_sparkable,
         "CARD_EXHAUSTS": card_exhausts,
+        "CARD_LEAD": card_lead,
         "CARD_OWNER": card_owner,
         "COMBATANT_ATTRIBUTE": combatant_attribute,
         "COMBATANT_SPARK_CARDS": combatant_spark_cards,
@@ -1191,6 +1208,8 @@ def render_battle(battle):
                           " against the card it appears on.",
         "CARD_EXHAUSTS": "The cards that go to the Exhaust pile when played, so an Ego that fires on an Exhaust"
                          " knows whether the hand can set it off.",
+        "CARD_LEAD": "The Lead cards, whose lowered cost lasts only until another card is played, so one shown lowered"
+                     " is worth opening the turn with.",
         "CARD_OWNER": "The combatant a card belongs to, recovered from the cards each of them starts and sparks."
                       " A card's attribute is its owner's, so this is how a card comes to have one.",
         "COMBATANT_ATTRIBUTE": "Each combatant's attribute, for matching a card against the weakness an enemy"
@@ -1226,7 +1245,7 @@ def main():
     table = load_table(args.dump)
     groups = [(name, collector(table, args.dump), comment) for name, comment, collector in GROUPS]
     described = collect_descriptions(table, args.dump)
-    epiphanies = collect_epiphanies(table, args.dump, described)
+    epiphanies, lead = collect_epiphanies(table, args.dump, described)
     divine = collect_divine(table, args.dump)
     quality = collect_quality(table, args.dump)
     battle = collect_battle(table, args.dump)
@@ -1234,7 +1253,7 @@ def main():
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUT_PATH.write_text(render(groups, args.dump), encoding="utf-8")
-    OUT_TEXT_PATH.write_text(render_descriptions(described, epiphanies, divine, args.dump), encoding="utf-8")
+    OUT_TEXT_PATH.write_text(render_descriptions(described, epiphanies, lead, divine, args.dump), encoding="utf-8")
     OUT_QUALITY_PATH.write_text(render_quality(quality), encoding="utf-8")
     OUT_BATTLE_PATH.write_text(render_battle(battle), encoding="utf-8")
     OUT_FATES_PATH.write_text(render_fates(fates), encoding="utf-8")

@@ -110,6 +110,23 @@ class TestAffordability(unittest.TestCase):
         lowered = [{**card, "cost": 0} for card in hand(JUSTICE_ATTACK)]
         self.assertEqual(played(cards.plan(lowered, cards.Board(action_points=0))), [JUSTICE_ATTACK])
 
+    def test_a_lowered_lead_card_opens_the_turn(self):
+        # Live, Swiftie went first and ended the Lead discounts. Warming Up opens over Shock Gun since it cheapens the attacks after it.
+        lead = [{"name": name, "cost": 0} for name in ("Scream For Me", "Shock Gun", "Warming Up")]
+        chosen = cards.plan(lead + hand("Growing Creature", "Will of Light"), cards.Board(action_points=4))
+        self.assertEqual(played(chosen)[0], "Warming Up")
+        # Once a card is played the discount is gone, so a stray green read changes nothing and Anika holds Warming Up again.
+        chosen = cards.plan(lead, cards.Board(action_points=4, played=("Knife Toss",)))
+        self.assertNotIn("Warming Up", played(chosen))
+
+    def test_an_epiphany_can_add_or_take_away_lead(self):
+        # Sadistic Restraint has Lead only through an Epiphany, and one of Shock Gun's drops it. A Divine line after the version changes nothing.
+        for name, base_lead in (("Sadistic Restraint", False), ("Shock Gun", True)):
+            flipped = next(text for text in EPIPHANIES[name] if (text in cards.EPIPHANY_LEAD.get(name, ())) != base_lead)
+            for deck, lead in (({}, base_lead), ({name: flipped + "\nA Divine line"}, not base_lead)):
+                with self.subTest(name=name, lead=lead):
+                    self.assertEqual(lead, cards.has_lead(name, cards.Board(deck=deck)))
+
     def test_nothing_affordable_plays_nothing(self):
         self.assertEqual(cards.plan(hand(JUSTICE_ATTACK), cards.Board(action_points=0)), [])
 

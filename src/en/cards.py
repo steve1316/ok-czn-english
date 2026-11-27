@@ -12,10 +12,10 @@ from difflib import SequenceMatcher
 from functools import lru_cache
 from itertools import combinations
 
-from src.en.game_battle import CARD_CATEGORY, CARD_COST, CARD_EXHAUSTS, CARD_OWNER, COMBATANT_ATTRIBUTE, X_COST
+from src.en.game_battle import CARD_CATEGORY, CARD_COST, CARD_EXHAUSTS, CARD_LEAD, CARD_OWNER, COMBATANT_ATTRIBUTE, X_COST
 from src.en.game_quality import COMBATANT_ROLE
 from src.en import kits
-from src.en.game_text import DESCRIPTIONS
+from src.en.game_text import DESCRIPTIONS, EPIPHANIES, EPIPHANY_LEAD
 from src.en.kits.kit import (ATTACK_CATEGORY, PHASE_ATTACK, PHASE_EPIPHANY, PHASE_ESCAPE, PHASE_FREE, PHASE_OTHER, PHASE_PRIME, PHASE_SETUP,
                              PHASE_SPENDS_EVERYTHING, PHASE_UPGRADE, base_name)
 from src.en.quality import fold, in_order, index, one_edit_apart, unconfused
@@ -40,6 +40,8 @@ CLEARING_RESERVE = 1
 CLEARING_MAX_COST = 1
 # A card that gets cheaper for each card Exhausted this turn, as Brand of Annihilation does. The screen never reads it lowered.
 EXHAUST_DISCOUNT = re.compile(r"When a card is Exhausted, decrease Cost of this card by (\d+)", re.I)
+# A played effect that makes other cards cheaper, as every Warming Up does, so a Lead card carrying it opens ahead of the ones it cheapens.
+COST_CUT = re.compile(r"decrease Cost of", re.I)
 # Any effect a card's text can carry names a number, so a text without one - blank, or flavour - does nothing when played.
 INERT_EFFECT = re.compile(r"\d")
 # A card of your own that works just by being held, as Unknown: Mutant Sample's "If in hand, +40% Damage Amount".
@@ -819,6 +821,43 @@ def best_buy(ranked, budget, board):
     return [ranked[index] for index in best]
 
 
+def has_lead(name, board):
+    """Say whether the version of a card the deck holds has Lead, which an Epiphany can add or take away.
+
+    Args:
+        name: The canonical card name.
+        board: The `Board`, whose `deck` holds the version text the last deck read matched, with any Divine lines after it.
+
+    Returns:
+        True when that version has Lead, or the base card does when the deck has not been read.
+    """
+    base = DESCRIPTIONS.get(name, "")
+    held = board.deck.get(name, base)
+    versions = (base, *EPIPHANIES.get(name, ()))
+    version = max((text for text in versions if held == text or held.startswith(text + "\n")), key=len, default=base)
+    return name in CARD_LEAD if version == base else version in EPIPHANY_LEAD.get(name, ())
+
+
+def lead_opener(hand, board):
+    """Pick the Lead card to open the turn with, when the screen shows one lowered and nothing has been played yet.
+
+    Its discount is lost to whichever card goes first, so it is used now or not at all, even by a card a kit would hold. One whose
+    played effect cuts other costs goes first, since the cards it cheapens make up for the Lead discounts it ends.
+
+    Args:
+        hand: Hand cards as `_hand_cards` reads them, after `discounted`.
+        board: The `Board` this is being decided against.
+
+    Returns:
+        The hand card to play first, or None when no lowered Lead card is worth it.
+    """
+    if board.played:
+        return None
+    lowered = [card for card in hand if has_lead(canonical(card["name"]), board) and "cost" in card and price(card) <= board.action_points
+               and worth_playing(card["name"]) and not wasted(card["name"], board)]
+    return min(lowered, key=lambda held: (not COST_CUT.search(on_play(held["name"])), buying_order(held, board)), default=None)
+
+
 def plan(hand, board):
     """Choose the cards to play this turn, in the order to play them.
 
@@ -836,6 +875,12 @@ def plan(hand, board):
     if not board.hand:
         board = board._replace(hand=tuple(canonical(card["name"]) for card in hand))
     hand = [discounted(card, board) for card in hand]
+    opener = lead_opener(hand, board)
+    if opener:
+        # Every other Lead card goes back to its full price once the opener is played.
+        rest = [{key: held for key, held in card.items() if key != "cost" or not has_lead(canonical(card["name"]), board)} for card in hand if card is not opener]
+        after = board._replace(action_points=board.action_points - price(opener), played=board.played + (canonical(opener["name"]),))
+        return [opener] + plan(rest, after)
     playable = (card for card in hand if worth_playing(card["name"]) and not kits.held(canonical(card["name"]), board)
                 and not wasted(card["name"], board))
     budget = board.action_points
