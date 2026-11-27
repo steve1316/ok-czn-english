@@ -15,7 +15,7 @@ from src.en.handlers import StandIn, loaded, register, standing_in, wrap
 from src.en.overrides import EXTRACT_SPARE
 from src.en.quality import EQUIPMENT_INDEX, grade
 from src.en.rewards import EQUIPMENT_KEYS
-from src.en.screen import (COMBATANT_NAME_POINTS, PAGE_CLOSE, centre_of, combatant_names, combatant_slot_points,
+from src.en.screen import (COMBATANT_NAME_POINTS, PAGE_CLOSE, centre_of, combatant_names, combatant_slot_points, lines_in,
                            text_in_region)
 from src.en.state import GEAR, say_once
 
@@ -76,6 +76,11 @@ SPREE_START = 600
 SPREE_END = 300
 # Where the run keeps the shop visit its spree belongs to, so the spree ends with the visit.
 SPREE = "_en_spree"
+# Upstream `handle_shop`'s shelf geometry: the band its credit icons are found in, and where each item's price and name
+# sit from an icon's centre. The name band is (left, top, right, bottom) offsets.
+SHELF_ICONS = (0.019, 0.761, 0.979, 0.890)
+SHELF_PRICE = (0.099, -0.001)
+SHELF_NAME = (-0.013, -0.247, 0.120, -0.105)
 # What the colour read hands back for a slot with nothing in it. `None` means it could not see, which is a
 # different thing and must not be read as room to spare.
 EMPTY_SLOT = ""
@@ -849,8 +854,35 @@ def on_spree(task, credit):
     return False
 
 
+def shelf_within(task, utils, budget):
+    """Read the names of the Dellang shelf's items costing at most `budget`, with prices read the way upstream `handle_shop` reads them.
+
+    Args:
+        task: The running task, on the shop screen.
+        utils: The loaded `utils` module, for its price parser and box lookup.
+        budget: The most an item may cost, in credits.
+
+    Returns:
+        The names as the shelf prints them. Empty off the shop screen.
+    """
+    left, top, right, bottom = SHELF_NAME
+    shelf = []
+    for icon in task.find_feature(feature_name="credit_icon", box=task.box_of_screen(*SHELF_ICONS)) or []:
+        x, y = (icon.x + icon.width / 2) / task.width, (icon.y + icon.height / 2) / task.height
+        price_box = utils.find_box_at_point(task, x + SHELF_PRICE[0], y + SHELF_PRICE[1])
+        price = utils._parse_discounted_price(price_box.name) if price_box else None
+        if price is None or price > budget:
+            continue
+        name = lines_in(task, (max(0.0, x + left), max(0.0, y + top), min(1.0, x + right), min(1.0, y + bottom))).strip()
+        if name:
+            shelf.append(name)
+    return shelf
+
+
 def buying_on_spree(generate, utils_of):
-    """Wrap `rewards.generated_list` so a generated equipment list only offers anything on a spree, for a bare slot.
+    """Wrap `rewards.generated_list` so a generated equipment list only offers pieces for a bare slot.
+
+    On a spree, anything listed is on offer. Off one, only a piece that leaves at least `SPREE_END` credits.
 
     Upstream buys any equipment its priority list names and the run can afford, which spends a run's credits
     on replacing gear it is already wearing. Gating the generated list, rather than the list the shop reads, is what
@@ -871,16 +903,25 @@ def buying_on_spree(generate, utils_of):
         # Read after the list, so a slot nothing is offered for costs no reading at all.
         if slot is None or not listed:
             return listed
-        credit = utils_of()._get_current_credit(task)
-        if not on_spree(task, credit):
-            say_once(task, GEAR, f"{credit} credits and no spree open, so the shelf's equipment is left")
-            return []
+        utils = utils_of()
+        credit = utils._get_current_credit(task)
+        spree = on_spree(task, credit)
         if slot not in bare_slots(task):
             say_once(task, GEAR, f"slot {slot + 1} is filled on every combatant, so its equipment is left")
             return []
-        say_once(task, GEAR, f"slot {slot + 1} is bare and there are {credit} credits, "
-                             f"so the shelf's equipment is on offer until {SPREE_END}")
-        return listed
+        if spree:
+            say_once(task, GEAR, f"slot {slot + 1} is bare and there are {credit} credits, "
+                                 f"so the shelf's equipment is on offer until {SPREE_END}")
+            return listed
+        # Off a spree a bare slot still takes a piece cheap enough to keep the spree's floor in hand.
+        budget = credit - SPREE_END
+        shelf = shelf_within(task, utils, budget)
+        cheap = [name for name in listed if any(utils._match_equipment_name(shown, [name])[0] for shown in shelf)]
+        if not cheap:
+            say_once(task, GEAR, f"{credit} credits and no spree open, so the shelf's equipment is left")
+            return []
+        say_once(task, GEAR, f"slot {slot + 1} is bare, so equipment costing up to {budget} of the {credit} credits is on offer")
+        return cheap
 
     return generated
 
