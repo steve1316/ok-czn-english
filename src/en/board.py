@@ -126,6 +126,9 @@ STATUS_ROW = (0.01, 0.005, 0.17, 0.07)
 # Where an enemy's HP number sits, as offsets from its counter's centre. A counter with no number there is scenery in the same magenta.
 HEALTH_NUMBER = (0.03, -0.05, 0.12, 0.0)
 HEALTH_DIGITS = re.compile(r"^\d+$")
+# How many times the HP of every other unsummoned enemy the boss must have, when one besides it carries no summoned mark.
+# Live, a boss at 9312 stood beside an unmarked 659 with an infinite counter, and no attack was aimed at all.
+BOSS_LEAD = 3
 # Where the ring a raised attack card puts over its target can be centred. Below it, the raised card's own art can hold a ring of the same size.
 RETICLE_BAND = (0.30, 0.25, 1.00, 0.60)
 # The ring's radius as a share of the frame height, 74 to 77px at 1080p in both captures, white or cyan by who plays the card.
@@ -468,7 +471,8 @@ def boss_x(task):
         task: The running task, whose `all_texts` holds each enemy's HP number.
 
     Returns:
-        The x of the HP number of the one enemy on screen not marked as summoned, or None unless at least one is and exactly one is not.
+        The x of the HP number of the enemy not marked as summoned with `BOSS_LEAD` times the HP of every other unmarked one, or None
+        when no enemy is marked or none leads by that much.
     """
     frame = frame_of(task)
     height = frame.shape[0] if frame is not None else 0
@@ -483,8 +487,13 @@ def boss_x(task):
         if any(icon_match(row, path, height) >= SUMMONED_MATCH for path in SUMMONED_IMAGES):
             summoned += 1
         else:
-            unsummoned.append(centre_of(number, task.width, task.height)[0])
-    return unsummoned[0] if summoned and len(unsummoned) == 1 else None
+            unsummoned.append((int(number.name), centre_of(number, task.width, task.height)[0]))
+    if not summoned or not unsummoned:
+        return None
+    unsummoned.sort(reverse=True)
+    if len(unsummoned) > 1 and unsummoned[0][0] < BOSS_LEAD * unsummoned[1][0]:
+        return None
+    return unsummoned[0][1]
 
 
 def reticle_x(frame):
