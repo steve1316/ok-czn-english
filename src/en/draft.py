@@ -25,6 +25,9 @@ SUPPORTING = ("Healing", "Protection", "Support")
 ROLES = DAMAGE + SUPPORTING
 # The team size at which the draft goes back to damage, so the fourth pick wants a Core, then an Attack.
 FOURTH_PICK = 3
+# The team size of the third pick, which takes a Healer over damage when a Protector or Supporter filled the support slot.
+THIRD_PICK = FOURTH_PICK - 1
+HEALING = "Healing"
 # The badge readings for each role. `Attack` reaches us as 攻击力, because the catalog rewrites that word for the
 # card type label and the equipment stat row, which share it.
 ROLE_READINGS = {"Core": ("core",), "Attack": ("attack", "攻击力"), "Support": ("support",),
@@ -62,7 +65,9 @@ def role_of(text):
 def wanted(party):
     """Name the roles a team still lacks, best first.
 
-    A team wants a damage dealer first, then one Healer, Protector or Supporter, then damage again. The fourth pick always wants damage.
+    A team wants a damage dealer first, then a Healer, rerolling for one before it settles for a Protector or Supporter, then damage
+    again. A team still without a Healer at the third pick takes one before damage, but never rerolls for one. The fourth pick always
+    wants damage.
 
     Args:
         party: Names of the combatants on the team, from `battle.PARTY`.
@@ -71,9 +76,13 @@ def wanted(party):
         A tuple of roles, best first.
     """
     have = {COMBATANT_ROLE.get(name) for name in party}
-    if len(party) >= FOURTH_PICK or not have & set(DAMAGE) or have & set(SUPPORTING):
+    if len(party) >= FOURTH_PICK or not have & set(DAMAGE):
         return DAMAGE
-    return SUPPORTING
+    if not have & set(SUPPORTING):
+        return (HEALING,)
+    if len(party) == THIRD_PICK and HEALING not in have:
+        return (HEALING,) + DAMAGE
+    return DAMAGE
 
 
 def rank(role, wants=()):
@@ -84,9 +93,11 @@ def rank(role, wants=()):
         wants: The roles the team lacks, as `wanted` returns them.
 
     Returns:
-        The wanted roles first in their own order, then the rest of `ROLES`, then an unread role.
+        The wanted roles first in their own order, then the rest of the first wanted role's group, so a team wanting a Healer settles
+        for a Protector before damage, then the rest of `ROLES`, then an unread role.
     """
-    order = wants + tuple(other for other in ROLES if other not in wants)
+    group = next((roles for roles in (DAMAGE, SUPPORTING) if wants and wants[0] in roles), ())
+    order = tuple(dict.fromkeys(wants + group + ROLES))
     return order.index(role) if role in order else len(order)
 
 

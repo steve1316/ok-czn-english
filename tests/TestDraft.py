@@ -142,11 +142,18 @@ class TestDraft(unittest.TestCase):
         """A second damage dealer is only a fallback once the rerolls are spent."""
         cases = [
             # (team, offers, can reroll, expected pick or None for a reroll)
-            ({"Hugo"}, ("Beryl", "Hilde", "Khalipe"), True, "Khalipe"),
+            # The second pick rerolls for a Healer, then settles for a Protector or Supporter before more damage.
             ({"Hugo"}, ("Khalipe", "Mika", "Cassius"), True, "Mika"),
+            ({"Hugo"}, ("Beryl", "Hilde", "Khalipe"), True, None),
+            ({"Hugo"}, ("Rin", "Cassius", "Khalipe"), False, "Khalipe"),
             # One Healer, Protector or Supporter fills the support slot, so the team goes back to damage.
             ({"Hugo", "Mika"}, ("Cassius", "Khalipe", "Rin"), True, "Rin"),
-            ({"Hugo", "Cassius"}, ("Mika", "Khalipe", "Rin"), True, "Rin"),
+            # A Protector or Supporter leaves the team without healing, so the third pick takes a Healer on offer.
+            ({"Hugo", "Cassius"}, ("Mika", "Khalipe", "Rin"), True, "Mika"),
+            ({"Hugo", "Khalipe"}, ("Rin", "Tiphera", "Beryl"), True, "Tiphera"),
+            # It never rerolls to find one: damage is taken instead.
+            ({"Hugo", "Khalipe"}, ("Rin", "Cassius", "Beryl"), True, "Rin"),
+            ({"Hugo", "Mika", "Khalipe"}, ("Tiphera", "Rin", "Beryl"), True, "Rin"),
             ({"Hugo"}, ("Beryl", "Rin", "Hilde"), True, None),
             ({"Hugo"}, ("Beryl", "Rin", "Hilde"), False, "Rin"),
             ({"Mika"}, ("Khalipe", "Beryl", "Cassius"), True, "Beryl"),
