@@ -11,8 +11,11 @@ from src.en.kits.kit import PHASE_SETUP, Kit, base_name, count, owned
 TIME_PARADOX = "Time Paradox"
 # The battle-long buff that turns spent AP into Chronicle, so nothing Time Paradox converts exists before it is out.
 CHRONO_ARCHON = "Chrono Archon"
-# A random 3-Cost card is a gamble outside a hand built for it, so the plain card stays in hand. An Epiphany version is left to the generic picker.
+# Raises a 2-Cost or lower card in hand by 1, then procs a random 3-Cost card, so the plain card waits for a 2- or 3-Cost card in hand.
+# An Epiphany version is left to the generic picker.
 FUTURE_DECREED = "Future Decreed"
+# The Costs a card in hand needs for Future Decreed to proc it: 3 already, or 2 once raised.
+PROC_COSTS = (2, 3)
 # Chrono Circle's creation, which deals its damage once for each point of its Cost. Playing one raises the Cost of the rest in hand by 1.
 FATE_IMPRINT = "Fate Imprint"
 # Worth the Fate Imprints it creates, which the generic picker cannot see, so it rated a flat 100 and sat in hand.
@@ -20,6 +23,18 @@ CHRONO_CIRCLE = "Chrono Circle"
 CREATED = 2
 # Cards played before Time Paradox has Chronicle from this turn's spending to convert.
 PLAYED_FIRST = 2
+
+
+def proc_targets(board):
+    """List the other cards in hand that Future Decreed could proc.
+
+    Args:
+        board: The `cards.Board` of the turn.
+
+    Returns:
+        The hand's cards with a 2 or 3 Cost, Future Decreed itself left out.
+    """
+    return [other for other in board.hand if other != FUTURE_DECREED and CARD_COST.get(base_name(other)) in PROC_COSTS]
 
 
 def archon_waiting(board):
@@ -35,17 +50,17 @@ def archon_waiting(board):
 
 
 class Rita(Kit):
-    """Plays Chrono Archon first, keeps Time Paradox for after the turn's first plays, and Future Decreed for good."""
+    """Plays Chrono Archon first, keeps Time Paradox for after the turn's first plays, and Future Decreed until it has a card to proc."""
 
     name = "Rita"
     # Fate Imprint too, which the data gives no owner since Chrono Circle creates it.
     cards = owned("Rita") | {FATE_IMPRINT}
     # After Chrono Archon, so it counts the AP, and before the cards whose Cost it counts leave the hand. Chrono Circle goes early so
     # its Fate Imprints arrive while the turn still has AP for them.
-    places = {"Time Axis Collapse": PHASE_SETUP + 0.5, CHRONO_CIRCLE: PHASE_SETUP}
+    places = {"Time Axis Collapse": PHASE_SETUP + 0.5, CHRONO_CIRCLE: PHASE_SETUP, FUTURE_DECREED: PHASE_SETUP}
 
     def held(self, name, board):
-        """Keep Time Paradox until cards have been played to build Chronicle, and the plain Future Decreed always.
+        """Keep Time Paradox until cards have been played to build Chronicle, and the plain Future Decreed until a card can be procced.
 
         Args:
             name: The card in question.
@@ -55,7 +70,7 @@ class Rita(Kit):
             True to keep the card in hand.
         """
         if name == FUTURE_DECREED:
-            return True
+            return not proc_targets(board)
         if base_name(name) != TIME_PARADOX:
             return False
         if archon_waiting(board):
@@ -66,7 +81,8 @@ class Rita(Kit):
         return any(base_name(other) != TIME_PARADOX and other != FUTURE_DECREED for other in board.hand)
 
     def worth(self, name, board, base, rate):
-        """Price the first Chrono Archon above the rest of the hand, Fate Imprint at its Cost this turn, and Chrono Circle at its Imprints.
+        """Price the first Chrono Archon above the rest of the hand, Fate Imprint at its Cost, Chrono Circle at its Imprints, and Future
+        Decreed at the least of the cards it could proc.
 
         Args:
             name: The card being valued.
@@ -79,6 +95,8 @@ class Rita(Kit):
         """
         if base_name(name) == FATE_IMPRINT:
             return base * (CARD_COST[FATE_IMPRINT] + count(board.played, {FATE_IMPRINT}))
+        if name == FUTURE_DECREED and proc_targets(board):
+            return min(rate(other) for other in proc_targets(board))
         if base_name(name) == CHRONO_CIRCLE:
             return max(base, CREATED * self.worth(FATE_IMPRINT, board, rate(FATE_IMPRINT), rate))
         if base_name(name) != CHRONO_ARCHON or not archon_waiting(board):

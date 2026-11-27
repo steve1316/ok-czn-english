@@ -1076,7 +1076,7 @@ class TestKits(unittest.TestCase):
         ))
 
     def test_rita_builds_chronicle_before_time_paradox(self):
-        """Time Paradox converts Chronicle that spent AP builds, Time Axis Collapse counts the Cost left in hand, and Future Decreed is a gamble."""
+        """Time Paradox converts the Chronicle spent AP builds, Time Axis Collapse counts Cost in hand, Future Decreed waits for a proc."""
         self.plays((
             # Generic play converts at once, when this turn has built no Chronicle to convert.
             ("Time Paradox waits for other plays", ("Time Paradox", "Anchor", "Time Axis Collapse"), cards.Board(), ["Time Axis Collapse", "Anchor"]),
@@ -1088,6 +1088,10 @@ class TestKits(unittest.TestCase):
              ["Time Axis Collapse", "Break Armor"]),
             # Generic play plays it as a skill and gets a random 3-Cost card.
             ("Future Decreed stays in hand", ("Future Decreed", "Anchor"), cards.Board(), ["Anchor"]),
+            # Live, 11 turns ended with points spare while it sat beside Time Acceleration.
+            ("Future Decreed procs a 3-Cost card", ("Time Acceleration", "Future Decreed"), cards.Board(action_points=1), ["Future Decreed"]),
+            ("Future Decreed procs a 2-Cost card it raises", ("Anchor", "Future Decreed", "Time Axis Collapse"), cards.Board(action_points=1),
+             ["Future Decreed"]),
             # Live, Gear Bag and an attack took the battle's points while Chrono Archon sat in hand, and Time Paradox converted nothing.
             ("Chrono Archon goes ahead of an attack", ("Slash", "Chrono Archon"), cards.Board(action_points=1), ["Chrono Archon", "Slash"]),
             ("Time Paradox waits for Chrono Archon", ("Time Paradox", "Chrono Archon"), cards.Board(action_points=1, played=("Slash", "Slash")),
