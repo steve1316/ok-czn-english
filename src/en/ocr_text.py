@@ -168,6 +168,11 @@ def fix_for(translation, text):
         fix = lookup.get(key)
         if fix is not None and fix != text:
             return fix
+    # A full stop read between words, as "Dellang. Shop" left the Safe Zone without shopping. Tried on the reading only, since in the
+    # catalog's own keys a msgid with a full stop could take the key of one without.
+    fix = lookup.get(text.replace(".", "").replace(" ", "").casefold())
+    if fix is not None and fix != text:
+        return fix
     # Trimming is lossy, so it stays behind the length guard: it is what could turn a sentence into a match.
     if len(text) <= MAX_LENGTH:
         for key in normalised_forms(text):
@@ -187,10 +192,12 @@ def pattern_fix(text):
         The Chinese literal the handler compares against, or None when no rule applies.
     """
     stripped = text.strip()
-    for pattern, template in PATTERNS:
-        found = pattern.match(stripped)
-        if found:
-            return template.format(*found.groups())
+    # The caption's icon can read as a glyph glued to its front. Live, "回select 2 card(s) to apply to." froze a turn for 40s.
+    for start in range(MAX_PREFIX + 1):
+        for pattern, template in PATTERNS:
+            found = pattern.match(stripped[start:].strip())
+            if found:
+                return template.format(*found.groups())
     return None
 
 

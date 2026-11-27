@@ -150,6 +150,8 @@ class TestOcrNormalisation(unittest.TestCase):
             ("Select 1 card(s) toExhaust.", "请选择1张卡牌"),
             ("Select up to 2 card(s) toExhaust.", "请选择至多2张卡牌"),
             ("Select 1 card(s) to place in hand.", "请选择1张放入手牌的卡牌"),
+            # The icon read as a glyph glued to the front, which left a turn frozen for 40s.
+            ("回select 2 card(s) to apply to.", "请选择2张卡牌"),
             ("Select second Combatant to join.", "请选择加入的主战员"),
             ("Select fourth Combatant to join.", "请选择加入的主战员"),
             # The ordinal is drawn in another colour, and OCR usually reads it glued to the word before.
@@ -219,6 +221,12 @@ class TestOcrNormalisation(unittest.TestCase):
                 continue
             with self.subTest(msgid=msgid):
                 self.assertEqual(msgstr, self.fix(msgid.rstrip(".")))
+
+    def test_a_full_stop_between_words_is_ignored(self):
+        """Live, the Safe Zone was left without shopping because its button read with a full stop inside."""
+        for reading in ("Dellang. Shop", "Dellang.Shop"):
+            with self.subTest(reading):
+                self.assertEqual("德朗商店", self.fix(reading))
 
     def test_a_full_stop_is_not_invented(self):
         """Stripping punctuation must not let an unrelated caption match a shorter msgid."""
