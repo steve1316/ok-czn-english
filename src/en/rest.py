@@ -28,10 +28,12 @@ SHOP_SETTING = "进入商店"
 # What a fresh status holds for `SHOP` until a handler that can read the setting fills it in. Falsy, so upstream
 # reading it before then still sees "do not enter".
 UNDECIDED = None
-# The count the safe zone prints along its bottom edge, as "Available Safe Zone Interactions: 1". Matched
-# loosely because only the number is load bearing, and read as text rather than at a point because the line
-# moves with its own length. Shops are exempt from the count, which is why only rest and meditate consult it.
-INTERACTIONS = re.compile(r"safe\s*zone\s*interactions\W*?(\d+|[|!lIi'])", re.I)
+# The line the safe zone prints along its bottom edge, with or without its count. The count is drawn orange, and live OCR dropped it,
+# so the free Epiphany was walked past.
+SAFE_ZONE_LINE = re.compile(r"safe\s*zone\s*interactions", re.I)
+# The count on that line, as "Available Safe Zone Interactions: 1". Matched loosely because only the number is load bearing, and read as
+# text rather than at a point because the line moves with its own length. Shops are exempt from the count, so only rest and meditate read it.
+INTERACTIONS = re.compile(SAFE_ZONE_LINE.pattern + r"\W*?(\d+|[|!lIi'])", re.I)
 # What OCR has read a lone "1" as at the end of that line: "Interactions:'". Only a read 0 means none are left.
 ONE_GLYPHS = "|!lIi'"
 # The game's own warning on leaving a safe zone unused, read in English off the Global client. Its Cancel stays, and it is the one sure sign
@@ -204,8 +206,8 @@ def free_epiphany_handler(utils):
         The handler.
     """
     def handle_free_epiphany(task):
-        # Battle frames reach this too, and a search that misses costs ~90ms at 1080p against ~2us for this read. A count of 0 still searches.
-        if interactions_left(task) is None:
+        # Battle frames reach this too, and a search that misses costs ~90ms at 1080p against ~2us for this read. Any count, or none, still searches.
+        if not any(SAFE_ZONE_LINE.search(box.name) for box in getattr(task, "all_texts", None) or []):
             return False
         icon = task.find_one(feature_name=FREE_EPIPHANY, box=task.box_of_screen(*FREE_EPIPHANY_REGION))
         if not icon:
