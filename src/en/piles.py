@@ -30,6 +30,8 @@ TITLE_REGION = (0.05, 0.0, 0.3, 0.1)
 COLUMNS = ((0.315, 0.461), (0.481, 0.627), (0.646, 0.792), (0.810, 0.956))
 # How far below a card name's centre its type label sits, which tells a name from a card named inside another card's text.
 LABEL_GAP = (0.01, 0.045)
+# What a Basic card's label holds, in the English the view draws and the Chinese `ocr.po` rewrites it into.
+BASIC_LABELS = ("basic", "基础")
 # Where a card's effect text sits below its name's centre. A card whose text runs off the bottom is read on a later page.
 TEXT_BAND = (0.05, 0.35)
 # Names above this are under the title bar.
@@ -188,7 +190,8 @@ def cards_on_page(task):
         task: The running task, whose `all_texts` holds this page's OCR pass.
 
     Returns:
-        `(name, text, y)` for each card whose name, type label and text are all on screen, `y` being the name's centre.
+        `(name, text, y, basic)` for each card whose name, type label and text are all on screen, `y` being the name's centre and
+        `basic` whether the label reads Basic.
     """
     centres = [(box, *centre_of(box, task.width, task.height)) for box in task.all_texts]
     found = []
@@ -198,9 +201,12 @@ def cards_on_page(task):
             name = cards.canonical(box.name)
             if name not in cards.CARD_COST or not TITLE_BAR < y < 1 - TEXT_BAND[1]:
                 continue
-            if not any(LABEL_GAP[0] < other_y - y < LABEL_GAP[1] and cards.looks_like_label(fold(other.name)) for other, other_y in column):
+            label = next((other for other, other_y in column
+                          if LABEL_GAP[0] < other_y - y < LABEL_GAP[1] and cards.looks_like_label(fold(other.name))), None)
+            if label is None:
                 continue
-            found.append((name, lines_in(task, (left, y + TEXT_BAND[0], right, y + TEXT_BAND[1])), round(y, 2)))
+            basic = any(word in fold(label.name) for word in BASIC_LABELS)
+            found.append((name, lines_in(task, (left, y + TEXT_BAND[0], right, y + TEXT_BAND[1])), round(y, 2), basic))
     return found
 
 
@@ -214,30 +220,32 @@ def read_piles(task, utils):
     Returns:
         Canonical card name to a `Counter` of the version texts its copies matched. Pages overlap, so a version counts the most copies
         of it any one page showed, which can miss a copy two rows away. Then canonical card name to its Retrieves, which each copy keeps
-        its own of, counted the same way.
+        its own of, counted the same way. Then the names of the cards labelled Basic.
     """
     copies = {}
     retrieves = {}
+    basics = set()
     last_page = None
     for _ in range(MAX_PAGES):
         raw_ocr(task)
         page = cards_on_page(task)
         # The same names at the same heights means the scroll did not move, so this is the bottom.
-        where = [(name, y) for name, _, y in page]
+        where = [(name, y) for name, _, y, _ in page]
         if where == last_page:
             break
-        for (name, version), number in Counter((name, version_of(name, text)) for name, text, _ in page).items():
+        for (name, version), number in Counter((name, version_of(name, text)) for name, text, _, _ in page).items():
             held = copies.setdefault(name, Counter())
             held[version] = max(held[version], number)
         on_page = Counter()
-        for name, text, _ in page:
+        basics.update(name for name, _, _, basic in page if basic)
+        for name, text, _, _ in page:
             retrieve = RETRIEVE.search(text)
             on_page[name] += int(retrieve.group(1) or 1) if retrieve else 0
         for name, number in on_page.items():
             retrieves[name] = max(retrieves.get(name, 0), number)
         last_page = where
         utils._scroll_card_page(task, *SCROLL_POINT, SCROLL_AMOUNT, "All Piles")
-    return copies, retrieves
+    return copies, retrieves, basics
 
 
 def read_deck(task, utils):
@@ -253,8 +261,9 @@ def read_deck(task, utils):
     if text_in_region(task, TITLE, TITLE_REGION) is None:
         logger.warning("tapped the deck icon but All Piles did not open, keeping the last deck read")
         return
-    copies, retrieves = read_piles(task, utils)
+    copies, retrieves, basics = read_piles(task, utils)
     cards.use_deck(copies, retrieves)
+    cards.BASICS.update(basics)
     epiphanies = sorted(name for name, texts in copies.items() if set(texts) - {DESCRIPTIONS.get(name)})
     logger.info(f"read {len(copies)} distinct cards off All Piles, {len(epiphanies)} with an Epiphany: {epiphanies}")
     logger.debug(f"deck read: {sorted(copies)}")

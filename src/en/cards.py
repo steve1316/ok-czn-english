@@ -110,6 +110,8 @@ COPIES = {}
 DECK = {}
 # How many times a battle a card comes back to hand after it is played, by canonical name, summed over its copies, from the deck read.
 RETRIEVES = {}
+# Every card the deck read has seen labelled Basic, by canonical name. Kept across reads and runs, since a card's type never changes.
+BASICS = set()
 # Every card `DECK` can put in hand, its own and those their effects create, from `holdable`. Rebound with `DECK`, and frozen so `canonical` can cache on it.
 HELD = frozenset()
 

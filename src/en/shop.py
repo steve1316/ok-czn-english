@@ -3,13 +3,15 @@
 Upstream walks into the shop however few credits the run holds, and its free refresh rerolls whenever nothing on
 the shelf matches - dead time when nothing could be paid for. The shelf also wraps long names onto two lines, which
 upstream glues in OCR order ("JudgmentInstant"), so no name ever matched them. A negative paid threshold reads as "never".
-Upstream also has no way to keep its credits off cards for removals and equipment.
+Upstream also has no way to keep its credits off cards for removals and equipment, and its removal takes any card once no Curse or Basic is found.
 """
 
 import sys
+import time
 
 from ok import Logger
 
+from src.en import cards
 from src.en.handlers import answering, loaded, register, standing_in, wrap
 from src.en.rest import GATED_ON_FLAG as SAFE_ZONES
 from src.en.screen import in_region, lines_in, text_in_region
@@ -46,6 +48,25 @@ BUY_CARDS = "Buy Shop Cards"
 OLD_BUY_CARDS = "Buy Monster Cards"
 # The fork's switch for taking Monster Cards off a battle's card reward, which `src/en/rewards.py` reads. On by default, as upstream takes them.
 TAKE_MONSTER_REWARDS = "Take Monster Card Rewards"
+# The mode whose shop removals only take a Curse or Basic card. Chaos keeps upstream's pick.
+SORTIE_MODE = "SortieMode"
+# The shelf's removal caption as `handle_shop` taps it, and the action `select_card` is handed for the prompt that tap opens.
+REMOVE_CARD = "移除卡牌"
+REMOVE = "移除"
+# The word a Basic card's type label carries, as upstream's `select_card` looks it up through `_get_game_text`.
+BASIC = "基础"
+# Upstream's switch for that Basic search, which the Settings no longer show. Read as on, so a removal held to Basics can find one.
+PREFER_BASIC = "优先移除基础牌"
+# The deck features upstream's `select_card` reads as a Curse, which it takes at the bottom of the deck ahead of any Basic.
+CURSE_FEATURES = ("hex_in_deck", "hex_in_deck_tw")
+# A Curse card's category, as `cards.category` gives it.
+CURSE = "CURSE"
+# The task attribute holding when the shop's removal was tapped, and how long after that a removal prompt still counts as the shop's.
+# The prompt opens ~2s after the tap, and a run cannot leave the shop and reach another removal this quickly.
+REMOVAL_TAPPED_AT = "_shop_removal_tapped_at"
+REMOVAL_SECONDS = 30.0
+REMOVAL_TAG = "shop removal tap"
+BASIC_TAG = "Curse or Basic shop removal"
 
 _patched = False
 
@@ -211,6 +232,81 @@ def never_paying(handler, utils):
     return wrapped
 
 
+def marking_removal(handler):
+    """Wrap `handle_shop` so a Sortie tap on the removal is remembered for the card prompt it opens, and held back once nothing is left to remove.
+
+    Upstream marks the removal spent as it taps, so a held-back tap leaves the shop to buy on the next frame without paying for it.
+
+    Args:
+        handler: The handler to wrap, upstream's or another patch's.
+
+    Returns:
+        The wrapped handler.
+    """
+    def wrapped(task):
+        if type(task).__name__ != SORTIE_MODE:
+            return handler(task)
+        click_box = task.click_box
+
+        def marking(box, *args, **kwargs):
+            if REMOVE_CARD in (getattr(box, "name", None) or ""):
+                if nothing_to_remove():
+                    say_once(task, GEAR, "the deck holds no Curse or Basic card, so the shop's removal is left")
+                    return None
+                setattr(task, REMOVAL_TAPPED_AT, time.monotonic())
+            return click_box(box, *args, **kwargs)
+
+        with standing_in(task, click_box=marking):
+            return handler(task)
+
+    return wrapped
+
+
+def nothing_to_remove():
+    """Say whether the deck read holds no card the shop's removal would take.
+
+    Returns:
+        True once a deck has been read and none of its cards is a Curse or one labelled Basic. False before any read.
+    """
+    return bool(cards.COPIES) and not any(name in cards.BASICS or cards.category(name) == CURSE for name in cards.COPIES)
+
+
+def basic_only(select_card, utils):
+    """Wrap `select_card` so a removal the shop opened takes only a Curse or Basic card, and cancels when none is left.
+
+    Every other card is hidden from upstream's pick, which then finds no card on the removal list, no Curse and no Basic, and presses
+    Cancel rather than take whatever is left.
+
+    Args:
+        select_card: The function to wrap, upstream's or another patch's.
+        utils: The module holding `recognize_cards_in_deck` and `_get_game_text`.
+
+    Returns:
+        The wrapped function.
+    """
+    def wrapped(task, card_names, count=1, action=""):
+        tapped = getattr(task, REMOVAL_TAPPED_AT, None)
+        if action != REMOVE or tapped is None or time.monotonic() - tapped > REMOVAL_SECONDS:
+            return select_card(task, card_names, count=count, action=action)
+        basic = utils._get_game_text(task, BASIC)
+        recognise = utils.recognize_cards_in_deck
+
+        def removable(*args, **kwargs):
+            return [card for card in recognise(*args, **kwargs) if card.get("feature_name") in CURSE_FEATURES or basic in (card.get("type") or "")]
+
+        # Upstream takes a Basic only after scrolling to the bottom of the deck and back up. Named, one is taken on the page it is seen.
+        names = sorted(name for name in cards.COPIES if cards.category(name) == CURSE) + sorted(cards.BASICS)
+        say_once(task, GEAR, "the shop's removal takes only a Curse or Basic card, and cancels when none is left")
+        with standing_in(utils, recognize_cards_in_deck=removable), answering(utils, PREFER_BASIC, lambda _task, _value: True):
+            done = select_card(task, names, count=count, action=action)
+        # Kept on a False, which leaves the prompt up for the next frame to try again under the same rule.
+        if done:
+            setattr(task, REMOVAL_TAPPED_AT, None)
+        return done
+
+    return wrapped
+
+
 def install(utils):
     """Wrap the shop handler wherever the run reaches it.
 
@@ -229,6 +325,8 @@ def install(utils):
     wrap(utils, "handle_shop", lambda handler: leaving_cards(handler, utils), CARDS_TAG)
     wrap(utils, "handle_shop", lambda handler: reading_names_whole(handler, utils), NAMES_TAG)
     wrap(utils, "handle_shop", lambda handler: never_paying(handler, utils), NEVER_PAID_TAG)
+    wrap(utils, "handle_shop", marking_removal, REMOVAL_TAG)
+    wrap(utils, "select_card", lambda select_card: basic_only(select_card, utils), BASIC_TAG)
     for module_name, handler_name in SAFE_ZONES.items():
         wrap(loaded(module_name), handler_name, lambda handler: skipping_poor_shop(handler, utils), ENTRY_TAG)
 
