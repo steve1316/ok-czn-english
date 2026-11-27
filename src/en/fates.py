@@ -6,8 +6,8 @@ one whose follow-up it skips as readily as a free Legendary weapon. Sortie and C
 
 from ok import Logger
 
-from src.en.events import fold
 from src.en.handlers import StandIn, loaded, register, standing_in, wrap
+from src.en.quality import fold, word_table
 from src.en.screen import same_line
 
 logger = Logger.get_logger(__name__)
@@ -71,6 +71,8 @@ CHAOS_TIERS = {
 # Each mode's folded Fate names, mapped to their tier.
 SORTIE_RANKS = {fold(name): tier for tier, names in SORTIE_TIERS.items() for name in names}
 CHAOS_RANKS = {fold(name): tier for tier, names in CHAOS_TIERS.items() for name in names}
+# Each Sortie Fate's folded words and tier, for `quality.longest_named`.
+SORTIE_WORDS = word_table((name, tier) for tier, names in SORTIE_TIERS.items() for name in names)
 
 _patched = False
 

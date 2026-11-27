@@ -11,7 +11,7 @@ import cv2
 import numpy as np
 from ok import Logger
 
-from src.en import desire, farm_start
+from src.en import desire, farm_start, fates, quality
 from src.en.handlers import StandIn, insert_before, loaded, register, standing_in, wrap
 from src.en.memory_limit import CANCEL, CANCEL_REGION
 from src.en.screen import centre_of, frame_of, lines_in, text_in_region, white_mask
@@ -29,9 +29,11 @@ QUIT = ("end the event",)
 ATTACK = ("initiate battle",)
 # An option leading into a follow-up event, named in brackets: "Event Encounter: [Interpretation of the Ending]".
 ENCOUNTER = ("event encounter",)
-# An option that only reads out lore, worded "Check Information [Their Intentions]" or "Check information on Types of
-# Pheromones". Captured from runs rather than read out of the client's tables, so two known wordings and not the whole set.
-DIALOGUE = ("check information",)
+# An option that only reads out lore, worded "Check Information [Their Intentions]", "Check [Lost Memories] Information" or
+# "Confirm information on The Suspicious One's Identity". The verb and subject need not touch, since a bracketed name can split them.
+# The verb is needed because "Extract information" and "Request information" hand over cards.
+DIALOGUE = ("check", "confirm")
+DIALOGUE_SUBJECT = ("information",)
 # An event handing out a Desire card says so. The faction is named separately, and both have to be present:
 # "Claim" and "Control" are ordinary English words that turn up in options having nothing to do with Desire.
 DESIRE = ("desire",)
@@ -73,6 +75,13 @@ CURSE_RANK = HEALTH_COST_RANK
 # Worse than quitting. Ending the event at least moves the run on, while reading lore puts the same screen
 # straight back up.
 DIALOGUE_RANK = 9
+# An option handing over a Fate it names. A random pick of three Fates ranks as a reward, so a named Fate worth less than that is ranked
+# below it: one that only pays out in a deck the run rarely has with the credits, and one that adds a Curse, Penance or Distrust with them.
+FORETOLD = ("foretold fate",)
+FATE_TIER_RANKS = {fates.WEAK: CREDIT_RANK, fates.AVOID: CURSE_RANK}
+# Equipment rarities that settle a tie between options, best first. An option counts by the equipment it names or the rarity it spells out,
+# as in "Obtain random Legendary Equipment". A tie between options naming none of them stays random.
+TIE_RARITIES = ("LEGEND", "UNIQUE")
 
 # `_get_region_text` glues the OCR boxes together with no separator and in an unstable order, and the reader
 # loses or invents spaces at line breaks - the same option was captured as "Spark an Epiphany for a" and
@@ -193,7 +202,9 @@ def rank(description, target=None):
     # After the spark, which is worth carrying a Curse for, and ahead of the "obtain" that would rank it a reward.
     if contains(text, CURSE):
         return CURSE_RANK
-    if contains(text, DIALOGUE):
+    if contains(text, FORETOLD) and (tier := quality.longest_named(fates.SORTIE_WORDS, text)) in FATE_TIER_RANKS:
+        return FATE_TIER_RANKS[tier]
+    if contains(text, DIALOGUE) and contains(text, DIALOGUE_SUBJECT):
         return DIALOGUE_RANK
     if contains(text, QUIT):
         return QUIT_RANK
@@ -212,6 +223,20 @@ def rank(description, target=None):
     # Anything unrecognised counts as a reward. Most options naming no known marker still hand something over,
     # and ranking them below a battle would trade a real gain for a fight.
     return REWARD_RANK
+
+
+def tie_order(description):
+    """Order options tied on rank by the rarest equipment each names or spells out, lowest first.
+
+    Args:
+        description: The option text.
+
+    Returns:
+        The index in `TIE_RARITIES` of the rarity it names, or the length of `TIE_RARITIES` when it names none of those.
+    """
+    text = fold(description)
+    rarity = quality.longest_named(quality.EQUIPMENT_WORDS, text) or next((tier for tier in TIE_RARITIES if tier.casefold() in text), None)
+    return TIE_RARITIES.index(rarity) if rarity in TIE_RARITIES else len(TIE_RARITIES)
 
 
 def credits(description):
@@ -613,7 +638,10 @@ class RankingChoice(StandIn):
             return self.original.choice(sequence)
         best = min(rank(option["description"], self.target) for option in options)
         candidates = [option for option in options if rank(option["description"], self.target) == best]
-        # Ties stay random so a repeated event does not always take an identical path.
+        # Live, a free Rare tied a 50-credit Legend and the pick was left to chance. Past the rarity ties stay random,
+        # so a repeated event does not always take an identical path.
+        ties = [tie_order(option["description"]) for option in candidates]
+        candidates = [option for option, tie in zip(candidates, ties) if tie == min(ties)]
         chosen = self.original.choice(candidates)
         logger.info(f"ranked {len(options)} options, {len(candidates)} tied at rank {best}, taking: "
                     f"{chosen['description']}")

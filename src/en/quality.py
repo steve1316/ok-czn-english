@@ -236,6 +236,37 @@ EQUIPMENT_INDEX = index(EQUIPMENT_RARITY)
 COMBATANT_INDEX = index(COMBATANT_CLASS)
 
 
+def word_table(pairs):
+    """Turn names into folded word lists for `longest_named`, longest name first, so "Distortion: Pale Eternal Flame" beats "Pale Eternal Flame".
+
+    Args:
+        pairs: `(name, value)` pairs, the name as the game spells it.
+
+    Returns:
+        `(folded words, value)` pairs, longest name first.
+    """
+    return sorted(((tuple(fold(word) for word in name.split()), value) for name, value in pairs), key=lambda pair: -len("".join(pair[0])))
+
+
+def longest_named(table, text):
+    """Find the value of the longest name whose every word a folded option text holds, as in "Obtain Equipment [Mutation: Vine Camouflage]".
+
+    Each word is looked for on its own, since OCR splits a bracketed name and reads it out of order: "Flame]Equipment [Distortion: Pale".
+
+    Args:
+        table: The names to look for, from `word_table`.
+        text: The option text, folded by `events.fold`.
+
+    Returns:
+        The matched name's value, or None when the text names none.
+    """
+    return next((value for words, value in table if all(word in text for word in words)), None)
+
+
+# Each equipment name's folded words and rarity, for `longest_named`.
+EQUIPMENT_WORDS = word_table(EQUIPMENT_RARITY.items())
+
+
 def team_classes(names):
     """Turn the combatants on screen into the set of classes they cover.
 
