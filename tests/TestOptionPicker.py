@@ -26,7 +26,7 @@ from ok import og  # noqa: E402
 
 from src.en import picker  # noqa: E402
 from src.en.framework import import_ui  # noqa: E402
-from src.en.game_data import CARDS  # noqa: E402
+from src.en.game_data import CARDS, RISK_MODIFIERS  # noqa: E402
 from src.en.game_text import DESCRIPTIONS  # noqa: E402
 from src.en.overrides import ROUTE_NODES  # noqa: E402
 from src.en.reobserve import MODIFIER_BLACKLIST, MODIFIER_HELP, MODIFIERS  # noqa: E402
@@ -85,6 +85,13 @@ class TestOptionPicker(unittest.TestCase):
         dialog = self.open_picker(ROUTE_NODES)
         self.assertIsNone(getattr(dialog, "option_list", None))
         self.assertEqual(len(ROUTE_NODES), len(dialog.option_buttons))
+
+    def test_options_too_wide_for_a_button_wrap_in_the_list(self):
+        """Upstream's buttons never wrap, so a Risk Modifier's 118 characters were cut off at both edges."""
+        dialog = self.open_picker(list(RISK_MODIFIERS), selected=list(RISK_MODIFIERS)[:1])
+        self.assertEqual({}, dialog.option_buttons)
+        self.assertEqual([True, True], [view.wordWrap() for view in (dialog.option_list, dialog.list_widget)])
+        self.assertFalse(dialog.option_list.uniformItemSizes())
 
     def test_saved_values_start_greyed_out(self):
         """An option already held by the setting must not be addable a second time."""
