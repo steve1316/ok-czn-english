@@ -42,6 +42,8 @@ COMMANDS = ("status", "screenshot", "texts", "click", "press_key", "hold", "sett
 STALE = 15
 # How often, in milliseconds, the title bar is brought up to date.
 TITLE_CHECK = 2000
+# Most bytes a request's body may have, so a huge Content-Length cannot hold the handler.
+BODY_LIMIT = 1 << 20
 
 # Actions waiting for the bot's thread, as `(action, future)` pairs.
 _actions = queue.Queue()
@@ -56,20 +58,76 @@ class Remote(http.server.BaseHTTPRequestHandler):
     """Answer `POST /<command>` with a JSON body of keyword arguments, replying `{"ok", "result" | "error"}`."""
 
     def do_POST(self):
-        """Run one command and reply with its result, or with the error it raised."""
+        """Run one command and reply with its result, or with the error it raised. A request a web page could have sent is refused before anything runs."""
         global _last_contact
+        refusal = self.length_refusal()
+        if refusal is None:
+            # Read before any reply, since body bytes that reach the socket after it closes make Windows reset the
+            # connection, and the reset wipes the reply the caller has not read yet.
+            body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+            refusal = self.refusal()
+        if refusal is not None:
+            status, message = refusal
+            self.reply(status, message.encode("utf-8"), "text/plain; charset=utf-8")
+            return
         _last_contact = time.monotonic()
         name = self.path.strip("/")
         try:
             if name not in COMMANDS:
                 raise KeyError(f"unknown command {name!r}, expected one of {', '.join(COMMANDS)}")
-            body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
             reply = {"ok": True, "result": globals()[name](**json.loads(body or b"{}"))}
         except Exception as error:
             reply = {"ok": False, "error": f"{type(error).__name__}: {error}"}
-        data = json.dumps(reply, ensure_ascii=False, default=str).encode("utf-8")
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.reply(200, json.dumps(reply, ensure_ascii=False, default=str).encode("utf-8"), "application/json; charset=utf-8")
+
+    def refusal(self):
+        """Refuse a request that did not come from a tool on this machine.
+
+        Loopback alone still lets any web page open here POST to the port. A browser sends an `Origin` with every
+        cross-site POST, can send JSON only after a CORS preflight this server never answers, and keeps the page's own
+        name in `Host` when DNS rebinding points that name at 127.0.0.1.
+
+        Returns:
+            `(status, message)` to reply with, or None to serve the request.
+        """
+        port = self.server.server_port
+        host = (self.headers.get("Host") or "").lower()
+        if host not in (f"{HOST}:{port}", f"localhost:{port}"):
+            return 403, f"refused: Host {host!r} is not {HOST}:{port} or localhost:{port}"
+        if "Origin" in self.headers:
+            return 403, "refused: the request came from a web page"
+        if (self.headers.get("Content-Type") or "").split(";")[0].strip().lower() != "application/json":
+            return 415, "refused: send the body as Content-Type application/json"
+        return None
+
+    def length_refusal(self):
+        """Refuse a body that cannot be read by its Content-Length.
+
+        A chunked body read as an empty one would run the command with its defaults instead of the caller's arguments,
+        a count of -1 reads until the caller closes, and Python refuses to convert more than 4300 digits.
+
+        Returns:
+            `(status, message)` to reply with, or None to read the body.
+        """
+        if "Transfer-Encoding" in self.headers:
+            return 411, "refused: send the body with a Content-Length, not chunked"
+        length = (self.headers.get("Content-Length") or "0").strip()
+        if not length.isdecimal():
+            return 400, f"refused: Content-Length {length[:32]!r} is not a number of bytes"
+        if len(length) > len(str(BODY_LIMIT)) or int(length) > BODY_LIMIT:
+            return 413, f"refused: the body is over {BODY_LIMIT} bytes"
+        return None
+
+    def reply(self, status, data, content_type):
+        """Send one complete response.
+
+        Args:
+            status: The HTTP status code.
+            data: The body, already encoded.
+            content_type: The body's Content-Type header.
+        """
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
