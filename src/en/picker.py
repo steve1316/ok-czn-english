@@ -7,8 +7,8 @@ the Global client's are not.
 
 from html import escape
 
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QListWidget, QListWidgetItem, QProxyStyle, QStyle
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtWidgets import QListView, QListWidget, QListWidgetItem, QProxyStyle, QStyle, QStyledItemDelegate
 
 from ok import Logger, og
 from ok.ui.qt.kit.labels import Label
@@ -30,6 +30,11 @@ ENABLED_FLAGS = Qt.ItemIsEnabled | Qt.ItemIsSelectable
 FALLBACK_THRESHOLD = 20
 # The dialog's two option columns, Available and Selected.
 COLUMN_COUNT = 2
+# Longest option a button in the Available column shows whole. Upstream's buttons never wrap, so a Risk Modifier (up to 118
+# characters) was cut off at both edges. A roster with a longer option goes to the list, whose rows wrap.
+WIDE_OPTION = 40
+# Pixels around each wrapped row.
+ROW_GAP = 3
 # Settings whose options are not cards, keyed to their own effect text. A modifier named Plague is not the card Plague.
 OPTION_EFFECTS = {MODIFIER_BLACKLIST: MODIFIER_HELP}
 
@@ -43,7 +48,7 @@ _pending_effects = None
 
 
 def wants_option_list(options, threshold):
-    """Decide whether a roster is long enough to be worth virtualizing.
+    """Decide whether a roster should show as a list rather than upstream's buttons.
 
     Reuses the framework's own search-box threshold: a list long enough to need searching is long enough to need
     virtualizing, and that keeps the rule to one number rather than two that can drift apart. Route Priority's
@@ -54,9 +59,49 @@ def wants_option_list(options, threshold):
         threshold: The framework's `SHOW_SEARCH_OPTIONS_THRESHOLD`.
 
     Returns:
-        True when the virtualized list should replace the button grid.
+        True when the roster is too long for buttons, or holds an option too wide for one.
     """
-    return options is not None and len(options) > threshold
+    return options is not None and (len(options) > threshold or any(len(option) > WIDE_OPTION for option in options))
+
+
+class FittedWrapDelegate(QStyledItemDelegate):
+    """Wrap a row's text to the width its padding leaves, so the row fits its list.
+
+    Qt wraps the text at the full row width and only then adds the stylesheet's item padding, so a wrapped Selected Options
+    row came out 16px wider than its list and lost the end of its longest line.
+    """
+
+    def sizeHint(self, option, index):
+        """Size one row, wrapping its text narrower by however much the padding pushed it past the row width.
+
+        Args:
+            option: The style option for the row, whose rect spans the list, row gaps included.
+            index: The row's model index.
+
+        Returns:
+            The row's size, no wider than the list.
+        """
+        size = super().sizeHint(option, index)
+        width = option.rect.width() - 2 * self.parent().spacing()
+        overflow = size.width() - width
+        if width <= 0 or overflow <= 0:
+            return size
+        option.rect.setWidth(width - overflow)
+        return QSize(width, super().sizeHint(option, index).height())
+
+
+def wrap_rows(view):
+    """Have a list wrap each row to its width instead of cutting it off.
+
+    Args:
+        view: The list to change. Its rows must not share one size, or every row keeps the first row's height.
+    """
+    view.setWordWrap(True)
+    view.setResizeMode(QListView.Adjust)
+    view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+    view.setItemDelegate(FittedWrapDelegate(view))
+    # A gap between rows shows where one wrapped option ends and the next begins.
+    view.setSpacing(ROW_GAP)
 
 
 def tooltip_for(option, display, effects=DESCRIPTIONS):
@@ -173,7 +218,7 @@ def show_setting_help(dialog):
     dialog.body.insertWidget(0, Label(_pending_help, parent=dialog, word_wrap=True))
 
 
-def build_option_list(dialog):
+def build_option_list(dialog, wrap):
     """Build the virtualized replacement for one dialog's option grid.
 
     Upstream's grid costs about 2.6 seconds to open Cards to Remove and another 2.9 on the first search
@@ -182,15 +227,19 @@ def build_option_list(dialog):
 
     Args:
         dialog: The `ModifyListDialog` being set up.
+        wrap: True for a short roster, whose rows wrap. A long one keeps uniform rows, so it never measures them all.
 
     Returns:
         A `QListWidget` holding every available option.
     """
     view = QListWidget()
-    # Every row is the same size, so the view lays itself out from the first one rather than measuring all of
-    # them. Rows then span the pane, and a name too long for it elides with the full text left in the tooltip.
-    view.setUniformItemSizes(True)
-    view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+    if wrap:
+        wrap_rows(view)
+    else:
+        # Every row is the same size, so the view lays itself out from the first one rather than measuring all of
+        # them. Rows then span the pane, and a name too long for it elides with the full text left in the tooltip.
+        view.setUniformItemSizes(True)
+        view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
     for option in dialog.options_available:
         display = og.app.tr(option)
@@ -241,9 +290,12 @@ def apply():
             return widget
         if self.option_effects is None:
             self.option_effects = DESCRIPTIONS
-        self.option_list = build_option_list(self)
+        wrap = len(self.options_available) <= threshold
+        self.option_list = build_option_list(self, wrap)
         # The Selected Options list already exists by now, and its rows want the same treatment.
         use_instant_tooltips(self.list_widget)
+        if wrap:
+            wrap_rows(self.list_widget)
         return self.option_list
 
     def patched_update(self):

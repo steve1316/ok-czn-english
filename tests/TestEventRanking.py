@@ -27,7 +27,7 @@ import utils_chaos  # noqa: E402
 from StoryMode import StoryMode  # noqa: E402
 
 from src.en.events import (  # noqa: E402
-    ATTACK, ATTACK_RANK, BESIDES_CREDITS, CREDIT_RANK, CURSE_RANK, DESIRE_RANK, DIALOGUE, DIALOGUE_RANK, ENCOUNTER, ENCOUNTER_RANK, HEALTH_COST,
+    ATTACK, ATTACK_RANK, BESIDES_CREDITS, CREDIT_RANK, CURSE_RANK, DESIRE_RANK, DIALOGUE, DIALOGUE_RANK, DIALOGUE_SUBJECT, ENCOUNTER, ENCOUNTER_RANK, HEALTH_COST,
     HEALTH_COST_RANK, MIN_LATIN_MARKER_LENGTH, MIN_MARKER_LENGTH, OFF_FACTION_RANK, QUIT, QUIT_RANK,
     REFINED, REWARD_RANK, RankingChoice, SPARK, SPARK_RANK, center_of, double_clicking, drop_unwanted, find_pins, fold,
     handle_unavailable_reward, leave_after_refinement, order, rank, ranking, take_substitute, tap_a_pin,
@@ -97,6 +97,19 @@ REAL_OPTIONS = {
     MUSHROOM_LORE: DIALOGUE_RANK,
     # Peregrine's, read with its bracketed name split around the marker and no "on". It tied with a real reward and was taken.
     "Ask about the gods' intentionsIntentions]Check Information [Their": DIALOGUE_RANK,
+    # Lore with the bracketed name read between the verb and "Information", and lore worded with another verb. Both tied with a removal.
+    "Talk to LuminusCheck [Lost MemoriesLuminus] Information": DIALOGUE_RANK,
+    "Ask who they areSuspicious One's ldentityConfirm information on The": DIALOGUE_RANK,
+    # Information as the thing asked for, not lore.
+    "Request informationSelect and obtain 1 among 3random Neutral Normal - RareCard.": REWARD_RANK,
+    "Extract informationConvert selected Cards intoCard(s) [Tactical Debilitation]": REWARD_RANK,
+    # Peregrine's Foretold Fates, which tied with a random pick of three. Faithless's Path hands over Distrust every battle, and
+    # Pilgrim's Path was read with its bracket split and out of order.
+    "Beseech the melody of doubtObtain Foretold Fate[Faithless's Path]": CURSE_RANK,
+    "Beseech the melody of resonancePath]Obtain Foretold Fate [Pilgrim's": CURSE_RANK,
+    "Request a performanceSelect and obtain 1 of 3random Fate paths": REWARD_RANK,
+    "Beseech the melody of doubtObtain Foretold Fate[Icky Credits]": CREDIT_RANK,
+    "Beseech the melody of doubtObtain Foretold Fate[Purple Fate]": REWARD_RANK,
 }
 
 # The same option, captured twice with its OCR boxes joined in a different order.
@@ -159,13 +172,13 @@ class TestEventRanking(unittest.TestCase):
 
     def test_every_marker_survives_folding(self):
         """A marker that folded away to nothing would be `in` every description and match everything."""
-        for marker in SPARK + QUIT + ATTACK + ENCOUNTER + DIALOGUE + HEALTH_COST + BESIDES_CREDITS:
+        for marker in SPARK + QUIT + ATTACK + ENCOUNTER + DIALOGUE + DIALOGUE_SUBJECT + HEALTH_COST + BESIDES_CREDITS:
             with self.subTest(marker=marker):
                 self.assertGreaterEqual(len(fold(marker)), MIN_MARKER_LENGTH)
 
     def test_latin_markers_are_whole_phrases(self):
         """Two Chinese characters are a specific word; two Latin letters would match half the screen."""
-        for marker in SPARK + QUIT + ATTACK + ENCOUNTER + DIALOGUE + HEALTH_COST + BESIDES_CREDITS:
+        for marker in SPARK + QUIT + ATTACK + ENCOUNTER + DIALOGUE + DIALOGUE_SUBJECT + HEALTH_COST + BESIDES_CREDITS:
             if marker.isascii():
                 with self.subTest(marker=marker):
                     self.assertGreaterEqual(len(fold(marker)), MIN_LATIN_MARKER_LENGTH)
@@ -310,6 +323,19 @@ class TestCreditOptions(unittest.TestCase):
     def test_the_random_stand_in_takes_the_removal_over_the_credits(self):
         options = [{"description": self.CREDITS}, {"description": self.REMOVE}]
         self.assertEqual(self.REMOVE, RankingChoice(random).choice(options)["description"])
+
+    def test_a_tie_goes_to_the_rarer_equipment(self):
+        # Both rank as rewards. Live, the pick between them was random. The picker here always takes the first it is handed.
+        first = SimpleNamespace(choice=lambda sequence: sequence[0])
+        for plain, legend in (
+            ("Request suppliesObtain Equipment [Mutation:Vine Camouflage]",
+             "the secret identification code PriDecrease Credits by 50, ObtainEternal Flame]Equipment [Distortion: Pale"),
+            # A rarity spelled out rather than an item named. Live, the heal was taken.
+            ("Finish the agonyDecrease all Combatants'by30%Stress by 12, Recover Health", "Watch the evil spiritObtain random Legendary装备"),
+        ):
+            with self.subTest(legend):
+                options = [{"description": plain}, {"description": legend}]
+                self.assertEqual(legend, RankingChoice(first).choice(options)["description"])
 
     def test_spending_is_not_gaining(self):
         # Ranked before the credit check, so an option that pays credits for a spark is worth the spark.

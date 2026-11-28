@@ -395,8 +395,8 @@ class TestSortieFreeEpiphany(unittest.TestCase):
         self.assertEqual(1, len(sortie_clicked))
 
     def test_the_search_runs_only_at_a_safe_zone_and_a_miss_falls_through(self):
-        # A count of 0 still searches, since the line is there to say this is a safe zone.
-        for line, searches in ((None, 0), (self.OFFERED, 1), (self.SPENT, 1)):
+        # A count of 0 still searches, since the line is there to say this is a safe zone. So does a count OCR dropped, as it did live.
+        for line, searches in ((None, 0), (self.OFFERED, 1), (self.SPENT, 1), ("Available Safe Zone Interactions:", 1)):
             with self.subTest(line=line):
                 task, searched, _ = self.seeing(None, line)
                 self.assertFalse(rest.free_epiphany_handler(utils)(task))

@@ -370,8 +370,21 @@ msgstr "重新闪光"
 msgid "Exploration Results"
 msgstr "探险结果"
 
+# From handle_expedition_result: "完成" in complete_box.name, the stamp beside the title. Sortie stamps CLEAR or FAIL there, and
+# unmapped every won run counted as lost. Chaos stamps nothing.
+msgid "CLEAR"
+msgstr "完成"
+
+# From handle_expedition_result: "失败" in complete_box.name, the same stamp on a lost run.
+msgid "FAIL"
+msgstr "失败"
+
 # From handle_battle_member_config: _get_game_text(task, "主战员配置") in title.name
 msgid "Team Formation"
+msgstr "主战员配置"
+
+# From handle_battle_member_config: _get_game_text(task, "主战员配置") in title.name. Sortie's own formation carries this title.
+msgid "Combatant Formation"
 msgstr "主战员配置"
 
 # From handle_copy: "复制" in box.name

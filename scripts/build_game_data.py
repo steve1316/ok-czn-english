@@ -22,6 +22,8 @@ import sys
 from datetime import date
 from pathlib import Path
 
+from compile_i18n import compile_one
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 OUT_PATH = REPO_ROOT / "src" / "en" / "game_data.py"
 OUT_TEXT_PATH = REPO_ROOT / "src" / "en" / "game_text.py"
@@ -52,12 +54,24 @@ GROUPS = [
      lambda table, dump: collect_codex(table, dump)[1]),
     ("CHAOS_SEASON", "A Chaos whose Codices always carry one season, mapped to it. The rest let Merge Codices pick any season.",
      lambda table, dump: collect_codex(table, dump)[2]),
+    ("RISK_MODIFIERS", "Lv.80 Sortie's Risk Modifiers in the game's list order, each mapped to the stages it adds.",
+     lambda table, dump: collect_risk_modifiers(table, dump)),
+    ("SORTIE_LEVELS", "Every Sortie tier's level, lowest first, as the lobby's arrows step through them.",
+     lambda table, dump: collect_sortie_levels(dump)),
 ]
 # Zero System's tables: each Chaos in list order, and each Codex coordinate naming its Chaos and its fixed season.
 CHAOS_TABLE = "chaos@chaos.json"
 COORDINATE_TABLE = "zero_orb_coordinate@zero_orb_coordinate.json"
 CHAOS_TITLE_ID = "chaos@title@{id}"
 SEASON_ID = re.compile(r"^chaos@title@(disaster_s\d+)$")
+# Sortie's Risk Modifiers as the game lists them. The text table also keeps retired ones, so the schedule decides which exist.
+RISK_MODIFIER_TABLE = "chaos_assault_schedule@chaos_assault_penalty.json"
+# The app catalogs whose Risk Modifiers pick-list shows each modifier with its stages, and the comment on each entry written here.
+STAGE_CATALOGS = [REPO_ROOT / "i18n" / language / "LC_MESSAGES" / "ok.po" for language in ("en_US", "zh_CN")]
+STAGE_TAG = "#. Risk Modifier stages, written by scripts/build_game_data.py"
+STAGE_ENTRY = re.compile("^" + re.escape(STAGE_TAG) + r'\nmsgid ".*"\nmsgstr ".*"\n\n?', re.MULTILINE)
+# Sortie's tiers, each with the level the lobby shows on it.
+SORTIE_TIER_TABLE = "chaos_assault_list@chaos_assault_list.json"
 # Combatants cannot be read out of the dump alone, from either direction. The `char_base@name@` namespace
 # also names every NPC and enemy, and even the combatant table carries characters that have not been released
 # yet, while a character released after the rip is missing from it altogether. So the roster below is the
@@ -221,6 +235,65 @@ def collect_codex(table, dump_dir):
         if len(tied) == 1 and (season := tied.pop()) in seasons:
             chaos_season[name] = seasons[season]
     return chaos_names, [seasons[key] for key in sorted(seasons)], chaos_season
+
+
+def collect_risk_modifiers(table, dump_dir):
+    """Read Sortie's Risk Modifiers and the stages each one adds.
+
+    Args:
+        table: The localization table, for each modifier's text.
+        dump_dir: Path to the dump's `output` directory, for the schedule table.
+
+    Returns:
+        A dict of modifier text to its stage count, in the game's list order.
+    """
+    rows = json.loads((Path(dump_dir) / "db" / RISK_MODIFIER_TABLE).read_text(encoding="utf-8"))
+    return {table[row["cs_desc"]].strip(): int(row["penalty_level"]) for row in sorted(rows, key=lambda row: int(row["sort"]))}
+
+
+def po_string(text):
+    """Escape text for a quoted `.po` string.
+
+    Args:
+        text: The text to escape.
+
+    Returns:
+        The text with backslashes and double quotes escaped.
+    """
+    return text.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def write_stage_labels(path, modifiers):
+    """Rewrite one catalog's Risk Modifier labels, replacing the ones a previous run wrote.
+
+    Args:
+        path: The `ok.po` to rewrite.
+        modifiers: Modifier text to its stage count, from `collect_risk_modifiers`.
+    """
+    raw = path.read_bytes().decode("utf-8")
+    newline = "\r\n" if "\r\n" in raw else "\n"
+    text = raw.replace("\r\n", "\n")
+    first = STAGE_ENTRY.search(text)
+    text = STAGE_ENTRY.sub("", text)
+    entries = "\n".join(f'{STAGE_TAG}\nmsgid "{po_string(name)}"\nmsgstr "{po_string(name)} (+{stages} Stages)"\n' for name, stages in modifiers.items())
+    if first is None:
+        text = text.rstrip("\n") + "\n\n" + entries
+    else:
+        text = text[:first.start()] + entries + "\n" + text[first.start():]
+    path.write_bytes(text.replace("\n", newline).encode("utf-8"))
+
+
+def collect_sortie_levels(dump_dir):
+    """Read the level of every Sortie tier.
+
+    Args:
+        dump_dir: Path to the dump's `output` directory, for the tier table.
+
+    Returns:
+        The levels, lowest first.
+    """
+    rows = json.loads((Path(dump_dir) / "db" / SORTIE_TIER_TABLE).read_text(encoding="utf-8"))
+    return [int(row["link_tier_monster_stat_id"]) for row in sorted(rows, key=lambda row: int(row["level"]))]
 
 
 def collect_combatants(table, dump_dir):
@@ -424,6 +497,8 @@ CARD_SORT_COLUMN = "sort"
 CARD_TALENT_COLUMN = "talent"
 # The talent that sends a card to the Exhaust pile the first time it is played. `TALENT_EXHAUST_2` waits for a second play.
 EXHAUST_TALENT = "TALENT_EXHAUST"
+# The talent that gives a card a chance to start the turn costing 1 less, a discount lost once another card is played.
+LEAD_TALENT = "TALENT_LEAD"
 # Kinds of card that share the deck's tables but never reach a hand. A Persona sits in a slot of its own and
 # an Ego skill is fired from the combatant bar, so neither one's `cost` is an Action Point cost. Leaving them
 # in would put an Ego skill's EP price of 5 beside a card that really does cost 5 Action Points.
@@ -745,11 +820,13 @@ def collect_epiphanies(table, dump_dir, described):
         described: The base descriptions from `collect_descriptions`, by name.
 
     Returns:
-        A dict of card name to its distinct Epiphany texts, in the game's own order.
+        `(epiphanies, lead)`: a dict of card name to its distinct Epiphany texts, in the game's own order, and the same for just the
+        texts whose version carries Lead, which an Epiphany can add to a card or take away.
     """
     cards = load_data_tables(dump_dir, CARD_TABLES)
     effects = load_data_tables(dump_dir, EFFECT_TABLES)
     epiphanies = {}
+    lead = {}
     for spark in sorted(load_data_tables(dump_dir, EPIPHANY_TABLES).values(), key=lambda row: row["change_link_card_id"]):
         name = table.get(cards.get(spark["link_card_id"], {}).get("name") or "")
         version = cards.get(spark["change_link_card_id"], {})
@@ -759,7 +836,9 @@ def collect_epiphanies(table, dump_dir, described):
         text = clean_description(resolve_card_values(raw, version, effects), table)
         if text and text != described.get(name) and text not in epiphanies.get(name, ()):
             epiphanies[name] = epiphanies.get(name, ()) + (text,)
-    return epiphanies
+            if LEAD_TALENT in id_list(version.get(CARD_TALENT_COLUMN)):
+                lead[name] = lead.get(name, ()) + (text,)
+    return epiphanies, lead
 
 
 def collect_divine(table, dump_dir):
@@ -821,12 +900,13 @@ def render(groups, dump_dir):
     return "\n".join(lines)
 
 
-def render_descriptions(described, epiphanies, divine, dump_dir):
+def render_descriptions(described, epiphanies, lead, divine, dump_dir):
     """Build the source of the generated description module.
 
     Args:
         described: A dict of entity name to cleaned description.
         epiphanies: A dict of card name to its Epiphany texts, from `collect_epiphanies`.
+        lead: The same for the texts whose version carries Lead, from `collect_epiphanies`.
         divine: The god and shared Divine Epiphany lines, from `collect_divine`.
         dump_dir: The dump the text came from, recorded in the header.
 
@@ -852,6 +932,11 @@ def render_descriptions(described, epiphanies, divine, dump_dir):
     lines.append("# The text of each Epiphany version a card can take, where it reads differently from the base card. Values as above.")
     lines.append("EPIPHANIES = {")
     lines.extend(f"    {name!r}: {epiphanies[name]!r}," for name in sorted(epiphanies))
+    lines.append("}")
+    lines.append("")
+    lines.append("# The Epiphany texts above whose version has Lead, which an Epiphany can add to a card or take away.")
+    lines.append("EPIPHANY_LEAD = {")
+    lines.extend(f"    {name!r}: {lead[name]!r}," for name in sorted(lead))
     lines.append("}")
     lines.append("")
     gods, shared = divine
@@ -1034,6 +1119,7 @@ def collect_battle(table, dump_dir):
     card_target = {}
     card_sparkable = set()
     card_exhausts = set()
+    card_lead = set()
     for name, row in named.items():
         cost = cost_of(row.get(CARD_COST_COLUMN))
         if cost is not None:
@@ -1046,8 +1132,11 @@ def collect_battle(table, dump_dir):
             card_target[name] = target
         if row.get(CARD_SPARK_COLUMN) == "YES":
             card_sparkable.add(name)
-        if EXHAUST_TALENT in id_list(row.get(CARD_TALENT_COLUMN)):
+        talents = id_list(row.get(CARD_TALENT_COLUMN))
+        if EXHAUST_TALENT in talents:
             card_exhausts.add(name)
+        if LEAD_TALENT in talents:
+            card_lead.add(name)
 
     attributes = collect_attributes(table, dump_dir)
     roster = set(PLAYABLE_COMBATANTS)
@@ -1087,6 +1176,7 @@ def collect_battle(table, dump_dir):
         "CARD_TARGET": card_target,
         "CARD_SPARKABLE": card_sparkable,
         "CARD_EXHAUSTS": card_exhausts,
+        "CARD_LEAD": card_lead,
         "CARD_OWNER": card_owner,
         "COMBATANT_ATTRIBUTE": combatant_attribute,
         "COMBATANT_SPARK_CARDS": combatant_spark_cards,
@@ -1118,6 +1208,8 @@ def render_battle(battle):
                           " against the card it appears on.",
         "CARD_EXHAUSTS": "The cards that go to the Exhaust pile when played, so an Ego that fires on an Exhaust"
                          " knows whether the hand can set it off.",
+        "CARD_LEAD": "The Lead cards, whose lowered cost lasts only until another card is played, so one shown lowered"
+                     " is worth opening the turn with.",
         "CARD_OWNER": "The combatant a card belongs to, recovered from the cards each of them starts and sparks."
                       " A card's attribute is its owner's, so this is how a card comes to have one.",
         "COMBATANT_ATTRIBUTE": "Each combatant's attribute, for matching a card against the weakness an enemy"
@@ -1153,7 +1245,7 @@ def main():
     table = load_table(args.dump)
     groups = [(name, collector(table, args.dump), comment) for name, comment, collector in GROUPS]
     described = collect_descriptions(table, args.dump)
-    epiphanies = collect_epiphanies(table, args.dump, described)
+    epiphanies, lead = collect_epiphanies(table, args.dump, described)
     divine = collect_divine(table, args.dump)
     quality = collect_quality(table, args.dump)
     battle = collect_battle(table, args.dump)
@@ -1161,10 +1253,14 @@ def main():
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUT_PATH.write_text(render(groups, args.dump), encoding="utf-8")
-    OUT_TEXT_PATH.write_text(render_descriptions(described, epiphanies, divine, args.dump), encoding="utf-8")
+    OUT_TEXT_PATH.write_text(render_descriptions(described, epiphanies, lead, divine, args.dump), encoding="utf-8")
     OUT_QUALITY_PATH.write_text(render_quality(quality), encoding="utf-8")
     OUT_BATTLE_PATH.write_text(render_battle(battle), encoding="utf-8")
     OUT_FATES_PATH.write_text(render_fates(fates), encoding="utf-8")
+    risk_modifiers = next(values for name, values, _ in groups if name == "RISK_MODIFIERS")
+    for path in STAGE_CATALOGS:
+        write_stage_labels(path, risk_modifiers)
+        compile_one(path)
 
     unresolved = sum(1 for text in described.values() if VALUE_PLACEHOLDER in text)
     print(f"read {len(table)} localization rows from {args.dump}")
@@ -1181,6 +1277,7 @@ def main():
           + ", ".join(f"{len(values)} {name.lower()}" for name, values in battle.items()))
     print(f"wrote {OUT_FATES_PATH.relative_to(REPO_ROOT)} with "
           + ", ".join(f"{len(values)} {name.lower()}" for name, values in fates.items()))
+    print(f"wrote {len(risk_modifiers)} Risk Modifier stage labels to " + ", ".join(str(path.relative_to(REPO_ROOT)) for path in STAGE_CATALOGS))
     return 0
 
 

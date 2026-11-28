@@ -40,6 +40,9 @@ STATUSES_AT = (1270, 190)
 # A boss with two summoned minions, their HP numbers where OCR reads them, and a magenta tentacle that passes for a counter.
 SUMMONED_AT = (820, 80)
 SUMMONED_HEALTH = (("1179", 0.725, 0.108), ("253", 0.535, 0.444), ("206", 0.910, 0.444))
+# A boss with two marked minions and an unmarked one beside it, cut from a 1080p frame of a Lv.80 Sortie fight.
+WARD_AT = (930, 140)
+WARD_HEALTH = (("9312", 0.709, 0.154), ("659", 0.907, 0.239), ("445", 0.590, 0.383), ("643", 0.803, 0.383))
 # A raised attack card's reticle in each of its two colours, cut with the enemy behind it, and the x of that enemy's HP number.
 RETICLES = (("reticle_white", (894, 395), 0.522), ("reticle_cyan", (1128, 402), 0.642))
 # The two Weakness badges on the Sortie boss select screen, Shadow Collector's Passion and Cold, Sweet Dream's Void.
@@ -293,6 +296,15 @@ class TestRealEnemies(unittest.TestCase):
         task = FakeTask(pasted("summoned_minions", *SUMMONED_AT))
         task.all_texts = [FakeBox(text, x, y) for text, x, y in SUMMONED_HEALTH]
         self.assertEqual(0.725, round(board.boss_x(task), 3))
+
+    def test_the_boss_is_targeted_over_an_unmarked_enemy_far_weaker_than_it(self):
+        # Live, an unmarked 659 beside a 9312 boss left every attack unaimed. An unmarked enemy close to the boss's HP still leaves it to the game.
+        for health, expected in (("659", 0.709), ("4000", None)):
+            with self.subTest(health=health):
+                task = FakeTask(pasted("boss_with_ward", *WARD_AT))
+                task.all_texts = [FakeBox(health if text == "659" else text, x, y) for text, x, y in WARD_HEALTH]
+                found = board.boss_x(task)
+                self.assertEqual(expected, found if found is None else round(found, 3))
 
     def test_a_reticle_lines_up_with_its_enemys_health(self):
         for name, at, health in RETICLES:

@@ -354,13 +354,16 @@ class TestDeckRead(unittest.TestCase):
     def test_each_whole_card_is_taken_for_its_version(self):
         task = types.SimpleNamespace(width=WIDTH, height=HEIGHT, all_texts=[FakeBox(text, x, y, width=w, height=h, units="pixels")
                                                                            for text, x, y, w, h in PILES_PAGE])
+        page = piles.cards_on_page(task)
         # A named card inside a text, or a card cut off at the bottom, would add a fifth. A broken match would land a copy on the base.
         self.assertEqual({
             ("Slash", next(iter(EPIPHANIES["Slash"]))),
             ("Experienced Strike", DESCRIPTIONS["Experienced Strike"]),
             ("Experienced Strike", SHIELD_GAIN),
             ("Hew", DESCRIPTIONS["Hew"]),
-        }, {(name, piles.version_of(name, text)) for name, text, _ in piles.cards_on_page(task)})
+        }, {(name, piles.version_of(name, text)) for name, text, _, _ in page})
+        # Only Slash is labelled Basic. Without it the shop would think the deck has nothing left to remove.
+        self.assertEqual({"Slash"}, {name for name, _, _, basic in page if basic})
 
     def test_a_card_is_valued_by_its_weakest_copy(self):
         base, stronger = cards.figures(DESCRIPTIONS["Experienced Strike"]), cards.figures(SHIELD_GAIN)
@@ -382,9 +385,9 @@ class TestDeckRead(unittest.TestCase):
     def test_each_copy_keeps_its_own_retrieves(self):
         # Two copies on one page are 4 returns, not 2. The next page shows the lower copy again, which must not make it 6.
         herb, text = "Harmonization: Residual Herb", "[Retrieve 2/Exhaust 3]96% Shield"
-        pages = iter([[(herb, text, 100), (herb, text, 300)], [(herb, text, 50)], [(herb, text, 50)]])
+        pages = iter([[(herb, text, 100, False), (herb, text, 300, False)], [(herb, text, 50, False)], [(herb, text, 50, False)]])
         with standing_in(piles, raw_ocr=lambda task: None, cards_on_page=lambda task: next(pages)):
-            _, retrieves = piles.read_piles(None, types.SimpleNamespace(_scroll_card_page=lambda *args: None))
+            _, retrieves, _ = piles.read_piles(None, types.SimpleNamespace(_scroll_card_page=lambda *args: None))
         self.assertEqual({herb: 4}, retrieves)
 
     def test_a_divine_epiphany_keeps_its_lines(self):

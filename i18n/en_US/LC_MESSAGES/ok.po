@@ -362,6 +362,50 @@ msgstr "Take Monster Card Rewards"
 msgid "Extract Spare Equipment"
 msgstr "Extract Spare Equipment"
 
+msgid "Sortie Level"
+msgstr "Sortie Level"
+
+msgid "Risk Modifiers"
+msgstr "Risk Modifiers"
+
+msgid "Drafted Combatant"
+msgstr "Drafted Combatant"
+
+msgid "Hardcore Mode"
+msgstr "Hardcore Mode"
+
+#. Risk Modifier stages, written by scripts/build_game_data.py
+msgid "Change Damage Amount taken by monsters to 1 (1 time per battle)"
+msgstr "Change Damage Amount taken by monsters to 1 (1 time per battle) (+3 Stages)"
+
+#. Risk Modifier stages, written by scripts/build_game_data.py
+msgid "Decrease Turn Draw by 1"
+msgstr "Decrease Turn Draw by 1 (+3 Stages)"
+
+#. Risk Modifier stages, written by scripts/build_game_data.py
+msgid "When a monster's HP drops to 30% or less, gain 2 Fortitude"
+msgstr "When a monster's HP drops to 30% or less, gain 2 Fortitude (+3 Stages)"
+
+#. Risk Modifier stages, written by scripts/build_game_data.py
+msgid "Unable to recover Stress through Heals"
+msgstr "Unable to recover Stress through Heals (+4 Stages)"
+
+#. Risk Modifier stages, written by scripts/build_game_data.py
+msgid "On Ravage, unable to gain AP"
+msgstr "On Ravage, unable to gain AP (+3 Stages)"
+
+#. Risk Modifier stages, written by scripts/build_game_data.py
+msgid "Increase all prices in the Safe Zones and the Dellang Shop by 30% and additionally increase the price of Flash by 100%"
+msgstr "Increase all prices in the Safe Zones and the Dellang Shop by 30% and additionally increase the price of Flash by 100% (+5 Stages)"
+
+#. Risk Modifier stages, written by scripts/build_game_data.py
+msgid "Randomly disable 1 selection option when acquiring Fates or cards"
+msgstr "Randomly disable 1 selection option when acquiring Fates or cards (+5 Stages)"
+
+#. Risk Modifier stages, written by scripts/build_game_data.py
+msgid "Decrease equipment stats by 80%"
+msgstr "Decrease equipment stats by 80% (+4 Stages)"
+
 # Section headers this fork draws over the mode settings, English for the same reason.
 msgid "Map"
 msgstr "Map"

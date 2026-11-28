@@ -110,6 +110,23 @@ class TestAffordability(unittest.TestCase):
         lowered = [{**card, "cost": 0} for card in hand(JUSTICE_ATTACK)]
         self.assertEqual(played(cards.plan(lowered, cards.Board(action_points=0))), [JUSTICE_ATTACK])
 
+    def test_a_lowered_lead_card_opens_the_turn(self):
+        # Live, Swiftie went first and ended the Lead discounts. Warming Up opens over Shock Gun since it cheapens the attacks after it.
+        lead = [{"name": name, "cost": 0} for name in ("Scream For Me", "Shock Gun", "Warming Up")]
+        chosen = cards.plan(lead + hand("Growing Creature", "Will of Light"), cards.Board(action_points=4))
+        self.assertEqual(played(chosen)[0], "Warming Up")
+        # Once a card is played the discount is gone, so a stray green read changes nothing and Anika holds Warming Up again.
+        chosen = cards.plan(lead, cards.Board(action_points=4, played=("Knife Toss",)))
+        self.assertNotIn("Warming Up", played(chosen))
+
+    def test_an_epiphany_can_add_or_take_away_lead(self):
+        # Sadistic Restraint has Lead only through an Epiphany, and one of Shock Gun's drops it. A Divine line after the version changes nothing.
+        for name, base_lead in (("Sadistic Restraint", False), ("Shock Gun", True)):
+            flipped = next(text for text in EPIPHANIES[name] if (text in cards.EPIPHANY_LEAD.get(name, ())) != base_lead)
+            for deck, lead in (({}, base_lead), ({name: flipped + "\nA Divine line"}, not base_lead)):
+                with self.subTest(name=name, lead=lead):
+                    self.assertEqual(lead, cards.has_lead(name, cards.Board(deck=deck)))
+
     def test_nothing_affordable_plays_nothing(self):
         self.assertEqual(cards.plan(hand(JUSTICE_ATTACK), cards.Board(action_points=0)), [])
 
@@ -379,7 +396,7 @@ class TestReadingNames(unittest.TestCase):
             ("the one deck card it fits", "DarkMistSecretAil", deck, "Dark Mist Secret Art: Annihilation"),
             ("no deck read yet leaves it alone", "DarkMistSecretAil", frozenset(), "DarkMistSecretAil"),
             ("two deck cards it fits leave it alone", "DarkMistSecretA", deck, "DarkMistSecretA"),
-            ("too little of the name left leaves it alone", "DarkMistS", frozenset({"Dark Mist Secret Art: Annihilation"}), "DarkMistS"),
+            ("too little of the name left leaves it alone", "DarkMistAil", frozenset({"Dark Mist Secret Art: Annihilation"}), "DarkMistAil"),
             ("the deck card a cut reading sits inside", "sidual Herb", frozenset({"Harmonization: Residual Herb"}), "Harmonization: Residual Herb"),
             ("a whole name keeps its own card", "Residual Herb", frozenset({"Harmonization: Residual Herb"}), "Residual Herb"),
             # Live, Joker read as all three, too short for the roster to guess at.
@@ -389,6 +406,14 @@ class TestReadingNames(unittest.TestCase):
         ):
             with self.subTest(description):
                 self.assertEqual(cards.canonical(reading, deck=held), expected)
+
+    def test_a_card_the_deck_creates_settles_a_clipped_reading(self):
+        # Live, a crowded hand cut Contaminated Spore short, and "Contaminat" also fits Contamination, which nobody in the deck makes.
+        held = cards.holdable(frozenset({"Bloom: Spore Harvester", "Rewind"}))
+        for reading in ("Contaminat", "Contam", "Contamil"):
+            with self.subTest(reading):
+                self.assertEqual(cards.canonical(reading, deck=held), "Contaminated Spore")
+                self.assertEqual(cards.canonical(reading), reading)
 
     def test_a_card_the_data_never_heard_of_is_still_played(self):
         chosen = cards.plan(hand("Some Card From A Later Patch"), cards.Board())
@@ -1051,7 +1076,7 @@ class TestKits(unittest.TestCase):
         ))
 
     def test_rita_builds_chronicle_before_time_paradox(self):
-        """Time Paradox converts Chronicle that spent AP builds, Time Axis Collapse counts the Cost left in hand, and Future Decreed is a gamble."""
+        """Time Paradox converts the Chronicle spent AP builds, Time Axis Collapse counts Cost in hand, Future Decreed waits for a proc."""
         self.plays((
             # Generic play converts at once, when this turn has built no Chronicle to convert.
             ("Time Paradox waits for other plays", ("Time Paradox", "Anchor", "Time Axis Collapse"), cards.Board(), ["Time Axis Collapse", "Anchor"]),
@@ -1063,6 +1088,10 @@ class TestKits(unittest.TestCase):
              ["Time Axis Collapse", "Break Armor"]),
             # Generic play plays it as a skill and gets a random 3-Cost card.
             ("Future Decreed stays in hand", ("Future Decreed", "Anchor"), cards.Board(), ["Anchor"]),
+            # Live, 11 turns ended with points spare while it sat beside Time Acceleration.
+            ("Future Decreed procs a 3-Cost card", ("Time Acceleration", "Future Decreed"), cards.Board(action_points=1), ["Future Decreed"]),
+            ("Future Decreed procs a 2-Cost card it raises", ("Anchor", "Future Decreed", "Time Axis Collapse"), cards.Board(action_points=1),
+             ["Future Decreed"]),
             # Live, Gear Bag and an attack took the battle's points while Chrono Archon sat in hand, and Time Paradox converted nothing.
             ("Chrono Archon goes ahead of an attack", ("Slash", "Chrono Archon"), cards.Board(action_points=1), ["Chrono Archon", "Slash"]),
             ("Time Paradox waits for Chrono Archon", ("Time Paradox", "Chrono Archon"), cards.Board(action_points=1, played=("Slash", "Slash")),

@@ -10,6 +10,7 @@ season's settings coming unfolded. Only that last one builds a widget.
 import json
 import os
 import re
+import shutil
 import sys
 import tempfile
 import types
@@ -21,9 +22,11 @@ import polib
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
+import build_game_data  # noqa: E402
 from src.en import etched_memory, forms, overrides, picker, row_hints, sections, shop, upload, zero_system  # noqa: E402
-from src.en.game_data import CARDS, COMBATANTS, EQUIPMENT, NODE_TYPES  # noqa: E402
+from src.en.game_data import CARDS, COMBATANTS, EQUIPMENT, NODE_TYPES, RISK_MODIFIERS  # noqa: E402
 from src.en.game_text import DESCRIPTIONS  # noqa: E402
 from src.en.framework import import_ui  # noqa: E402
 from tests.fakes import EchoApp  # noqa: E402
@@ -68,7 +71,7 @@ class FakeTask:
             "游戏语言": "简体中文",
             "移除卡牌列表": ["剑幕"],
             "装备1号位优先级": ["蚀化臂铠"],
-            "出战主战员优先级": ["海德玛丽"],
+            "主战员优先级": ["米卡"],
             "路线优先级": ["休息", "事件", "小怪", "精英"],
             "刷存档主战员": "海德玛丽",
             "指定面具卡牌": "丢弃最多2张卡牌",
@@ -271,11 +274,17 @@ class TestBuyCards(unittest.TestCase):
         self.assertFalse({"需要冥想的卡牌", "多少信用点以上冥想"} & set(keys))
 
     def test_the_reward_and_extract_switches_sit_under_the_list_they_narrow(self):
-        # Anchored on upstream's keys, so a rename there would drop a switch from both modes without an error.
+        # Anchored on upstream's keys, so a rename there would drop a switch from both modes without an error. A row may also chain under an
+        # earlier fork row, as Risk Modifiers does under Sortie Level.
+        added, anchors = [], {key: anchor for key, _, anchor in overrides.ADDED_UNDER}
         for key, default, anchor in overrides.ADDED_UNDER:
             with self.subTest(key=key):
-                self.assertIn(anchor, mode_setting_keys())
-                task = reshaped({anchor: [], "只打第一层": True})
+                self.assertIn(anchor, [*mode_setting_keys(), *added])
+                added.append(key)
+                root = anchor
+                while root in anchors:
+                    root = anchors[root]
+                task = reshaped({root: [], "只打第一层": True})
                 keys = list(task.default_config)
                 self.assertEqual(key, keys[keys.index(anchor) + 1])
                 self.assertIs(default, task.default_config[key])
@@ -310,6 +319,31 @@ class TestSeasonFive(unittest.TestCase):
         for label in (*SEASON_FIVE, *etched_memory.BONUSES):
             with self.subTest(label=label):
                 self.assertIn(label, msgids)
+
+
+class TestRiskModifiers(unittest.TestCase):
+    """The Risk Modifiers pick-list, which shows each modifier with the stages it adds."""
+
+    def test_each_modifier_is_shown_with_its_stage_cost(self):
+        # A re-rip that changed a cost or added a modifier would leave the picker showing the wrong stages, or none.
+        for language in ("en_US", "zh_CN"):
+            catalog = {entry.msgid: entry.msgstr for entry in polib.pofile(str(REPO_ROOT / "i18n" / language / "LC_MESSAGES" / "ok.po"))}
+            for name, cost in RISK_MODIFIERS.items():
+                with self.subTest(language=language, name=name):
+                    self.assertEqual(f"{name} (+{cost} Stages)", catalog.get(name))
+
+    def test_a_regen_replaces_the_labels_it_wrote(self):
+        # Appending on every run would leave a changed cost's old label in the catalog beside the new one.
+        source = REPO_ROOT / "i18n" / "en_US" / "LC_MESSAGES" / "ok.po"
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "ok.po"
+            shutil.copyfile(source, path)
+            first, *rest = RISK_MODIFIERS
+            build_game_data.write_stage_labels(path, {first: 9, **{name: RISK_MODIFIERS[name] for name in rest}})
+            catalog = polib.pofile(str(path))
+            self.assertEqual([f"{first} (+9 Stages)"], [entry.msgstr for entry in catalog if entry.msgid == first])
+            build_game_data.write_stage_labels(path, RISK_MODIFIERS)
+            self.assertEqual(source.read_bytes(), path.read_bytes())
 
 
 class TestSeasonSections(unittest.TestCase):
@@ -505,7 +539,7 @@ class TestReshape(unittest.TestCase):
     def test_entity_settings_become_pick_lists(self):
         """Typing an entity name by hand is how a config silently stops matching."""
         task = reshaped()
-        for key, roster in (("移除卡牌列表", CARDS), ("装备1号位优先级", EQUIPMENT), ("出战主战员优先级", COMBATANTS)):
+        for key, roster in (("移除卡牌列表", CARDS), ("装备1号位优先级", EQUIPMENT), ("主战员优先级", COMBATANTS)):
             with self.subTest(key=key):
                 self.assertEqual(roster, task.config_type[key]["options_available"])
                 self.assertEqual([], task.default_config[key], "Chinese defaults cannot match English OCR")

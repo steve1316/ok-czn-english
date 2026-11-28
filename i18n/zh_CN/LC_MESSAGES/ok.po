@@ -339,6 +339,50 @@ msgstr "领取怪物卡奖励"
 msgid "Extract Spare Equipment"
 msgstr "提炼多余装备"
 
+msgid "Sortie Level"
+msgstr "出击等级"
+
+msgid "Risk Modifiers"
+msgstr "风险修正"
+
+msgid "Drafted Combatant"
+msgstr "出战主战员"
+
+msgid "Hardcore Mode"
+msgstr "困难模式"
+
+#. Risk Modifier stages, written by scripts/build_game_data.py
+msgid "Change Damage Amount taken by monsters to 1 (1 time per battle)"
+msgstr "Change Damage Amount taken by monsters to 1 (1 time per battle) (+3 Stages)"
+
+#. Risk Modifier stages, written by scripts/build_game_data.py
+msgid "Decrease Turn Draw by 1"
+msgstr "Decrease Turn Draw by 1 (+3 Stages)"
+
+#. Risk Modifier stages, written by scripts/build_game_data.py
+msgid "When a monster's HP drops to 30% or less, gain 2 Fortitude"
+msgstr "When a monster's HP drops to 30% or less, gain 2 Fortitude (+3 Stages)"
+
+#. Risk Modifier stages, written by scripts/build_game_data.py
+msgid "Unable to recover Stress through Heals"
+msgstr "Unable to recover Stress through Heals (+4 Stages)"
+
+#. Risk Modifier stages, written by scripts/build_game_data.py
+msgid "On Ravage, unable to gain AP"
+msgstr "On Ravage, unable to gain AP (+3 Stages)"
+
+#. Risk Modifier stages, written by scripts/build_game_data.py
+msgid "Increase all prices in the Safe Zones and the Dellang Shop by 30% and additionally increase the price of Flash by 100%"
+msgstr "Increase all prices in the Safe Zones and the Dellang Shop by 30% and additionally increase the price of Flash by 100% (+5 Stages)"
+
+#. Risk Modifier stages, written by scripts/build_game_data.py
+msgid "Randomly disable 1 selection option when acquiring Fates or cards"
+msgstr "Randomly disable 1 selection option when acquiring Fates or cards (+5 Stages)"
+
+#. Risk Modifier stages, written by scripts/build_game_data.py
+msgid "Decrease equipment stats by 80%"
+msgstr "Decrease equipment stats by 80% (+4 Stages)"
+
 msgid "刷梦边"
 msgstr "刷梦边"
 

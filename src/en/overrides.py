@@ -11,7 +11,7 @@ from ok.util.file import get_relative_path, read_json_file, write_json_file
 
 from src.en.desire import DEFAULT_FACTION, FACTIONS
 from src.en.etched_memory import BONUSES, ENTER_MEMORY_END, ETCHED_MEMORY, KEEP_BONUS, MEMORIES, MEMORY_BONUS
-from src.en.game_data import CARDS, COMBATANTS, EQUIPMENT
+from src.en.game_data import CARDS, COMBATANTS, EQUIPMENT, RISK_MODIFIERS, SORTIE_LEVELS
 from src.en.framework import import_ui
 from src.en.game_language import GAME_LANGUAGES, MODE_KEY
 from src.en.heal import PAY_CREDITS
@@ -43,8 +43,8 @@ SMART_CARD_PLAY = "Smart Card Play"
 PLAYS_ITS_OWN_CARDS = "出牌优先级"
 # Upstream settings taken off both modes. `Config` drops a saved key it no longer declares, so upstream reads its own default.
 # Upstream's Meditation list and threshold are replaced by `MEDITATE`. Its Credits switch is read as on by `heal.py`.
-# Its discard list is read nowhere.
-DROPPED = ("优先移除基础牌", "需要冥想的卡牌", "多少信用点以上冥想", PAY_CREDITS, "丢弃卡牌优先级")
+# Its discard list is read nowhere. Its lead combatant list is replaced by `DRAFTED_COMBATANT`.
+DROPPED = ("优先移除基础牌", "需要冥想的卡牌", "多少信用点以上冥想", PAY_CREDITS, "丢弃卡牌优先级", "出战主战员优先级")
 # The combatant whose save data the run farms. `src/en/navigation.py` reads it to recognise the tab. Only Chaos
 # declares it, which makes it the marker for Chaos-only settings.
 FARMED_COMBATANT = "刷存档主战员"
@@ -57,8 +57,22 @@ NO_COMBATANT = "(none)"
 DESIRE_FACTION = "Desire Faction"
 # Extract every non-Mythic piece for Credits instead of equipping it. Here rather than in `src/en/equipment.py`, which imports this module.
 EXTRACT_SPARE = "Extract Spare Equipment"
-# Fork switches added right under the upstream list they narrow, as `(key, default, anchor)`. Both modes declare both anchors.
-ADDED_UNDER = ((TAKE_MONSTER_REWARDS, True, "卡牌奖励优先级"), (EXTRACT_SPARE, False, "装备3号位优先级"))
+# The Lv.80 Risk Modifiers to turn on before each Sortie run. Here rather than in `src/en/sortie_loop.py`, which imports this module.
+RISK_PICKS = "Risk Modifiers"
+# The Sortie tier to start each run on, stepped to from whatever the lobby shows. `KEEP_LEVEL` leaves the lobby's tier alone.
+SORTIE_LEVEL = "Sortie Level"
+KEEP_LEVEL = "Keep current"
+LEVEL_OPTIONS = [KEEP_LEVEL, *(f"Lv.{level}" for level in SORTIE_LEVELS)]
+# The combatant Sortie assigns to the formation's empty slot. `AUTO_DRAFT` presses Assign on the game's own pick, the week's red
+# Drafted Combatant. Both here rather than in `src/en/sortie_loop.py`, which imports this module.
+DRAFTED_COMBATANT = "Drafted Combatant"
+AUTO_DRAFT = "Auto"
+# Whether Sortie runs with the formation's Hardcore Mode switch on.
+HARDCORE = "Hardcore Mode"
+# Fork settings added right under the upstream row they belong with, as `(key, default, anchor)`. Both modes declare the first two anchors.
+# Only Sortie declares Blocked Combatants and Combatant Priority, which keeps the rest off Chaos.
+ADDED_UNDER = ((TAKE_MONSTER_REWARDS, True, "卡牌奖励优先级"), (EXTRACT_SPARE, False, "装备3号位优先级"), (SORTIE_LEVEL, KEEP_LEVEL, "拉黑主战员"), (HARDCORE, False, SORTIE_LEVEL),
+               (RISK_PICKS, [], HARDCORE), (DRAFTED_COMBATANT, AUTO_DRAFT, "主战员优先级"))
 # List settings the user picks from, keyed by config name -> the roster it draws on.
 # Two rules decide whether a setting can become a pick-list. The value must be compared against OCR text - card,
 # equipment and combatant names are, while Route Priority's values are internal labels produced from template
@@ -75,7 +89,6 @@ LIST_OPTIONS = {
     "装备1号位优先级": EQUIPMENT,
     "装备2号位优先级": EQUIPMENT,
     "装备3号位优先级": EQUIPMENT,
-    "出战主战员优先级": COMBATANTS,
     "主战员优先级": COMBATANTS,
     "拉黑主战员": COMBATANTS,
     "路线优先级": ROUTE_NODES,
@@ -117,9 +130,12 @@ DESCRIPTIONS = {
     "装备1号位优先级": "Preferred equipment for the first slot, best first.",
     "装备2号位优先级": "Preferred equipment for the second slot, best first.",
     "装备3号位优先级": "Preferred equipment for the third slot, best first.",
-    "出战主战员优先级": "Combatants to deploy, in order of preference.",
     "主战员优先级": "Combatants to pick when the run offers a choice.",
     "拉黑主战员": "Combatants to never pick.",
+    SORTIE_LEVEL: "The tier each run starts on. Keep current runs whatever the lobby shows.",
+    RISK_PICKS: "Lv.80 only. The modifiers to turn on before each run. The rest are turned off.",
+    DRAFTED_COMBATANT: f"The combatant to assign when the formation's slot is empty. {AUTO_DRAFT} takes the red Drafted Combatant of the week.",
+    HARDCORE: "Turn on Hardcore Mode for increased difficulty and rewards.",
     FARMED_COMBATANT: f"The combatant whose save data is farmed. Pick {NO_COMBATANT} to favour no one.",
     "指定面具卡牌": "The Persona Card to hold out for, matched against its name and description.",
     "面具卡牌刻印": "The Engraving to hold out for on that Persona Card.",
@@ -262,6 +278,11 @@ def reshape(task):
         if anchor in task.default_config:
             task.default_config[key] = default
             place_under(task.default_config, key, anchor)
+    if RISK_PICKS in task.default_config:
+        task.config_type[SORTIE_LEVEL] = {"type": "drop_down", "options": LEVEL_OPTIONS}
+        task.config_type[RISK_PICKS] = {"type": "drop_down", "options_available": list(RISK_MODIFIERS)}
+    if DRAFTED_COMBATANT in task.default_config:
+        task.config_type[DRAFTED_COMBATANT] = {"type": "drop_down", "options": [AUTO_DRAFT, *COMBATANTS]}
 
     if FARMED_COMBATANT in task.default_config:
         task.default_config[DESIRE_FACTION] = DEFAULT_FACTION

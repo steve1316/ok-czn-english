@@ -12,10 +12,10 @@ from difflib import SequenceMatcher
 from functools import lru_cache
 from itertools import combinations
 
-from src.en.game_battle import CARD_CATEGORY, CARD_COST, CARD_EXHAUSTS, CARD_OWNER, COMBATANT_ATTRIBUTE, X_COST
+from src.en.game_battle import CARD_CATEGORY, CARD_COST, CARD_EXHAUSTS, CARD_LEAD, CARD_OWNER, COMBATANT_ATTRIBUTE, X_COST
 from src.en.game_quality import COMBATANT_ROLE
 from src.en import kits
-from src.en.game_text import DESCRIPTIONS
+from src.en.game_text import DESCRIPTIONS, EPIPHANIES, EPIPHANY_LEAD
 from src.en.kits.kit import (ATTACK_CATEGORY, PHASE_ATTACK, PHASE_EPIPHANY, PHASE_ESCAPE, PHASE_FREE, PHASE_OTHER, PHASE_PRIME, PHASE_SETUP,
                              PHASE_SPENDS_EVERYTHING, PHASE_UPGRADE, base_name)
 from src.en.quality import fold, in_order, index, one_edit_apart, unconfused
@@ -40,6 +40,8 @@ CLEARING_RESERVE = 1
 CLEARING_MAX_COST = 1
 # A card that gets cheaper for each card Exhausted this turn, as Brand of Annihilation does. The screen never reads it lowered.
 EXHAUST_DISCOUNT = re.compile(r"When a card is Exhausted, decrease Cost of this card by (\d+)", re.I)
+# A played effect that makes other cards cheaper, as every Warming Up does, so a Lead card carrying it opens ahead of the ones it cheapens.
+COST_CUT = re.compile(r"decrease Cost of", re.I)
 # Any effect a card's text can carry names a number, so a text without one - blank, or flavour - does nothing when played.
 INERT_EFFECT = re.compile(r"\d")
 # A card of your own that works just by being held, as Unknown: Mutant Sample's "If in hand, +40% Damage Amount".
@@ -108,6 +110,10 @@ COPIES = {}
 DECK = {}
 # How many times a battle a card comes back to hand after it is played, by canonical name, summed over its copies, from the deck read.
 RETRIEVES = {}
+# Every card the deck read has seen labelled Basic, by canonical name. Kept across reads and runs, since a card's type never changes.
+BASICS = set()
+# Every card `DECK` can put in hand, its own and those their effects create, from `holdable`. Rebound with `DECK`, and frozen so `canonical` can cache on it.
+HELD = frozenset()
 
 # What a card does, in the terms the ordering cares about.
 Features = namedtuple("Features", [
@@ -185,6 +191,8 @@ GARBLED_TAIL = 2
 # How much of a name a reading checked against the deck has to keep, as a share of its letters. Live, Annihilation came back as
 # "DarkMistSecretAil", 17 of 29, far past what the whole roster can risk but the only Dark Mist card those letters fit in that deck.
 DECK_SHARE = 0.5
+# What an effect text creates, as in "Create 2 Contaminated Spore, then ...", up to the punctuation or joining word that ends the name.
+CREATE = re.compile(r"\bcreate (?:\d+ |x |a )?(.+?)(?=,|\.|\n|$| then | and | in | to | for | with )", re.I)
 # Tiphera's three Archetype cards differ only by a glyph the reader seldom keeps - "Archetype:O", "Archetyp", "rchetype:".
 # Matched on folded text, on a piece of the word, with a real glyph or the O, C or 0 the reader takes the circle for at the end.
 ARCHETYPE_READ = re.compile(r"(?:rchet|het[yv]p)[a-z]*?([○△□oc0]?)$|^arche$")
@@ -229,7 +237,30 @@ def owner(name):
     return CARD_OWNER.get(base_name(name))
 
 
-def stub_card(stub, party=frozenset()):
+def holdable(deck):
+    """Add to a deck the cards its effects create, and what those create in turn.
+
+    A created card is in no deck read, so a name cut short that fits it and another card could not be placed. Live, a crowded hand read
+    Contaminated Spore as "Contaminat", which fits Contamination too, and the free Spores Retain kept making were never played.
+
+    Args:
+        deck: The canonical names of the deck's cards, from `DECK`.
+
+    Returns:
+        Those names and every card a text among them creates.
+    """
+    held = set(deck)
+    pending = list(deck)
+    while pending:
+        for found in CREATE.finditer(description(pending.pop())):
+            for made in found.group(1).split(" or "):
+                if made in CARD_COST and made not in held:
+                    held.add(made)
+                    pending.append(made)
+    return frozenset(held)
+
+
+def stub_card(stub, party=frozenset(), held=frozenset()):
     """Find the one card a name cut short can be.
 
     The reader cuts from either end - "Knife Tos" and "rrier Der" are both real readings - so a stub is tried as the start
@@ -241,6 +272,7 @@ def stub_card(stub, party=frozenset()):
     Args:
         stub: A folded reading the index has no spelling for.
         party: The combatants known to be in the party. Empty when none are known yet, which leaves every card in play.
+        held: The cards the deck can put in hand, from `holdable`, which narrow the fits the same way. Empty before the piles are read.
 
     Returns:
         The card, or None when nothing or more than one card fits. A card and its Epiphanies count as one card, the plainest of them, as do
@@ -256,6 +288,8 @@ def stub_card(stub, party=frozenset()):
         # Kept whole when no fit is the party's, so a member whose cards have not been read yet still gets the old answer.
         if party:
             matches = [real for real in matches if owner(real) in (None, *party)] or matches
+        if held:
+            matches = [real for real in matches if real in held] or matches
         if matches:
             plainest = min(matches, key=len)
             # A longer name built on the plainest at its price is played the same: "Inferno" fits Inferno Rhapsody and Inferno Rhapsody: Heaven.
@@ -292,7 +326,7 @@ def canonical(name, party=frozenset(), deck=frozenset()):
     # The reader also cuts a name short while the hand animates, so "Knife Tos" arrives for "Knife Toss".
     # Only an unambiguous stub is repaired: two cards start "Attac", and guessing between them would be
     # worse than leaving the reading alone for the label test to deal with.
-    known = stub_card(stub, party) or deck_card(stub, deck)
+    known = stub_card(stub, party, deck) or deck_card(stub, deck)
     if known:
         return known
     archetype = ARCHETYPE_READ.search(stub)
@@ -538,9 +572,11 @@ def on_play(name):
 
 def settle_deck():
     """Value every card by the version of it `COPIES` holds, the weakest where its copies differ."""
+    global HELD
     DECK.clear()
     DECK.update({name: min(texts, key=lambda text: strength(figures(text))) for name, texts in COPIES.items()})
     parsed.cache_clear()
+    HELD = holdable(DECK)
 
 
 def use_deck(copies, retrieves=None):
@@ -819,6 +855,43 @@ def best_buy(ranked, budget, board):
     return [ranked[index] for index in best]
 
 
+def has_lead(name, board):
+    """Say whether the version of a card the deck holds has Lead, which an Epiphany can add or take away.
+
+    Args:
+        name: The canonical card name.
+        board: The `Board`, whose `deck` holds the version text the last deck read matched, with any Divine lines after it.
+
+    Returns:
+        True when that version has Lead, or the base card does when the deck has not been read.
+    """
+    base = DESCRIPTIONS.get(name, "")
+    held = board.deck.get(name, base)
+    versions = (base, *EPIPHANIES.get(name, ()))
+    version = max((text for text in versions if held == text or held.startswith(text + "\n")), key=len, default=base)
+    return name in CARD_LEAD if version == base else version in EPIPHANY_LEAD.get(name, ())
+
+
+def lead_opener(hand, board):
+    """Pick the Lead card to open the turn with, when the screen shows one lowered and nothing has been played yet.
+
+    Its discount is lost to whichever card goes first, so it is used now or not at all, even by a card a kit would hold. One whose
+    played effect cuts other costs goes first, since the cards it cheapens make up for the Lead discounts it ends.
+
+    Args:
+        hand: Hand cards as `_hand_cards` reads them, after `discounted`.
+        board: The `Board` this is being decided against.
+
+    Returns:
+        The hand card to play first, or None when no lowered Lead card is worth it.
+    """
+    if board.played:
+        return None
+    lowered = [card for card in hand if has_lead(canonical(card["name"]), board) and "cost" in card and price(card) <= board.action_points
+               and worth_playing(card["name"]) and not wasted(card["name"], board)]
+    return min(lowered, key=lambda held: (not COST_CUT.search(on_play(held["name"])), buying_order(held, board)), default=None)
+
+
 def plan(hand, board):
     """Choose the cards to play this turn, in the order to play them.
 
@@ -836,6 +909,12 @@ def plan(hand, board):
     if not board.hand:
         board = board._replace(hand=tuple(canonical(card["name"]) for card in hand))
     hand = [discounted(card, board) for card in hand]
+    opener = lead_opener(hand, board)
+    if opener:
+        # Every other Lead card goes back to its full price once the opener is played.
+        rest = [{key: held for key, held in card.items() if key != "cost" or not has_lead(canonical(card["name"]), board)} for card in hand if card is not opener]
+        after = board._replace(action_points=board.action_points - price(opener), played=board.played + (canonical(opener["name"]),))
+        return [opener] + plan(rest, after)
     playable = (card for card in hand if worth_playing(card["name"]) and not kits.held(canonical(card["name"]), board)
                 and not wasted(card["name"], board))
     budget = board.action_points

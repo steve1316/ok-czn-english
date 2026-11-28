@@ -468,6 +468,7 @@ def fire(task, utils, turn, key, ego, reason, banked):
     # covers that. A second miss means the game will not take it this turn, so the turn stops firing rather than pressing it again.
     if board.banked_points(frame_of(task)) < banked:
         turn.ego_fires += 1
+        turn.ego_opened = ego.name
         return True
     if not turn.ego_missed:
         task.log_info(f"{ego.name or key} did not take, EP still {banked}, so it does not count against the turn")

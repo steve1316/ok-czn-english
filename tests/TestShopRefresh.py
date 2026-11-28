@@ -11,6 +11,7 @@ mean "never", which upstream's own `handle_shop` is run against below.
 """
 
 import sys
+import time
 import types
 import unittest
 from functools import partial
@@ -24,9 +25,11 @@ import utils  # noqa: E402
 
 from tests.fakes import FakeBox as Box  # noqa: E402
 
+from src.en import cards  # noqa: E402
+from src.en.handlers import standing_in  # noqa: E402
 from src.en.shop import (  # noqa: E402
-    BUY_CARDS, PAID_THRESHOLD, SHOP_FLOOR, credits_read, free_refresh_box, leaving_cards, never_paying, reading_names_whole,
-    refusing_free_refresh, skipping_poor_shop,
+    BUY_CARDS, PAID_THRESHOLD, REMOVAL_SECONDS, REMOVAL_TAPPED_AT, SHOP_FLOOR, basic_only, credits_read, free_refresh_box, leaving_cards,
+    marking_removal, never_paying, reading_names_whole, refusing_free_refresh, skipping_poor_shop,
 )
 
 WIDTH, HEIGHT = 1920, 1080
@@ -38,6 +41,8 @@ SHELF_X, SHELF_Y = 0.500, 0.850
 SOLD_OUT_X, SOLD_OUT_Y = 0.727, 0.286
 CREDIT_X, CREDIT_Y = 0.794, 0.054
 COUNT_X, PRICE_X, PAID_Y = 0.080, 0.190, 0.932
+# Where `handle_shop` reads the card removal and its price.
+REMOVAL_X, REMOVAL_Y, REMOVAL_PRICE_Y = 0.729, 0.261, 0.319
 # Two shelf slots: the credit icon `handle_shop` clicks to buy, and the card type badge that marks the slot as a card.
 SHELF_ICON_XS, SHELF_ICON_Y, BADGE_Y = (0.200, 0.500), 0.830, 0.730
 
@@ -206,6 +211,74 @@ class TestLeavingCards(unittest.TestCase):
                 task = CardAndGearShelfTask(buys_cards)
                 handler(task)
                 self.assertEqual(task.clicked, [task.icons[slot]])
+
+
+class RemovalShelfTask(PaidRefreshTask):
+    """The shop with its 120-credit card removal still on sale and 500 credits to pay for it."""
+
+    def __init__(self):
+        super().__init__(-1)
+        self.all_texts = [FakeBox("移除卡牌", REMOVAL_X, REMOVAL_Y), FakeBox("120", REMOVAL_X, REMOVAL_PRICE_Y), FakeBox("500", CREDIT_X, CREDIT_Y)]
+        self.node_status = {"shop": True}
+
+
+class TestBasicOnlyRemoval(unittest.TestCase):
+    """A Sortie shop removal takes only a Curse or Basic card. Live, with no Basic left upstream would take whatever card was left."""
+
+    PAGE = [{"name": "Rapier", "type": "基础攻击", "feature_name": "attack_in_deck"}, {"name": "Metal Pierce", "type": "攻击力", "feature_name": "attack_in_deck"},
+            {"name": "Shackles", "type": "", "feature_name": "hex_in_deck"}]
+
+    def test_only_a_sortie_shop_tap_is_remembered(self):
+        for mode, remembered in (("SortieMode", True), ("ChaosMode", False)):
+            with self.subTest(mode):
+                task = type(mode, (RemovalShelfTask,), {})()
+                marking_removal(utils.handle_shop)(task)
+                self.assertEqual([box.name for box in task.clicked], ["移除卡牌"])
+                self.assertEqual(getattr(task, REMOVAL_TAPPED_AT, None) is not None, remembered)
+
+    def test_the_removal_is_left_once_the_deck_holds_no_curse_or_basic(self):
+        for why, deck, tapped in (("no deck read yet", {}, True), ("a Basic left", {"Rapier": {""}, "Metal Pierce": {""}}, True),
+                                  ("a Curse left", {"Abyssal Erosion": {""}}, True), ("neither left", {"Metal Pierce": {""}}, False)):
+            with self.subTest(why):
+                task = type("SortieMode", (RemovalShelfTask,), {})()
+                with standing_in(cards, COPIES=deck, BASICS={"Rapier"}):
+                    marking_removal(utils.handle_shop)(task)
+                self.assertEqual(["移除卡牌"] if tapped else [], [box.name for box in task.clicked])
+                self.assertFalse(task.node_status["shop"], "the removal stays spent, so the next frame shops instead")
+
+    def test_the_shop_removal_is_offered_only_curse_and_basic_cards(self):
+        now = time.monotonic()
+        for why, tapped, offered, names in (
+            ("just after the shop's tap", now, ["Rapier", "Shackles"], []),
+            ("a removal the shop did not open", None, ["Rapier", "Metal Pierce", "Shackles"], ["Metal Pierce"]),
+            ("long after the shop's tap", now - REMOVAL_SECONDS - 1, ["Rapier", "Metal Pierce", "Shackles"], ["Metal Pierce"]),
+        ):
+            with self.subTest(why):
+                task = types.SimpleNamespace(config={}, **{REMOVAL_TAPPED_AT: tapped})
+                seen = []
+
+                def picking(task_, card_names, count=1, action=""):
+                    seen.append(([card["name"] for card in utils.recognize_cards_in_deck(task_, page=action)], card_names))
+                    return True
+
+                with standing_in(utils, recognize_cards_in_deck=lambda *args, **kwargs: [dict(card) for card in self.PAGE]), \
+                        standing_in(cards, COPIES={}, BASICS=set()):
+                    basic_only(picking, utils)(task, ["Metal Pierce"], action="移除")
+                self.assertEqual(seen, [(offered, names)])
+
+    def test_a_basic_on_the_first_page_is_taken_there(self):
+        # Upstream's own pick on a deck taller than one page, which takes an unnamed Basic only after scrolling to the bottom and back up.
+        events = []
+        page = [{"name": "Metal Pierce", "type": "攻击力", "feature_name": "attack_in_deck", "x": 0.33, "y": 0.17, "selected": False},
+                {"name": "Sword Slash", "type": "基础攻击", "feature_name": "attack_in_deck", "x": 0.49, "y": 0.17, "selected": False}]
+        task = types.SimpleNamespace(config={}, all_texts=[], ocr=list, sleep=lambda seconds: None, log_info=lambda message: None, box_of_screen=lambda *args: None,
+                                     **{REMOVAL_TAPPED_AT: time.monotonic()})
+        with standing_in(utils, recognize_cards_in_deck=lambda *args, **kwargs: [dict(card) for card in page], region_white_ratio=lambda *args: 0.09,
+                         _point_is_white=lambda *args: False, _move_and_click=lambda task, x, y: events.append(("tap", x, y)),
+                         _scroll_card_page=lambda *args: events.append("scroll")), \
+                standing_in(cards, COPIES={"Sword Slash": {""}, "Metal Pierce": {""}}, BASICS={"Sword Slash"}):
+            self.assertTrue(basic_only(utils.select_card, utils)(task, [], action="移除"))
+        self.assertEqual([("tap", 0.49, 0.17)], events)
 
 
 class TestReadingNamesWhole(unittest.TestCase):

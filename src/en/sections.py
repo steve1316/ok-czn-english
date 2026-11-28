@@ -18,7 +18,7 @@ from src.en import row_hints
 from src.en.framework import import_ui
 from src.en.etched_memory import ENTER_MEMORY_END, ETCHED_MEMORY, MEMORY_BONUS, MEMORY_CARD
 from src.en.meditation import MEDITATE
-from src.en.overrides import DESIRE_FACTION, EXTRACT_SPARE, FARMED_COMBATANT, SMART_CARD_PLAY
+from src.en.overrides import DESIRE_FACTION, DRAFTED_COMBATANT, EXTRACT_SPARE, FARMED_COMBATANT, HARDCORE, RISK_PICKS, SMART_CARD_PLAY, SORTIE_LEVEL
 from src.en.reobserve import MODIFIER_BLACKLIST, REOBSERVE, SAVE_LIMIT_KEY
 from src.en.rest import SHOP_SETTING
 from src.en.shop import BUY_CARDS, PAID_THRESHOLD, TAKE_MONSTER_REWARDS
@@ -26,10 +26,10 @@ from src.en.zero_system import CODEX, CODEX_MERGE, CODEX_SEASON, MAX_MERGES
 
 logger = Logger.get_logger(__name__)
 
-# The settings shown first and never folded, in this order: the farmed combatant and the loot claim, then the run, then the
-# rest of the party, then what rerolls the Chaos start page. Chaos claims through the first loot key and Sortie through the second.
-TOP = [FARMED_COMBATANT, "领取奖励(只使用验证卡)", "领取奖励", "几轮后停止(0为不停止)", "第几层boss前自动暂停", "只打第一层",
-       "出战主战员优先级", "主战员优先级", "拉黑主战员",
+# The settings shown first and never folded, in this order: the lead combatant and the loot claim, then the run, then the rest of
+# the party, then what rerolls the Chaos start page. Chaos claims through the first loot key and Sortie through the second.
+TOP = [FARMED_COMBATANT, DRAFTED_COMBATANT, "领取奖励(只使用验证卡)", "领取奖励", "几轮后停止(0为不停止)", "第几层boss前自动暂停", "只打第一层",
+       "主战员优先级", "拉黑主战员", SORTIE_LEVEL, HARDCORE, RISK_PICKS,
        SAVE_LIMIT_KEY, REOBSERVE, MODIFIER_BLACKLIST, "刷初始卡牌", "刷空档"]
 # Header title -> the settings folded under it, in the order they are shown. Both modes share the lists and a card draws only
 # the keys it carries, so a section with none of them is not drawn. A key in neither list stays above everything.

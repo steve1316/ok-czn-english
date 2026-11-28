@@ -791,23 +791,33 @@ class TestBuyingOnSpree(unittest.TestCase):
     somebody. A configured list never reaches the builder, so it is not gated here at all.
     """
 
-    def builder(self, credit, slots=None, listed=("Crimson Sword",)):
+    def builder(self, credit, slots=None, listed=("Crimson Sword",), shelf=()):
         """Build a task and a gated list builder that offers `listed` for every equipment key.
 
         Args:
             credit: What the run is holding. `self.credit` can be changed between calls to spend it.
             slots: What was last seen of each combatant's slots, or None for a screen never seen.
             listed: What the ungated builder generates.
+            shelf: `(name, price)` pairs laid out on the shop shelf the way upstream `handle_shop` finds them.
 
         Returns:
             A `(task, offered)` pair, where `offered(slot)` is what the gated builder hands back for that slot.
         """
-        task = FakeTask([])
+        icons, boxes = [], []
+        for index, (name, price) in enumerate(shelf):
+            x = 0.2 + 0.3 * index
+            icons.append(Box("", x, 0.82, width=30))
+            boxes += [Box(str(price), x + 0.099, 0.819, width=60), Box(name, x + 0.05, 0.65, width=200)]
+        task = FakeTask(boxes)
+        task.find_feature = lambda feature_name, box: icons if feature_name == "credit_icon" else []
+        task.box_of_screen = lambda *region: region
         task.start_time, task.node_status = 1.0, {"pass_final_boss_count": 0, "node_count": 4}
         if slots is not None:
             setattr(task, SLOTS, slots)
         self.credit = credit
-        utils = types.SimpleNamespace(_get_current_credit=lambda task_: self.credit)
+        utils = types.SimpleNamespace(_get_current_credit=lambda task_: self.credit, find_box_at_point=upstream.find_box_at_point,
+                                      _parse_discounted_price=upstream._parse_discounted_price,
+                                      _match_equipment_name=upstream._match_equipment_name)
         generated = buying_on_spree(lambda task_, key, farmed="": list(listed), lambda: utils)
         keys = {slot: key for key, slot in EQUIPMENT_KEYS.items()}
         return task, lambda slot: generated(task, keys[slot])
@@ -823,6 +833,15 @@ class TestBuyingOnSpree(unittest.TestCase):
             with self.subTest(credit=credit):
                 self.credit = credit
                 self.assertEqual(expected, offered(0))
+
+    def test_off_a_spree_a_bare_slot_buys_only_what_keeps_the_floor(self):
+        """Below `SPREE_START` a bare slot was left bare for a whole shop visit, however cheap the shelf was."""
+        helmet, sword = "Gladiator’s Helmet", "Crimson Sword"
+        shelf = ((helmet, 115), (sword, 240))
+        task, offered = self.builder(477, slots=[["", "", "传说"]], listed=(helmet, sword), shelf=shelf)
+        self.assertEqual([[helmet], [helmet], []], [offered(slot) for slot in range(3)])
+        self.credit = SPREE_END + 114
+        self.assertEqual([], offered(0), "a 115 piece would leave 299")
 
     def test_a_spree_ends_with_the_shop_visit(self):
         task, offered = self.builder(SPREE_START)
