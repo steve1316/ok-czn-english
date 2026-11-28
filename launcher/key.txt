@@ -1,0 +1,5 @@
+pyappify v1.2.9
+action a987e9ade9d7517f97b38636c0e07b44fd5ef379
+pyappify.yml 08fe8de9396674c74f9b9b33a412d0043ecde588
+icons/icon.ico 4036326aec3fff0510b139ee00e1ad72dfd44d70
+icons/icon.png 7a1d42192c18c98ce2a34a3ebf8cf8fc399826dc
