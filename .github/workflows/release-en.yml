@@ -194,6 +194,8 @@ jobs:
           "REUSE_LAUNCHER=$(if ($reuse) { 'true' } else { 'false' })" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           if ($reuse) {
             Write-Host "Reusing the committed launcher, built from:`n$key"
+          } elseif ($committed -eq $key) {
+            Write-Host "launcher/key.txt matches this run, but launcher/$name.exe is missing, so it builds the launcher and commits it at the end."
           } else {
             Write-Host "The committed launcher was built from:`n$(if ($committed) { $committed } else { '(nothing committed)' })"
             Write-Host "This run needs one built from:`n$key`nso it builds the launcher and commits it at the end."
@@ -304,7 +306,13 @@ jobs:
           New-Item -ItemType Directory -Force -Path "$tree/launcher" | Out-Null
           Copy-Item -LiteralPath $exe -Destination "$tree/launcher/$env:APP_NAME.exe" -Force
           Copy-Item -LiteralPath "$env:RUNNER_TEMP/launcher-key.txt" -Destination "$tree/launcher/key.txt" -Force
-          git -C $tree add launcher
+          # --force because upstream's .gitignore has *.exe, which a plain add skips without a word.
+          git -C $tree add --force launcher
+          git -C $tree ls-files --error-unmatch "launcher/$env:APP_NAME.exe" 2>&1 | Out-Null
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::warning::launcher/$env:APP_NAME.exe did not stage, so nothing was committed. The next run will build it again."
+            exit 0
+          }
           git -C $tree commit --quiet -m "Update the committed PyAppify launcher to $env:PYAPPIFY_VERSION"
           git -C $tree push --quiet origin "HEAD:refs/heads/$branch"
           if ($LASTEXITCODE -ne 0) {
