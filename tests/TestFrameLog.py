@@ -110,17 +110,18 @@ def raw_post(port, headers, host=True, command="status", body=b"{}"):
     Args:
         port: The remote control's port.
         headers: Every header to send besides Host unless `headers` names one, and besides the body's Content-Length
-            unless `headers` names a Content-Length or a Transfer-Encoding, which sends the body chunked.
+            unless `headers` names a Content-Length or a Transfer-Encoding. Naming either sends no body at all.
         host: False to send no Host header at all.
         command: The command the path names.
-        body: The bytes to send.
+        body: The bytes to send. Dropped when `headers` names its own length, since the server refuses those unread and
+            leftover bytes make Windows reset the connection over the reply.
 
     Returns:
         The reply's status, Content-Type and body text.
     """
-    if "Transfer-Encoding" in headers:
-        body = b"%x\r\n%s\r\n0\r\n\r\n" % (len(body), body)
-    elif "Content-Length" not in headers:
+    if "Transfer-Encoding" in headers or "Content-Length" in headers:
+        body = None
+    else:
         headers = {**headers, "Content-Length": str(len(body))}
     connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
     try:
